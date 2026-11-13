@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
@@ -29,13 +28,6 @@ func wantBaseDigests(t *testing.T, got Trusted) {
 	wantStrings(t, "LabelsDigests", got.LabelsDigests, digests(baseLabels))
 }
 
-func wantApproval(t *testing.T, got Trusted, approval Approval, by string) {
-	t.Helper()
-	if got.Approval != approval || got.ApprovedBy != by {
-		t.Errorf("Approval, ApprovedBy = %q, %q; want %q, %q", got.Approval, got.ApprovedBy, approval, by)
-	}
-}
-
 func TestResolveCleanPullRequest(t *testing.T) {
 	f := newFixture()
 	got := f.mustResolve(t, pullTarget())
@@ -51,10 +43,6 @@ func TestResolveCleanPullRequest(t *testing.T) {
 		t.Errorf("policy digest %q is not bare lowercase hex", got.PolicyDigests[0])
 	}
 	wantStrings(t, "ProtectedPaths", got.ProtectedPaths, nil)
-	wantApproval(t, got, ApprovalNotRequired, "")
-	if f.pulls.reviewsCalls != 0 {
-		t.Errorf("Reviews called %d times", f.pulls.reviewsCalls)
-	}
 
 	t.Run("baseline and labels absent on base", func(t *testing.T) {
 		f := newFixture()
@@ -71,44 +59,19 @@ func TestResolveCleanPullRequest(t *testing.T) {
 	})
 }
 
-func TestResolveApprovedPolicyChange(t *testing.T) {
-	f := newFixture()
-	f.pulls.changed = []string{"main.go", policy.PolicyPath}
-	f.pulls.reviews = []api.Review{approved("alice", headSHA)}
-	got := f.mustResolve(t, pullTarget())
+// A protected change trusts nothing of the head (M2 task 26): the inputs stay those of the protected ref.
+func TestResolveProtectedChangeTrustsOnlyTheBase(t *testing.T) {
+	for _, changed := range []string{policy.PolicyPath, policy.LabelsPath, policy.BaselinePath} {
+		t.Run(changed, func(t *testing.T) {
+			f := newFixture()
+			f.pulls.changed = []string{"main.go", changed}
+			got := f.mustResolve(t, pullTarget())
 
-	wantApproval(t, got, ApprovalGranted, "alice")
-	wantStrings(t, "ProtectedPaths", got.ProtectedPaths, []string{policy.PolicyPath})
-	wantStrings(t, "PolicyDigests", got.PolicyDigests, digests(basePolicy, headPolicy))
-	wantStrings(t, "BaselineDigests", got.BaselineDigests, digests(baseBaseline))
-	wantStrings(t, "LabelsDigests", got.LabelsDigests, digests(baseLabels))
-	if want := time.Date(2026, 10, 5, 23, 59, 59, 0, time.UTC); !got.EarliestWaiverExpiry.Equal(want) {
-		t.Errorf("EarliestWaiverExpiry = %v, want the approved head waiver %v", got.EarliestWaiverExpiry, want)
+			wantStrings(t, "ProtectedPaths", got.ProtectedPaths, []string{changed})
+			wantBaseDigests(t, got)
+			wantStrings(t, "head reads", f.repos.headReads(), nil)
+		})
 	}
-
-	t.Run("labels only", func(t *testing.T) {
-		f := newFixture()
-		f.pulls.changed = []string{policy.LabelsPath}
-		f.pulls.reviews = []api.Review{approved("alice", headSHA)}
-		got := f.mustResolve(t, pullTarget())
-		wantApproval(t, got, ApprovalGranted, "alice")
-		wantStrings(t, "LabelsDigests", got.LabelsDigests, digests(baseLabels, headLabels))
-		wantStrings(t, "PolicyDigests", got.PolicyDigests, digests(basePolicy))
-		wantStrings(t, "BaselineDigests", got.BaselineDigests, digests(baseBaseline))
-		if !got.EarliestWaiverExpiry.IsZero() {
-			t.Errorf("EarliestWaiverExpiry = %v, want zero: the head policy is not approved input", got.EarliestWaiverExpiry)
-		}
-	})
-
-	t.Run("policy deleted at head appends nothing", func(t *testing.T) {
-		f := newFixture()
-		f.pulls.changed = []string{policy.PolicyPath}
-		f.pulls.reviews = []api.Review{approved("alice", headSHA)}
-		delete(f.repos.files, fileCall{headSHA, policy.PolicyPath})
-		got := f.mustResolve(t, pullTarget())
-		wantApproval(t, got, ApprovalGranted, "alice")
-		wantStrings(t, "PolicyDigests", got.PolicyDigests, digests(basePolicy))
-	})
 }
 
 func TestResolvePushTarget(t *testing.T) {
@@ -118,9 +81,8 @@ func TestResolvePushTarget(t *testing.T) {
 
 	wantBaseDigests(t, got)
 	wantStrings(t, "ProtectedPaths", got.ProtectedPaths, nil)
-	wantApproval(t, got, ApprovalNotRequired, "")
-	if f.pulls.changedCalls != 0 || f.pulls.reviewsCalls != 0 {
-		t.Errorf("ChangedFiles calls = %d, Reviews calls = %d; want 0, 0", f.pulls.changedCalls, f.pulls.reviewsCalls)
+	if f.pulls.changedCalls != 0 {
+		t.Errorf("ChangedFiles calls = %d; want 0", f.pulls.changedCalls)
 	}
 	for _, c := range f.repos.calls {
 		if c.ref != baseRef {
@@ -149,8 +111,8 @@ func TestResolveBootstrap(t *testing.T) {
 			f.putEntitlement(t, installation, ent)
 
 			got := f.mustResolve(t, pullTarget())
-			want := Trusted{Approval: ApprovalNotRequired, Suspended: true, Entitlement: ent}
-			if got.SettingsFound || got.Approval != want.Approval || got.Suspended != want.Suspended ||
+			want := Trusted{Suspended: true, Entitlement: ent}
+			if got.SettingsFound || got.Suspended != want.Suspended ||
 				got.Entitlement != want.Entitlement || len(got.Settings.Owners) != 0 {
 				t.Errorf("Trusted = %+v, want %+v", got, want)
 			}

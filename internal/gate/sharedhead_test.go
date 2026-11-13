@@ -28,7 +28,6 @@ func TestSharedHeadNeverSucceeds(t *testing.T) {
 		b := w.openPull(w.shop, 7)
 		w.changes(b, "pkg/a/a.go", ".archfit-app.yaml")
 		w.handle(w.event(webhook.PullOpened, b))
-		w.review(b, ownerLogin, "APPROVED", b.head)
 		w.shareHead(b, 8, "loosened")
 
 		w.wantAnswer(w.upload(b, fixtureHealthy), 200, "action_required", "shared_head")
@@ -121,7 +120,7 @@ func TestSharedHeadWithdrawsAnExistingSuccess(t *testing.T) {
 	for name, trigger := range triggers {
 		t.Run(name, func(t *testing.T) {
 			w := newWorld(t)
-			b, s := w.approvedSettingsEdit()
+			b, s := w.greenPull()
 			other := w.shareHead(b, 8, "loosened")
 
 			trigger(w, other)
@@ -149,7 +148,7 @@ func TestSharedHeadWithdrawsAnExistingSuccess(t *testing.T) {
 // A closed pull request into another base shares nothing: its event leaves the success alone.
 func TestSharedHeadClosedPullLeavesTheSuccess(t *testing.T) {
 	w := newWorld(t)
-	b, _ := w.approvedSettingsEdit()
+	b, _ := w.greenPull()
 	other := w.shareHead(b, 8, "loosened")
 	w.editPull(other, func(pl *api.Pull) { pl.State = "closed" })
 
@@ -186,7 +185,7 @@ func TestSharedHeadOpenedWhileTheUploadWaitsForTheLease(t *testing.T) {
 
 	t.Run("a withdrawal lands before the lease of a stale upload of the same run", func(t *testing.T) {
 		w := newWorld(t)
-		b, s := w.approvedSettingsEdit()
+		b, s := w.greenPull()
 		writes := w.successWrites()
 		w.store.beforeLease = func() {
 			other := w.shareHead(b, 8, "loosened")
@@ -225,7 +224,7 @@ func TestSharedHeadEventRetriesAFailedUnit(t *testing.T) {
 	for _, method := range []string{"OpenPulls", "CheckRuns"} {
 		t.Run(method+" fails", func(t *testing.T) {
 			w := newWorld(t)
-			b, _ := w.approvedSettingsEdit()
+			b, _ := w.greenPull()
 			other := w.shareHead(b, 8, "loosened")
 			w.gh.fail[method] = errors.New("github down")
 

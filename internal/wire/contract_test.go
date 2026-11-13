@@ -30,7 +30,7 @@ const (
 	statusNonCompar = "non_comparable"
 )
 
-var wireChildren = []string{"decision", "envelope", "manifest", "policy", "policy3", "report", "request", "result", "settings", "wording"}
+var wireChildren = []string{"envelope", "manifest", "policy", "policy3", "report", "request", "result", "settings", "wording"}
 
 // reportFields are the decision and identity values a report or leakage expectation records.
 type reportFields struct {

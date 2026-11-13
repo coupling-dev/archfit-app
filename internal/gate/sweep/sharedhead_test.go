@@ -96,9 +96,9 @@ func TestSharedHeadDecidesAgainInsideTheLease(t *testing.T) {
 			w.pub.states[checkKey(tg)] = feedback.CheckState{Exists: true, Receipt: receipt(202, verdict.ReasonHealthy)}
 		}, 0},
 		{"the listing failed", func(w *world, tg inputs.Target) { w.pulls.errs[tg.Repo.FullName] = errBoom }, 1},
-		{"the approval was withdrawn", func(w *world, tg inputs.Target) {
+		{"a protected change appeared", func(w *world, tg inputs.Target) {
 			tr := trusted()
-			tr.Approval = inputs.ApprovalMissing
+			tr.ProtectedPaths = []string{".archfit.yaml"}
 			w.trust(tg, tr)
 		}, 0},
 		{"the inputs moved", func(w *world, tg inputs.Target) {

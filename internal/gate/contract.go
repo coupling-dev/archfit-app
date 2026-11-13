@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/approvals"
-	"github.com/alexei-led/archfit-app/internal/gate/decisions"
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
@@ -43,11 +42,8 @@ type Gate struct {
 	publisher  feedback.Publisher
 	repairer   feedback.Repairer
 	sweeper    sweep.Sweeper
-	actions    sweep.Runs
 	repos      api.Repos
 	pulls      api.Pulls
-	queues     api.MergeQueues
-	comments   api.Comments
 	admissions admitter
 	now        func() time.Time
 	v4         *upload4           // the envelope 2 upload path
@@ -106,10 +102,9 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 		now = time.Now
 	}
 	resolver := inputs.New(gh, gh, gh, s)
-	reqs := decisions.New(s, gh, gh, now)
 	publisher := feedback.New(gh, gh, gh, s, audience, now) // the audience is the App's base URL
 	g := newGate(newReceiver(gh, v, audience, adm), resolver, publisher, feedback.NewRepairer(gh, gh, gh, gh, s, now),
-		sweep.New(gh, gh, gh, resolver, publisher, adm, reqs, c), gh, gh, gh, gh, gh, adm, now)
+		sweep.New(gh, gh, gh, resolver, publisher, adm, c), gh, gh, adm, now)
 	// One Archfit 4 publisher, so an upload and a request line take the same head lease.
 	publisher4 := feedback.New4(gh, gh, gh, s, audience, now)
 	g.v4 = newUpload4(ingest.NewV2(gh, gh, gh, gh, gh, v, audience, adm), gh, gh, s, publisher4)
@@ -120,8 +115,8 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 	return g
 }
 
-func newGate(rc ingest.Receiver, rs inputs.Resolver, p feedback.Publisher, rp feedback.Repairer, sw sweep.Sweeper, a sweep.Runs, repos api.Repos, pl api.Pulls, q api.MergeQueues, cm api.Comments, adm admitter, now func() time.Time) *Gate {
-	return &Gate{receiver: rc, resolver: rs, publisher: p, repairer: rp, sweeper: sw, actions: a, repos: repos, pulls: pl, queues: q, comments: cm, admissions: adm, now: now}
+func newGate(rc ingest.Receiver, rs inputs.Resolver, p feedback.Publisher, rp feedback.Repairer, sw sweep.Sweeper, repos api.Repos, pl api.Pulls, adm admitter, now func() time.Time) *Gate {
+	return &Gate{receiver: rc, resolver: rs, publisher: p, repairer: rp, sweeper: sw, repos: repos, pulls: pl, admissions: adm, now: now}
 }
 
 // UploadHandler serves POST /v1/reports: envelope 2 uploads on the Archfit 4 path, every other upload on the

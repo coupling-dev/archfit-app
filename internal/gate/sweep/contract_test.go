@@ -68,15 +68,14 @@ func eachRuleWorld(t *testing.T, now time.Time, fullName, baseRef string) (*worl
 
 	w.check(open(11, trusted()), receipt(111, verdict.ReasonSuspended), now.Add(-day))
 
-	approved := trusted()
-	approved.Approval = inputs.ApprovalGranted
-	approved.PolicyDigests = []string{"p1", "p1-head"}
-	w.check(open(12, approved), receipt(112, verdict.ReasonOwnerApprovalMissing), now.Add(-day))
+	cleared := trusted() // the pull request no longer changes a protected path
+	cleared.PolicyDigests = []string{"p1", "p1-head"}
+	w.check(open(12, cleared), receipt(112, verdict.ReasonOwnerApprovalMissing), now.Add(-day))
 
 	w.check(open(13, trusted()), healthy(13), now.Add(-day))
 
-	withdrawn := trusted() // the owner approval the green receipt relied on was dismissed
-	withdrawn.Approval, withdrawn.ProtectedPaths = inputs.ApprovalMissing, []string{settings.Path}
+	withdrawn := trusted() // the protected settings came to protect a path the green pull request changes
+	withdrawn.ProtectedPaths = []string{settings.Path}
 	w.check(open(14, withdrawn), healthy(14), now.Add(-day))
 	return w, r
 }
@@ -529,8 +528,6 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	for key, tr := range w.resolver.trusted {
 		tr.Settings.Owners = []string{marker + "-owner"}
 		tr.Settings.Workflow = ".github/workflows/" + marker + ".yaml"
-		tr.ProtectedPaths = []string{marker + "/policy.yaml"}
-		tr.ApprovedBy = marker + "-reviewer"
 		w.resolver.trusted[key] = tr
 	}
 	w.actions.rerunErrs[106] = errors.New(marker + ": GET /repos/" + r.FullName) // errors may quote names

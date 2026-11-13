@@ -204,35 +204,16 @@ func TestMergeGroupWithUnapprovedProtectedChangeInAnyMember(t *testing.T) {
 	w.noSuccess()
 }
 
-func TestMergeGroupWithOwnerApprovedPolicyChange(t *testing.T) {
+// A queued policy change never passes (M2 task 26): the group asks for action, whichever policy the upload names.
+func TestMergeGroupPolicyChangeNeverPasses(t *testing.T) {
 	w := newWorld(t)
 	one, two := w.openPull(w.shop, 1), w.openPull(w.shop, 2)
 	groups := w.enqueue(one, two)
 	w.changePolicyIn(one, loosenedPolicy, groups...)
-	w.review(one, ownerLogin, "APPROVED", one.head)
 	digest := policy.Digest([]byte(loosenedPolicy))
-	w.wantAnswer(w.uploadGroup(groups[1], fixtureHealthy, configHash(digest)), http.StatusOK, "success", "healthy")
-	// The default branch's own policy is not the group's governing blob any more.
-	w2 := newWorld(t)
-	one2, two2 := w2.openPull(w2.shop, 1), w2.openPull(w2.shop, 2)
-	groups2 := w2.enqueue(one2, two2)
-	w2.changePolicyIn(one2, loosenedPolicy, groups2...)
-	w2.review(one2, ownerLogin, "APPROVED", one2.head)
-	w2.wantAnswer(w2.uploadGroup(groups2[1], fixtureHealthy), http.StatusOK, "action_required", "policy_mismatch")
-}
-
-func TestMergeGroupConflictingPolicyChanges(t *testing.T) {
-	w := newWorld(t)
-	one, two := w.openPull(w.shop, 1), w.openPull(w.shop, 2)
-	groups := w.enqueue(one, two)
-	w.changePolicyIn(one, loosenedPolicy, groups...)
-	w.changePolicyIn(two, loosenedPolicy+"  c:\n    paths: [\"pkg/c/**\"]\n", groups[1])
-	w.review(one, ownerLogin, "APPROVED", one.head)
-	w.review(two, ownerLogin, "APPROVED", two.head)
-	digest := w.digestOf(w.shop, groups[1].sha, policy.PolicyPath)
-	w.wantAnswer(w.uploadGroup(groups[1], fixtureHealthy, configHash(digest)), http.StatusOK, "action_required", "merge_group_conflict")
-	// Each approved change alone still passes in its own group.
-	w.wantAnswer(w.uploadGroup(groups[0], fixtureHealthy, configHash(policy.Digest([]byte(loosenedPolicy)))), http.StatusOK, "success", "healthy")
+	w.wantAnswer(w.uploadGroup(groups[1], fixtureHealthy, configHash(digest)), http.StatusOK, "action_required", "owner_approval_missing")
+	w.wantAnswer(w.uploadGroup(groups[0], fixtureHealthy), http.StatusOK, "action_required", "owner_approval_missing")
+	w.noSuccess()
 }
 
 func TestMergeGroupWithForkMember(t *testing.T) {
@@ -276,23 +257,6 @@ func TestMergeGroupMergedKeepsItsResult(t *testing.T) {
 	w.wantGroupGate(groups[0], "success")
 }
 
-func TestOwnerWithdrawalOnAQueuedPullDowngradesItsGroups(t *testing.T) {
-	w := newWorld(t)
-	one, two := w.openPull(w.shop, 1), w.openPull(w.shop, 2)
-	groups := w.enqueue(one, two)
-	w.changePolicyIn(one, loosenedPolicy, groups...)
-	w.review(one, ownerLogin, "APPROVED", one.head)
-	digest := policy.Digest([]byte(loosenedPolicy))
-	for _, g := range groups {
-		w.wantAnswer(w.uploadGroup(g, fixtureHealthy, configHash(digest)), http.StatusOK, "success", "healthy")
-	}
-	w.review(one, ownerLogin, "CHANGES_REQUESTED", one.head)
-	w.handle(w.event(webhook.ReviewChanged, one))
-	for _, g := range groups {
-		w.wantGroupGate(g, "action_required")
-	}
-}
-
 func TestMergeGroupWithoutSettingsGetsNoPendingCheck(t *testing.T) {
 	w := newWorld(t)
 	one := w.openPull(w.shop, 1)
@@ -314,8 +278,6 @@ func TestMergeGroupQueueUnreadableIsNeverASuccess(t *testing.T) {
 		t.Fatalf("answer = %d %s, want 503", a.status, a.raw)
 	}
 	w.noSuccess()
-	// A review event is still handled without the permission: no group result can exist to withdraw.
-	w.handle(w.event(webhook.ReviewChanged, one))
 }
 
 // pullOnGroupHead opens a pull request into another base whose head is the group commit.
@@ -355,7 +317,6 @@ func TestMergeGroupBehindAnUnbuiltEntryIsUnaffected(t *testing.T) {
 	key := branchKey(w.shop.FullName, testBranch)
 	w.gh.queue[key][1].HeadSHA = "" // #2 not built yet
 	w.wantAnswer(w.uploadGroup(groups[0], fixtureHealthy), http.StatusOK, "success", "healthy")
-	w.handle(w.event(webhook.ReviewChanged, two)) // no group commit to re-check
 }
 
 func TestPullIntoAnotherBaseOnAMergedGroupCommitWithdrawsItsSuccess(t *testing.T) {

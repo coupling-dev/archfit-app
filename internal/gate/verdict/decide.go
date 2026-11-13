@@ -107,10 +107,10 @@ func Decide(f Facts) Outcome {
 	return rs.outcome()
 }
 
-// Unapproved is the condition of step 5: t needs an owner approval that it does not have. Only the two known passing
-// values clear it, so an unknown Approval fails closed.
+// Unapproved is the condition of step 5: t changes a protected path. Nothing approves that change (M2 task 26): only
+// the App's policy pull request changes the policy, and it is not decided here.
 func Unapproved(t inputs.Trusted) bool {
-	return t.Approval != inputs.ApprovalNotRequired && t.Approval != inputs.ApprovalGranted
+	return len(t.ProtectedPaths) > 0
 }
 
 // Without returns the fixed outcome for a target that has no report: code is one of ReasonMissingUpload,
@@ -129,7 +129,7 @@ func Without(code ReasonCode) Outcome {
 }
 
 // GroupBlocked is the outcome of a merge group whose trusted inputs t no longer allow any result but action_required:
-// a fork member, an unverified group, conflicting protected files, or a member change without its owner approval.
+// a fork member, an unverified group, a protected file changed by no member, or a member that changes a protected path.
 // ok is false when t is no merge group's or allows a decision.
 func GroupBlocked(t inputs.Trusted) (out Outcome, ok bool) {
 	g := t.Group

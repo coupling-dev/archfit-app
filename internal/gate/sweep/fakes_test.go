@@ -176,40 +176,6 @@ type fakeResolver struct {
 	hook    func(inputs.Target)
 }
 
-func (f *fakeResolver) RecordPusher(context.Context, inputs.Target, string) error { return nil }
-
-func (f *fakeResolver) Candidate(context.Context, inputs.Target) (inputs.Candidate, error) {
-	panic("the sweep never reads an approval candidate")
-}
-
-func (f *fakeResolver) CanApprove(context.Context, inputs.Target, string) error {
-	panic("the sweep never asks who may approve")
-}
-
-func (f *fakeResolver) CanDecide(context.Context, inputs.Target, string) error {
-	panic("the sweep never asks who may decide")
-}
-
-func (f *fakeResolver) CanWithdraw(context.Context, inputs.Target, string) (bool, error) {
-	panic("the sweep never asks who may withdraw")
-}
-
-func (f *fakeResolver) Decide(context.Context, inputs.Target, string, map[string]string, inputs.DecisionAction, string, []string, time.Time) error {
-	panic("the sweep never records a decision")
-}
-
-func (f *fakeResolver) MirrorDecisions(context.Context, inputs.Target, api.Comments) error {
-	panic("the sweep never mirrors a decision")
-}
-
-func (f *fakeResolver) RequestEligibleReviewers(context.Context, inputs.Target, string, time.Time) bool {
-	panic("the sweep never requests reviewers")
-}
-
-func (f *fakeResolver) Approve(context.Context, inputs.Target, string, map[string]string, time.Time) error {
-	panic("the sweep never approves")
-}
-
 func (f *fakeResolver) Resolve(_ context.Context, t inputs.Target, now time.Time) (inputs.Trusted, error) {
 	f.calls = append(f.calls, t)
 	f.nows = append(f.nows, now)
@@ -314,28 +280,14 @@ func checkKey(t inputs.Target) string { return t.Repo.FullName + "@" + t.HeadSHA
 
 // world is one GitHub account as the fakes see it, plus the sweeper under test.
 type world struct {
-	t         *testing.T
-	repos     *fakeRepos
-	pulls     *fakePulls
-	actions   *fakeActions
-	resolver  *fakeResolver
-	pub       *fakePublisher
-	admit     fakeAdmitter
-	decisions *fakeDecisions
-	sweeper   Sweeper
-}
-
-// fakeDecisions records the pull requests whose decision requests the sweep revalidated, with the digests it offered.
-type fakeDecisions struct {
-	targets []inputs.Target
-	digests [][]string
-	err     error
-}
-
-func (d *fakeDecisions) Revalidate(_ context.Context, t inputs.Target, tr inputs.Trusted, _ time.Time) error {
-	d.targets = append(d.targets, t)
-	d.digests = append(d.digests, tr.PolicyDigests)
-	return d.err
+	t        *testing.T
+	repos    *fakeRepos
+	pulls    *fakePulls
+	actions  *fakeActions
+	resolver *fakeResolver
+	pub      *fakePublisher
+	admit    fakeAdmitter
+	sweeper  Sweeper
 }
 
 // fakeAdmitter admits every installation except the refused ones; a down one cannot be read.
@@ -361,8 +313,7 @@ func newWorld(t *testing.T) *world {
 		pub:      &fakePublisher{states: map[string]feedback.CheckState{}, errs: map[string]error{}},
 	}
 	w.admit = fakeAdmitter{refused: map[int64]bool{}, down: map[int64]bool{}}
-	w.decisions = &fakeDecisions{}
-	w.sweeper = New(w.repos, w.pulls, w.actions, w.resolver, w.pub, w.admit, w.decisions, Config{})
+	w.sweeper = New(w.repos, w.pulls, w.actions, w.resolver, w.pub, w.admit, Config{})
 	t.Cleanup(w.assertNeverSuccess)
 	return w
 }
@@ -472,7 +423,6 @@ func trusted() inputs.Trusted {
 		Settings:      settings.Settings{Version: 1, Gate: settings.GateRequired},
 		SettingsFound: true,
 		PolicyDigests: []string{"p1"},
-		Approval:      inputs.ApprovalNotRequired,
 	}
 }
 

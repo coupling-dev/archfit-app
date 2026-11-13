@@ -71,7 +71,7 @@ func lookup(code ReasonCode) (entry, bool) {
 	case ReasonSuspended:
 		return entry{CategorySubscription, ActionRequired, suspendedNext}, true
 	case ReasonMergeGroupConflict:
-		return entry{CategoryGovernance, ActionRequired, "Queued pull requests change the same protected file. Remove all but one from the merge queue and queue the others again after it merges."}, true
+		return entry{CategoryGovernance, ActionRequired, "A protected file of the merge group differs from the default branch, and no queued pull request changes it. Queue the pull requests again."}, true
 	case ReasonMergeGroupUnverified:
 		return entry{CategoryEvidence, ActionRequired, "GitHub does not confirm this merge group: it was destroyed or rebuilt, or a queued pull request changed. Queue the pull request again."}, true
 	}

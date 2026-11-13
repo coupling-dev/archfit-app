@@ -320,7 +320,7 @@ func (p *pass) retarget(ctx context.Context, rule string, t inputs.Target, rc fe
 }
 
 // publishMoved writes target_moved over rc inside the head's publication lease. The decision is made again there from
-// the check and the inputs as they are: a newer run, a withdrawn approval, a repository that left required mode or
+// the check and the inputs as they are: a newer run, a withdrawn result, a repository that left required mode or
 // that admits answers false are left to the rule that owns them.
 func (p *pass) publishMoved(ctx context.Context, rule string, t inputs.Target, rc feedback.Receipt, cycle []string, tip string, admits func(inputs.Trusted) bool) error {
 	var pub *feedback.Publication

@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
@@ -50,106 +49,12 @@ func TestProtectedPathsIntersection(t *testing.T) {
 		})
 	}
 
-	t.Run("truncated list requires approval", func(t *testing.T) {
+	t.Run("a truncated list protects every path", func(t *testing.T) {
 		f := newFixture()
 		f.pulls.truncated = true
 		got := f.mustResolve(t, pullTarget())
 		wantStrings(t, "ProtectedPaths", got.ProtectedPaths, all)
-		if got.Approval != ApprovalMissing {
-			t.Errorf("Approval = %q, want %q", got.Approval, ApprovalMissing)
-		}
 	})
-}
-
-func TestApprovalAlgorithm(t *testing.T) {
-	owners := []string{"alice", teamOwner}
-	tests := []struct {
-		name          string
-		owners        []string
-		agents        []string
-		reviews       []api.Review
-		want          string
-		wantTeamCalls []string
-	}{
-		{name: "owner approved head", reviews: []api.Review{approved("alice", headSHA)}, want: "alice"},
-		{name: "owner approved an older SHA", reviews: []api.Review{approved("alice", oldSHA)}},
-		{
-			name:          "non-owner approved head",
-			reviews:       []api.Review{approved("mallory", headSHA)},
-			wantTeamCalls: []string{teamOwner + ":mallory"},
-		},
-		{
-			name: "owner approved then requested changes",
-			reviews: []api.Review{
-				approved("alice", headSHA),
-				{Reviewer: "alice", State: "CHANGES_REQUESTED", CommitSHA: headSHA},
-			},
-		},
-		{
-			name: "owner approved then commented",
-			reviews: []api.Review{
-				approved("alice", headSHA),
-				{Reviewer: "alice", State: "COMMENTED", CommitSHA: headSHA},
-			},
-			want: "alice",
-		},
-		{name: "owner approval dismissed", reviews: []api.Review{{Reviewer: "alice", State: "DISMISSED", CommitSHA: headSHA}}},
-		{name: "login case differs", reviews: []api.Review{approved("Alice", headSHA)}, want: "Alice"},
-		{
-			name:          "team owner with member",
-			reviews:       []api.Review{approved("carol", headSHA)},
-			want:          "carol",
-			wantTeamCalls: []string{teamOwner + ":carol"},
-		},
-		{
-			name:          "team owner with non-member",
-			reviews:       []api.Review{approved("dave", headSHA)},
-			wantTeamCalls: []string{teamOwner + ":dave"},
-		},
-		{
-			name:    "two owners, second approves",
-			owners:  []string{"alice", "bob"},
-			reviews: []api.Review{{Reviewer: "alice", State: "COMMENTED", CommitSHA: headSHA}, approved("bob", headSHA)},
-			want:    "bob",
-		},
-		{
-			name:    "no team lookup without a qualifying approval",
-			reviews: []api.Review{approved("carol", oldSHA), {Reviewer: "dave", State: "CHANGES_REQUESTED", CommitSHA: headSHA}},
-		},
-		{
-			name:    "a later review under another login case still wins",
-			reviews: []api.Review{approved("alice", headSHA), {Reviewer: "ALICE", State: "DISMISSED", CommitSHA: headSHA}},
-		},
-		{name: "an owner listed as an agent", agents: []string{"Alice"}, reviews: []api.Review{approved("alice", headSHA)}},
-		{name: "an agent's app account", agents: []string{"alice"}, reviews: []api.Review{approved("alice[bot]", headSHA)}},
-		{name: "an agent in an owner team, never looked up", agents: []string{"carol"}, reviews: []api.Review{approved("carol", headSHA)}},
-		{
-			name:    "an owner approves after an agent",
-			owners:  []string{"alice", "claude"},
-			agents:  []string{"claude"},
-			reviews: []api.Review{approved("claude", headSHA), approved("alice", headSHA)},
-			want:    "alice",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pulls := newFixture().pulls
-			if tt.owners == nil {
-				tt.owners = owners
-			}
-			s := settings.Settings{Owners: tt.owners, Agents: tt.agents}
-			got, err := approver(tt.reviews, s, headSHA, func(team, login string) (bool, error) {
-				return pulls.TeamMember(t.Context(), api.RepoRef{}, team, login)
-			})
-			if err != nil {
-				t.Fatalf("approver: %v", err)
-			}
-			if got != tt.want {
-				t.Errorf("approver = %q, want %q", got, tt.want)
-			}
-			wantStrings(t, "team lookups", pulls.teamCalls, tt.wantTeamCalls)
-		})
-	}
 }
 
 func TestSuspendedFormula(t *testing.T) {
@@ -262,9 +167,6 @@ func TestProtectedPathSet(t *testing.T) {
 			f.pulls.changed = []string{"main.go", p}
 			got := f.mustResolve(t, pullTarget())
 			wantStrings(t, "ProtectedPaths", got.ProtectedPaths, []string{p})
-			if got.Approval != ApprovalMissing {
-				t.Errorf("Approval = %q, want %q", got.Approval, ApprovalMissing)
-			}
 		})
 	}
 }

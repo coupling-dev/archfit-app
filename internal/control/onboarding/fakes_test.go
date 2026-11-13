@@ -528,14 +528,6 @@ func (h *hub) ChangedFiles(ctx context.Context, _ api.RepoRef, _ int) ([]string,
 	return nil, false, h.enter(ctx, "ChangedFiles", "")
 }
 
-func (h *hub) Reviews(ctx context.Context, _ api.RepoRef, _ int) ([]api.Review, error) {
-	return nil, h.enter(ctx, "Reviews", "")
-}
-
-func (h *hub) TeamMember(ctx context.Context, _ api.RepoRef, _, _ string) (bool, error) {
-	return false, h.enter(ctx, "TeamMember", "")
-}
-
 // Receiver fake.
 
 type fakeReceiver struct {

@@ -22,25 +22,21 @@ const (
 	reactionNone         = "none"
 	reactionPending      = "pending"
 	reactionForkRefused  = "fork_refused"
-	reactionRerun        = "rerun"
 	reactionRepoSweep    = "repo_sweep"
 	reactionSharedHead   = "shared_head" // a pull request into another base: the pull requests into the default branch on its head are checked
 	reactionRecheck      = "recheck"     // a default-branch push moved the target: open pull requests are checked for a module cycle with it
 	reactionNotOnboarded = "not_onboarded"
-	reactionNotAdmitted  = "not_admitted" // no operator approved the installation: nothing is read or written
-	reactionOtherBase    = "other_base"   // a pull request into a branch other than the default branch: nothing is read or written
-	// reactionApprovalWithdrawn is owner_approval_missing published over a receipt that asked for no action.
-	reactionApprovalWithdrawn = "approval_withdrawn"
-	reactionPullClosed        = "pull_closed"   // a closed pull request left the Archfit 4 pull index
-	reactionGroupChecked      = "group_checked" // merge groups were re-read inside their leases; a blocked one was corrected
+	reactionNotAdmitted  = "not_admitted"  // no operator approved the installation: nothing is read or written
+	reactionOtherBase    = "other_base"    // a pull request into a branch other than the default branch: nothing is read or written
+	reactionPullClosed   = "pull_closed"   // a closed pull request left the Archfit 4 pull index
+	reactionGroupChecked = "group_checked" // merge groups were re-read inside their leases; a blocked one was corrected
 	// groupMerged is the destroyed reason of a merge group that landed: its result stands.
 	groupMerged = "merged"
 )
 
-// HandleEvent reacts to a verified webhook event: pending check on a new head, fork refusal,
-// owner_approval_missing on a review change that withdraws the approval a receipt relied on, re-run on a
-// review change when the last receipt was owner_approval_missing, a re-evaluation of the pull request on a pushed head
-// (a push never approves), and a one-repository sweep when a default-branch push changes a protected path.
+// HandleEvent reacts to a verified webhook event: a pending check on a new head, a fork refusal, a request line or a
+// request issue, a closed pull request, the checks of a merge group, and a default-branch push, whose policy is judged
+// before a re-check or a one-repository sweep. No event approves a protected change.
 func (g *Gate) HandleEvent(ctx context.Context, e webhook.Event) error {
 	reaction, err := g.react(ctx, e)
 	slog.Default().InfoContext(ctx, "gate event",
@@ -75,11 +71,6 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 		return reactionNone, nil
 	case webhook.IssueOpened:
 		return g.requestFiled(ctx, e)
-	case webhook.ReviewChanged:
-		if otherBase(e.DefaultBranch, e.BaseRef) {
-			return reactionOtherBase, nil
-		}
-		return g.refreshOwnerDecision(ctx, eventTarget(e))
 	case webhook.MergeGroupRequested:
 		if otherBase(e.DefaultBranch, e.BaseRef) || e.DefaultBranch == "" {
 			return reactionOtherBase, nil
@@ -90,7 +81,7 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 			return reactionNone, nil
 		}
 		return reactionGroupChecked, g.groupCheck(ctx, groupTarget(e))
-	case webhook.BranchPush, webhook.DefaultBranchPush:
+	case webhook.DefaultBranchPush:
 		return g.branchPushed(ctx, e)
 	}
 	return reactionNone, nil
@@ -151,18 +142,14 @@ func (g *Gate) sharedGroupHead(ctx context.Context, repo api.Repo, head string) 
 	return nil
 }
 
-// branchPushed re-evaluates the pull request on the pushed head as a review event does. A push approves nothing: a
-// local coding agent pushes with its owner's credentials. A default-branch push is judged for the policy it brings
-// (policyPushed, M2 task 20); one that changes a protected path also runs the repository sweep.
+// branchPushed reacts to a push to the default branch: it is judged for the policy it brings (policyPushed, M2 task
+// 20), and one that changes a protected path also runs the repository sweep. A push approves nothing: a local coding
+// agent pushes with its owner's credentials.
 func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error) {
 	t := eventTarget(e)
-	reaction, err := g.pullOnHead(ctx, t, e.Branch, e.DefaultBranch)
-	if err != nil || e.Kind == webhook.BranchPush {
-		return reaction, err
-	}
 	// Judged before the sweep reads the new policy: a consume or "outside the flow" is recorded first.
 	if err := g.policyPushed(ctx, e); err != nil {
-		return reaction, err
+		return reactionNone, err
 	}
 	if !protectedPush(e.ChangedPaths) {
 		// A rate limit is an error that wraps api.ErrRateLimited: the queue retries the delivery.
@@ -176,26 +163,6 @@ func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error
 		return reactionRepoSweep, fmt.Errorf("gate: repository sweep: %w", err)
 	}
 	return reactionRepoSweep, nil
-}
-
-// pullOnHead re-evaluates the newest pull request whose head is branch, when that head is the commit just pushed.
-// A pull request from a fork never has a head in this repository, so it is never found here.
-func (g *Gate) pullOnHead(ctx context.Context, t inputs.Target, branch, defaultBranch string) (string, error) {
-	pr, err := g.pulls.PullByHead(ctx, t.Repo.RepoRef, branch)
-	if errors.Is(err, api.ErrNotFound) {
-		return reactionNone, nil
-	}
-	if err != nil {
-		return reactionNone, fmt.Errorf("gate: pull request by head: %w", err)
-	}
-	if pr.State != "open" || pr.HeadSHA != t.HeadSHA {
-		return reactionNone, nil
-	}
-	if otherBase(defaultBranch, pr.BaseRef) {
-		return reactionOtherBase, nil
-	}
-	t.PullRequest, t.BaseRef = pr.Number, pr.BaseRef
-	return g.approvalChanged(ctx, t)
 }
 
 // otherBase reports a pull request into a branch other than the default branch. The App decides only against the
@@ -267,39 +234,6 @@ func (g *Gate) groupCheck(ctx context.Context, t inputs.Target) error {
 	})
 }
 
-// groupsOf re-checks every merge group of the default branch's queue that holds the pull request t: its own entry's
-// group and every group behind it. A review of a queued pull request can withdraw the approval such a group relied on.
-// A pull request that is not queued reads the queue only.
-func (g *Gate) groupsOf(ctx context.Context, t inputs.Target) error {
-	if t.Repo.DefaultBranch == "" || t.PullRequest == 0 {
-		return nil
-	}
-	entries, err := g.queues.MergeQueue(ctx, t.Repo.RepoRef, t.Repo.DefaultBranch)
-	if errors.Is(err, api.ErrQueueForbidden) {
-		// Without the Merge queues permission no merge-group upload is ever accepted (ingest reads the same queue), so
-		// no group result exists to withdraw. The review itself is handled; it is not retried for this.
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("gate: merge queue: %w", err)
-	}
-	at := slices.IndexFunc(entries, func(e api.QueueEntry) bool { return e.PullRequest == t.PullRequest })
-	if at < 0 {
-		return nil
-	}
-	var errs error
-	for _, e := range entries[at:] {
-		if e.HeadSHA == "" {
-			continue // not built yet: no group commit, no check
-		}
-		gt := inputs.Target{Repo: t.Repo, HeadSHA: e.HeadSHA, BaseRef: t.Repo.DefaultBranch, MergeGroup: true}
-		if err := g.groupCheck(ctx, gt); err != nil {
-			errs = errors.Join(errs, fmt.Errorf("gate: merge group of pull request %d: %w", e.PullRequest, err))
-		}
-	}
-	return errs
-}
-
 func (g *Gate) pinProtectedRef(ctx context.Context, t inputs.Target) (inputs.Target, error) {
 	if t.PullRequest == 0 || t.BaseRef == "" || t.BaseSHA != "" {
 		return t, nil
@@ -362,93 +296,6 @@ func (g *Gate) newHead(ctx context.Context, t inputs.Target) (string, error) {
 	return reactionNone, nil
 }
 
-// approvalChanged reacts to an event that may withdraw or grant an owner approval: a review, an approval recorded in
-// the App (Reevaluate), or a push of t's head. It reads the gate check, decides and writes inside the head's
-// publication lease (Publisher.Reconcile), so no other publication for the head lands in between. A receipt that asks for no action
-// while the approval it needs is gone becomes owner_approval_missing at once, as sweep rule 5a does it. After
-// owner_approval_missing, an event once no approval is missing re-runs the workflow; the check stays as it is until
-// the new upload, so nothing here can turn it green.
-func (g *Gate) approvalChanged(ctx context.Context, t inputs.Target) (string, error) {
-	reaction := reactionNone
-	var err error
-	t, err = g.pinProtectedRef(ctx, t)
-	if err != nil {
-		return reaction, fmt.Errorf("gate: read protected ref head: %w", err)
-	}
-	err = g.publisher.Reconcile(ctx, t, func(ctx context.Context, current feedback.CheckState) (*feedback.Publication, error) {
-		if err := g.checkProtectedRef(ctx, t); err != nil {
-			return nil, err
-		}
-		trusted, err := g.resolver.Resolve(ctx, t, g.now())
-		if err != nil {
-			return nil, fmt.Errorf("gate: resolve inputs: %w", err)
-		}
-		if t.PullRequest != 0 && trusted.SettingsFound && trusted.Settings.Gate != settings.GateRequired {
-			current, err = g.publisher.AdvisoryState(ctx, t)
-			if err != nil {
-				return nil, fmt.Errorf("gate: read advisory state: %w", err)
-			}
-		}
-		rc := current.Receipt
-		if !sweep.Decided(rc) && rc.Reason != verdict.ReasonOwnerApprovalMissing {
-			return nil, nil // the check already asks for action, or there is none yet
-		}
-		if pub := sweep.Withdrawal(t, current, trusted); pub != nil {
-			reaction = reactionApprovalWithdrawn
-			return pub, nil
-		}
-		if rc.Reason != verdict.ReasonOwnerApprovalMissing || verdict.Unapproved(trusted) {
-			return nil, nil // no re-run while an owner approval is still missing
-		}
-		// The sweep owns the guard and its four conditions (design 10.5). A run that cannot be re-run is skipped, not an
-		// error: the check keeps owner_approval_missing until a new upload, as the sweep's rule 7b leaves it.
-		in, err := g.rerunInput(ctx, t, rc)
-		if err != nil {
-			return nil, err
-		}
-		res, _, err := sweep.Rerun(ctx, g.actions, t.Repo.RepoRef, in, g.now())
-		if err != nil {
-			return nil, fmt.Errorf("gate: re-run: %w", err)
-		}
-		if res == sweep.RerunRequested {
-			reaction = reactionRerun
-		}
-		return nil, nil
-	})
-	if err != nil {
-		return reaction, fmt.Errorf("gate: approval: %w", err)
-	}
-	return reaction, nil
-}
-
-// rerunInput is what the re-run guard judges an Archfit 3 receipt rc of t on: the event's base is the base the
-// receipt's run measured, else the pull request's base; the Archfit 3 Action reads the protected inputs from the target
-// tip (design D.2: run.sh input_tip). A failed read is returned, so the delivery is retried; a pull request or branch
-// GitHub does not have is unknown, and no re-run is requested.
-func (g *Gate) rerunInput(ctx context.Context, t inputs.Target, rc feedback.Receipt) (sweep.RerunInput, error) {
-	in := sweep.RerunInput{Receipt: rc, Head: t.HeadSHA, EventBase: rc.BaseSHA, ReadsTip: true}
-	if rc.RunID == 0 {
-		return in, nil
-	}
-	if in.EventBase == "" && t.PullRequest != 0 {
-		pull, err := g.pulls.Pull(ctx, t.Repo.RepoRef, t.PullRequest)
-		switch {
-		case err == nil:
-			in.EventBase = pull.BaseSHA
-		case !errors.Is(err, api.ErrNotFound):
-			return in, fmt.Errorf("gate: read the pull request base: %w", err)
-		}
-	}
-	tip, err := g.repos.BranchHead(ctx, t.Repo.RepoRef, t.Repo.DefaultBranch)
-	switch {
-	case err == nil:
-		in.Tip = tip
-	case !errors.Is(err, api.ErrNotFound):
-		return in, fmt.Errorf("gate: read the default branch head: %w", err)
-	}
-	return in, nil
-}
-
 // protectedPush reports whether a default-branch push may have changed a trusted input.
 // No paths means "unknown", which fails towards the repository pass: the pass is idempotent.
 func protectedPush(paths []string) bool {
@@ -461,14 +308,4 @@ func protectedPush(paths []string) bool {
 // Sweep runs one reconciliation pass.
 func (g *Gate) Sweep(ctx context.Context) (Summary, error) {
 	return g.sweeper.Run(ctx, g.now())
-}
-
-// refreshOwnerDecision refreshes authorization on the PR and its queued groups before attempting reason comments.
-func (g *Gate) refreshOwnerDecision(ctx context.Context, t inputs.Target) (string, error) {
-	reaction, err := g.approvalChanged(ctx, t)
-	err = errors.Join(err, g.groupsOf(ctx, t))
-	if mirrorErr := g.resolver.MirrorDecisions(ctx, t, g.comments); mirrorErr != nil {
-		err = errors.Join(err, fmt.Errorf("gate: mirror owner decisions: %w", mirrorErr))
-	}
-	return reaction, err
 }

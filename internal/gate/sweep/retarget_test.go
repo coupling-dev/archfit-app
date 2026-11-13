@@ -143,10 +143,10 @@ func TestARerunRuleLeavesTheChangeToTheOwningRule(t *testing.T) {
 			tr.PolicyDigests = []string{"p2"}
 			w.trust(tg, tr)
 		}, nil},
-		{"5b: the approval was withdrawn meanwhile", "5b", func(w *world, tg inputs.Target) {
+		{"5b: a protected change appeared meanwhile", "5b", func(w *world, tg inputs.Target) {
 			tr := trusted()
 			tr.PolicyDigests = []string{"p2"}
-			tr.Approval = inputs.ApprovalMissing
+			tr.ProtectedPaths = []string{".archfit.yaml"}
 			w.trust(tg, tr)
 		}, nil},
 	}

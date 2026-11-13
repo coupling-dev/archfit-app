@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -206,68 +205,4 @@ func uniquePaths(files []fileJSON) []string {
 		}
 	}
 	return paths
-}
-
-func (c *Client) Reviews(ctx context.Context, r RepoRef, number int) ([]Review, error) {
-	cr, base, err := r.target()
-	if err != nil {
-		return nil, err
-	}
-	type reviewJSON struct {
-		ID   int64 `json:"id"`
-		User *struct {
-			Login string `json:"login"`
-		} `json:"user"`
-		State       string    `json:"state"`
-		CommitID    string    `json:"commit_id"`
-		Body        string    `json:"body"`
-		SubmittedAt time.Time `json:"submitted_at"`
-	}
-	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/pulls/{n}/reviews",
-		url: pagedURL(base+"/pulls/"+strconv.Itoa(number)+"/reviews", nil)}
-	all, err := listAll[reviewJSON](ctx, c, k, "")
-	if err != nil {
-		return nil, err
-	}
-	out := []Review{}
-	for _, j := range all {
-		if j.State == "PENDING" {
-			continue
-		}
-		rv := Review{ID: j.ID, State: j.State, CommitSHA: j.CommitID, Body: j.Body, SubmittedAt: j.SubmittedAt}
-		if j.User != nil {
-			rv.Reviewer = j.User.Login
-		}
-		out = append(out, rv)
-	}
-	return out, nil
-}
-
-func (c *Client) TeamMember(ctx context.Context, r RepoRef, team, login string) (bool, error) {
-	cr, _, err := r.target()
-	if err != nil {
-		return false, err
-	}
-	org, slug, ok := strings.Cut(team, "/")
-	if !ok {
-		return false, errors.New("github: team is not org/team-slug")
-	}
-	var parts [3]string
-	for i, s := range []string{org, slug, login} {
-		if parts[i], err = escapeSegment(s); err != nil {
-			return false, errors.New("github: team is not org/team-slug or the login is invalid")
-		}
-	}
-	var j struct {
-		State string `json:"state"`
-	}
-	k := call{cred: cr, method: http.MethodGet, route: "/orgs/{org}/teams/{slug}/memberships/{login}",
-		url: apiURL("/orgs/"+parts[0]+"/teams/"+parts[1]+"/memberships/"+parts[2], nil)}
-	if err := c.send(ctx, k, &j); err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-	return j.State == "active", nil
 }

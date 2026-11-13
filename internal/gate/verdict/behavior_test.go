@@ -102,23 +102,12 @@ func TestHeadEditsCannotWeakenTheGate(t *testing.T) {
 	})
 }
 
-func TestAtomicPolicyPullRequestWaitsForOwner(t *testing.T) {
+// A code pull request that also changes the policy never passes (M2 task 26): nothing approves it, so it asks for action
+// whatever its report says.
+func TestCodeAndPolicyPullRequestNeverPasses(t *testing.T) {
 	wantCodes(t, decide(t, with(policyMismatch, approvalMissing)),
 		ActionRequired, ReasonOwnerApprovalMissing, ReasonPolicyMismatch)
-
-	wantCodes(t, decide(t, with(policyMismatch, func(f *Facts) {
-		f.Trusted.Approval = inputs.ApprovalGranted
-		f.Trusted.PolicyDigests = []string{basePolicy, headPolicy}
-	})), Success, ReasonHealthy)
-}
-
-func TestIntegrityFailureIsNotClearedByApproval(t *testing.T) {
-	f := with(func(f *Facts) {
-		f.Trusted.Approval = inputs.ApprovalGranted
-		f.Trusted.PolicyDigests = []string{basePolicy, headPolicy}
-		f.Report.Comparison.ConfigHash = strings.Repeat("9", 64)
-	})
-	wantCodes(t, decide(t, f), ActionRequired, ReasonPolicyMismatch)
+	wantCodes(t, decide(t, with(approvalMissing)), ActionRequired, ReasonOwnerApprovalMissing)
 }
 
 func TestMissingEvidenceNeverPasses(t *testing.T) {

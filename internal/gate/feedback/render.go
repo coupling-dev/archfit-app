@@ -659,9 +659,6 @@ func inputsBlock(p Publication) string {
 		profile = "version " + code(mp.Version) + ", settings hash " + code(mp.SettingsHash)
 	}
 	lines = append(lines, "- Measurement profile: "+profile, identityLine(p.Identity))
-	if p.Trusted.Approval == inputs.ApprovalGranted {
-		lines = append(lines, "- Protected path change: owner approval by "+code(p.Trusted.ApprovedBy))
-	}
 	return headInputs + "\n\n" + strings.Join(lines, "\n") + "\n\n" + fixedTrustSentence
 }
 

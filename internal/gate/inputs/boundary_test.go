@@ -19,51 +19,25 @@ import (
 var allProtected = []string{policy.PolicyPath, policy.BaselinePath, policy.LabelsPath, settings.Path, workflowPath}
 
 func TestHeadTreeIsNeverRead(t *testing.T) {
-	unapproved := []struct {
+	cases := []struct {
 		name      string
 		fork      bool
 		truncated bool
-		reviews   []api.Review
 	}{
-		{name: "no reviews"},
-		{name: "non-owner approval", reviews: []api.Review{approved("mallory", headSHA)}},
-		{name: "owner approval on an older SHA", reviews: []api.Review{approved("alice", oldSHA)}},
-		{name: "owner approval dismissed", reviews: []api.Review{{Reviewer: "alice", State: "DISMISSED", CommitSHA: headSHA}}},
+		{name: "every protected file changed"},
 		{name: "truncated file list", truncated: true},
-		{name: "fork with owner approval", fork: true, reviews: []api.Review{approved("alice", headSHA)}},
+		{name: "fork", fork: true},
 	}
-	for _, tt := range unapproved {
+	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newFixture()
 			f.pulls.changed = allProtected
 			f.pulls.truncated = tt.truncated
-			f.pulls.reviews = tt.reviews
 			target := pullTarget()
 			target.Fork = tt.fork
 
-			got := f.mustResolve(t, target)
-			wantApproval(t, got, ApprovalMissing, "")
+			f.mustResolve(t, target)
 			wantStrings(t, "head reads", f.repos.headReads(), nil)
-		})
-	}
-
-	approvedCases := []struct {
-		name    string
-		changed []string
-		want    []string
-	}{
-		{"policy, settings and workflow", []string{policy.PolicyPath, settings.Path, workflowPath, "CODEOWNERS"}, []string{policy.PolicyPath}},
-		{"baseline and labels", []string{policy.LabelsPath, policy.BaselinePath}, []string{policy.BaselinePath, policy.LabelsPath}},
-		{"settings only", []string{settings.Path}, nil},
-	}
-	for _, tt := range approvedCases {
-		t.Run("approved: "+tt.name, func(t *testing.T) {
-			f := newFixture()
-			f.pulls.changed = tt.changed
-			f.pulls.reviews = []api.Review{approved("alice", headSHA)}
-			got := f.mustResolve(t, pullTarget())
-			wantApproval(t, got, ApprovalGranted, "alice")
-			wantStrings(t, "head reads", f.repos.headReads(), tt.want)
 		})
 	}
 }
@@ -132,11 +106,7 @@ func TestGitHubErrorsFailClosed(t *testing.T) {
 		{"File policy", func(f *fixture, err error) { f.repos.errs[fileCall{baseRef, policy.PolicyPath}] = err }},
 		{"File baseline", func(f *fixture, err error) { f.repos.errs[fileCall{baseRef, policy.BaselinePath}] = err }},
 		{"File labels", func(f *fixture, err error) { f.repos.errs[fileCall{baseRef, policy.LabelsPath}] = err }},
-		{"File head policy", func(f *fixture, err error) { f.repos.errs[fileCall{headSHA, policy.PolicyPath}] = err }},
-		{"File head baseline", func(f *fixture, err error) { f.repos.errs[fileCall{headSHA, policy.BaselinePath}] = err }},
 		{"ChangedFiles", func(f *fixture, err error) { f.pulls.changedErr = err }},
-		{"Reviews", func(f *fixture, err error) { f.pulls.reviewsErr = err }},
-		{"TeamMember", func(f *fixture, err error) { f.pulls.teamErr = err }},
 	}
 	errs := []error{errBoom, fmt.Errorf("after backoff: %w", api.ErrRateLimited), errOversize}
 	for _, fail := range failures {
@@ -144,7 +114,6 @@ func TestGitHubErrorsFailClosed(t *testing.T) {
 			t.Run(fail.name+"/"+want.Error(), func(t *testing.T) {
 				f := newFixture()
 				f.pulls.changed = allProtected
-				f.pulls.reviews = []api.Review{approved("carol", headSHA)} // an owner only through the team
 				f.putEntitlement(t, installation, Entitlement{Notice: "Trial ends 2026-10-20"})
 				fail.set(f, want)
 
@@ -159,11 +128,12 @@ func TestGitHubErrorsFailClosed(t *testing.T) {
 		}
 	}
 
-	t.Run("without the failure the scenario is granted", func(t *testing.T) {
+	t.Run("without the failure the scenario resolves", func(t *testing.T) {
 		f := newFixture()
 		f.pulls.changed = allProtected
-		f.pulls.reviews = []api.Review{approved("carol", headSHA)}
-		wantApproval(t, f.mustResolve(t, pullTarget()), ApprovalGranted, "carol")
+		if _, err := f.resolve(pullTarget()); err != nil {
+			t.Errorf("Resolve = %v", err)
+		}
 	})
 }
 
@@ -206,12 +176,10 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 		name  string
 		setup func(f *fixture)
 	}{
-		{"approved policy change", func(f *fixture) {
+		{"marked head policy", func(f *fixture) {
 			f.repos.files[fileCall{headSHA, policy.PolicyPath}] = markedPolicy("2026-10-01")
-			f.pulls.reviews = []api.Review{approved("marker-reviewer", headSHA), approved("marker-owner", headSHA)}
 		}},
-		{"unapproved policy change", func(f *fixture) {
-			f.pulls.reviews = []api.Review{approved("marker-reviewer", headSHA)}
+		{"policy change", func(f *fixture) {
 		}},
 		{"malformed waivers", func(f *fixture) {
 			f.repos.files[fileCall{baseRef, policy.PolicyPath}] = markedPolicy("MARKER-REASON")
@@ -222,15 +190,7 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 		{"unreadable entitlement", func(f *fixture) {
 			f.store = &stubStore{get: func(context.Context) ([]byte, error) { return []byte("MARKER-ENTITLEMENT"), nil }}
 		}},
-		{"github failure", func(f *fixture) { f.pulls.reviewsErr = errBoom }},
-		{"approval recorded in the App", func(f *fixture) {
-			f.pulls.teams[teamOwner] = []string{"marker-reviewer"}
-			seen, _ := f.resolver().Candidate(context.Background(), pullTarget())
-			_ = f.resolver().Approve(context.Background(), pullTarget(), "marker-reviewer", seen.Digests, now)
-		}},
-		{"unreadable approval record", func(f *fixture) {
-			_ = f.store.Put(context.Background(), store.Tenant(installation), approvalKey(pullTarget()), []byte(`{"login":"marker-owner`))
-		}},
+		{"github failure", func(f *fixture) { f.pulls.changedErr = errBoom }},
 	}
 	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {

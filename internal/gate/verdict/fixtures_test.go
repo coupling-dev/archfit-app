@@ -105,7 +105,6 @@ func fixtureCase(t *testing.T, name string) (Facts, fixtureExpect) {
 			PolicyDigests:   []string{basePolicy}, // a fixture that does not decode has no config_hash
 			BaselineDigests: siblingDigests(t, name, ".baseline.json"),
 			LabelsDigests:   siblingDigests(t, name, ".labels.yaml"),
-			Approval:        inputs.ApprovalNotRequired,
 		},
 	}
 	if e.Decode == "ok" {

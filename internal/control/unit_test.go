@@ -114,7 +114,7 @@ func TestNewWorkerNeedsNoUISecrets(t *testing.T) {
 
 func TestHandleEventRouting(t *testing.T) {
 	kinds := []webhook.EventKind{
-		webhook.PullOpened, webhook.PullSynchronized, webhook.PullClosed, webhook.ReviewChanged,
+		webhook.PullOpened, webhook.PullSynchronized, webhook.PullClosed,
 		webhook.DefaultBranchPush, webhook.InstallationAdded, webhook.InstallationRemoved,
 		webhook.ReposRemoved, webhook.Ignored,
 	}
