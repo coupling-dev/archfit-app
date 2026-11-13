@@ -141,7 +141,9 @@ func approvalRequests(ctx context.Context, s store.Store, t store.Tenant, fullNa
 func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string, m Merge, requests map[string]int) error {
 	keys := []string{ProposalKey(fullName, m.Proposal), ProposalIndexKey(fullName), RepoKey(fullName),
 		RequestIndexKey(fullName), PolicyPushKey(fullName, m.Push)}
-	return store.Update(ctx, s, t, keys, func(cur [][]byte) ([][]byte, error) {
+	approvedMoved := false
+	err := store.Update(ctx, s, t, keys, func(cur [][]byte) ([][]byte, error) {
+		approvedMoved = false
 		if cur[0] == nil {
 			return nil, ErrNoRecord
 		}
@@ -207,7 +209,11 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 		}
 		if m.AtTip && r.OutsideFlow == nil {
 			if r.ApprovedCommit != m.Over {
-				return nil, ErrApprovedMoved
+				// This judges the proposal and the repository together, and Update reads them one by one: a consume
+				// that landed between the two reads shows the proposal open and the repository already moved. Only a
+				// swap of the unchanged bytes proves both were current together; a lost one reads again.
+				approvedMoved = true
+				return cur, nil
 			}
 			if r.ApprovedDigest == "" {
 				r.GuardedSince = m.Commit // the first approval: change control starts here
@@ -221,6 +227,10 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 		}
 		return [][]byte{out[0], proposalIndex, out[1], requestIndex, out[2]}, nil
 	})
+	if err == nil && approvedMoved {
+		return ErrApprovedMoved
+	}
+	return err
 }
 
 // Outside records that push brought a policy of digest that no approval made: the repository is outside the flow

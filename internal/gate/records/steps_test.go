@@ -460,6 +460,40 @@ func TestAConsumeWinsOnce(t *testing.T) {
 	})
 }
 
+// landsBefore is a Store whose first read of key first runs land on the store beneath: another writer whose swap
+// lands between two reads of one Update.
+type landsBefore struct {
+	store.Store
+	key  string
+	once sync.Once
+	land func()
+}
+
+func (l *landsBefore) Get(ctx context.Context, t store.Tenant, key string) ([]byte, error) {
+	if key == l.key {
+		l.once.Do(l.land)
+	}
+	return l.Store.Get(ctx, t, key)
+}
+
+func TestAConsumeThatLandsBetweenTwoReadsMakesTheOtherErrMoved(t *testing.T) {
+	ctx := context.Background()
+	s := store.NewMemory()
+	openProposal(t, s, "p1", 50, "d")
+	torn := &landsBefore{Store: s, key: records.RepoKey(repoName), land: func() {
+		if err := records.Consume(ctx, s, tenant, repoName, merge("p1", "c0", "d")); err != nil {
+			t.Errorf("the winning consume: %v", err)
+		}
+	}}
+
+	if err := records.Consume(ctx, torn, tenant, repoName, merge("p1", "c1", "d")); !errors.Is(err, records.ErrMoved) {
+		t.Errorf("the losing consume = %v, want ErrMoved", err)
+	}
+	if p := load[records.Proposal](t, s, records.ProposalKey(repoName, "p1")); p.Commit != "c0" {
+		t.Errorf("consumed by %q, want c0", p.Commit)
+	}
+}
+
 func TestTheSameCommitConsumesConcurrentlyWithoutError(t *testing.T) {
 	forEachBackend(t, 2, func(t *testing.T, clients []store.Store) {
 		ctx := context.Background()

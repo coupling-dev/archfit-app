@@ -112,7 +112,8 @@ Functions, all under one installation tenant:
   `ApprovedDigest` set to `Digest`, the requests of its approvals removed from the request index, and
   `PolicyPush{Digest, Proposal}` at `PolicyPushKey(Push)` (a merge queue lands a merge commit inside a push to a later
   commit). With `AtTip` the repository must still hold `Over` as its `ApprovedCommit` (else `ErrApprovedMoved` and
-  nothing is written: a consume landed in between, judge again); then `ApprovedDigest` and `ApprovedCommit` become
+  nothing is written: a consume landed in between, judge again; `store.Update` reads its keys one by one, so this
+  verdict across two keys is returned only after a swap of the unchanged bytes proves both current); then `ApprovedDigest` and `ApprovedCommit` become
   `Digest` and `Commit`, and the first approval also sets `GuardedSince`. The approvals are read before the swap (they would add up to 9 keys); a proposal that gained one meanwhile
   is read again, at most 3 times, then `store.ErrConflict`. The approved digest moves only with `AtTip` (the default
   branch's tip holds `Digest` now): a consume handled after a later policy push never puts an older digest back, and
@@ -203,7 +204,8 @@ sweep) read and write through this module;
   `TestAConsumeApprovesOnlyWhatTheTipHolds`, `TestAConsumeRecordsTheMergeCommitAndThePush`, `TestUnguarded`,
   `TestAPushBackToAJudgedCommitIsAnotherPush`, `TestAProposalWithAnApprovalLeftIsNotVoided`,
   `TestAConsumeApprovesOverTheApprovedCommitItRead` (a moved approved commit writes nothing; the first approval sets
-  `GuardedSince`).
+  `GuardedSince`), `TestAConsumeThatLandsBetweenTwoReadsMakesTheOtherErrMoved` (a consume lands between the other's
+  reads of the proposal and the repository: the other is `ErrMoved`, not `ErrApprovedMoved`).
 - `TestOutside`: the state and the push recorded; the issue recorded once, a second one returns the first; the same
   push again changes no byte; a later push keeps the issue; a consumed push is `ErrMoved`; `OutsideIssue` inside the
   flow is `ErrMoved`.
