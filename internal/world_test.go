@@ -138,6 +138,7 @@ type run struct {
 	Status     string
 	Conclusion string
 	Pulls      []int
+	Created    time.Time // zero: an hour before the test clock starts
 }
 
 type dispatch struct {
@@ -598,6 +599,14 @@ func (rp *repo) pullJSON(p *pull) map[string]any {
 	}
 }
 
+// created is when GitHub created the run; a re-run keeps it, and GitHub re-runs none 30 days later (design 10.5).
+func (r *run) created() time.Time {
+	if r.Created.IsZero() {
+		return testNow.Add(-time.Hour)
+	}
+	return r.Created
+}
+
 func (r *run) json() map[string]any {
 	pulls := []map[string]any{}
 	for _, n := range r.Pulls {
@@ -611,6 +620,7 @@ func (r *run) json() map[string]any {
 		"id": r.ID, "run_attempt": r.Attempt, "event": r.Event, "head_sha": r.HeadSHA, "path": r.Path,
 		"status": r.Status, "conclusion": conclusion, "head_repository": map[string]any{"full_name": r.HeadRepo},
 		"pull_requests": pulls,
+		"created_at":    r.created().Format(time.RFC3339),
 	}
 }
 
@@ -1148,15 +1158,24 @@ func (w *world) routes() {
 		if rp == nil {
 			return
 		}
+		q := r.URL.Query()
 		var ids []int64
 		for id, wr := range rp.runs {
-			if strings.HasSuffix(wr.Path, "/"+r.PathValue("file")) && (r.URL.Query().Get("branch") == "" || r.URL.Query().Get("branch") == wr.Branch) {
+			if strings.HasSuffix(wr.Path, "/"+r.PathValue("file")) && (q.Get("branch") == "" || q.Get("branch") == wr.Branch) &&
+				(q.Get("head_sha") == "" || q.Get("head_sha") == wr.HeadSHA) {
 				ids = append(ids, id)
 			}
 		}
 		slices.Sort(ids)
 		out := []map[string]any{}
-		if len(ids) > 0 {
+		switch {
+		case q.Get("head_sha") != "" && q.Get("page") != "" && q.Get("page") != "1":
+			// one page holds every run of a head
+		case q.Get("head_sha") != "":
+			for _, id := range ids {
+				out = append(out, rp.runs[id].json())
+			}
+		case len(ids) > 0:
 			out = append(out, rp.runs[ids[len(ids)-1]].json())
 		}
 		writeJSON(rw, http.StatusOK, map[string]any{"total_count": len(out), "workflow_runs": out})

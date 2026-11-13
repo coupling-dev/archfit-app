@@ -55,7 +55,7 @@ type Decisions interface {
 	Revalidate(ctx context.Context, t inputs.Target, tr inputs.Trusted, now time.Time) error
 }
 
-func New(repos api.Repos, pulls api.Pulls, actions api.Actions, r inputs.Resolver, p feedback.Publisher, admit Admitter, d Decisions, c Config) Sweeper {
+func New(repos api.Repos, pulls api.Pulls, actions Runs, r inputs.Resolver, p feedback.Publisher, admit Admitter, d Decisions, c Config) Sweeper {
 	if c.MissingUploadAfter == 0 {
 		c.MissingUploadAfter = defaultMissingUploadAfter
 	}

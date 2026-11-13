@@ -63,7 +63,7 @@ func (w *world) enqueue(pulls ...*pull) []*group {
 		w.nextRun++
 		g.runID = w.nextRun
 		w.gh.runs[g.runID] = api.WorkflowRun{ID: g.runID, Attempt: 1, Event: "merge_group", HeadSHA: g.sha, HeadRepo: r.FullName,
-			WorkflowPath: testWorkflow, Status: runCompleted}
+			WorkflowPath: testWorkflow, Status: runCompleted, CreatedAt: w.now}
 		entries = append(entries, api.QueueEntry{Position: i + 1, HeadSHA: g.sha, BaseSHA: tip, PullRequest: p.number, PullHeadSHA: p.head})
 		out = append(out, g)
 	}

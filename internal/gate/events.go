@@ -400,8 +400,13 @@ func (g *Gate) approvalChanged(ctx context.Context, t inputs.Target) (string, er
 		if rc.Reason != verdict.ReasonOwnerApprovalMissing || verdict.Unapproved(trusted) {
 			return nil, nil // no re-run while an owner approval is still missing
 		}
-		// The sweep owns the guard. A receipt without a run and a run that is gone are skipped, not errors.
-		res, err := sweep.Rerun(ctx, g.actions, t.Repo.RepoRef, rc)
+		// The sweep owns the guard and its four conditions (design 10.5). A run that cannot be re-run is skipped, not an
+		// error: the check keeps owner_approval_missing until a new upload, as the sweep's rule 7b leaves it.
+		in, err := g.rerunInput(ctx, t, rc)
+		if err != nil {
+			return nil, err
+		}
+		res, _, err := sweep.Rerun(ctx, g.actions, t.Repo.RepoRef, in, g.now())
 		if err != nil {
 			return nil, fmt.Errorf("gate: re-run: %w", err)
 		}
@@ -414,6 +419,34 @@ func (g *Gate) approvalChanged(ctx context.Context, t inputs.Target) (string, er
 		return reaction, fmt.Errorf("gate: approval: %w", err)
 	}
 	return reaction, nil
+}
+
+// rerunInput is what the re-run guard judges an Archfit 3 receipt rc of t on: the event's base is the base the
+// receipt's run measured, else the pull request's base; the Archfit 3 Action reads the protected inputs from the target
+// tip (design D.2: run.sh input_tip). A failed read is returned, so the delivery is retried; a pull request or branch
+// GitHub does not have is unknown, and no re-run is requested.
+func (g *Gate) rerunInput(ctx context.Context, t inputs.Target, rc feedback.Receipt) (sweep.RerunInput, error) {
+	in := sweep.RerunInput{Receipt: rc, Head: t.HeadSHA, EventBase: rc.BaseSHA, ReadsTip: true}
+	if rc.RunID == 0 {
+		return in, nil
+	}
+	if in.EventBase == "" && t.PullRequest != 0 {
+		pull, err := g.pulls.Pull(ctx, t.Repo.RepoRef, t.PullRequest)
+		switch {
+		case err == nil:
+			in.EventBase = pull.BaseSHA
+		case !errors.Is(err, api.ErrNotFound):
+			return in, fmt.Errorf("gate: read the pull request base: %w", err)
+		}
+	}
+	tip, err := g.repos.BranchHead(ctx, t.Repo.RepoRef, t.Repo.DefaultBranch)
+	switch {
+	case err == nil:
+		in.Tip = tip
+	case !errors.Is(err, api.ErrNotFound):
+		return in, fmt.Errorf("gate: read the default branch head: %w", err)
+	}
+	return in, nil
 }
 
 // protectedPush reports whether a default-branch push may have changed a trusted input.

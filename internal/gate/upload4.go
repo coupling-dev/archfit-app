@@ -448,6 +448,7 @@ func (v *upload4) storePull(ctx context.Context, u ingest.Upload4, d decision4) 
 				if old.RunID > rec.RunID || old.RunID == rec.RunID && old.RunAttempt > rec.RunAttempt {
 					return cur, nil
 				}
+				rec.Rechecks = old.Rechecks // the re-checks after an answer mark the pull request, not a run (M2 task 21)
 			}
 			x.Remove(entry)
 			if err := x.Add(entry, b.HeadSHA); err != nil {
