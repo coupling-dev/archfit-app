@@ -309,3 +309,5 @@ a clean state with no errors and `unread: false` is a fully read clean result.
 outside-flow state and notification bookkeeping. Drift issue close/update helpers do not clear it.
 `drift_test.go` tests old-record round trips and unrelated field preservation on memory and the official
 Firestore emulator (when `FIRESTORE_EMULATOR_HOST` is set), plus clean/partial and canceled writes.
+
+`StoreDrift` deduplicates map triples and fits the complete record within the Store limit. If entries do not fit, it keeps a prefix and marks the evidence unread. A failed CAS is returned for retry.

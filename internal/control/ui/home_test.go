@@ -340,3 +340,41 @@ func TestHomeDoesNotCallOldEvidenceCleanOrMissDigestMismatch(t *testing.T) {
 		})
 	}
 }
+
+func TestHomeOutsideFlowCanRestoreMissingOrInvalidPolicy(t *testing.T) {
+	for _, invalid := range []bool{false, true} {
+		t.Run(strconv.FormatBool(invalid), func(t *testing.T) {
+			e := newHomeEnv(t, homePolicy)
+			homeEditRepo(t, e, func(rec map[string]any) { rec["outside_flow"] = map[string]any{"digest": "changed", "issue": 73} })
+			e.setups.out.State = "outside_flow"
+			if invalid {
+				e.gh.setFile(repoName, mainBranch, ".archfit.yaml", "invalid yaml")
+			} else {
+				e.gh.deleteFile(repoName, mainBranch, ".archfit.yaml")
+			}
+			var got homeJSON
+			e.as("alice", permRead).getJSON(homeAPI, &got)
+			if !strings.Contains(got.Status, "policy changed outside the flow") || got.Map != nil {
+				t.Fatalf("got %+v", got)
+			}
+			if !slices.ContainsFunc(got.NeedsYou, func(n homeNeedJSON) bool { return n.Kind == "revert" }) {
+				t.Fatalf("no revert action: %+v", got.NeedsYou)
+			}
+			if slices.ContainsFunc(got.NeedsYou, func(n homeNeedJSON) bool { return n.Kind == "confirm" }) {
+				t.Fatalf("invalid policy cannot be confirmed: %+v", got.NeedsYou)
+			}
+		})
+	}
+}
+
+func TestHomeDenyPathSelectorUsesActualErrorModules(t *testing.T) {
+	pol := homePolicy + "rules:\n  - id: no-app-to-other\n    deny: {from: 'cmd/**', to: other}\n    why: Keep this import out.\n    instead: Pass a value in.\n"
+	e := newHomeEnv(t, pol)
+	e.gh.pulls[repoName+"#4"] = api.Pull{Number: 4, State: "open", HeadSHA: sha(4), HeadRepo: repoName, BaseRef: mainBranch}
+	homePut(t, e, "pull/4", map[string]any{"schema": "archfit-app.pull.v1", "head_sha": sha(4), "errors": []string{"no-app-to-other app other other/pkg"}})
+	var got homeJSON
+	e.as("alice", permRead).getJSON(homeAPI, &got)
+	if !slices.ContainsFunc(got.Map.Lines, func(l homeLineJSON) bool { return l.Kind == "deny" && l.From == "app" && l.To == "other" }) {
+		t.Fatalf("deny missing: %+v", got.Map.Lines)
+	}
+}

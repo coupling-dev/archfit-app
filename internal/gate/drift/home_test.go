@@ -2,6 +2,10 @@ package drift
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/gate/records"
@@ -71,4 +75,41 @@ func TestHomeDriftIsStoredEvenWhenIssuesAreTurnedOff(t *testing.T) {
 	w.gh.failOn, w.gh.failErr = "CreateIssue", api.ErrNotFound
 	w.push("h1", block(t, "repository_drift"))
 	assertHomeDrift(t, w, "h1", 1, len(block(t, "repository_drift").Unread) > 0)
+}
+
+func TestHomeSnapshotWriteFailureIsReturnedAndRetryStoresIt(t *testing.T) {
+	w := newWorld(t)
+	w.push("h0", noUnread(t, "repository_clean"))
+	before := w.repoRecord().Drift
+	w.svc = New(w.gh, failingRecordStore{w.store})
+	_, err := w.svc.Pushed(t.Context(), Run{Repo: repo, Head: "h1", State: noUnread(t, "repository_clean")})
+	if !errors.Is(err, errFake) {
+		t.Fatalf("Pushed = %v", err)
+	}
+	if !reflect.DeepEqual(w.repoRecord().Drift, before) {
+		t.Fatal("failed write changed evidence")
+	}
+	w.svc = New(w.gh, w.store)
+	w.push("h1", noUnread(t, "repository_clean"))
+	assertHomeDrift(t, w, "h1", 0, false)
+}
+
+func TestHomeSnapshotDeduplicatesAndBoundsValidErrors(t *testing.T) {
+	w := newWorld(t)
+	state := block(t, "repository_drift")
+	for range 2000 {
+		state.Drift = append(state.Drift, state.Drift[0])
+	}
+	w.push("h1", state)
+	if len(w.repoRecord().Drift.Errors) != 1 {
+		t.Fatalf("repeated errors stored: %d", len(w.repoRecord().Drift.Errors))
+	}
+	for i := range state.Drift {
+		state.Drift[i].From = fmt.Sprintf("module-%d-%s", i, strings.Repeat("a", 100))
+	}
+	w.push("h2", state)
+	got := w.repoRecord().Drift
+	if got == nil || !got.Unread || len(got.Errors) == 0 || len(got.Errors) >= len(state.Drift) {
+		t.Fatalf("snapshot not bounded and marked incomplete: %+v", got)
+	}
 }

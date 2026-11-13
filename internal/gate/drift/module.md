@@ -107,3 +107,5 @@ leaves the previous snapshot for the retry. A nil repository block changes nothi
 replaces the snapshot with its head, repository state, rule/from/to errors and whether places were unread.
 A partial result is distinct from a fully read clean result. Closing or forgetting the notification does
 not discard this evidence. `home_test.go` covers drift, partial, clean, nil and permanent notification refusal.
+
+Duplicate rule/module triples are collapsed; if a record cannot hold every triple, the stored snapshot is marked unread rather than causing a permanent oversized-record failure.

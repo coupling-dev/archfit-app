@@ -1694,3 +1694,5 @@ day, and are expired the next day. An absent, stale or partial repository result
 handler. JSON goldens live in `testdata/home/`; generate deliberately with
 `UPDATE_GOLDEN=1 go test ./internal/control/ui -run '^TestHomeAPIGoldens$'` from the repository root.
 The same tests call `wording.NotUsedIn` and cover the UTC date window, failures and authorization.
+
+If the outside-flow policy is missing or invalid, Home omits the map and confirm action but retains the revert link.

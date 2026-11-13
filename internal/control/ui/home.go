@@ -72,7 +72,10 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 }
 
 func homeBody(view gate.HomeState, setup setupJSON, repo string, today time.Time) homeJSON {
-	out := homeJSON{NeedsYou: []homeNeedJSON{}, Map: homeMap(view, today)}
+	out := homeJSON{NeedsYou: []homeNeedJSON{}}
+	if view.PolicyAvailable {
+		out.Map = homeMap(view, today)
+	}
 	base := "/r/" + repo
 	policyHref := base + "/policy"
 	issueHref := func(n int) string {
@@ -84,9 +87,10 @@ func homeBody(view gate.HomeState, setup setupJSON, repo string, today time.Time
 	var status []string
 	if view.OutsideFlow || setup.State == "outside_flow" {
 		status = append(status, "policy changed outside the flow")
-		out.NeedsYou = append(out.NeedsYou,
-			homeNeedJSON{Kind: "confirm", Text: "Confirm the policy changed outside the flow.", Href: base + "/owner/confirm"},
-			homeNeedJSON{Kind: "revert", Text: "Revert the policy changed outside the flow.", Href: base + "/owner/revert"})
+		if view.PolicyAvailable {
+			out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "confirm", Text: "Confirm the policy changed outside the flow.", Href: base + "/owner/confirm"})
+		}
+		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "revert", Text: "Revert the policy changed outside the flow.", Href: base + "/owner/revert"})
 	}
 	if n := len(view.Requests); n > 0 {
 		if n == 1 {
@@ -233,7 +237,7 @@ func homeMap(view gate.HomeState, today time.Time) *homeMapJSON {
 			continue
 		}
 		for _, touch := range touches {
-			if slices.Contains(rule.Deny.From, touch.From) && slices.Contains(rule.Deny.To, touch.To) {
+			if touch.Rule == rule.ID || slices.Contains(rule.Deny.From, touch.From) && slices.Contains(rule.Deny.To, touch.To) {
 				add(homeLineJSON{Kind: "deny", Rule: rule.ID, From: touch.From, To: touch.To})
 			}
 		}

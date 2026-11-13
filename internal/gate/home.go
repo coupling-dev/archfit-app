@@ -28,6 +28,7 @@ type HomeViews interface {
 // Policy is read at Tip; OutsideFlow also covers a digest that has not yet been judged by a push delivery.
 type HomeState struct {
 	Policy                  policy3.File
+	PolicyAvailable         bool
 	Tip                     string
 	OutsideFlow             bool
 	Issue                   int
@@ -65,7 +66,7 @@ type homeViews struct {
 	admissions *Admissions
 }
 
-// NewHome constructs the read-only façade used by control; it reads no head-tree policy.
+// NewHome reads the target policy at the protected tip; workflow eligibility also reads proposed pull heads.
 func NewHome(gh homeGitHub, s store.Store, admissions *Admissions) HomeViews {
 	return &homeViews{gh: gh, store: s, admissions: admissions}
 }
@@ -89,18 +90,20 @@ func (h *homeViews) Home(ctx context.Context, r api.Repo) (HomeState, error) {
 		return out, err
 	}
 	raw, _, err := h.gh.File(ctx, r.RepoRef, tip, homePolicyPath)
-	if err != nil {
+	if err != nil && !errors.Is(err, api.ErrNotFound) {
 		return out, err
 	}
-	pol, err := policy3.Decode(raw)
-	if err != nil {
-		return out, fmt.Errorf("home: read the target policy: %w", err)
+	pol, decodeErr := policy3.Decode(raw)
+	out.Tip = tip
+	out.PolicyAvailable = err == nil && decodeErr == nil
+	out.OutsideFlow = rec.OutsideFlow != nil || rec.ApprovedDigest != "" && (!out.PolicyAvailable || rec.ApprovedDigest != policy3.Digest(raw))
+	if !out.PolicyAvailable && !out.OutsideFlow {
+		return out, fmt.Errorf("home: read the target policy: %w", cmp.Or(err, decodeErr))
 	}
-	out.Policy, out.Tip = pol, tip
-	out.OutsideFlow = rec.OutsideFlow != nil || rec.ApprovedDigest != "" && rec.ApprovedDigest != policy3.Digest(raw)
 	if rec.OutsideFlow != nil {
 		out.Issue = rec.OutsideFlow.Issue
 	}
+	out.Policy = pol
 	out.DriftIssue = rec.DriftIssue
 	out.ExceptionIssues = map[HomeException]int{}
 	for _, x := range pol.Exceptions {
@@ -149,20 +152,23 @@ func (h *homeViews) Home(ctx context.Context, r api.Repo) (HomeState, error) {
 		if pull.HeadSHA != p.HeadSHA {
 			continue
 		}
-		for _, rule := range pol.Rules {
-			if rule.Deny == nil {
+		// Error keys contain rule, actual module names and a symbol/path, not deny selectors.
+		for _, key := range pull.Errors {
+			fields := strings.Fields(key)
+			if len(fields) < 3 {
 				continue
 			}
-			for _, from := range rule.Deny.From {
-				for _, to := range rule.Deny.To {
-					// Error keys include a trailing symbol/path. Match only a complete module prefix, never a substring.
-					prefix := rule.ID + " " + from + " " + to
-					if slices.ContainsFunc(pull.Errors, func(key string) bool { return key == prefix || strings.HasPrefix(key, prefix+" ") }) {
-						out.Touched = append(out.Touched, HomeError{rule.ID, from, to})
-					}
-				}
+			if _, ok := pol.Modules[fields[1]]; !ok {
+				continue
+			}
+			if _, ok := pol.Modules[fields[2]]; !ok {
+				continue
+			}
+			if slices.ContainsFunc(pol.Rules, func(rule policy3.Rule) bool { return rule.Deny != nil && rule.ID == fields[0] }) {
+				out.Touched = append(out.Touched, HomeError{fields[0], fields[1], fields[2]})
 			}
 		}
+
 	}
 	if rec.ApprovedDigest != "" && !out.OutsideFlow {
 		out.WorkflowPulls, err = h.workflows(ctx, r, tip, pulls)
