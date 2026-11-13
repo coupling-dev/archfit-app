@@ -21,6 +21,14 @@ const (
 	waitingGolden = "testdata/waiting.txt"
 )
 
+// sameRecordAs names, for the results whose repository block is the only difference from another golden, that
+// golden: the engine has no record golden for them, because the record never shows the block.
+var sameRecordAs = map[string]string{
+	"repository_clean":   "pass",
+	"repository_drift":   "pass",
+	"repository_expired": "expired_exception",
+}
+
 var commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // TestVendoredFilesMatchSchemaSource holds every vendored file to its SCHEMA_SOURCE line, and every line to a file.
@@ -87,6 +95,9 @@ func TestRecordMatchesTheGoldens(t *testing.T) {
 	for _, path := range results {
 		name := strings.TrimSuffix(filepath.Base(path), ".json")
 		golden := filepath.Join(recordDir, name+".txt")
+		if other, ok := sameRecordAs[name]; ok {
+			golden = filepath.Join(recordDir, other+".txt")
+		}
 		if name == "waiting" {
 			golden = waitingGolden
 		}

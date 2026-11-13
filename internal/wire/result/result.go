@@ -36,11 +36,14 @@ type Result struct {
 	Summary string    `json:"summary" rule:"text"` // the status line, such as "archfit: fail, 1 error"
 	Errors  []Error   `json:"errors"`              // in record order
 	Unknown []Unknown `json:"unknown"`             // the reasons for an unknown status, in record order
-	Policy  Policy    `json:"policy"`
-	Base    string    `json:"base,omitempty" rule:"commit"` // the merge base; absent without one
-	Head    string    `json:"head,omitempty" rule:"commit"`
-	Date    string    `json:"date" rule:"date"` // the date exceptions were judged on
-	Engine  string    `json:"engine" rule:"text"`
+	// Repository is the repository state for owners, set only on a push run whose head is the target branch's tip and
+	// that gave a verdict. nil means no state, never clean.
+	Repository *Repository `json:"repository,omitempty"`
+	Policy     Policy      `json:"policy"`
+	Base       string      `json:"base,omitempty" rule:"commit"` // the merge base; absent without one
+	Head       string      `json:"head,omitempty" rule:"commit"`
+	Date       string      `json:"date" rule:"date"` // the date exceptions were judged on
+	Engine     string      `json:"engine" rule:"text"`
 }
 
 // Error is one place where the change breaks a rule.
@@ -87,6 +90,42 @@ type Unknown struct {
 	What  string `json:"what" rule:"text"`
 	Why   string `json:"why,omitempty"`
 	Next  Next   `json:"next"`
+}
+
+// RepositoryState is the state of the repository for owners (design 7.1).
+type RepositoryState string
+
+// The states of the repository a push run reports.
+const (
+	RepositoryClean   RepositoryState = "clean"   // no error outside the exceptions, in what the check read
+	RepositoryDrift   RepositoryState = "drift"   // an error exists that no exception covers
+	RepositoryExpired RepositoryState = "expired" // an exception passed its date and the code still breaks its rule
+)
+
+// Repository is the whole tree the check read, judged on its own with the policy's exceptions on the result's date.
+// State covers only what was read: a reader that shows State shows Unread beside it.
+type Repository struct {
+	State    RepositoryState     `json:"state" rule:"repository"`
+	Drift    []Error             `json:"drift"`    // the errors no exception covers, from_change false, in record order
+	Expiring []ExpiringException `json:"expiring"` // exceptions within 14 days of their date that still cover an error
+	Unread   []UnreadPlace       `json:"unread"`   // places the check could not read; missing evidence is not zero
+}
+
+// ExpiringException is an exception of the policy close to its date.
+type ExpiringException struct {
+	Rule    string `json:"rule" rule:"text"`
+	From    string `json:"from" rule:"text"` // a module, or a path glob for the unowned rule
+	To      string `json:"to,omitempty"`
+	Expires string `json:"expires" rule:"date"` // the last day the exception holds
+	Why     string `json:"why,omitempty"`
+}
+
+// UnreadPlace is a place of the tree the check could not read.
+type UnreadPlace struct {
+	Path   string `json:"path,omitempty"` // absent when the place is the whole tree, such as a missing tool
+	Line   int    `json:"line,omitempty"`
+	Reason string `json:"reason" rule:"text"`
+	Fix    string `json:"fix,omitempty"`
 }
 
 // Policy names the policy that judged the change.

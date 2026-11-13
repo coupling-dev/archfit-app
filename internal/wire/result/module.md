@@ -16,6 +16,10 @@ what the CLI prints (design 8.2). The engine owns both contracts (design 11.7); 
 
 - Decode `archfit.result.v1` strictly into `Result` (`Decode`). Name the location and the rule of the first failure,
   never a value.
+- Carry the optional `repository` block of a push run (M2 D18, engine task 5): the repository state (`clean`, `drift`,
+  `expired`), the drift errors, the exceptions within 14 days of their date, and the places the check could not read.
+  `nil` means no state, never `clean`; `State` covers only what was read, so a reader that shows it shows `Unread`
+  beside it. `gate/drift` (M2 task 22) reads it.
 - Render the record of a `Result` (`Record`).
 - Hold the vendored schema and the engine's goldens, pinned in `SCHEMA_SOURCE`.
 - Nothing else: no I/O, no GitHub, no decision. `waiting` is derived from open requests by the gate (M2 task 16).
@@ -37,6 +41,8 @@ engine release, and old and new contracts are never accepted side by side (desig
 
   The schema also defines `archfit.can.v1`; the App never receives a `can` answer, so `can.json` and `can.txt` are not
   vendored and `Decode` refuses that schema.
+- The engine has no record golden for `repository_clean`, `repository_drift` and `repository_expired`: the record never
+  shows the block. Their record is that of `pass` and `expired_exception`, whose results differ only by the block.
 - `testdata/waiting.txt` is the App's own golden, not vendored and not in `SCHEMA_SOURCE`: the engine never emits
   `waiting`, so the App owns its record. It is rendered from the vendored `waiting.json`.
 - Hand-written strict decoder, as in `wire/report` **[default]**: a token pre-pass walks the input beside the Go types
@@ -55,13 +61,17 @@ const SchemaV1 = "archfit.result.v1"
 
 type Status string // StatusPass, StatusFail, StatusWaiting (set by the App only), StatusUnknown
 
-type Result struct { Schema, Status, Summary, Errors, Unknown, Policy, Base, Head, Date, Engine }
+type Result struct { Schema, Status, Summary, Errors, Unknown, Repository, Policy, Base, Head, Date, Engine }
 type Error struct { Path, Line, Rule, What, Why, Instead, Balance, Next, From, To, Key, FromChange, Exception }
 type Unknown struct { Path, Line, Cause, What, Why, Next }
 type Next struct { Kind, Text, Note }
 type Balance struct { Value, Min }
 type Exception struct { Rule, Expires }
 type Policy struct { Path, Digest, Protected, Differs, Target }
+type RepositoryState string // RepositoryClean, RepositoryDrift, RepositoryExpired
+type Repository struct { State, Drift, Expiring, Unread } // Result.Repository is a pointer: nil is no state
+type ExpiringException struct { Rule, From, To, Expires, Why }
+type UnreadPlace struct { Path, Line, Reason, Fix }
 
 // Decode reads raw strictly against the Result branch of the vendored schema.
 func Decode(raw []byte) (Result, error)
@@ -89,9 +99,11 @@ every key, required key, enum or pattern the Go types must follow; read the gold
 
 - `TestVendoredFilesMatchSchemaSource`: every vendored file has its `SCHEMA_SOURCE` line and SHA-256, and every line
   a file.
-- `TestRecordMatchesTheGoldens`: every vendored result renders byte for byte to its golden; every golden has a result.
+- `TestRecordMatchesTheGoldens`: every vendored result renders byte for byte to its golden (a `repository_*` result to
+  the golden of the same result without the block); every golden has a result.
   `TestWaitingResultNamesTheRequest`: the waiting record says `wait for an owner: #431`.
 - `TestTypesFollowTheVendoredSchema`: the Go types and the rules equal the schema.
 - `TestDecodeRejects`, `TestDecodeRejectsWhatIsNotOneObject`: one mutation of a vendored result per row, with the
-  exact error, which never quotes the seeded value. `TestDecodeAcceptsAbsentOptionalKeys`, `TestDecodeReadsEveryField`.
+  exact error, which never quotes the seeded value. `TestDecodeAcceptsAbsentOptionalKeys`, `TestDecodeReadsEveryField`,
+  `TestDecodeReadsTheRepositoryBlock` (each state; a result without the block has none).
 - `TestRecordLines`: the parts of the grammar no golden covers.

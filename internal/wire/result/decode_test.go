@@ -71,6 +71,16 @@ func TestDecodeRejects(t *testing.T) {
 		{"an empty base", graph, `"base": "1405df66cbe219b0bf6355bc3d60361a8376b6b4"`, `"base": ""`, "result: base: must match ^[0-9a-f]{40}([0-9a-f]{24})?$"},
 		{"a malformed date", graph, `"date": "2026-11-10"`, `"date": "` + leak + `"`, "result: date: must match ^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
 		{"a malformed expiry", expired, `"expires": "2026-11-19"`, `"expires": "19.11.2026` + leak + `"`, "result: errors[0].exception.expires: must match ^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+		{"an unknown repository state", "repository_drift", `"state": "drift"`, `"state": "` + leak + `"`, "result: repository.state: must be one of clean, drift, expired"},
+		{"a repository without unread", "repository_drift", `,
+    "unread": []`, ``, "result: repository.unread: required"},
+		{"an unknown repository key", "repository_drift", `"unread": []`, `"unread": [], "` + leak + `": 1`, "result: repository: unknown key"},
+		{"a null repository", "repository_drift", `"repository": {`, `"repository": null, "x": {`, "result: repository: must not be null"},
+		{"a drift error without a key", "repository_drift", `"key": "graph pkg_tc pkg_util pkg/util",`, ``, "result: repository.drift[0].key: required"},
+		{"an expiring exception without a date", "repository_clean", `"expires": "2026-11-19",`, ``, "result: repository.expiring[0].expires: required"},
+		{"a malformed expiring date", "repository_clean", `"expires": "2026-11-19"`, `"expires": "` + leak + `"`, "result: repository.expiring[0].expires: must match ^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+		{"an unread place without a reason", "repository_clean", `"reason": "import ./x does not resolve",`, ``, "result: repository.unread[0].reason: required"},
+		{"an unread place at line 0", "repository_clean", `"line": 3`, `"line": 0`, "result: repository.unread[0].line: must be an integer >= 1"},
 		{"trailing data", pass, `"engine": "4.0.0"
 }`, `"engine": "4.0.0"
 } {}`, "result: trailing data after the object"},
@@ -173,5 +183,49 @@ func TestDecodeReadsEveryField(t *testing.T) {
 	}
 	if !r.Policy.Protected || r.Policy.Differs || r.Policy.Target != "origin/main" {
 		t.Errorf("policy = %+v", r.Policy)
+	}
+}
+
+func TestDecodeReadsTheRepositoryBlock(t *testing.T) {
+	clean, err := result.Decode(read(t, resultDir+"/repository_clean.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := clean.Repository
+	if r == nil || r.State != result.RepositoryClean || len(r.Drift) != 0 {
+		t.Fatalf("repository = %+v", r)
+	}
+	want := result.ExpiringException{Rule: "duplication", From: "pkg_tc", To: "pkg_util", Expires: "2026-11-19", Why: "Request #431 is open."}
+	if len(r.Expiring) != 1 || r.Expiring[0] != want {
+		t.Errorf("expiring = %+v", r.Expiring)
+	}
+	if len(r.Unread) != 1 || r.Unread[0] != (result.UnreadPlace{Path: "web/app.ts", Line: 3, Reason: "import ./x does not resolve", Fix: "add web/x.ts"}) {
+		t.Errorf("unread = %+v", r.Unread)
+	}
+
+	drift, err := result.Decode(read(t, resultDir+"/repository_drift.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := drift.Repository
+	if d == nil || d.State != result.RepositoryDrift || len(d.Drift) != 1 || d.Drift[0].FromChange || d.Drift[0].Key != "graph pkg_tc pkg_util pkg/util" {
+		t.Errorf("repository = %+v", d)
+	}
+
+	expired, err := result.Decode(read(t, resultDir+"/repository_expired.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if x := expired.Repository; x == nil || x.State != result.RepositoryExpired || len(expired.Errors) != 1 || expired.Errors[0].Rule != "exception" {
+		t.Errorf("result = %+v", expired)
+	}
+
+	// A pull-request run carries no block: no state, never clean.
+	none, err := result.Decode(read(t, resultDir+"/pass.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if none.Repository != nil {
+		t.Errorf("repository = %+v, want none", none.Repository)
 	}
 }
