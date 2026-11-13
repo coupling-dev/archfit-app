@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -362,7 +363,8 @@ func TestStoreWritesOnlyLeasesAndInputsRecords(t *testing.T) {
 		t.Fatalf("records touched: %v, want a pusher and an approval record", written)
 	}
 	for i, key := range w.store.keys {
-		if key != EntitlementKey || w.store.tenants[i] == store.SystemTenant {
+		// A default-branch push reads the Archfit 4 records of its repository (gate/approvals); they are read, not written.
+		if key != EntitlementKey && !strings.HasPrefix(key, records.Prefix) || w.store.tenants[i] == store.SystemTenant {
 			t.Errorf("Store read of key %q under tenant %d", key, w.store.tenants[i])
 		}
 	}

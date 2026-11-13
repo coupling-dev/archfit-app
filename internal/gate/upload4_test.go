@@ -60,7 +60,20 @@ func newWorld4(t *testing.T) *world4 {
 		return id == manifest.Identity{EngineVersion: engine4, ImageDigest: image4, Platform: "linux/amd64"}
 	}
 	w.gate.v4.actionApproved = func(c string) bool { return c == actionPinned || c == actionBumped }
+	w.approved(w.shop, policy4)
 	return w
+}
+
+// approved records policy as the approved policy of r: the repository is under change control (M2 task 20).
+func (w *world4) approved(r api.Repo, policy string) {
+	w.t.Helper()
+	raw, err := records.Encode(&records.Repo{ApprovedDigest: policy3.Digest([]byte(policy))})
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	if err := w.mem.Put(context.Background(), store.Tenant(r.InstallationID), records.RepoKey(r.FullName), raw); err != nil {
+		w.t.Fatal(err)
+	}
 }
 
 // spec4 is a consistent envelope 2 upload of a result golden for the pull: the run executed the default branch's
@@ -414,6 +427,7 @@ const policy4Required = "version: 3\ngate: required\nowners: [olivia]\nmodules:\
 // require makes the default branch's policy required and s a run of it.
 func (w *world4) require(s *spec4) {
 	w.setFile(w.shop, testBranch, policyPath, []byte(policy4Required))
+	w.approved(w.shop, policy4Required)
 	s.env.PolicyDigest = policy3.Digest([]byte(policy4Required))
 	s.result["policy"].(map[string]any)["digest"] = s.env.PolicyDigest
 }

@@ -45,6 +45,7 @@ type Event struct {
 	Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
 	PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
 	ChangedPaths   []string // default_branch_push only
+	Before         string   // default_branch_push only: the commit before the push; "" when the push created the branch
 	CommentID      int64    // pull_commented only: the comment's ID
 	Issue          int      // issue_opened only: the issue number
 	Author         string   // pull_commented and issue_opened: the login that wrote the comment or the issue

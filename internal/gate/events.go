@@ -165,7 +165,8 @@ func (g *Gate) sharedGroupHead(ctx context.Context, repo api.Repo, head string) 
 
 // branchPushed records who moved the branch to e.HeadSHA, then re-evaluates the pull request on that head as a review
 // event does. The record approves nothing: a local coding agent pushes with its owner's credentials. A default-branch
-// push that changes a protected path also runs the repository sweep.
+// push is judged for the policy it brings (policyPushed, M2 task 20); one that changes a protected path also runs the
+// repository sweep.
 func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error) {
 	t := eventTarget(e)
 	if err := g.recordPusher(ctx, t, e); err != nil {
@@ -173,6 +174,10 @@ func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error
 	}
 	reaction, err := g.pullOnHead(ctx, t, e.Branch, e.DefaultBranch)
 	if err != nil || e.Kind == webhook.BranchPush {
+		return reaction, err
+	}
+	// Judged before the sweep reads the new policy: a consume or "outside the flow" is recorded first.
+	if err := g.policyPushed(ctx, e); err != nil {
 		return reaction, err
 	}
 	if !protectedPush(e.ChangedPaths) {

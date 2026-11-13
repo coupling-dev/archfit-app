@@ -499,7 +499,9 @@ func TestAnAnswerJoinsWhenOnlyTheOpenProposalSaysIt(t *testing.T) {
 	w := newWorld(t)
 	w.request(431, "graph", "pkg_tc", "pkg_util")
 	first := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
-	w.request(433, "graph", "pkg_tc", "pkg_util") // the same key, asked again while the first waits to merge
+	// The same key cannot be asked again while the first waits to merge: the answered request keeps it (task 20). A
+	// request under another key that writes the same line can.
+	w.requestKeyed(433, "graph pkg_tc pkg_util other", "graph", "pkg_tc", "pkg_util")
 	second := w.mustAnswer(oscar, 433, requests.Answer{Kind: policy3.Approve}, true)
 	if second.PullRequest != first.PullRequest || second.State != requests.PullLater {
 		t.Fatalf("second = %+v, want it in #%d", second, first.PullRequest)
