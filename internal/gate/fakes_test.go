@@ -37,8 +37,6 @@ type fakeGitHub struct {
 	files         map[string][]byte           // fileKey
 	pulls         map[string]api.Pull         // pullKey
 	changed       map[string][]string         // pullKey
-	reviews       map[string][]api.Review     // pullKey
-	teams         map[string]bool             // "team|login"
 	runs          map[int64]api.WorkflowRun   // run IDs are unique across the fake
 	checks        map[string][]api.CheckRun   // by full name
 	comments      map[string][]api.Comment    // pullKey; an issue's comments under its number
@@ -85,8 +83,6 @@ func newFakeGitHub() *fakeGitHub {
 		files:    map[string][]byte{},
 		pulls:    map[string]api.Pull{},
 		changed:  map[string][]string{},
-		reviews:  map[string][]api.Review{},
-		teams:    map[string]bool{},
 		runs:     map[int64]api.WorkflowRun{},
 		checks:   map[string][]api.CheckRun{},
 		comments: map[string][]api.Comment{},
@@ -290,24 +286,6 @@ func (f *fakeGitHub) ChangedFiles(_ context.Context, r api.RepoRef, number int) 
 		return nil, false, err
 	}
 	return slices.Clone(f.changed[pullKey(r.FullName, number)]), false, nil
-}
-
-func (f *fakeGitHub) Reviews(_ context.Context, r api.RepoRef, number int) ([]api.Review, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.enter("Reviews", r); err != nil {
-		return nil, err
-	}
-	return slices.Clone(f.reviews[pullKey(r.FullName, number)]), nil
-}
-
-func (f *fakeGitHub) TeamMember(_ context.Context, r api.RepoRef, team, login string) (bool, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.enter("TeamMember", r); err != nil {
-		return false, err
-	}
-	return f.teams[team+"|"+login], nil
 }
 
 func (f *fakeGitHub) Run(_ context.Context, r api.RepoRef, runID int64) (api.WorkflowRun, error) {
@@ -828,51 +806,12 @@ type fakeResolver struct {
 	err     error
 	targets []inputs.Target
 	nows    []time.Time
-	pushers []string // logins recorded by RecordPusher, in call order
 }
 
 func (r *fakeResolver) Resolve(_ context.Context, t inputs.Target, now time.Time) (inputs.Trusted, error) {
 	r.targets = append(r.targets, t)
 	r.nows = append(r.nows, now)
 	return r.trusted, r.err
-}
-
-func (r *fakeResolver) RecordPusher(_ context.Context, _ inputs.Target, login string) error {
-	r.pushers = append(r.pushers, login)
-	return nil
-}
-
-// The approval methods run only over the real resolver, in the world.
-func (r *fakeResolver) Candidate(context.Context, inputs.Target) (inputs.Candidate, error) {
-	panic("fakeResolver: Candidate")
-}
-
-func (r *fakeResolver) CanApprove(context.Context, inputs.Target, string) error {
-	panic("fakeResolver: CanApprove")
-}
-
-func (r *fakeResolver) CanDecide(context.Context, inputs.Target, string) error {
-	panic("fakeResolver: CanDecide")
-}
-
-func (r *fakeResolver) CanWithdraw(context.Context, inputs.Target, string) (bool, error) {
-	panic("fakeResolver: CanWithdraw")
-}
-
-func (r *fakeResolver) Decide(context.Context, inputs.Target, string, map[string]string, inputs.DecisionAction, string, []string, time.Time) error {
-	panic("fakeResolver: Decide")
-}
-
-func (r *fakeResolver) MirrorDecisions(context.Context, inputs.Target, api.Comments) error {
-	return nil
-}
-
-func (r *fakeResolver) RequestEligibleReviewers(context.Context, inputs.Target, string, time.Time) bool {
-	return false
-}
-
-func (r *fakeResolver) Approve(context.Context, inputs.Target, string, map[string]string, time.Time) error {
-	panic("fakeResolver: Approve")
 }
 
 type fakePublisher struct {
@@ -1009,5 +948,3 @@ func (a *fakeActions) Rerun(_ context.Context, r api.RepoRef, runID int64) error
 	a.refs = append(a.refs, r)
 	return nil
 }
-
-func (r *fakeResolver) ReviewerNotificationProblem(context.Context, inputs.Target) bool { return false }

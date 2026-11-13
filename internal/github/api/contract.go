@@ -130,17 +130,6 @@ type Pull struct {
 	UpdatedAt time.Time
 }
 
-type Review struct {
-	ID        int64  // GitHub review ID; version identity for a native decision
-	Reviewer  string // login returned by GitHub
-	State     string // "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED"
-	CommitSHA string // the head SHA the review was submitted on
-	Body      string // review text returned by GitHub; untrusted display data
-	// SubmittedAt is when the review was submitted; zero when GitHub did not say. A dismissed review keeps the time it
-	// was submitted, not the time it was dismissed.
-	SubmittedAt time.Time
-}
-
 type Pulls interface {
 	Pull(ctx context.Context, r RepoRef, number int) (Pull, error)
 	OpenPulls(ctx context.Context, r RepoRef) ([]Pull, error)
@@ -149,16 +138,6 @@ type Pulls interface {
 	// ChangedFiles lists changed paths; a rename lists both the old and the new path.
 	// truncated is true when GitHub's file list was cut off: callers must assume any path changed.
 	ChangedFiles(ctx context.Context, r RepoRef, number int) (paths []string, truncated bool, err error)
-	Reviews(ctx context.Context, r RepoRef, number int) ([]Review, error)
-	// TeamMember reports whether login belongs to "org/team-slug".
-	TeamMember(ctx context.Context, r RepoRef, team, login string) (bool, error)
-}
-
-// ReviewerRequests is the narrow GitHub capability for asking configured architecture owners to review a pull request.
-// It never removes a reviewer and does not change who has authority to decide.
-type ReviewerRequests interface {
-	RequestedReviewers(ctx context.Context, r RepoRef, number int) (users, teams []string, err error)
-	RequestReviewers(ctx context.Context, r RepoRef, number int, users, teams []string) error
 }
 
 // MergeQueues reads a branch's merge queue: the authoritative membership of its merge groups.

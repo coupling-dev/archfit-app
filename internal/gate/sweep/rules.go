@@ -58,7 +58,7 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted,
 		p.sum.TimedOut++
 		return nil
 	case Withdrawn(rc, tr):
-		// No re-run: no run can pass before an owner approves again, and rule 7b re-runs then.
+		// No re-run: no run can pass while the pull request changes a protected path; rule 7b re-runs once it does not.
 		return p.withdraw(ctx, t)
 	case stale(rc, tr):
 		if moved, err := p.retarget(ctx, "5b", t, rc, true); err != nil || moved {
@@ -82,8 +82,8 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted,
 		return err
 	}
 	restored := rc.Reason == verdict.ReasonSuspended // rule 2 already excluded Trusted.Suspended
-	// Granted, or no longer needed (a retargeted base, a repointed settings workflow): either way the reason is gone.
-	approvedLate := rc.Reason == verdict.ReasonOwnerApprovalMissing && !verdict.Unapproved(tr)
+	// The pull request no longer changes a protected path (a retargeted base, settings that protect other paths).
+	cleared := rc.Reason == verdict.ReasonOwnerApprovalMissing && !verdict.Unapproved(tr)
 	switch {
 	case !e.IsZero() && !p.now.Before(e) && state.StartedAt.Before(e) && rc.Reason != verdict.ReasonTargetMoved:
 		if moved, err := p.retarget(ctx, "6b", t, rc, false); err != nil || moved {
@@ -94,9 +94,9 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted,
 		}
 		_, err := p.rerun(ctx, "6b", t, rc)
 		return err
-	case restored, approvedLate:
+	case restored, cleared:
 		rule := "7a"
-		if approvedLate {
+		if cleared {
 			rule = "7b"
 		}
 		if moved, err := p.retarget(ctx, rule, t, rc, false); err != nil || moved {
@@ -120,16 +120,15 @@ func (p *pass) evaluate(ctx context.Context, t inputs.Target, tr inputs.Trusted,
 
 // Decided reports whether rc is a decision on the report: success, failure, or an action_required whose reason comes
 // from the report (missing required coverage, a baseline that is not comparable, a policy defect). The report is shown
-// under such a result, and the owner approval that admitted the head's inputs matters to it as to success. Any other
+// under such a result, and a protected change withdraws it as it withdraws a success. Any other
 // action_required result, and a pending, zero or unreadable receipt, already says what to do and is not decided.
 func Decided(rc feedback.Receipt) bool {
 	return rc.Conclusion == verdict.Success || rc.Conclusion == verdict.Failure ||
 		(rc.Conclusion == verdict.ActionRequired && verdict.ReportDerivedAction(rc.Reason))
 }
 
-// Withdrawn reports whether rc is Decided although tr now lacks the owner approval that verdict.Decide demands: the
-// approval it relied on was dismissed or followed by a request for changes, the approver left the owners of the
-// protected settings, or the pull now changes a protected path.
+// Withdrawn reports whether rc is Decided although tr now changes a protected path, which nothing approves: the
+// protected settings came to protect a path the pull request changes.
 func Withdrawn(rc feedback.Receipt, tr inputs.Trusted) bool {
 	return Decided(rc) && verdict.Unapproved(tr)
 }
@@ -237,8 +236,8 @@ func withOutcome(out verdict.Outcome, code verdict.ReasonCode, t inputs.Target, 
 // Withdrawal is rule 5a, decided inside the head's publication lease (feedback.Publisher.Reconcile) from the gate
 // check current there and inputs tr resolved there: Without(ReasonOwnerApprovalMissing) over the current receipt
 // when a check exists and its receipt is Withdrawn, in either gate mode, else nil. Deciding inside the lease is what
-// makes it safe: a newer run that turned green while the caller waited is the receipt it replaces, and an owner who
-// approved again meanwhile leaves the check as it is.
+// makes it safe: a newer run that turned green while the caller waited is the receipt it replaces, and settings that
+// stopped protecting the path meanwhile leave the check as it is.
 func Withdrawal(t inputs.Target, current feedback.CheckState, tr inputs.Trusted) *feedback.Publication {
 	if !current.Exists || !Withdrawn(current.Receipt, tr) {
 		return nil
@@ -248,7 +247,7 @@ func Withdrawal(t inputs.Target, current feedback.CheckState, tr inputs.Trusted)
 }
 
 // GroupWithdrawal is the correction of a merge group's required check when its trusted inputs tr, read now, block it
-// (verdict.GroupBlocked): the group was destroyed or rebuilt, a member changed, or a member's owner approval is gone.
+// (verdict.GroupBlocked): the group was destroyed or rebuilt, a member changed, or a member changes a protected path.
 // Only a pending check or a decided result is replaced; one that already asks for action stays. nil writes nothing.
 func GroupWithdrawal(t inputs.Target, current feedback.CheckState, tr inputs.Trusted) *feedback.Publication {
 	if tr.Settings.Gate != settings.GateRequired || !current.Exists || (!current.Pending && !Decided(current.Receipt)) {
@@ -263,7 +262,7 @@ func GroupWithdrawal(t inputs.Target, current feedback.CheckState, tr inputs.Tru
 }
 
 // recheckPull is rule 5c alone, for the pass a default-branch push starts. A pull request that another rule acts on
-// (a fork, a suspension, a withdrawn approval, stale inputs, and with them a missing, pending or unreadable check) is
+// (a fork, a suspension, a withdrawn result, stale inputs, and with them a missing, pending or unreadable check) is
 // left to the full pass: target_moved must not replace the reason that rule publishes, nor its re-run.
 func (p *pass) recheckPull(ctx context.Context, t inputs.Target, tr inputs.Trusted) error {
 	if tr.Settings.Gate != settings.GateRequired || t.Fork || tr.Suspended {
@@ -318,7 +317,7 @@ func (p *pass) sharedHead(ctx context.Context, t inputs.Target, rc feedback.Rece
 // SharedHeadPublication is the shared-head decision of a default-branch pull request t, made inside its head's
 // publication lease from the gate check current there: shared_head over the current receipt (the zero receipt of a
 // pending check, which any upload replaces) when the repository is in required mode, the check is Pending or a success
-// whose approval and inputs still hold, and a fresh OpenPulls listing still names a pull request on the head with
+// whose inputs still hold, and a fresh OpenPulls listing still names a pull request on the head with
 // another base. nil otherwise. A pending check is written only to refuse the upload that is about to decide it: that
 // upload lists inside the lease too, so it sees this publication or is seen by it.
 func SharedHeadPublication(ctx context.Context, pulls api.Pulls, res inputs.Resolver, now time.Time, t inputs.Target, current feedback.CheckState) (*feedback.Publication, error) {

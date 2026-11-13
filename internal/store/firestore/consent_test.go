@@ -26,10 +26,10 @@ func testConcurrentConsents(t *testing.T, clients []store.Store) {
 	errs := make([]error, admins)
 	var wg sync.WaitGroup
 	for i := range admins {
-		_, consents, _ := account.New(clients[i%len(clients)])
+		_, consents := account.New(clients[i%len(clients)])
 		wg.Go(func() {
 			errs[i] = consents.Record(ctx, installation, account.Consent{
-				Kind: account.ConsentManagedLLM, By: "admin" + strconv.Itoa(i), ByID: int64(100 + i), At: at,
+				Kind: account.ConsentSourceProcessing, By: "admin" + strconv.Itoa(i), ByID: int64(100 + i), At: at,
 			})
 		})
 	}
@@ -49,8 +49,8 @@ func testConcurrentConsents(t *testing.T, clients []store.Store) {
 	if winner < 0 {
 		t.Fatal("no admin recorded the consent")
 	}
-	_, consents, _ := account.New(clients[0])
-	got, ok, err := consents.Get(ctx, installation, account.ConsentManagedLLM)
+	_, consents := account.New(clients[0])
+	got, ok, err := consents.Get(ctx, installation, account.ConsentSourceProcessing)
 	if !ok || err != nil || got.By != "admin"+strconv.Itoa(winner) || got.ByID != int64(100+winner) {
 		t.Errorf("Get = %+v, %v, %v; want the winner admin%d", got, ok, err, winner)
 	}

@@ -75,9 +75,6 @@ func TestRateLimitExhaustionNeverLooksLikeData(t *testing.T) {
 			v, err := c.ResolveRepo(ctx, "o/r")
 			return v != Repo{}, err
 		}
-		calls["Pulls.TeamMember"] = func(ctx context.Context) (bool, error) {
-			return c.TeamMember(ctx, repoA, "acme/core", "alice")
-		}
 		calls["Users.Permission"] = func(ctx context.Context) (bool, error) {
 			v, err := c.Permission(ctx, "user-token", "o/r")
 			return v != "", err
@@ -128,7 +125,7 @@ func TestRateLimitExhaustionNeverLooksLikeData(t *testing.T) {
 				pagedAny(w, r, 500)
 			}
 		}))
-		lists := []string{"Repos.ListInstallations", "Repos.ListRepos", "Pulls.OpenPulls", "Pulls.ChangedFiles", "Pulls.Reviews",
+		lists := []string{"Repos.ListInstallations", "Repos.ListRepos", "Pulls.OpenPulls", "Pulls.ChangedFiles",
 			"Checks.CheckRuns", "Comments.AppComments", "Users.UserRepos"}
 		calls := reads(env.c)
 		for _, name := range lists {

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
-	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
@@ -120,9 +119,6 @@ func TestSweepForgetsOrphanTenants(t *testing.T) {
 			t.Fatalf("HandleEvent: %v", err)
 		}
 	}
-	if err := h.c.budget.Reserve(ctx, 1000, h.clock.Now()); err != nil {
-		t.Fatalf("Reserve: %v", err)
-	}
 	before1, _ := h.entitlement(1)
 	h.gh.uninstall(2) // the installation_removed delivery was missed
 
@@ -137,9 +133,6 @@ func TestSweepForgetsOrphanTenants(t *testing.T) {
 	if after1, _ := h.entitlement(1); after1 != before1 {
 		t.Errorf("tenant 1 changed: %+v -> %+v", before1, after1)
 	}
-	if !h.budgetBooked(1000) {
-		t.Error("the SystemTenant budget counter changed")
-	}
 	out := logs.String()
 	if !strings.Contains(out, `"forgotten":1`) || !strings.Contains(out, `"installation_id":2`) {
 		t.Errorf("log lacks the forgotten tenant:\n%s", out)
@@ -148,7 +141,7 @@ func TestSweepForgetsOrphanTenants(t *testing.T) {
 
 func TestSweepStopsWhenInstallationsUnavailable(t *testing.T) {
 	st := &flakyStore{Store: store.NewMemory()}
-	acct, _, _ := account.New(st)
+	acct, _ := account.New(st)
 	repos := &fakeRepos{installErr: api.ErrRateLimited}
 	c := newControl(acct, repos, st, admitAll{}, okHandler, okHandler, newClock().Now)
 
@@ -227,28 +220,17 @@ func TestHandlersAreMounted(t *testing.T) {
 }
 
 func TestSeamsDefaultToNotAvailable(t *testing.T) {
-	h := newHarness(t, withoutSandbox, withoutProvider)
+	h := newHarness(t, withoutSandbox)
 	h.gh.install(7, ghr(70, "org7/app", true))
 	r := repo(7, "org7/app", true)
-	for _, k := range []account.ConsentKind{account.ConsentSourceProcessing, account.ConsentManagedLLM} {
-		if err := h.c.consents.Record(ctx, 7, account.Consent{Kind: k, By: "alice", ByID: 1, At: h.clock.Now()}); err != nil {
-			t.Fatalf("Record: %v", err)
-		}
+	if err := h.c.consents.Record(ctx, 7, account.Consent{Kind: account.ConsentSourceProcessing, By: "alice", ByID: 1, At: h.clock.Now()}); err != nil {
+		t.Fatalf("Record: %v", err)
 	}
 
 	if _, err := h.c.onboarding.StartManaged(ctx, r, []string{"@org7/owners"}); !errors.Is(err, ErrNoSandbox) {
 		t.Errorf("StartManaged = %v, want ErrNoSandbox", err)
 	}
-	_, err := h.c.assist.Propose(ctx, assist.ModeManaged, assist.Request{
-		Repo: r, Branch: "archfit/policy", HeadSHA: strings.Repeat("a", 40), Instruction: "allow ui to import store", By: "alice",
-	})
-	if !errors.Is(err, assist.ErrManagedUnavailable) {
-		t.Errorf("Propose = %v, want ErrManagedUnavailable", err)
-	}
 	if n := h.gh.writeCount(); n != 0 {
 		t.Errorf("%d GitHub writes, want no PR", n)
-	}
-	if h.store.adds != 0 {
-		t.Errorf("%d budget reservations, want none", h.store.adds)
 	}
 }

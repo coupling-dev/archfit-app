@@ -77,7 +77,6 @@ func (s *publisher) Publish(ctx context.Context, p Publication) (err error) {
 		Status:     statusCompleted,
 		StartedAt:  now,
 	}
-	p.ownerBanner = renderDecisionBanner(p.Target, p.Trusted, s.pullLink(p.Target))
 	if required(p) { // the same predicate the headline reads, so a title never names a gate that was not written
 		run.Name, run.Conclusion = gateCheck, string(p.Outcome.Conclusion)
 		run.Title, run.Summary = gateTitle(p), renderGate(p)
@@ -228,10 +227,10 @@ func (s *publisher) changedFiles(ctx context.Context, p Publication) (func(strin
 }
 
 // findComment returns the App comments and the lowest-ID feedback comment that starts with the comment marker.
-func (s *publisher) findComment(ctx context.Context, t inputs.Target) ([]api.Comment, api.Comment, bool, error) {
+func (s *publisher) findComment(ctx context.Context, t inputs.Target) (api.Comment, bool, error) {
 	all, err := s.comments.AppComments(ctx, t.Repo.RepoRef, t.PullRequest)
 	if err != nil {
-		return nil, api.Comment{}, false, err
+		return api.Comment{}, false, err
 	}
 	var found api.Comment
 	for _, c := range all {
@@ -239,7 +238,7 @@ func (s *publisher) findComment(ctx context.Context, t inputs.Target) ([]api.Com
 			found = c
 		}
 	}
-	return all, found, found.ID != 0, nil
+	return found, found.ID != 0, nil
 }
 
 func (s *publisher) writeComment(ctx context.Context, p Publication, now time.Time) (string, error) {
@@ -251,19 +250,12 @@ func (s *publisher) writeComment(ctx context.Context, p Publication, now time.Ti
 	if pull.HeadSHA != t.HeadSHA {
 		return actionSkippedOldHead, nil
 	}
-	comments, existing, found, err := s.findComment(ctx, t)
+	existing, found, err := s.findComment(ctx, t)
 	if err != nil {
 		return actionNone, err
 	}
 	if !found {
 		body := renderComment(p, now, "", s.pullLink(t))
-		if p.ownerBanner != "" {
-			for _, comment := range comments {
-				if strings.Contains(comment.Body, decisionBannerMarker) {
-					return actionUpdated, s.comments.UpdateComment(ctx, t.Repo.RepoRef, comment.ID, body)
-				}
-			}
-		}
 		_, err = s.comments.CreateComment(ctx, t.Repo.RepoRef, t.PullRequest, body)
 		return actionCreated, err
 	}
@@ -333,7 +325,7 @@ func (s *publisher) Warn(ctx context.Context, t inputs.Target, expiry time.Time)
 	}()
 
 	date := waiverDate(expiry)
-	_, existing, found, err := s.findComment(ctx, t)
+	existing, found, err := s.findComment(ctx, t)
 	if err != nil {
 		return err
 	}

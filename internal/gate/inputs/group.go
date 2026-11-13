@@ -14,28 +14,23 @@ import (
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
-// member is one queued pull request of a merge group, with what its own pull request changes and who approved it.
+// member is one queued pull request of a merge group, with the protected paths its own pull request changes.
 type member struct {
-	number   int
-	head     string
-	paths    []string          // protected paths its own pull request changes, by the settings of the snapshot
-	digests  map[string]string // each of paths at its head; set only when approver is
-	approver string
+	number int
+	head   string
+	paths  []string // protected paths its own pull request changes, by the settings of the snapshot
 }
 
 // resolveGroup resolves the trusted inputs of a merge group commit t.HeadSHA of t.BaseRef's queue.
 //
 // The members are the queue entries from the front up to the entry whose commit is t.HeadSHA: GitHub builds each
 // entry's commit from the base and every entry ahead of it. Every protected file is read at two immutable commits,
-// the default-branch head S, read once, and the group commit X. A file that differs between them is accepted only
-// when exactly one member changes it in its own pull request, that member holds a current owner approval of its own
-// head, and its head holds exactly X's blob. Every member that changes a protected path needs its own approval, even
-// when the group's file equals S's: an unauthorized change in any member is refused. The group commit itself is never
-// an approval subject.
+// the default-branch head S, read once, and the group commit X. Nothing approves a protected change: a member that
+// changes a protected path in its own pull request blocks the group (Group.Unapproved), and so does a protected file
+// that differs between S and X while no member changes it (GroupConflict).
 func (r *resolver) resolveGroup(ctx context.Context, t Target, now time.Time) (Trusted, error) {
 	ent := r.entitlement(ctx, t.Repo.InstallationID)
 	out := Trusted{
-		Approval:    ApprovalNotRequired,
 		Suspended:   suspended(t.Repo.Private, ent, now),
 		Entitlement: ent,
 		Group:       &Group{},
@@ -94,49 +89,36 @@ func (r *resolver) resolveGroup(ctx context.Context, t Target, now time.Time) (T
 	if err != nil {
 		return Trusted{}, err
 	}
-	var unapproved, approvedBy []string
+	var unapproved []string
 	for i := range members {
 		m := &members[i]
-		if err := r.approveMember(ctx, t, s, m); err != nil {
+		mt := Target{Repo: t.Repo, PullRequest: m.number, HeadSHA: m.head, BaseRef: t.BaseRef, BaseSHA: t.BaseSHA}
+		if m.paths, err = r.changedProtected(ctx, mt, s); err != nil {
 			return Trusted{}, err
 		}
-		switch {
-		case len(m.paths) == 0:
-		case m.approver == "":
+		if len(m.paths) > 0 {
 			unapproved = append(unapproved, "#"+strconv.Itoa(m.number)+" "+strings.Join(m.paths, ", "))
-		default:
-			approvedBy = append(approvedBy, m.approver+" (#"+strconv.Itoa(m.number)+")")
 		}
 	}
 
-	var changed, conflicts []string
+	var conflicts []string
 	for _, p := range paths {
 		claimed := slices.ContainsFunc(members, func(m member) bool { return slices.Contains(m.paths, p) })
 		differs := !sameBlob(atS[p], atX[p])
 		if differs || claimed {
 			out.ProtectedPaths = append(out.ProtectedPaths, p)
 		}
-		if differs {
-			changed = append(changed, p)
+		if differs && !claimed {
+			conflicts = append(conflicts, p+" changed by no queued pull request")
 		}
 	}
 	if len(unapproved) > 0 {
-		out.Approval, out.Group.Unapproved = ApprovalMissing, strings.Join(unapproved, "; ")
+		out.Group.Unapproved = strings.Join(unapproved, "; ")
 		return out, nil
-	}
-	for _, p := range changed {
-		if why := attribute(members, p, atX[p]); why != "" {
-			conflicts = append(conflicts, p+" "+why)
-		}
 	}
 	if len(conflicts) > 0 {
-		out.Approval, out.Group.Problem, out.Group.Detail = ApprovalMissing, GroupConflict, strings.Join(conflicts, "; ")
-		return out, nil
+		out.Group.Problem, out.Group.Detail = GroupConflict, strings.Join(conflicts, "; ")
 	}
-	if len(approvedBy) > 0 {
-		out.Approval, out.ApprovedBy = ApprovalGranted, strings.Join(approvedBy, ", ")
-	}
-	accept(atX) // equal to S's blob for every path not in changed
 	return out, nil
 }
 
@@ -171,65 +153,6 @@ func (r *resolver) members(ctx context.Context, t Target, entries []api.QueueEnt
 		out = append(out, member{number: e.PullRequest, head: pull.HeadSHA})
 	}
 	return out, "", "", nil
-}
-
-// approveMember fills in the protected paths m's own pull request changes and, when there are any, the owner who
-// approved m's head under the existing pull request rules (a GitHub review of the head, else the App record) and the
-// digests of those paths at its head.
-func (r *resolver) approveMember(ctx context.Context, t Target, s settings.Settings, m *member) error {
-	mt := Target{Repo: t.Repo, PullRequest: m.number, HeadSHA: m.head, BaseRef: t.BaseRef, BaseSHA: t.BaseSHA}
-	paths, err := r.changedProtected(ctx, mt, s)
-	if err != nil || len(paths) == 0 {
-		return err
-	}
-	m.paths = paths
-	reviews, err := r.pulls.Reviews(ctx, t.Repo.RepoRef, m.number)
-	if err != nil {
-		return fmt.Errorf("inputs: reviews: %w", err)
-	}
-	by, _, _, err := r.approvalDecision(ctx, mt, s, paths, reviews)
-	if err != nil {
-		return err
-	}
-	if by == "" {
-		return nil
-	}
-	if m.digests, err = r.headDigests(ctx, mt, paths); err != nil {
-		return err
-	}
-	m.approver = by
-	return nil
-}
-
-// attribute returns "" when exactly one member changes p and its approved head holds exactly blob, else why not.
-func attribute(members []member, p string, blob []byte) string {
-	var claimants []member
-	for _, m := range members {
-		if slices.Contains(m.paths, p) {
-			claimants = append(claimants, m)
-		}
-	}
-	want := ""
-	if blob != nil {
-		want = policy.Digest(blob)
-	}
-	switch {
-	case len(claimants) == 0:
-		return "changed by no queued pull request"
-	case len(claimants) > 1:
-		return "changed by " + numbers(claimants)
-	case claimants[0].digests[p] != want:
-		return "is not the file an owner approved on " + numbers(claimants)
-	}
-	return ""
-}
-
-func numbers(ms []member) string {
-	out := make([]string, len(ms))
-	for i, m := range ms {
-		out[i] = "#" + strconv.Itoa(m.number)
-	}
-	return strings.Join(out, " and ")
 }
 
 // blobs reads each path at the commit sha; an absent path is nil.

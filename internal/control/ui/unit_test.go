@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"slices"
 	"strconv"
@@ -14,7 +13,6 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
-	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
@@ -59,51 +57,8 @@ func TestCSRFToken(t *testing.T) {
 	}
 }
 
-func TestEditBranchName(t *testing.T) {
-	tests := []struct {
-		login, requested, want string
-	}{
-		{"Alice", "", "archfit/edit-alice"},
-		{"mary-ann", "", "archfit/edit-mary-ann"},
-		{"alice", "archfit/policy", "archfit/policy"},
-		{"alice", "main", ""},
-		{"alice", "archfit/../main", ""},
-		{"alice", "archfit/a b", ""},
-		{"alice", "archfit/", ""},
-		{"alice", "archfit//x", ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.login+" "+tt.requested, func(t *testing.T) {
-			got, err := editBranch(tt.login, tt.requested)
-			if tt.want != "" {
-				if err != nil || got != tt.want {
-					t.Fatalf("editBranch = %q, %v; want %q", got, err, tt.want)
-				}
-				return
-			}
-			if status, _, _ := explain(err); status != http.StatusUnprocessableEntity {
-				t.Errorf("status = %d (%v), want 422", status, err)
-			}
-			e := newEnv(t)
-			res := e.as("alice", permWrite).get(policyAPI + "?branch=" + url.QueryEscape(tt.requested))
-			wantStatus(t, res, http.StatusUnprocessableEntity)
-		})
-	}
-
-	t.Run("the rule is proposal's", func(t *testing.T) {
-		for _, requested := range []string{"archfit/policy", "archfit/a/b.c_d", "archfit/./x", "archfit/a//b", "archfit/a/", "archfit/ä", "archfit"} {
-			_, err := editBranch("alice", requested)
-			if got, want := err == nil, proposal.ValidBranch(requested); got != want {
-				t.Errorf("editBranch(%q) accepted = %v, want proposal.ValidBranch = %v", requested, got, want)
-			}
-		}
-	})
-}
-
 func TestStatusMapping(t *testing.T) {
-	const text = policyText + "# my edit\n"
 	const onboardingAPI = "/api/repos/" + repoName + "/onboarding"
-	viaAssist := func(err error) func(*env) { return func(e *env) { e.assist.propose = failingAssist(err) } }
 	tests := []struct {
 		name       string
 		inject     func(*env)
@@ -112,26 +67,11 @@ func TestStatusMapping(t *testing.T) {
 		want       int
 		retryAfter bool
 	}{
-		{"forbidden", func(e *env) { e.grant("alice", repoName, permRead) }, policyAPI, editOf("", "", text), 404, false},
-		{"stale from proposal", func(e *env) { e.props.fail["Propose"] = proposal.ErrStale }, policyAPI, editOf("", "", text), 409, false},
-		{"head_sha is not the draft head", func(e *env) { e.props.push(repoName, "archfit/edit-alice", policyText) }, policyAPI, editOf("", sha(1), text), 409, false},
-		{"branch outside archfit/", nil, policyAPI, editOf("main", "", text), 422, false},
-		{"unparseable YAML", nil, policyAPI, editOf("", "", "# my edit\nmodules: ["), 422, false},
-		{"assist invalid request", viaAssist(assist.ErrInvalidRequest), assistAPI, assistOf("", text), 422, false},
-		{"assist invalid proposal", viaAssist(assist.ErrInvalidProposal), assistAPI, assistOf("", text), 422, false},
-		{"assist no draft", viaAssist(assist.ErrNoDraft), assistAPI, assistOf("", text), 409, false},
-		{"assist no consent", viaAssist(account.ErrNoConsent), assistAPI, assistOf("", text), 409, false},
-		{"assist not managed", viaAssist(assist.ErrNotManaged), assistAPI, assistOf("", text), 409, false},
-		{"assist policy too large", viaAssist(assist.ErrPolicyTooLarge), assistAPI, assistOf("", text), 409, false},
-		{"assist no workflow", viaAssist(assist.ErrNoAssistWorkflow), assistAPI, assistOf("", text), 409, false},
-		{"assist stale", viaAssist(proposal.ErrStale), assistAPI, assistOf("", text), 409, false},
-		{"assist busy", viaAssist(assist.ErrBusy), assistAPI, assistOf("", text), 429, false},
-		{"assist managed unavailable", viaAssist(assist.ErrManagedUnavailable), assistAPI, assistOf("", text), 503, false},
-		{"assist budget exhausted", viaAssist(account.ErrBudgetExhausted), assistAPI, assistOf("", text), 503, false},
-		{"assist provider", viaAssist(assist.ErrProvider), assistAPI, assistOf("", text), 503, false},
-		{"rate limited", func(e *env) { e.gh.fail["File"] = api.ErrRateLimited }, policyAPI, editOf("", "", text), 503, true},
-		{"rate limited through assist", viaAssist(fmt.Errorf("wrapped: %w", api.ErrRateLimited)), assistAPI, assistOf("", text), 503, true},
-		{"other upstream error", func(e *env) { e.props.fail["Get"] = errors.New("boom") }, policyAPI, editOf("", "", text), 502, false},
+		{"forbidden", func(e *env) { e.grant("alice", repoName, permRead) }, onboardingAPI, onboardingJSON{Mode: "customer", Owners: "alice"}, 404, false},
+		{"rate limited", func(e *env) { e.onb.startErr = fmt.Errorf("wrapped: %w", api.ErrRateLimited) },
+			onboardingAPI, onboardingJSON{Mode: "customer", Owners: "alice"}, 503, true},
+		{"other upstream error", func(e *env) { e.onb.startErr = errors.New("boom") },
+			onboardingAPI, onboardingJSON{Mode: "customer", Owners: "alice"}, 502, false},
 		{"no sandbox", func(e *env) {
 			e.onb.startErr = onboarding.ErrNoSandbox
 			_ = e.consents.Record(t.Context(), installA, account.Consent{Kind: account.ConsentSourceProcessing})
@@ -163,7 +103,7 @@ func TestStatusMapping(t *testing.T) {
 
 	t.Run("missing CSRF token", func(t *testing.T) {
 		e := newEnv(t)
-		res := e.as("alice", permAdmin).postJSONWith(policyAPI, editOf("", "", text), "")
+		res := e.as("alice", permAdmin).postJSONWith(onboardingAPI, onboardingJSON{Mode: "customer", Owners: "alice"}, "")
 		wantStatus(t, res, http.StatusForbidden)
 	})
 	t.Run("GET rate limited", func(t *testing.T) {
@@ -186,10 +126,6 @@ func TestStatusMapping(t *testing.T) {
 			t.Errorf("panic on /api answered %q %q, want the JSON error", ct, res.Body.String())
 		}
 	})
-}
-
-func failingAssist(err error) func(assist.Mode, assist.Request) (assist.Result, error) {
-	return func(assist.Mode, assist.Request) (assist.Result, error) { return assist.Result{}, err }
 }
 
 func TestWording(t *testing.T) {
@@ -264,9 +200,7 @@ func TestWording(t *testing.T) {
 	})
 	t.Run("one distinct sentence per sentinel", func(t *testing.T) {
 		errs := []error{
-			assist.ErrInvalidRequest, assist.ErrNoDraft, assist.ErrManagedUnavailable, account.ErrNoConsent, assist.ErrNotManaged,
-			assist.ErrPolicyTooLarge, assist.ErrBusy, assist.ErrProvider, assist.ErrInvalidProposal, assist.ErrNoAssistWorkflow,
-			proposal.ErrStale, account.ErrBudgetExhausted, onboarding.ErrNoSandbox, api.ErrRateLimited,
+			account.ErrNoConsent, onboarding.ErrNoSandbox, onboarding.ErrBusy, onboarding.ErrAlreadyOnboarded, api.ErrRateLimited,
 		}
 		_, _, unknown := explain(errors.New("boom"))
 		seen := map[string]error{unknown: errors.New("unknown")}

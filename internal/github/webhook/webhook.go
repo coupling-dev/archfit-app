@@ -15,11 +15,9 @@ const (
 	PullOpened          EventKind = "pull_opened"       // opened, reopened, ready_for_review
 	PullSynchronized    EventKind = "pull_synchronized" // new head SHA
 	PullClosed          EventKind = "pull_closed"
-	ReviewChanged       EventKind = "review_changed" // submitted, edited, dismissed
 	PullCommented       EventKind = "pull_commented" // a comment created on a pull request
 	IssueOpened         EventKind = "issue_opened"   // an issue opened; never a pull request
 	DefaultBranchPush   EventKind = "default_branch_push"
-	BranchPush          EventKind = "branch_push"          // a push to a branch other than the default branch
 	InstallationAdded   EventKind = "installation_added"   // created, or repositories added
 	InstallationRemoved EventKind = "installation_removed" // deleted
 	ReposRemoved        EventKind = "repos_removed"
@@ -42,8 +40,6 @@ type Event struct {
 	BaseRef        string
 	DefaultBranch  string   // the repository's default branch; "" when the payload does not name one
 	Branch         string   // push kinds only: the branch, without "refs/heads/"
-	Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
-	PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
 	ChangedPaths   []string // default_branch_push only
 	Before         string   // default_branch_push only: the commit before the push; "" when the push created the branch
 	CommentID      int64    // pull_commented only: the comment's ID

@@ -29,7 +29,7 @@ func TestRepositoryOfWaitingAccountAnswersWaiting(t *testing.T) {
 	e.grant("alice", strangerRepo, "admin")
 	c := e.as("alice", "admin")
 
-	for _, path := range []string{"overview", "findings", "policy", "data-sharing"} {
+	for _, path := range []string{"overview", "findings", "graph", "data-sharing"} {
 		res := c.get("/api/repos/" + strangerRepo + "/" + path)
 		wantStatus(t, res, http.StatusForbidden)
 		if got := decodeAs[errorJSON](t, res); got.Waiting != "stranger" {

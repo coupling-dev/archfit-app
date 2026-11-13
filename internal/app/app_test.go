@@ -30,12 +30,12 @@ func startRun(t *testing.T, c Config, log *slog.Logger) (base string, network *n
 func TestOptionalDependenciesAreOptional(t *testing.T) {
 	c := validConfig(t)
 
-	st, sandbox, provider, err := platform(c, nil, http.DefaultClient)
+	st, sandbox, err := platform(c, http.DefaultClient)
 	if err != nil {
 		t.Fatalf("platform: %v", err)
 	}
-	if st == nil || sandbox != nil || provider != nil {
-		t.Errorf("platform = (%v, %v, %v), want a store, nil sandbox, nil provider", st, sandbox, provider)
+	if st == nil || sandbox != nil {
+		t.Errorf("platform = (%v, %v), want a store and a nil sandbox", st, sandbox)
 	}
 
 	base, network, stop := startRun(t, c, slog.New(slog.DiscardHandler))
@@ -57,7 +57,7 @@ func TestOptionalDependenciesAreOptional(t *testing.T) {
 	t.Run("firestore starts without contacting Google", func(t *testing.T) {
 		c := validConfig(t)
 		c.StoreDriver, c.FirestoreProject = storeFirestore, "coupling-dev-510710"
-		st, _, _, err := platform(c, nil, http.DefaultClient)
+		st, _, err := platform(c, http.DefaultClient)
 		if err != nil || st == nil {
 			t.Fatalf("platform = %v, %v, want a Firestore store", st, err)
 		}
@@ -88,13 +88,6 @@ func TestOptionalDependenciesAreOptional(t *testing.T) {
 			t.Errorf("run = %v, want nil after cancellation", err)
 		}
 	})
-
-	t.Run("a configured key selects the Anthropic provider", func(t *testing.T) {
-		_, _, provider, err := platform(c, []byte(testAnthropicKey), http.DefaultClient)
-		if err != nil || provider == nil {
-			t.Errorf("platform = (%v, %v), want a provider", provider, err)
-		}
-	})
 }
 
 func TestRequiredDependenciesFailStartup(t *testing.T) {
@@ -119,9 +112,6 @@ func TestRequiredDependenciesFailStartup(t *testing.T) {
 		{"empty operator token file", func(t *testing.T, c *Config) {
 			c.OperatorTokenFile = writeFile(t, t.TempDir(), "operator", nil)
 		}, envOperatorTokenFile},
-		{"configured but empty Anthropic key file", func(t *testing.T, c *Config) {
-			c.AnthropicKeyFile = writeFile(t, t.TempDir(), "anthropic", nil)
-		}, envAnthropicKeyFile},
 		{"missing base URL", func(_ *testing.T, c *Config) { c.BaseURL = "" }, envBaseURL},
 		{"missing app ID", func(_ *testing.T, c *Config) { c.AppID = 0 }, envAppID},
 		{"unknown store driver", func(_ *testing.T, c *Config) { c.StoreDriver = "redis" }, envStore},
@@ -155,7 +145,7 @@ func TestRequiredDependenciesFailStartup(t *testing.T) {
 
 	t.Run("unknown drivers are refused by platform too", func(t *testing.T) {
 		for _, c := range []Config{{StoreDriver: "redis", SandboxDriver: sandboxNone}, {StoreDriver: storeMemory, SandboxDriver: "docker"}} {
-			if _, _, _, err := platform(c, nil, http.DefaultClient); err == nil {
+			if _, _, err := platform(c, http.DefaultClient); err == nil {
 				t.Errorf("platform(%+v) = nil error", c)
 			}
 		}
@@ -215,7 +205,6 @@ func TestGracefulShutdown(t *testing.T) {
 // Not parallel: run installs the capturing logger as the slog default.
 func TestLogsNeverContainSecretsOrBodies(t *testing.T) {
 	c := validConfig(t)
-	c.AnthropicKeyFile = writeFile(t, t.TempDir(), "anthropic", []byte(testAnthropicKey))
 	logs := &lockedBuffer{}
 	base, network, stop := startRun(t, c, slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
@@ -269,7 +258,7 @@ func TestLogsNeverContainSecretsOrBodies(t *testing.T) {
 
 func TestImportsStayInsideTheDesign(t *testing.T) {
 	allowed := map[string]bool{}
-	for _, p := range []string{"gate", "control", "control/assist/anthropic", "store", "store/firestore", "gcptoken", "github/auth", "github/api", "github/webhook", "github/oidc", "queue", "queue/cloudtasks"} {
+	for _, p := range []string{"gate", "control", "store", "store/firestore", "gcptoken", "github/auth", "github/api", "github/webhook", "github/oidc", "queue", "queue/cloudtasks"} {
 		allowed[modulePath+"internal/"+p] = true
 	}
 	out, err := exec.CommandContext(t.Context(), "go", "list", "-f", `{{join .Imports "\n"}}`, ".").Output()
@@ -298,7 +287,6 @@ var (
 	oauthField      = secretField{envOAuthSecretFile, func(c *Config, v string) { c.OAuthSecretFile = v }}
 	cookieField     = secretField{envCookieKeyFile, func(c *Config, v string) { c.CookieKeyFile = v }}
 	operatorField   = secretField{envOperatorTokenFile, func(c *Config, v string) { c.OperatorTokenFile = v }}
-	anthropicField  = secretField{envAnthropicKeyFile, func(c *Config, v string) { c.AnthropicKeyFile = v }}
 )
 
 // roleConfig is validConfig for role with only the given secret settings kept; every other one is empty.
@@ -306,7 +294,7 @@ func roleConfig(t *testing.T, role string, own []secretField) Config {
 	t.Helper()
 	full := validConfig(t)
 	c := full
-	for _, f := range []secretField{privateKeyField, webhookField, oauthIDField, oauthField, cookieField, operatorField, anthropicField} {
+	for _, f := range []secretField{privateKeyField, webhookField, oauthIDField, oauthField, cookieField, operatorField} {
 		f.set(&c, "")
 	}
 	for _, f := range own {
@@ -335,7 +323,7 @@ func TestEachRoleStartsWithOnlyItsSecrets(t *testing.T) {
 	}{
 		{roleAll, []secretField{privateKeyField, webhookField, oauthIDField, oauthField, cookieField, operatorField}, nil},
 		{rolePublic, []secretField{privateKeyField, webhookField, oauthIDField, oauthField, cookieField}, []secretField{operatorField}},
-		{roleWorker, []secretField{privateKeyField, webhookField, operatorField}, []secretField{oauthField, cookieField, anthropicField}},
+		{roleWorker, []secretField{privateKeyField, webhookField, operatorField}, []secretField{oauthField, cookieField}},
 	}
 	for _, r := range roles {
 		t.Run(r.role+" starts with only its own secrets", func(t *testing.T) {

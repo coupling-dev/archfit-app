@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -19,25 +18,6 @@ import (
 // entitlementTimeout bounds the Store read so that a Store outage never blocks a merge.
 // A variable only so that tests need not wait for it.
 var entitlementTimeout = 2 * time.Second
-
-const (
-	reviewApproved  = "APPROVED"
-	reviewCommented = "COMMENTED"
-
-	reviewChangesRequested = "CHANGES_REQUESTED"
-	reviewDismissed        = "DISMISSED"
-)
-
-const (
-	// pusherSep separates the logins of a pusher record; a GitHub login holds no newline.
-	pusherSep = "\n"
-	// maxPushers bounds one record. Past it a further account is not recorded: no real commit is pushed by that many
-	// accounts, and an unbounded value would grow with every push of a hot SHA.
-	maxPushers     = 32
-	recordAttempts = 5
-)
-
-var errRecordContention = errors.New("inputs: record pusher: store contention")
 
 type resolver struct {
 	repos  api.Repos
@@ -57,7 +37,6 @@ func (r *resolver) Resolve(ctx context.Context, t Target, now time.Time) (Truste
 	}
 	ent := r.entitlement(ctx, t.Repo.InstallationID)
 	out := Trusted{
-		Approval:    ApprovalNotRequired,
 		Suspended:   suspended(t.Repo.Private, ent, now),
 		Entitlement: ent,
 	}
@@ -112,50 +91,12 @@ func (r *resolver) Resolve(ctx context.Context, t Target, now time.Time) (Truste
 		return out, nil
 	}
 
+	// A pull request that changes a protected path is never approved: not by a push, a review or the App. Its inputs
+	// stay those of the protected ref, and the verdict asks for action (owner_approval_missing).
 	out.ProtectedPaths, err = r.changedProtected(ctx, t, s)
 	if err != nil {
 		return Trusted{}, err
 	}
-	if len(out.ProtectedPaths) == 0 {
-		return out, nil
-	}
-	out.Approval = ApprovalMissing
-	if t.Fork {
-		return out, nil
-	}
-
-	reviews, err := r.pulls.Reviews(ctx, t.Repo.RepoRef, t.PullRequest)
-	if err != nil {
-		return Trusted{}, fmt.Errorf("inputs: reviews: %w", err)
-	}
-	by, objections, history, err := r.approvalDecision(ctx, t, s, out.ProtectedPaths, reviews)
-	if err != nil {
-		return Trusted{}, err
-	}
-	out.Objections, out.DecisionHistory = objections, history
-	if by == "" {
-		return out, nil
-	}
-	out.Approval, out.ApprovedBy = ApprovalGranted, by
-
-	// The single exception to "never trust the head tree": hash what a base-version owner approved.
-	for _, f := range trusted {
-		if !slices.Contains(out.ProtectedPaths, f.path) {
-			continue
-		}
-		raw, err := r.file(ctx, t, t.HeadSHA, f.path)
-		if err != nil {
-			return Trusted{}, err
-		}
-		if raw == nil {
-			continue
-		}
-		*f.digests = append(*f.digests, policy.Digest(raw))
-		if f.path == policy.PolicyPath {
-			waivers = append(waivers, parseWaivers(t, raw)...)
-		}
-	}
-	out.EarliestWaiverExpiry = earliestExpiry(waivers, now)
 	return out, nil
 }
 
@@ -221,88 +162,6 @@ func protectedPaths(changed []string, truncated bool, s settings.Settings) []str
 		}
 	}
 	return out
-}
-
-// RecordPusher adds login to the set of accounts that pushed t's head, for attribution only: nothing grants an
-// approval from it, because a local coding agent pushes with its owner's credentials. The set is keyed by the head
-// SHA: a later head has its own set, and an empty login writes nothing. It only ever grows, so the record does not
-// depend on event order.
-func (r *resolver) RecordPusher(ctx context.Context, t Target, login string) error {
-	if login == "" {
-		return nil
-	}
-	tenant, key := store.Tenant(t.Repo.InstallationID), pusherKey(t)
-	for range recordAttempts {
-		old, err := r.store.Get(ctx, tenant, key)
-		var pushers []string
-		switch {
-		case errors.Is(err, store.ErrNotFound):
-			old = nil
-		case err != nil:
-			return fmt.Errorf("inputs: record pusher: %w", err)
-		default:
-			pushers = strings.Split(string(old), pusherSep)
-		}
-		known := slices.ContainsFunc(pushers, func(p string) bool { return strings.EqualFold(p, login) })
-		if known || len(pushers) >= maxPushers {
-			return nil
-		}
-		swapped, err := r.store.CompareAndSwap(ctx, tenant, key, old, []byte(strings.Join(append(pushers, login), pusherSep)))
-		if err != nil {
-			return fmt.Errorf("inputs: record pusher: %w", err)
-		}
-		if swapped {
-			return nil
-		}
-	}
-	return errRecordContention // the queue retries the delivery
-}
-
-// pusherKey is the Store key of the accounts that pushed t's head. Repository names compare case-insensitively.
-func pusherKey(t Target) string {
-	return "pusher/" + strings.ToLower(t.Repo.FullName) + "/" + t.HeadSHA
-}
-
-// approver returns the first owner, in review order, whose latest non-comment review approves headSHA; "" if none.
-// An agent identity of s never approves, also when s names it an owner or a team of owners holds it.
-func approver(reviews []api.Review, s settings.Settings, headSHA string, member func(team, login string) (bool, error)) (string, error) {
-	latest := map[string]int{}
-	for i, rv := range reviews {
-		if rv.State != reviewCommented {
-			latest[strings.ToLower(rv.Reviewer)] = i
-		}
-	}
-	for i, rv := range reviews {
-		if rv.State != reviewApproved || rv.CommitSHA != headSHA || latest[strings.ToLower(rv.Reviewer)] != i ||
-			s.IsAgent(rv.Reviewer) {
-			continue
-		}
-		ok, err := isOwner(s.Owners, rv.Reviewer, member)
-		if err != nil {
-			return "", err
-		}
-		if ok {
-			return rv.Reviewer, nil
-		}
-	}
-	return "", nil
-}
-
-// isOwner reports whether login is one of owners: a GitHub login, or a team that member reports as containing it.
-func isOwner(owners []string, login string, member func(team, login string) (bool, error)) (bool, error) {
-	for _, owner := range owners {
-		if !strings.Contains(owner, "/") {
-			if strings.EqualFold(owner, login) {
-				return true, nil
-			}
-			continue
-		}
-		ok, err := member(owner, login)
-		if err != nil || ok {
-			return ok, err
-		}
-	}
-	return false, nil
 }
 
 // earliestExpiry skips expired waivers so that an old expiry does not hide the next one.

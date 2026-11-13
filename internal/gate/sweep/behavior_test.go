@@ -1,7 +1,6 @@
 package sweep
 
 import (
-	"errors"
 	"reflect"
 	"slices"
 	"testing"
@@ -268,23 +267,23 @@ func TestRestoredEntitlementNeedsFreshEvidence(t *testing.T) {
 	})
 }
 
-func TestLateOwnerApproval(t *testing.T) {
+// Rule 7b: owner_approval_missing stands while the pull request changes a protected path, and nothing approves that
+// (M2 task 26). Once it changes none (settings that protect other paths), the run is re-run.
+func TestOwnerApprovalMissingClearsWithTheProtectedChange(t *testing.T) {
 	tests := []struct {
-		name     string
-		approval inputs.Approval
-		want     []int64
+		name  string
+		paths []string
+		want  []int64
 	}{
-		{"approval on the head SHA", inputs.ApprovalGranted, []int64{9}},
-		{"approval on an older SHA", inputs.ApprovalMissing, nil},
-		{"approval no longer needed", inputs.ApprovalNotRequired, []int64{9}},
+		{"a protected change", []string{".archfit.yaml"}, nil},
+		{"no protected change any more", nil, []int64{9}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			w := newWorld(t)
 			r := w.repo(1, 11, "acme/shop")
 			tr := trusted()
-			tr.Approval = tc.approval
-			tr.ProtectedPaths = []string{".archfit.yaml"}
+			tr.ProtectedPaths = tc.paths
 			tg := w.pull(r, 1, tr)
 			w.check(tg, receipt(9, verdict.ReasonOwnerApprovalMissing), t0.Add(-day))
 
@@ -300,13 +299,11 @@ func TestLateOwnerApproval(t *testing.T) {
 	}
 }
 
-func TestWithdrawnApprovalEndsSuccess(t *testing.T) {
+func TestAProtectedChangeEndsSuccess(t *testing.T) {
 	withdrawn := func(tr inputs.Trusted) inputs.Trusted {
-		tr.Approval, tr.ProtectedPaths = inputs.ApprovalMissing, []string{".archfit-app.yaml", ".github/workflows/archfit.yaml"}
+		tr.ProtectedPaths = []string{".archfit-app.yaml", ".github/workflows/archfit.yaml"}
 		return tr
 	}
-	granted := trusted()
-	granted.Approval, granted.ProtectedPaths = inputs.ApprovalGranted, []string{".archfit-app.yaml"}
 	advisory := withdrawn(trusted())
 	advisory.Settings.Gate = settings.GateAdvisory
 	failed := receipt(9, verdict.ReasonBlockingFindings)
@@ -323,7 +320,7 @@ func TestWithdrawnApprovalEndsSuccess(t *testing.T) {
 		{"success", receipt(9, verdict.ReasonHealthy), withdrawn(trusted()), []verdict.ReasonCode{verdict.ReasonOwnerApprovalMissing}},
 		{"failure", failed, withdrawn(trusted()), []verdict.ReasonCode{verdict.ReasonOwnerApprovalMissing}},
 		{"withdrawn while the policy also changed", stalePolicy, withdrawn(trusted()), []verdict.ReasonCode{verdict.ReasonOwnerApprovalMissing}},
-		{"approval still granted", receipt(9, verdict.ReasonHealthy), granted, nil},
+		{"no protected change", receipt(9, verdict.ReasonHealthy), trusted(), nil},
 		{"the check already asks for action", receipt(9, verdict.ReasonPolicyMismatch), withdrawn(trusted()), nil},
 		{"advisory mode", receipt(9, verdict.ReasonHealthy), advisory, nil},
 	}
@@ -341,7 +338,7 @@ func TestWithdrawnApprovalEndsSuccess(t *testing.T) {
 				t.Errorf("published %v, want %v", got, tc.want)
 			}
 			if len(w.actions.rerunCalls) != 0 {
-				t.Errorf("re-runs = %v: no run can pass before an owner approves again", w.actions.rerunCalls)
+				t.Errorf("re-runs = %v: no run can pass while the pull request changes a protected path", w.actions.rerunCalls)
 			}
 			if len(tc.want) == 0 {
 				return
@@ -364,9 +361,8 @@ func TestWithdrawnApprovalEndsSuccess(t *testing.T) {
 // Rule 5a decides again inside the publication lease, from the gate check and the inputs as they are there.
 func TestWithdrawalDecidesInsideTheLease(t *testing.T) {
 	withdrawn := trusted()
-	withdrawn.Approval, withdrawn.ProtectedPaths = inputs.ApprovalMissing, []string{".archfit-app.yaml"}
-	granted := withdrawn
-	granted.Approval = inputs.ApprovalGranted
+	withdrawn.ProtectedPaths = []string{".archfit-app.yaml"}
+	cleared := trusted()
 	newer := receipt(9, verdict.ReasonHealthy)
 	newer.RunAttempt = 2
 
@@ -381,7 +377,7 @@ func TestWithdrawalDecidesInsideTheLease(t *testing.T) {
 		{"a newer attempt turned green", func(w *world, tg inputs.Target) {
 			w.pub.states[checkKey(tg)] = feedback.CheckState{Exists: true, StartedAt: t0, Receipt: newer}
 		}, []verdict.ReasonCode{verdict.ReasonOwnerApprovalMissing}, 2, 0},
-		{"the owner approved again", func(w *world, tg inputs.Target) { w.trust(tg, granted) }, nil, 0, 0},
+		{"the protected change is gone", func(w *world, tg inputs.Target) { w.trust(tg, cleared) }, nil, 0, 0},
 		{"the inputs cannot be read", func(w *world, tg inputs.Target) { w.resolver.errs[pullKey(tg)] = errBoom }, nil, 0, 1},
 	}
 	for _, tc := range tests {
@@ -429,47 +425,5 @@ func TestStoreOutageDoesNotSuspend(t *testing.T) {
 
 	if w.calls() != (calls{}) || sum.Suspended != 0 || w.state(tg).Receipt != want {
 		t.Errorf("calls = %+v, summary = %+v, receipt = %+v, want the receipt to stand", w.calls(), sum, w.state(tg).Receipt)
-	}
-}
-
-func TestDecisionRequestsAreRevalidatedOncePerOnboardedPull(t *testing.T) {
-	w := newWorld(t)
-	r := w.repo(1, 11, "acme/shop")
-	first := w.pull(r, 1, trusted())
-	second := w.pull(r, 2, func() inputs.Trusted { tr := trusted(); tr.PolicyDigests = []string{"p2", "p1"}; return tr }())
-	advisory := w.pull(r, 3, func() inputs.Trusted { tr := trusted(); tr.Settings.Gate = settings.GateAdvisory; return tr }())
-	w.pass(t0)
-
-	numbers := map[int][]string{}
-	for i, tg := range w.decisions.targets {
-		numbers[tg.PullRequest] = w.decisions.digests[i]
-	}
-	want := map[int][]string{first.PullRequest: {"p1"}, second.PullRequest: {"p2", "p1"}, advisory.PullRequest: {"p1"}}
-	if !reflect.DeepEqual(numbers, want) || len(w.decisions.targets) != 3 {
-		t.Errorf("revalidated %v (%d calls), want %v: every onboarded pull with its own trusted digests", numbers, len(w.decisions.targets), want)
-	}
-}
-
-func TestDecisionRevalidationSkipsPullsThatAreNotOnboarded(t *testing.T) {
-	w := newWorld(t)
-	r := w.repo(1, 11, "acme/shop")
-	w.pull(r, 1, inputs.Trusted{})
-	w.pass(t0)
-	if len(w.decisions.targets) != 0 {
-		t.Errorf("revalidated %d pulls of a repository without settings", len(w.decisions.targets))
-	}
-}
-
-func TestDecisionRevalidationFailureDoesNotSkipTheCheckRules(t *testing.T) {
-	w := newWorld(t)
-	r := w.repo(1, 11, "acme/shop")
-	tg := w.pull(r, 1, trusted())
-	w.decisions.err = errors.New("fake: store down")
-	sum := w.pass(t0)
-	if !w.state(tg).Exists || !w.state(tg).Pending {
-		t.Errorf("the check rules did not run: %+v", w.state(tg))
-	}
-	if sum.Errors != 1 {
-		t.Errorf("summary = %+v, want the failure counted", sum)
 	}
 }

@@ -246,15 +246,15 @@ func TestTamperingNeverYieldsSuccess(t *testing.T) {
 		t.Fatalf("the untampered upload answered %+v; want success", got)
 	}
 
-	// And the only exception the design allows: a base-version owner approved the exact head SHA.
+	// No exception (M2 task 26): an owner's approving review of the exact head SHA does not admit a policy change.
 	w = newWorld(t)
 	w.seedDemo(f, "required", true)
 	w.edit(demoRepo, func(rp *repo) {
 		rp.push("main", demoBase, map[string]string{".archfit.yaml": string(loadFixture(t, "real-blocked-no-baseline").policy)})
 		rp.pull(demoPull).reviews = []review{{owner, "APPROVED", demoHead}}
 	})
-	if got := newSystem(t, w, options{}).upload(demoUpload(f)); got.Conclusion != "success" {
-		t.Fatalf("the owner-approved policy change answered %+v; want success", got)
+	if got := newSystem(t, w, options{}).upload(demoUpload(f)); got.Conclusion != "action_required" || got.Reason != "owner_approval_missing" {
+		t.Fatalf("the owner-reviewed policy change answered %+v; want action_required, owner_approval_missing", got)
 	}
 }
 

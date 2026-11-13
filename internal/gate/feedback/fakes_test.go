@@ -300,11 +300,3 @@ func (f *fakePulls) ChangedFiles(context.Context, api.RepoRef, int) ([]string, b
 	defer f.mu.Unlock()
 	return slices.Clone(f.changed), f.truncated, nil
 }
-
-func (f *fakePulls) Reviews(context.Context, api.RepoRef, int) ([]api.Review, error) {
-	return nil, nil
-}
-
-func (f *fakePulls) TeamMember(context.Context, api.RepoRef, string, string) (bool, error) {
-	return false, nil
-}

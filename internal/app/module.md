@@ -7,7 +7,7 @@
 ## Purpose
 
 `app` turns configuration into one running process: it loads secrets from file references, constructs every
-module, chooses the platform implementations of `Store`, `Sandbox`, `Queue` and the LLM `Provider`, mounts the
+module, chooses the platform implementations of `Store`, `Sandbox` and `Queue`, mounts the
 HTTP routes of the process role, verifies and queues webhooks, processes queued webhooks, and guards the operator
 and worker endpoints. Without it `cmd/reporter` would
 have to know every module, and the rule "the gate keeps working when the control plane fails" would have no
@@ -55,7 +55,7 @@ single place where it is enforced at runtime.
   `control.Grant` (body rules under Operator endpoints below); on the worker it needs both.
 - Isolation at runtime: the two `control` HTTP handlers are wrapped with panic recovery and a per-request timeout; a panic
   or timeout there never reaches the gate routes. The deadline of every route is in the Timeouts table below: 55 seconds
-  **[default]** for the control routes, 300 seconds **[default]** for the managed assist route only, and the gate upload route
+  **[default]** for the control routes, and the gate upload route
   has its own 55 seconds **[default]** (target: feedback within 60 seconds).
 - Base URL: `ARCHFIT_BASE_URL` must not end in `/`. It is the OIDC audience, compared byte for byte with the token's
   `aud`, and the Action refuses an endpoint with a trailing slash; a slash here would refuse every upload.
@@ -64,8 +64,8 @@ single place where it is enforced at runtime.
   | Role     | Reads                                                                                      | Never reads                                   |
   | -------- | ------------------------------------------------------------------------------------------ | --------------------------------------------- |
   | `all`    | every secret                                                                               | nothing                                       |
-  | `public` | App key, webhook secrets, OAuth secret, cookie key, Anthropic key                          | operator token                                |
-  | `worker` | App key, webhook secrets, operator token                                                   | OAuth secret, cookie key, Anthropic key       |
+  | `public` | App key, webhook secrets, OAuth secret, cookie key                                         | operator token                                |
+  | `worker` | App key, webhook secrets, operator token                                                   | OAuth secret, cookie key                      |
 
   The worker builds its control façade with `control.NewWorker`, which takes no UI dependency, and passes no OAuth
   fields to `auth.New`, so it holds no OAuth client. `ARCHFIT_GITHUB_OAUTH_CLIENT_ID`, `ARCHFIT_GITHUB_OAUTH_SECRET_FILE`
@@ -89,7 +89,7 @@ single place where it is enforced at runtime.
   `FirestoreProject`, `FirestoreDatabase` and `FirestoreEmulator`, and a `gcptoken.Source` over the shared client
   (nil, and one warning log line, when the emulator is set). `ARCHFIT_FIRESTORE_PROJECT` is required with
   `"firestore"`; an invalid project or database ID is a startup error. Startup sends no request to Google. `SandboxDriver` `"none"` → nil `Sandbox`
-  (managed discovery reports "not available"); `AnthropicKeyFile` empty → nil `Provider`. `control.New` and `anthropic.New` return errors; both are startup errors (a configured but invalid LLM key must not start silently). `app` passes the same `TokenSource` to `api.New` and to `control.Deps.Tokens`. Unknown driver names are a startup error. New drivers are added here and nowhere else.
+  (managed discovery reports "not available"). `control.New` returns an error, which is a startup error. `app` passes the same `TokenSource` to `api.New` and to `control.Deps.Tokens`. Unknown driver names are a startup error. New drivers are added here and nowhere else.
 - Readiness (`GET /ready`, every role, no credential): the check of the release canary and of a post-deploy check.
   It is not a startup probe: Cloud Run runs that on every new instance, and a GitHub API outage would then stop new
   instances, intake included, although intake does not need GitHub. The startup probe is `GET /health`. It runs two probes at the same time, under one 5-second deadline **[default]** that includes the GitHub
@@ -139,7 +139,7 @@ Supporting. Wiring has no business rules and changes only when a module or platf
 - The operator token scheme for `/internal/*`, and the invoker identity check of the worker.
 - Enqueue deadline: 4 s per task **[default]**, so both tasks fit inside GitHub's 10-second delivery timeout.
 - Server settings: read timeout 15 s, write timeout 310 s, idle 60 s, shutdown grace 10 s **[default]**. The write timeout
-  is above the longest route deadline (300 s), so a route's own deadline always answers before the server cuts the connection.
+  is above the longest route deadline (55 s), so a route's own deadline always answers before the server cuts the connection.
 
 ## Public Contract
 
@@ -155,7 +155,6 @@ type Config struct {
     OAuthSecretFile  string // ARCHFIT_GITHUB_OAUTH_SECRET_FILE; never read by the worker role
     CookieKeyFile    string // ARCHFIT_COOKIE_KEY_FILE; never read by the worker role
     OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
-    AnthropicKeyFile string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM; never read by the worker role
     StoreDriver      string // ARCHFIT_STORE, "memory" (default) or "firestore"
     FirestoreProject string // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
     FirestoreDatabase string // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
@@ -200,7 +199,6 @@ func NewLogger(w io.Writer) *slog.Logger
 | `POST /internal/grants`                 | `all`           | `app`                                             | `app` (operator bearer token)                      |
 | `POST /internal/grants`                 | `worker`        | `app`                                             | `app` (invoker ID token and operator token)        |
 | any other `/internal/*`                 | every role      | `404`                                             | none                                               |
-| `POST /api/repos/{owner}/{name}/assist` | `all`, `public` | `control.UIHandler()`, under the long deadline    | control (session)                                  |
 | `/` and everything else                 | `all`, `public` | `control.UIHandler()`                             | control (session)                                  |
 
 The `worker` role answers `404` for every route it does not mount, the UI included.
@@ -220,15 +218,7 @@ The deadline is the one the handler sees on its request context. `http.TimeoutHa
 | `POST /internal/webhooks`               | none     | the half runs under its own deadline (gate 55 s, control 55 s), attached to the dispatch request             |
 | `POST /internal/sweep`                  | none     | operator call; no deadline of its own                                                                        |
 | `POST /internal/grants`                 | none     | operator call; no deadline of its own                                                                        |
-| `POST /api/repos/{owner}/{name}/assist` | 300 s    | managed assist; the sum below                                                                                |
 | `/` and everything else                 | 55 s     | control per-request timeout                                                                                  |
-
-`control` measured the managed assist route end to end at about 285 seconds worst case: ui save 60 s, assist pre-checks
-30 s, provider 150 s, settle 5 s (detached), propose 40 s. A shorter route deadline cancels the provider call and the
-full budget reservation is settled for nothing, so this route, and only this route, gets 300 seconds.
-
-The shared outbound `http.Client` timeout of 30 seconds does not bound the provider call: `anthropic.New` copies
-the client and clears `Timeout` on its copy, so the 150 second deadline of `control/assist` is the one that applies.
 
 ### Operator endpoints
 
@@ -261,7 +251,7 @@ All integrations are constructor or handler calls: contract strength. `app` hold
 - **LCA / Rank / Distance**: internal (root) / 1 / 1
 - **Volatility**: high on the gate side; the façade is kept small on purpose
 - **Balanced?**: yes
-- **Shared knowledge**: the façade, the sweep summary that `/internal/sweep` returns, and `NewReceiver`, which `app` passes to `control`; `app` also passes the `*Gate` itself to `control.Deps.Approvals`, the seam for the pull-request architecture-decision banner and actions, and to `control.Deps.Decisions`, the seam of its decision request buttons. `app` builds one `Admissions` with `NewAdmissions(Store, `app` also passes it to `control.Deps.DecisionQueue`, the read-only list of the decision requests that wait for an owner.
+- **Shared knowledge**: the façade, the sweep summary that `/internal/sweep` returns, and `NewReceiver`, which `app` passes to `control`; `app` also passes the `*Gate` itself to `control.Deps.RequestViews`, the read-only seam of the request page, and to `control.Deps.Answers`, the seam of an owner's answer. `app` builds one `Admissions` with `NewAdmissions(Store,
   ApprovedAccounts)` and passes that same value to `Deps.Admissions`, `NewReceiver` and `control.Deps.Admissions`, so the
   three agree on who is served. The worker role builds it too, for the gate.
   In these blocks `Config` means `gate.Config` (the sweep thresholds), not this module's `Config`. `app` sets
@@ -359,13 +349,13 @@ type Receiver interface {
 - **LCA / Rank / Distance**: internal (root) / 1 / 1
 - **Volatility**: high inside control; the façade is stable
 - **Balanced?**: yes
-- **Shared knowledge**: the façade and the two platform seams `app` fills. In this block `Deps` means `control.Deps`.
-  `app` also passes `Admissions` (the value the gate uses), `Approvals`, `Decisions` and `DecisionQueue` (all the `*Gate`) and `Operators`
-  (`Config.Operators`); `New` refuses a nil `Admissions`, `Approvals`, `Decisions` or `DecisionQueue`. `NewWorker` takes `Admissions` too (required), for installation events and the sweep, and no `Operators`.
+- **Shared knowledge**: the façade and the platform seam `app` fills. In this block `Deps` means `control.Deps`.
+  `app` also passes `Admissions` (the value the gate uses), `RequestViews` and `Answers` (both the `*Gate`) and `Operators`
+  (`Config.Operators`); `New` refuses a nil `Admissions`, `RequestViews` or `Answers`. `NewWorker` takes `Admissions` too (required), for installation events and the sweep, and no `Operators`.
 
 <!-- contract: Control, Deps, New, WorkerDeps, NewWorker — restated from internal/control/module.md -->
 ```go
-// Deps are wired by internal/app. Sandbox and Provider may be nil: managed features then report "not available".
+// Deps are wired by internal/app. Sandbox may be nil: managed discovery then reports "not available".
 type Deps struct {
     GitHub    *Client
     Tokens    TokenSource
@@ -374,20 +364,20 @@ type Deps struct {
     Receiver  Receiver
     // Admissions says which installations the App serves; Operators (GitHub user IDs) approve the others on /admin.
     Admissions *Admissions
-    // Approvals reads protected owner authority and records authenticated PR decisions through the gate façade.
-    Approvals Approvals
-    // Decisions lists, declines and approves the decision requests of unattended agents for the pull request page.
-    Decisions Decisions
+    // RequestViews reads a request and the preview of each answer for the request page: the gate façade. It reads only.
+    RequestViews RequestViews
+    // Answers records an owner's answer and carries it to the default branch: the gate façade. control/answers adds
+    // the passkey.
+    Answers   Answers
     Operators []int64
     Sandbox    Sandbox
-    Provider   Provider
     CookieKey  []byte
     BaseURL    string
     Now        func() time.Time
 }
 
 // WorkerDeps are the dependencies of the worker façade: it handles events, the sweep and grants, and serves no UI.
-// So it takes no OAuth, no cookie key, no Receiver, no Sandbox and no Provider.
+// So it takes no OAuth, no cookie key, no Receiver and no Sandbox.
 type WorkerDeps struct {
     GitHub     *Client
     Store      Store
@@ -440,27 +430,6 @@ type DiscoveryResult struct {
 
 // ErrNoSandbox is returned by the default Sandbox until a platform implementation is configured.
 var ErrNoSandbox = errors.New("onboarding: managed discovery is not available")
-```
-
-<!-- contract: Provider, Prompt, Completion — restated from internal/control/module.md -->
-```go
-// Provider is the LLM seam. Implementations own endpoint, model choice, and pricing.
-type Provider interface {
-    // MaxCostMicroUSD is the worst-case cost of one Complete call for p; used to reserve budget.
-    MaxCostMicroUSD(p Prompt) int64
-    Complete(ctx context.Context, p Prompt) (Completion, error)
-}
-
-type Prompt struct {
-    System    string
-    User      string
-    MaxTokens int
-}
-
-type Completion struct {
-    Text         string
-    CostMicroUSD int64
-}
 ```
 
 ### internal/queue, internal/queue/cloudtasks
@@ -527,29 +496,6 @@ type TokenSource interface {
 func New(c Config, ts TokenSource, hc *http.Client) (queue.Queue, error)
 ```
 
-### internal/control/assist/anthropic
-
-- **Counterpart**: internal/control/assist/anthropic/
-- **Direction**: app depends on it (constructor only); `control` publishes this package for that purpose
-- **Strength**: contract
-- **LCA / Rank / Distance**: internal (root) / 3 / 3
-- **Volatility**: moderate (provider may change)
-- **Balanced?**: yes — contract coupling tolerates any distance
-- **Shared knowledge**: `app` reads the key file and leaves `Model` empty for the default. In this block `Config` means `anthropic.Config`.
-  `app` passes the shared `http.Client`; `anthropic.New` clears `Timeout` on its own copy, so the 30-second value never cuts a provider call.
-
-<!-- contract: New, Config — restated from internal/control/assist/anthropic/module.md -->
-```go
-type Config struct {
-    APIKey string // from a secret reference
-    Model  string // default "claude-sonnet-5"
-}
-
-// New returns a Provider backed by the Anthropic Messages API over net/http.
-// New fails on an empty key or a model without an embedded price.
-func New(c Config, hc *http.Client) (Provider, error)
-```
-
 ### internal/store
 
 - **Counterpart**: internal/store/
@@ -567,7 +513,7 @@ func New(c Config, hc *http.Client) (Provider, error)
 // Every key is stored under its tenant prefix; no operation crosses tenants.
 type Tenant int64
 
-// SystemTenant holds App-wide keys (the managed-LLM budget counter). It is never a GitHub installation ID.
+// SystemTenant holds App-wide keys (the readiness probe). It is never a GitHub installation ID.
 const SystemTenant Tenant = 0
 ```
 
@@ -834,7 +780,7 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
 
 ## Change Vectors
 
-- A new `Store`, `Sandbox`, `Queue`, or `Provider` driver: one constructor call and one driver name.
+- A new `Store`, `Sandbox` or `Queue` driver: one constructor call and one driver name.
 - A new route or operator endpoint.
 - New configuration variables, timeouts, or log fields.
 - Another source for the approved accounts or operators (a Store list, a secret): only `Load` changes. The lists are
@@ -848,30 +794,20 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   halves are separate tasks with independent results: a control failure never blocks or repeats gate work.
   `gate.Sweep` runs even when `control.Sweep` fails or panics.
 - The public role never serves `/internal/*` and never reads the operator token. The worker role never serves the UI,
-  the uploads or intake, and never reads the OAuth secret, the cookie key or the Anthropic key.
+  the uploads or intake, and never reads the OAuth secret or the cookie key.
 - A task is GitHub's own delivery. The worker verifies the signature again, so the queue is not trusted. The half
   header is not signed; it only chooses between two handlers of the same verified delivery.
-- A failing or missing optional dependency (LLM key, sandbox driver) never prevents startup of the gate routes. A missing GitHub App credential, webhook secret, or base URL is a startup error, and so is a missing operator token outside the public role, a missing OAuth client ID, OAuth secret or cookie key outside the worker role, a configured previous webhook secret file that is empty or unreadable, and a missing worker URL or invoker in the worker role or with the cloudtasks driver. An empty `ARCHFIT_OPERATORS`
+- A failing or missing optional dependency (sandbox driver) never prevents startup of the gate routes. A missing GitHub App credential, webhook secret, or base URL is a startup error, and so is a missing operator token outside the public role, a missing OAuth client ID, OAuth secret or cookie key outside the worker role, a configured previous webhook secret file that is empty or unreadable, and a missing worker URL or invoker in the worker role or with the cloudtasks driver. An empty `ARCHFIT_OPERATORS`
   uses the default; a list with an element that is not a positive integer is a startup error naming the variable.
 - Secrets arrive as file paths; their contents are never logged, never placed in `Config` string form, never echoed in errors.
 - The approved accounts are logins and compare case-insensitively; the operators are user IDs, never logins, because a
   released login can be taken by someone else. The lists are configuration, not secrets.
-- An owner approval of a pull request head is reachable only behind `control/ui`'s browser session: no `/v1/` route
-  (OIDC uploads) and no CLI reaches `gate.Approvals`. `app` hands the `*Gate` to `control.Deps.Approvals` and `control.Deps.Decisions` and to nothing
-  else; `TestOwnerApprovalIsReachableOnlyFromTheBrowserSession` and `TestDecisionsAreReachableOnlyFromTheBrowserSession` pin it.
-- Declared restatement: that test names `control/ui`'s route `POST /api/repos/{o}/{n}/pulls/{number}/approve` and
-  `gate/inputs`' record key prefix `approval/` to prove where they are mounted and written. Owner of each: those two
-  modules. On drift the test fails; it never changes a route.
+- An owner's answer to a request is reachable only behind `control/ui`'s browser session: no `/v1/` route (OIDC uploads)
+  and no CLI reaches `gate.Answers`. `app` hands the `*Gate` to `control.Deps.RequestViews` and `control.Deps.Answers` and to nothing
+  else in `control`.
 - Tenant identity is never taken from a request here. `/internal/grants` is operator-authenticated and is the single place an installation ID arrives in a body; it is logged with the operator action.
 - Webhook body cap 25 MB **[default]**; bodies are never logged. Unknown events answer `202` and do nothing.
 - The server write timeout is greater than every route deadline. Raising a route deadline means raising the write timeout with it.
-- Declared restatement: the mux pattern `POST /api/repos/{owner}/{name}/assist` repeats one row of the route table of
-  `internal/control/ui` (there `POST /api/repos/{o}/{n}/assist`), because `control.UIHandler()` is one opaque handler and only
-  this route needs the long deadline. Owner of the rule: `control/ui`. If ui renames or moves the route, requests still
-  reach ui through `/`, but under 55 seconds: the provider call is cancelled and the full reservation is settled for
-  nothing. Remove the restatement when `control` publishes the assist route as its own handler or publishes the pattern.
-- Known ceiling: the shutdown grace of 10 seconds is shorter than the assist deadline, so a managed assist request in
-  flight at shutdown is cancelled. Upgrade trigger: managed assist traffic that makes deploy-time cancellations visible.
 - No background job tables and no queue state: the queue product holds queued tasks. The only goroutines `app`
   starts are the HTTP server and its shutdown watcher.
 - Standard library only.
@@ -979,26 +915,14 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   `400` and no call; `400` and no call; `401`.
 - **Test name**: `TestRouteDeadlines`
   **Scenario**: table over the route classes with fake handlers that record `ctx.Deadline()` and return at once: `POST /v1/reports`,
-  `POST /v1/discoveries`, `POST /v1/baselines`, `GET /`, `POST /api/repos/o/n/policy`, `GET /api/repos/o/n/assist`, `POST /api/repos/o/n/assist`, `POST /api/repos/o/n/assist/x`, the old `POST /r/o/n/assist`; the two webhook halves;
+  `POST /v1/discoveries`, `POST /v1/baselines`, `GET /`, `POST /api/repos/o/n/requests/431/answer`, `POST /api/repos/o/n/assist` (a removed route, which `ui` answers `404`); the two webhook halves;
   the operator routes. No sleeping.
-  **Expected behavior**: 55 s for every row except `POST /api/repos/o/n/assist`, which sees 300 s; the inline webhook halves each see 55 s although the
+  **Expected behavior**: 55 s for every row; the inline webhook halves each see 55 s although the
   request has no deadline; the operator routes see no deadline; the server write timeout is greater than every one of them.
 
 - **Test name**: `TestImportsStayInsideTheDesign`
   **Scenario**: list the package's imports with `go list`.
   **Expected behavior**: every import outside the standard library is a module listed under Integrations; anything else fails the test.
-- **Test name**: `TestDecisionsAreReachableOnlyFromTheBrowserSession`
-  **Scenario**: the same parse and route tables; `POST` the two decision paths (approve, decline) with an Actions OIDC bearer token on every role.
-  **Expected behavior**: `ApproveDecision`, `ApprovedDecision`, `DeclineDecision` and `DecisionRequests` are each used only in `control/ui`; both routes are mounted as `s.apiRepo(permWrite, …)`; the paths reach `control.UI` and nothing else (the worker role reaches nothing).
-- **Test name**: `TestOwnerApprovalIsReachableOnlyFromTheBrowserSession`
-  **Scenario**: parse every non-test Go file under `cmd/` and `internal/`; read the route tables of `control/ui` and of
-  this package; `go list -deps` of `gate/ingest` and `github/oidc`; `POST` the approve path, a `/v1/reports/approve`
-  path and `/v1/reports` with an Actions OIDC bearer token on every role.
-  **Expected behavior**: `Approve` is used only in `gate.(*Gate).Approve` and `ui.(*server).apiApprovePull`; the
-  handler only in `control/ui`'s route table, at the approve route, as `s.apiRepo(permWrite, s.apiApprovePull)`
-  (session, CSRF token, write access); the record key only in `gate/inputs`; the four `/v1/` routes are served by no
-  UI handler; the upload authentication links neither `gate/inputs` nor `store`; the approve paths reach only
-  `control.UI` (nothing on the worker) and `/v1/reports` only `gate.Upload`.
 
 ### Boundary Tests
 
@@ -1029,8 +953,8 @@ func WorkflowPath(jobWorkflowRef, fullName string) string
   **Scenario**: one line with a request context that holds a trace, one without a context.
   **Expected behavior**: the first carries the trace fields and its attributes; the second has no trace field.
 - **Test name**: `TestOptionalDependenciesAreOptional`
-  **Scenario**: no Anthropic key, sandbox `none`; then `ARCHFIT_STORE=firestore` with a project.
-  **Expected behavior**: startup succeeds; `control.Deps.Provider` and `Sandbox` are nil; gate routes serve. With
+  **Scenario**: sandbox `none`; then `ARCHFIT_STORE=firestore` with a project.
+  **Expected behavior**: startup succeeds; `Sandbox` is nil; gate routes serve. With
   Firestore, startup sends no outbound request. With a previous webhook secret file, intake answers `202` for a
   delivery signed with the current or the previous secret and `401` for one signed with neither.
 - **Test name**: `TestEachRoleStartsWithOnlyItsSecrets`

@@ -87,12 +87,6 @@ func (s *server) defaultBranchState(ctx context.Context, repo api.Repo) branchCh
 	return out
 }
 
-// checkWord is the latest run of one check on a commit, as a word and its reason title.
-func (s *server) checkWord(ctx context.Context, ref api.RepoRef, headSHA, name string) (state, reason string) {
-	_, state, reason = s.latestCheck(ctx, ref, headSHA, name)
-	return state, reason
-}
-
 // latestCheck is the latest run of one check on a commit, as the run, a word and its reason title; the run is nil when
 // there is none or the read failed.
 func (s *server) latestCheck(ctx context.Context, ref api.RepoRef, headSHA, name string) (run *api.CheckRun, state, reason string) {

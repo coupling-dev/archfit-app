@@ -54,7 +54,6 @@ func preconditionCases() []decideCase {
 		one("baseline not used", ReasonBaselineMismatch, func(f *Facts) { f.BaselineDigest = "" }),
 		one("labels digest", ReasonLabelsMismatch, labelsMismatch),
 		one("approval missing", ReasonOwnerApprovalMissing, approvalMissing),
-		one("approval unknown", ReasonOwnerApprovalMissing, func(f *Facts) { f.Trusted.Approval = "skipped" }),
 		one("not comparable", ReasonBaselineNotComparable, nonComparable),
 		one("no gate reference", ReasonBaselineNotComparable, gateRef(nil)),
 		one("unmeasured", ReasonMissingCoverage, engine(verdictHealthy, gatesUnmeasured)),

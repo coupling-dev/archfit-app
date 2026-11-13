@@ -56,8 +56,8 @@ func TestPullRequestLifecycle(t *testing.T) {
 	}{
 		{"open", "pull_request", prPayload("opened", sha1), PullOpened, sha1},
 		{"push to the PR", "pull_request", prPayload("synchronize", sha2), PullSynchronized, sha2},
-		{"review submitted", "pull_request_review", reviewPayload("submitted", sha2), ReviewChanged, sha2},
-		{"review dismissed", "pull_request_review", reviewPayload("dismissed", sha2), ReviewChanged, sha2},
+		{"review submitted", "pull_request_review", reviewPayload("submitted", sha2), Ignored, ""},
+		{"review dismissed", "pull_request_review", reviewPayload("dismissed", sha2), Ignored, ""},
 		{"convert to draft", "pull_request", prPayload("converted_to_draft", sha2), Ignored, ""},
 		{"ready for review", "pull_request", prPayload("ready_for_review", sha2), PullOpened, sha2},
 		{"close", "pull_request", prPayload("closed", sha2), PullClosed, sha2},
@@ -109,18 +109,6 @@ func TestInstallationLifecycle(t *testing.T) {
 	}
 }
 
-func TestBranchPushFields(t *testing.T) {
-	payload := set(set(pushPayload("refs/heads/feature/x", "main"), "after", shaA), "sender.login", "octocat")
-	ev := mustParse(t, "push", payload)
-	want := Event{
-		Kind: BranchPush, DeliveryID: testDelivery, InstallationID: 5001, Repo: "acme/shop", RepoPrivate: false,
-		HeadSHA: shaA, HeadRepo: "acme/shop", DefaultBranch: "main", Branch: "feature/x", Pusher: "octocat",
-	}
-	if !reflect.DeepEqual(ev, want) {
-		t.Errorf("Parse() = %+v, want %+v", ev, want)
-	}
-}
-
 func TestPushKinds(t *testing.T) {
 	const zeroSHA = "0000000000000000000000000000000000000000"
 	tests := []struct {
@@ -130,12 +118,12 @@ func TestPushKinds(t *testing.T) {
 		wantBase string
 	}{
 		{"push to main (default)", pushPayload("refs/heads/main", "main"), DefaultBranchPush, "main"},
-		{"push to a feature branch", pushPayload("refs/heads/feature/x", "main"), BranchPush, ""},
+		{"push to a feature branch", pushPayload("refs/heads/feature/x", "main"), Ignored, ""},
 		{"tag push", pushPayload("refs/tags/v1.0.0", "main"), Ignored, ""},
 		{"deletion of a branch", set(set(pushPayload("refs/heads/main", "main"), "deleted", true), "after", zeroSHA), Ignored, ""},
 		{"deletion of a feature branch", set(set(pushPayload("refs/heads/feature/x", "main"), "deleted", true), "after", zeroSHA), Ignored, ""},
 		{"default branch is trunk", pushPayload("refs/heads/trunk", "trunk"), DefaultBranchPush, "trunk"},
-		{"push to main when the default is trunk", pushPayload("refs/heads/main", "trunk"), BranchPush, ""},
+		{"push to main when the default is trunk", pushPayload("refs/heads/main", "trunk"), Ignored, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -148,30 +136,6 @@ func TestPushKinds(t *testing.T) {
 			}
 			if tt.wantKind == DefaultBranchPush && (ev.HeadRepo != ev.Repo || ev.HeadSHA != shaA || ev.PullRequest != 0) {
 				t.Errorf("push fields do not follow the Field sources rule: %+v", ev)
-			}
-		})
-	}
-}
-
-func TestBranchPushCarriesPusherType(t *testing.T) {
-	tests := []struct {
-		name       string
-		pusherType any
-		want       string
-	}{
-		{"absent", nil, ""},
-		{"user", "user", "user"},
-		{"deploy key", "deploy_key", "deploy_key"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			payload := set(pushPayload("refs/heads/feature/x", "main"), "sender.login", "octocat")
-			if tt.pusherType != nil {
-				set(payload, "pusher_type", tt.pusherType)
-			}
-			ev := mustParse(t, "push", payload)
-			if ev.PusherType != tt.want || ev.Pusher != "octocat" {
-				t.Errorf("PusherType = %q, Pusher = %q; want %q, octocat", ev.PusherType, ev.Pusher, tt.want)
 			}
 		})
 	}

@@ -38,7 +38,6 @@ const (
 	testOperatorToken   = "MARKER-operator-token"
 	testOAuthSecret     = "MARKER-oauth-secret"
 	testCookieKey       = "MARKER-cookie-key-0123456789abcd" // 32 bytes
-	testAnthropicKey    = "MARKER-anthropic-key"
 	bodyMarker          = "MARKER-request-body"
 
 	testWorkerURL = "https://worker.archfit.example"

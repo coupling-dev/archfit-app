@@ -3,13 +3,11 @@ package control
 import (
 	"errors"
 	"net/http"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
-	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -19,7 +17,6 @@ const (
 	onboardingBranch = "archfit/onboarding"
 	workflowPath     = ".github/workflows/archfit.yaml"
 	policyPath       = ".archfit.yaml"
-	monthlyBudget    = 20_000_000 // micro-USD: the App-wide managed-LLM cap of account
 )
 
 func (h *harness) rawEntitlement(id int64) string {
@@ -103,61 +100,6 @@ func TestStoreOutageIsNotNonPayment(t *testing.T) {
 	}
 	if got := h.rawEntitlement(7); got != lastGood {
 		t.Errorf("record changed during the outage:\n%s\n%s", lastGood, got)
-	}
-}
-
-func TestBudgetExhaustionStopsOnlyAssist(t *testing.T) {
-	h := newHarness(t)
-	r := repo(7, "org7/app", true)
-	h.gh.install(7, ghr(70, r.FullName, true))
-	h.gh.allow("alice", r.FullName, "admin")
-	h.provider.maxCost = 1000
-	h.provider.answer = Completion{Text: policyDraft, CostMicroUSD: 10}
-	h.sandbox.result = DiscoveryResult{DraftPolicy: []byte(policyDraft)}
-	if err := h.c.budget.Reserve(ctx, monthlyBudget, h.clock.Now()); err != nil {
-		t.Fatalf("Reserve: %v", err)
-	}
-
-	h.event(webhook.InstallationAdded, 7)
-	if err := h.c.Sweep(ctx); err != nil {
-		t.Errorf("Sweep: %v", err)
-	}
-	h.consent(7, account.ConsentSourceProcessing, account.ConsentManagedLLM)
-	if _, err := h.c.onboarding.StartManaged(ctx, r, []string{"org7/owners"}); err != nil {
-		t.Fatalf("StartManaged: %v", err)
-	}
-	h.gh.awaitManagedJob(r.FullName, onboardingBranch, policyPath)
-	h.gh.merge(r.FullName, onboardingBranch)
-
-	b := newBrowser(t, h.c.UIHandler())
-	b.signIn("alice")
-	page := policyPage(t, b, "")
-	save := map[string]string{"branch": page.Branch, "head_sha": page.HeadSHA, "content": policyDraft + "# reviewed\n"}
-	if rec := b.postJSON("/api/repos/org7/app/policy", save); rec.Code != http.StatusOK {
-		t.Fatalf("policy save = %d, want 200: %s", rec.Code, rec.Body.String())
-	}
-	branch := page.Branch
-	saved, ok := h.gh.file(r.FullName, branch, policyPath)
-	if !ok || !strings.Contains(saved, "# reviewed") {
-		t.Fatalf("policy save did not reach the draft branch %q", branch)
-	}
-
-	head := h.gh.pulls(r.FullName)
-	if len(head) != 2 {
-		t.Fatalf("%d pull requests, want the onboarding and the policy draft", len(head))
-	}
-	draft := policyPage(t, b, "?branch="+url.QueryEscape(branch))
-	_, err := h.c.assist.Propose(ctx, assist.ModeManaged, assist.Request{
-		Repo: r, Branch: branch, HeadSHA: draft.HeadSHA, Instruction: "allow ui to import store", By: "alice",
-	})
-	if !errors.Is(err, account.ErrBudgetExhausted) {
-		t.Errorf("Propose = %v, want ErrBudgetExhausted", err)
-	}
-	if h.provider.count() != 0 {
-		t.Errorf("%d LLM calls, want none", h.provider.count())
-	}
-	if !h.budgetBooked(monthlyBudget) {
-		t.Error("the budget counter moved")
 	}
 }
 
@@ -251,14 +193,13 @@ func TestControlFailureNeverReachesTheGate(t *testing.T) {
 	h.gh.install(7, ghr(70, r.FullName, true))
 	h.gh.allow("alice", r.FullName, "admin")
 	h.event(webhook.InstallationAdded, 7)
-	h.consent(7, account.ConsentManagedLLM)
+	h.consent(7, account.ConsentSourceProcessing)
 	b := newBrowser(t, h.c.UIHandler())
 	b.signIn("alice")
 	lastGood := h.rawEntitlement(7)
 
 	h.store.set(func(s *flakyStore) { s.failAll = true })
 	h.gh.set(func(g *fakeGitHub) { g.down = true })
-	h.provider.err = errBoom
 	h.receiver.answer(gate.Upload{}, &gate.Rejection{Status: http.StatusServiceUnavailable, Code: "github_unavailable"})
 	h.clock.Add(time.Hour)
 
@@ -278,11 +219,6 @@ func TestControlFailureNeverReachesTheGate(t *testing.T) {
 	}
 	if rec := h.upload("{}"); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("discovery upload = %d, want 503", rec.Code)
-	}
-	if _, err := h.c.assist.Propose(ctx, assist.ModeManaged, assist.Request{
-		Repo: r, Branch: "archfit/edit-alice", HeadSHA: strings.Repeat("a", 40), Instruction: "tidy", By: "alice",
-	}); err == nil {
-		t.Error("Propose = nil, want an error")
 	}
 
 	if got := h.rawEntitlement(7); got != lastGood {

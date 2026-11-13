@@ -460,9 +460,9 @@ func TestRecheckAfterAPush(t *testing.T) {
 			rc.PolicyDigest = "old"
 			w.check(tg, rc, t0.Add(-day))
 		}},
-		{"a withdrawn approval", func(w *world, tg inputs.Target, _ feedback.Receipt) {
+		{"a protected change", func(w *world, tg inputs.Target, _ feedback.Receipt) {
 			tr := trusted()
-			tr.Approval = inputs.ApprovalMissing
+			tr.ProtectedPaths = []string{".archfit.yaml"}
 			w.trust(tg, tr)
 		}},
 		{"a suspension", func(w *world, tg inputs.Target, _ feedback.Receipt) {
@@ -554,9 +554,9 @@ func TestTargetMovedDecidesInsideTheLease(t *testing.T) {
 			tr.PolicyDigests = []string{"p2"}
 			w.trust(tg, tr)
 		}, false},
-		{"the approval was withdrawn", func(w *world, tg inputs.Target) {
+		{"a protected change appeared", func(w *world, tg inputs.Target) {
 			tr := trusted()
-			tr.Approval = inputs.ApprovalMissing
+			tr.ProtectedPaths = []string{".archfit.yaml"}
 			w.trust(tg, tr)
 		}, false},
 		{"recheck was switched off", func(w *world, tg inputs.Target) {

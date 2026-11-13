@@ -74,18 +74,12 @@ there is no repair issue.
 | Permission    | Access       | What the App does with it                                                                                                           | Without it                                                                                                            |
 | ------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Checks        | Read & write | Posts `archfit/state` and `archfit/gate` on every pull request and default-branch push.                                             | No result on the pull request, and no gate.                                                                           |
-| Pull requests | Read & write | Opens its own pull requests (onboarding, policy, baseline). Reads reviews/requested reviewers, requests missing configured owners or teams, and mirrors owner decisions. | No setup pull requests, decision comments, review data, or automatic reviewer requests. |
+| Pull requests | Read & write | Opens its own pull requests (onboarding, policy, baseline). It does not read reviews or request reviewers. | No setup pull requests. |
 | Contents      | Read & write | Reads the policy and settings from the protected branch. Writes only branches named `archfit/…`, for its own pull requests.         | The App cannot read the approved policy or propose a change.                                                          |
-| Actions       | Read & write | Reads the Archfit run and its report artifact. Re-runs the Archfit run when its inputs change. Starts discovery and AI assist runs. | After an owner approves, the gate stays red until someone re-runs the job by hand. No discovery button, no AI assist. |
+| Actions       | Read & write | Reads the Archfit run and its report artifact. Re-runs the Archfit run when its inputs change. Starts discovery runs.               | After an owner answers, the gate stays red until someone re-runs the job by hand. No discovery button.                |
 | Metadata      | Read         | GitHub adds it to every App: repository name, default branch.                                                                       | Not optional.                                                                                                         |
 | Issues        | Read & write | Added by the release that brings the [repair issue](#repair-issue-on-the-default-branch): opens, updates and closes one issue when a push breaks the default branch. | No repair issue. Checks and comments work as before; the App logs each refused issue call. |
 | Merge queues  | Read         | Added by the release that brings [merge queue](#merge-queue) support: reads which pull requests a merge group holds, and receives the `merge_group` event. | A merge group never passes: its upload answers `503` and GitHub's timeout fails it. Pull requests work as before. |
-
-### Organization permissions
-
-| Permission | Access | What the App does with it                                               | Without it                          |
-| ---------- | ------ | ----------------------------------------------------------------------- | ----------------------------------- |
-| Members    | Read   | Checks that an approver is in an owner team, such as `acme/architects`. | Owners could only be single logins. |
 
 ### What the App never asks for
 
@@ -100,7 +94,7 @@ there is no repair issue.
   those branches and never merges. Protect the default branch with a ruleset so that a pull request and a review are
   needed for every change, including one from the App.
 - **Actions write lets the App start any workflow that has `workflow_dispatch`.** The App starts only the Archfit
-  workflow and the AI assist workflow. A workflow that deploys should need an approval in a GitHub environment.
+  workflow. A workflow that deploys should need an approval in a GitHub environment.
 - **Tokens are short-lived.** Each App token lasts at most one hour and is limited to the repositories you chose at
   install.
 
@@ -120,16 +114,15 @@ there is no repair issue.
 
 The App reads repository permission from GitHub and caches the answer briefly.
 
-| GitHub permission | Actions                                                             |
-| ----------------- | ------------------------------------------------------------------- |
-| `read`            | Read the status, policy, and graph                                  |
-| `write`           | Save a policy draft, ask for an AI proposal, and mark a draft ready |
-| `admin`           | Start onboarding, run discovery, and allow or revoke data sharing   |
+| GitHub permission | Actions                                                           |
+| ----------------- | ----------------------------------------------------------------- |
+| `read`            | Read the status and graph; an owner answers requests              |
+| `admin`           | Start onboarding, run discovery, and allow or revoke data sharing |
 
 A policy owner is separate from GitHub permission. The settings file lists each policy owner.
 An owner can be a login such as `alice` or a team such as `acme/architects`. An agent listed in `agents` never
-approves, even when it is also an owner or a member of an owner team. Approving a pull request in the App needs both:
-a policy owner with `write` permission.
+approves, even when it is also an owner or a member of an owner team. An answer to a request needs an owner named in
+`.archfit.yaml` on the default branch (see [Change the policy](#change-the-policy)).
 
 ## Onboard a repository
 
@@ -209,7 +202,7 @@ policy, and `baseline` captures accepted debt. A dispatch with `mode: report` is
 The `mode` input selects the run: `discovery`, `baseline` or `reanchor`. The status page button dispatches `mode: discovery`.
 On a pull request, the Action reads `.archfit.yaml`, `.archfit-baseline.json`, and `.archfit-labels.yaml` per file:
 from the pull request head when the pull request changes that file, otherwise from the tip of the base branch. The
-App accepts a changed protected file only after a current architecture owner approves that exact head and protected-input snapshot. A push, including one from an owner, is never approval.
+App never accepts a changed protected file: a pull request that changes one stays `owner_approval_missing`, and a push, a review or an owner's answer does not clear it. The policy changes through a request (see [Change the policy](#change-the-policy)).
 Discovery can also run in an existing customer workflow that uploads from a default-branch push.
 
 The status page derives its stage from GitHub on every read.
@@ -259,7 +252,7 @@ policy, and `baseline` captures accepted debt. A dispatch with `mode: report` is
 The `mode` input selects the run: `discovery`, `baseline` or `reanchor`. The status page button dispatches `mode: discovery`.
 On a pull request, the Action reads `.archfit.yaml`, `.archfit-baseline.json`, and `.archfit-labels.yaml` per file:
 from the pull request head when the pull request changes that file, otherwise from the tip of the base branch. The
-App accepts a changed protected file only after a current architecture owner approves that exact head and protected-input snapshot. A push, including one from an owner, is never approval.
+App never accepts a changed protected file: a pull request that changes one stays `owner_approval_missing`, and a push, a review or an owner's answer does not clear it. The policy changes through a request (see [Change the policy](#change-the-policy)).
 Discovery can also run in an existing customer workflow that uploads from a default-branch push.
 
 The status page derives its stage from GitHub on every read.
@@ -465,12 +458,12 @@ reason applies. The detail lists the dimensions that are not fully measured and 
 
 | Reason                   | Recovery                                                                                                               |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `owner_approval_missing` | An eligible architecture owner approves the exact candidate on GitHub. Resolve active objections first; native GitHub reviews and branch protection remain independent. |
+| `owner_approval_missing` | This pull request changes the policy. Only the App's policy pull request changes it: revert the change and ask with `archfit request -m "<why>"` or `/archfit request <why>`; an owner answers in the App. See [Change the policy](#change-the-policy). |
 | `settings_missing`       | Merge the onboarding pull request to add `.archfit-app.yaml`.                                                          |
 | `policy_missing`         | Merge the Archfit policy pull request.                                                                                 |
 | `policy_defect`          | Fix the selectors of the listed rules by owner-approved pull request, or mark an intentional guard rule `guard: true`. |
 | `waiver_expired`         | Renew the waiver by owner-approved pull request or fix the finding.                                                    |
-| `merge_group_conflict`   | Queued pull requests change the same protected file, or the queued file is not the one an owner approved. Remove all but one from the merge queue, or update the branch and have an owner approve the new head. See [Merge queue](#merge-queue). |
+| `merge_group_conflict`   | A protected file of the merge group differs from the default branch, and no queued pull request changes it. Queue the pull requests again. See [Merge queue](#merge-queue). |
 
 `policy_defect` names required rules whose selector matches nothing in the repository. The engine cannot evaluate
 such a rule, so the gate asks for a policy fix instead of more evidence. The comment shows each rule with the selector
@@ -505,9 +498,9 @@ that matches nothing. Other rules that the engine could not evaluate keep `missi
 | ------------------------ | ---------------------------------------------------------------------------- |
 | `subscription_suspended` | Contact the Archfit team or remove the Archfit requirement from the ruleset. |
 
-The sweep requests a workflow rerun after stale inputs, an expired waiver, a late owner decision or restored subscription. A rerun uses customer CI minutes. A fresh report is required for a new `success` result; a saved approval or override is not a check result. Required and advisory state both refresh after approvals, objections, overrides and withdrawals. `target_moved` requests no rerun, because a rerun measures the old commit: the author updates the branch.
+The sweep requests a workflow rerun after stale inputs, an expired waiver, a protected change that went away or restored subscription. A rerun uses customer CI minutes. A fresh report is required for a new `success` result. `target_moved` requests no rerun, because a rerun measures the old commit: the author updates the branch.
 
-When a current owner objection makes a previously accepted candidate ineligible, the review event withdraws the result into `owner_approval_missing` at once; the sweep does so within an hour if the event is lost. The pull request stays open. Archfit re-runs the workflow only when a current candidate is authorized again; it never turns a decision alone into a green check.
+A pull request that changes a protected path is never approved. When the protected settings come to protect a path it changes, or its base moves under it, the sweep withdraws a decided result into `owner_approval_missing` within an hour. The pull request stays open. Archfit re-runs the workflow when the pull request no longer changes a protected path.
 
 ### Engine versions
 
@@ -603,119 +596,27 @@ declarations: rules removed, loosened, added or tightened; waivers added or remo
 coverage lost or gained (code the analysis stops or starts reading, such as an added `exclude`); and declarations it
 cannot order, which count as loosening. A change that "fixes" a violation by excluding its source shows as coverage
 lost. The App derives the direction from those lists and refuses a classification that states another. The card
-informs the owner who approves; it decides nothing.
+tells the author to revert the change and ask with a request, and informs the owner who answers it; it decides nothing.
 
 The classification comes from the Action: with engine v3.4.0 or later it states it in the upload, and the App shows it
 only for a pull request whose changed files, which the App reads from GitHub itself, include `.archfit.yaml`. No card
 means "not classified" (an older engine, a change that orders nothing, an upload the App could not read), never "no
 change": read the diff of `.archfit.yaml` yourself.
 
-### Architecture decisions
+### Changes to a protected path
 
-A pull request that changes a protected path shows an **Architecture decision** banner on its App page. The App-authored pull-request comment and, in required mode, the pending `archfit/gate` check show the same authority information even when no usable report exists. The App derives the changed paths from GitHub and the protected path set from `.archfit-app.yaml` at the current protected-settings commit. It does not use report claims to name the paths or owners.
-
-The banner links to the exact protected settings commit and lists the configured owners and teams. Any one current eligible owner may decide; the list is not a quorum. A repository writer or administrator is not an architecture owner unless the protected settings name that login or team. Agents never decide. An approving GitHub review grants Archfit authorization for the exact candidate; an App decision saved before M2 still counts. GitHub does not accept a pull-request author's own review, and the App no longer records one, so a sole owner who opened the PR cannot approve it.
-
-The banner is read only: the App records no owner decision on a pull request. An owner approves the exact candidate
-with a GitHub review. A policy change goes through a request instead (see [Change the policy](#change-the-policy)).
-
-Review requests are notifications, not authority. For an unchanged head and protected-settings snapshot Archfit requests only configured direct owners or teams that are not already requested, and it does not remove unrelated requests. It skips the pull-request author, known agent logins, and a team that contains the pull-request author. An eligible sole owner who opened the PR receives no self-review request. Reviewer-request API or permission failures are shown as notification problems only; they never change who may decide. Requests are deduplicated per pull-request head and protected-settings snapshot with bounded retries. If owners change while the head stays the same, Archfit checks GitHub's current reviewer list and requests only newly missing configured principals. You can also request a reviewer on GitHub.
-
-Required mode says the protected settings require `archfit/gate`; GitHub branch rules determine whether that check blocks merge. Do not assume a branch rule that names only a check is unbypassable. Advisory mode does not prevent merging. In either mode, an App decision is not a successful architecture check, merge, or policy publication. The page shows the latest check separately; a saved decision may be waiting for a workflow report, evidence, or other required checks.
-
-An older deployed App does not understand the new negative decision records. If an operator rolls back to an older image after these records exist, pause merges of protected-path pull requests until the decision-aware App is restored or a forward fix is deployed. Do not claim an older-image rollback is safe: it may ignore a new App objection or withdrawal and reuse an earlier legacy grant. The App preserves valid unchanged-head legacy approvals; it does not silently migrate or delete them.
-
-## Decision requests from unattended agents
-
-A coding agent that works alone cannot change the policy to make a finding go away, and must not: only an
-architecture owner can. When it believes the policy is wrong, it files a decision request. The request is a pull
-request comment; the App records it, answers in the thread, and keeps it for the owners. It grants nothing: the
-requester is whoever commented, and an owner decides.
-
-The request works on a pull request of the repository itself, into the default branch, in a repository with
-`gate: required`. On a fork, a closed pull request, another base, or a repository in advisory mode the App stays silent.
-It starts working in the release that subscribes the App to the Issue comment event.
-
-**File.** Save this as `request.md` and post it with `gh pr comment 42 --body-file request.md`. The JSON is the
-whole request; the three lines around it are fixed.
-
-````markdown
-<!-- archfit:decision-request -->
-```json
-{
-  "schema_version": "archfit.decision-request.v1",
-  "finding_id": "0a1b2c3d4e5f60718293a4b5c6d7e8f9",
-  "rule_id": "boundary.no-import",
-  "edge": {"from": "web", "to": "store"},
-  "head_sha": "4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70",
-  "policy_digest": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-  "why": "The web module renders the saved view and needs its read model; there is no other path.",
-  "alternatives_tried": ["moved the read model to a shared module", "added an interface in web"],
-  "proposal": {"kind": "policy_patch", "policy": "version: 2\nmodules:\n  web:\n    paths: [\"web/**\"]\n  store:\n    paths: [\"store/**\"]\n"}
-}
-```
-<!-- /archfit:decision-request -->
-````
-
-The App answers with one comment, which it later edits in place. Its first line is a marker, its second the status:
-
-```text
-<!-- archfit:decision-status 0a1b2c3d4e5f60718293a4b5c6d7e8f9 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 -->
-pending
-Only an architecture owner can approve this request.
-```
-
-**Read the answer.** Anyone who can comment on the pull request can post text that looks like a status comment, so
-read only comments written by the App. Its login is its slug plus `[bot]` (`archfit-review[bot]` for the hosted App;
-it is also the author of the App's other comments on the pull request). Among those, take the comment whose first
-line starts with `<!-- archfit:decision-status ` and holds your `finding_id` and `policy_digest`; if there are two,
-take the lowest `id`. The first word of line 2 is the status:
-
-```sh
-gh api repos/OWNER/REPO/issues/42/comments --paginate | jq -rs '
-  add | [ .[] | select(.user.login == "archfit-review[bot]"
-      and (.body | startswith("<!-- archfit:decision-status 0a1b2c3d4e5f60718293a4b5c6d7e8f9 "))) ]
-  | sort_by(.id) | first | .body | split("\n")[1]'
-```
-
-Ignore a status line from any other author: it grants nothing and means nothing.
-
-| Status                                             | Meaning                                                                                             |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `pending`                                          | Recorded. Wait for an owner.                                                                        |
-| `approved (proposal PR #n)`                        | An owner approved; the App opened pull request `n` with the policy change. It goes through the owner approval of any policy change. |
-| `declined (by an owner)`                           | An owner declined. It stays declined until the policy changes on the default branch.                |
-| `declined (<field>: <rule>)`                       | The request was not valid, for example `declined (why: must be 1 to 2000 characters)`. Nothing was recorded; fix it and post again. |
-| `stale (head moved)`                               | The head is not the one the request names, or a push moved it. Post it again for the new head.      |
-| `stale (policy changed)`                           | The policy on the default branch changed after the finding. Run the check again and ask again.      |
-| `stale (base branch changed)`                      | The pull request no longer targets the default branch; an owner's decision is refused for it.   |
-| `stale (pull request closed)`                      | The pull request closed.                                                                            |
-
-**Decide (architecture owners).** The App no longer shows these requests or their buttons, and they have no request
-page. A worker who needs a policy change asks with a request instead (see [Change the policy](#change-the-policy)).
-
-Posting the same request for the same head again changes nothing. Posting it for a new head replaces the record and
-sets it back to `pending`; a declined request is not reopened that way.
-
-**Limits.** One block per comment. The JSON has exactly the keys above, each once, no `null`; there is no
-`blast_radius` in v1. `finding_id` is 32 hex, `head_sha` 40 hex, `policy_digest` 64 hex of the policy the finding was
-measured under; `why` is up to 2000 characters, `alternatives_tried` up to 20 entries of 500, `proposal.policy` the
-whole candidate `.archfit.yaml` up to 64 KiB, and it must be a valid policy file. Free text holds no control
-characters except newline and tab. At most 20 pending requests per pull request and 200 per repository; beyond that
-the App ignores the request. The App never trusts the block: head, policy digest and policy are checked against
-GitHub and the default branch.
-
-A command, `archfit decision request`, that posts the block and reads the answer is planned for a later engine release.
+A pull request that changes a protected path is never approved: not by a push, a review or the App. Its check stays
+`owner_approval_missing`, also when an owner opened it. Change the policy with a request instead (see
+[Change the policy](#change-the-policy)).
 
 ## Data sharing
 
-Archfit runs in customer CI, so source code and reports stay there. Two managed features send data out of that
-environment, and each stays off until a repository administrator allows it on **Data sharing**. An administrator opens it
+Archfit runs in customer CI, so source code and reports stay there. A managed feature sends data out of that
+environment, and stays off until a repository administrator allows it on **Data sharing**. An administrator opens it
 from **Administration** on the repository overview, or at `/r/{owner}/{repo}/data-sharing`.
 
 | Feature           | What leaves your environment                                                    | Also needs                 |
 | ----------------- | ------------------------------------------------------------------------------- | -------------------------- |
-| Managed AI        | The draft policy text and the instruction, when someone asks for a proposal     | `data_mode: managed`       |
 | Managed discovery | The repository, cloned into a short-lived sandbox that is deleted after the job | Not started by the App yet |
 
 - A choice applies to every repository of the owner that the Archfit App can access, not only to the repository the page
@@ -737,8 +638,8 @@ path. The App never commits it to the default branch.
 3. The App opens a draft pull request from `archfit/baseline`, or updates the open one. It changes only
    `.archfit-baseline.json`.
 4. Read the pull request body. It counts the accepted findings that the capture adds and removes, and lists their rule
-   IDs and finding IDs. Approval accepts every added finding.
-5. Select **Ready for review**. A current architecture owner approves or resolves any objection for the exact candidate (see [Architecture decisions](#architecture-decisions)).
+   IDs and finding IDs. Merging accepts every added finding.
+5. Select **Ready for review**. The baseline pull request changes a protected path, so its check is `owner_approval_missing`; the baseline goes away with Archfit 4.
 6. Merge the pull request.
 
 The App accepts the upload only from the workflow named in `.archfit-app.yaml`, from a run at the current head of the
@@ -759,7 +660,7 @@ the default branch. A capture equal to the current baseline opens nothing.
 The generated workflow sets `endpoint`, so the Action uploads the file. It also keeps the file as the
 `archfit-baseline` workflow artifact. A `409` answer (`stale_head` or `stale_attempt`) fails the job: dispatch the
 capture again on the current default-branch head. Without `endpoint` the Action sends nothing; commit the artifact
-as `.archfit-baseline.json` in a pull request that a policy owner approves.
+as `.archfit-baseline.json` in a pull request.
 
 ### Re-anchor after an engine or profile change
 
@@ -771,14 +672,14 @@ baseline already accepts, and accepts nothing new.
 2. The Action runs `archfit baseline --reanchor` against the protected baseline, and uploads the new file.
 3. The App checks the upload against the protected baseline. It opens the same pull request as a baseline capture.
 4. Read the pull request body. It states what the re-anchor keeps and drops, the seams that stop qualifying, and the
-   metric values that reset. Approving resets those metric values.
-5. Select **Ready for review**, approve the exact head commit, and merge.
+   metric values that reset. Merging resets those metric values.
+5. Select **Ready for review** and merge. Its check is `owner_approval_missing`, as for a baseline capture.
 
 | Refusal                     | Recovery                                                                                                                                                 |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `reanchor_baseline_missing` | The default branch has no readable baseline. Capture a baseline with `mode: baseline` instead.                                                           |
 | `reanchor_digest_mismatch`  | The protected baseline changed during the run. Run the re-anchor again.                                                                                  |
-| `reanchor_not_subset`       | The capture accepts debt or a seam that the protected baseline does not accept. Fix the findings, or capture a full baseline and approve the added debt. |
+| `reanchor_not_subset`       | The capture accepts debt or a seam that the protected baseline does not accept. Fix the findings, or capture a full baseline and accept the added debt.  |
 
 ## Enable the gate
 
@@ -835,26 +736,21 @@ upload. The members are the entries from the front of the queue up to the group'
 protected file (policy, baseline, labels, settings, workflow) at the default-branch head and at the group commit:
 
 - A file the group does not change: the default branch's file governs, as for any pull request.
-- A file the group changes: exactly one queued pull request must change it, an owner must have approved that pull
-  request's own head (on GitHub, under [Architecture decisions](#architecture-decisions)), and the
-  group's file must be exactly the file at that head. Then that file governs the group.
-- Every queued pull request that changes a protected file needs its own owner approval, also when the group's file
-  ends up equal to the default branch's. A pull request without one ends the group `owner_approval_missing`, naming it.
+- A queued pull request that changes a protected file in its own pull request ends the group `owner_approval_missing`,
+  naming it, also when the group's file ends up equal to the default branch's. Nothing approves it.
+- A protected file of the group that differs from the default branch while no queued pull request changes it (the
+  default branch changed that file in the meantime) ends the group `merge_group_conflict`.
 
 The group commit is never approved itself. Putting a pull request in the queue, pushing, or text in the pull request
 approves nothing. Settings, owners, agents and the gate mode come from the default branch.
 
-**A policy change through the queue.** An owner approves the pull request's head, then it is queued like any other.
-Two pull requests that change the same protected file cannot share a group: that group ends `merge_group_conflict`.
-Remove all but one from the queue; queue the others again after it merges, each with a fresh approval if the update
-changed its head. When the queued file is not the approved one (the default branch changed that file in the meantime),
-update the branch and have an owner approve the new head.
+**A policy change through the queue.** There is none: a queued pull request that changes a protected file blocks its
+group. Change the policy with a request (see [Change the policy](#change-the-policy)). When a group ends
+`merge_group_conflict`, queue the pull requests again.
 
 **When a group goes away.** GitHub destroys a group when a pull request leaves the queue or one ahead of it fails, and
 builds a new group with a new commit. The App sets a destroyed group's `archfit/gate` to `action_required` with
-`merge_group_unverified`, and refuses a late upload for it with `409 stale_group`. An owner who withdraws an approval
-(requests changes or dismisses the review) on a queued pull request turns every group that holds it to
-`action_required`. A group without an upload stays pending until GitHub's status check timeout fails it.
+`merge_group_unverified`, and refuses a late upload for it with `409 stale_group`. A group without an upload stays pending until GitHub's status check timeout fails it.
 
 **Limits.**
 
@@ -883,7 +779,7 @@ branch, which then reports the cycle as a finding.
 
 **Re-runs cannot help once the target moved.** A workflow re-run measures the commit the first run measured, and the
 App holds every upload to the default branch as it is now. When the default branch has moved, the sweep therefore
-requests no rerun, for a changed policy or baseline, an expired waiver, a late owner approval or a restored
+requests no rerun, for a changed policy or baseline, an expired waiver, a protected change that went away or a restored
 subscription: it sets `target_moved`, without a cycle in the comment, and the author updates the branch. Rerunning the
 workflow by hand ends in `envelope_mismatch`.
 
@@ -926,22 +822,13 @@ onboarding or discovery, only when that is the step's action. After the first re
   the `archfit/state` check on the branch tip, so it names what the check saw, not what was merged since;
 - three counts: rule violations and advisories in the latest default-branch report, and the open pull requests whose
   Archfit result needs attention. They are counts, never a score;
-- two more counts: the pull requests to update (their result was withdrawn with `target_moved` after the default branch
-  moved, see [Merge safety when the target moves](#merge-safety-when-the-target-moves)) and the decision requests that
-  wait for an owner. Each reads "could not be read" rather than zero when the App could not read it. The pending
-  requests of a repository are read from the App's own records, only when the repository has an open pull request;
-- under **Needs you**, the first pending decision requests with the pull request, the rule, the dependency, who asked
-  and how long ago, each linking to its pull request page. An agent cannot approve its own request, and nothing on
-  the overview approves or declines;
+- one more count: the pull requests to update (their result was withdrawn with `target_moved` after the default branch
+  moved, see [Merge safety when the target moves](#merge-safety-when-the-target-moves)). It reads "could not be read"
+  rather than zero when the App could not read the open pull requests;
 - the open pull requests, newest first, each with its result and a link to its page (up to 20). A pull request that
   waits for an update says so under its row and names the modules the pull request and the default branch close a
   cycle through, in the words of the comment;
 - **Findings on** the default branch: its violations, advisories and accepted debt, grouped as on a pull request page.
-
-![The Overview of a repository with agents: the watch line, the counts of pull requests to update and decision requests pending, and the requests under Needs you](images/overview-watch-light.png#gh-light-mode-only)
-![The Overview of a repository with agents: the watch line, the counts of pull requests to update and decision requests pending, and the requests under Needs you](images/overview-watch-dark.png#gh-dark-mode-only)
-
-_The watch line under the result, the two counts, and the decision requests under Needs you. Sample data._
 
 ![The open pull requests of a repository, one waiting for an update after the default branch moved](images/overview-pulls-to-update-light.png#gh-light-mode-only)
 ![The open pull requests of a repository, one waiting for an update after the default branch moved](images/overview-pulls-to-update-dark.png#gh-dark-mode-only)
@@ -985,7 +872,6 @@ on the pull request links to this page ("Details in Archfit").
 - **Evidence** has one row per dimension: how many the engine measured, then what it counted in its own words, quoted
   as on the comment (`3 of 3 ("classified source files")`), its confidence, and its **Result**: pass, warn or fail.
 - **For coding agents** holds the exact repair tasks of the run; **Copy** puts them on the clipboard.
-- **Architecture decision** appears when the pull request changes a protected file, even without a report: protected paths and digests, the owners and exact settings source, current objections and history, read only. Approval does not mean the check passed or the pull request merged. See [Architecture decisions](#architecture-decisions).
 - The **Graph** tab draws the same report as a graph. See [The graph of a pull request](#the-graph-of-a-pull-request).
 - The page shows a report only when it is the one the check was computed from. Under a result that asks for action it
   shows the report only when every reason the check records comes from the report itself (missing required coverage,

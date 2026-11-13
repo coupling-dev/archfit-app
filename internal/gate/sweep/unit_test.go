@@ -80,14 +80,11 @@ func TestWithdrawnReceipt(t *testing.T) {
 	conclusions := map[verdict.Conclusion]bool{
 		verdict.Success: true, verdict.Failure: true, verdict.ActionRequired: false, "": false, "neutral": false,
 	}
-	approvals := map[inputs.Approval]bool{
-		inputs.ApprovalMissing: true, "": true, "skipped": true, inputs.ApprovalGranted: false, inputs.ApprovalNotRequired: false,
-	}
 	for conclusion, decided := range conclusions {
-		for approval, unapproved := range approvals {
+		for _, paths := range [][]string{nil, {".archfit.yaml"}} {
 			rc := feedback.Receipt{RunID: 9, RunAttempt: 1, Conclusion: conclusion, Reason: verdict.ReasonHealthy}
-			if got, want := Withdrawn(rc, inputs.Trusted{Approval: approval}), decided && unapproved; got != want {
-				t.Errorf("Withdrawn(%q receipt, approval %q) = %v, want %v", conclusion, approval, got, want)
+			if got, want := Withdrawn(rc, inputs.Trusted{ProtectedPaths: paths}), decided && len(paths) > 0; got != want {
+				t.Errorf("Withdrawn(%q receipt, protected paths %q) = %v, want %v", conclusion, paths, got, want)
 			}
 		}
 	}
@@ -118,11 +115,11 @@ func TestDecidedReceipt(t *testing.T) {
 			if got := Decided(tt.rc); got != tt.want {
 				t.Errorf("Decided(%+v) = %v, want %v", tt.rc, got, tt.want)
 			}
-			if got, want := Withdrawn(tt.rc, inputs.Trusted{Approval: inputs.ApprovalMissing}), tt.want; got != want {
-				t.Errorf("Withdrawn without an approval = %v, want %v", got, want)
+			if got, want := Withdrawn(tt.rc, inputs.Trusted{ProtectedPaths: []string{".archfit.yaml"}}), tt.want; got != want {
+				t.Errorf("Withdrawn with a protected change = %v, want %v", got, want)
 			}
-			if Withdrawn(tt.rc, inputs.Trusted{Approval: inputs.ApprovalGranted}) {
-				t.Error("Withdrawn while the approval holds")
+			if Withdrawn(tt.rc, inputs.Trusted{}) {
+				t.Error("Withdrawn without a protected change")
 			}
 		})
 	}
