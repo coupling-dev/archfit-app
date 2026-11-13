@@ -2,6 +2,7 @@ package gate
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/github/webhook"
 	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
 )
@@ -337,5 +339,75 @@ func TestAConfirmLeavesTheCheckOfAPullRequestItCannotRerun(t *testing.T) {
 	}
 	if after, _ := w.latestGate(p.head); after.ID != before.ID || after.Summary != before.Summary {
 		t.Errorf("the check was rewritten:\n%s\nwant it kept:\n%s", after.Summary, before.Summary)
+	}
+}
+
+// proposalSuccess puts the success the App sets on a proposal's head (M2 D13) on head, for proposal id.
+func (w *world4) proposalSuccess(head, id string) {
+	w.t.Helper()
+	_, err := w.gh.CreateCheckRun(context.Background(), w.shop.RepoRef, api.CheckRun{Name: gateCheckName, HeadSHA: head,
+		ExternalID: "proposal:" + id, Status: "completed", Conclusion: "success"})
+	if err != nil {
+		w.t.Fatal(err)
+	}
+}
+
+// openAt opens pull request number at head and handles its opened event.
+func (w *world4) openAt(number int, head string) {
+	w.t.Helper()
+	p := w.openPull(w.shop, number)
+	w.editPull(p, func(pl *api.Pull) { pl.HeadSHA = head })
+	p.head = head
+	w.handle(w.event(webhook.PullOpened, p))
+}
+
+// TestAConsumedProposalsHeadMergesNothing (M2 review H2): the App squash-merged its policy pull request and the push
+// used its approvals; another pull request opened at the same head commit finds no success to merge on.
+func TestAConsumedProposalsHeadMergesNothing(t *testing.T) {
+	w := newWorld4(t)
+	ctx, tn := context.Background(), store.Tenant(w.shop.InstallationID)
+	head, next := w.sha(), policy4+"# answered\n"
+	err := records.Indexed(ctx, w.mem, tn, records.RequestKey(shopName, 431), records.RequestIndexKey(shopName),
+		records.SchemaRequestIndex, func(_ []byte, x *records.Index) ([]byte, error) {
+			if err := x.Add("graph a b", "431"); err != nil {
+				return nil, err
+			}
+			return records.Encode(&records.Request{Key: "graph a b", Reason: "why", State: records.StateOpen})
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := records.Approval{Kind: records.KindApprove, Request: 431, Change: json.RawMessage(`{}`), Owner: 1, Login: "olivia"}
+	pin := &records.Pin{Proposal: "p1", PullRequest: 21, HeadSHA: head, Digest: policy3.Digest([]byte(next))}
+	if err := records.Answer(ctx, w.mem, tn, shopName, "a1", a, pin); err != nil {
+		t.Fatal(err)
+	}
+	w.proposalSuccess(head, "p1")
+
+	merge := w.sha()
+	w.setFile(w.shop, merge, policyPath, []byte(next))
+	w.gh.pulls[pullKey(shopName, 21)] = api.Pull{Number: 21, State: "closed", Merged: true, MergeCommitSHA: merge,
+		BaseRef: testBranch, HeadRepo: shopName}
+	w.gh.heads[branchKey(shopName, testBranch)] = merge
+	e := w.pushEvent(w.shop, policyPath)
+	e.Before, e.HeadSHA = w.tip, merge
+	w.handle(e)
+
+	w.openAt(8, head)
+	if run, ok := w.latestGate(head); !ok || run.Conclusion == "success" {
+		t.Errorf("archfit/gate on the old head = %+v, want no success", run)
+	}
+}
+
+// TestAPullRequestAtAProposalsHeadTakesBackItsSuccess: a success the App set for its own policy pull request is taken
+// back when another pull request opens at that commit, even when nothing took it back before.
+func TestAPullRequestAtAProposalsHeadTakesBackItsSuccess(t *testing.T) {
+	w := newWorld4(t)
+	head := w.sha()
+	w.proposalSuccess(head, "p9")
+	w.openAt(8, head)
+	run, ok := w.latestGate(head)
+	if !ok || run.Conclusion == "success" || run.ExternalID != "proposal:p9:retired" {
+		t.Errorf("archfit/gate = %+v, want the success taken back", run)
 	}
 }

@@ -37,6 +37,7 @@ type hub struct {
 	issues    map[int]bool // number → open
 	comments  map[int][]string
 	assignees map[int][]string
+	checks    []api.CheckRun
 	next      int
 	fail      map[string]error
 }
@@ -138,6 +139,13 @@ func (h *hub) SetAssigneesAndLabels(_ context.Context, _ api.RepoRef, number int
 	defer h.mu.Unlock()
 	h.assignees[number] = assignees
 	return assignees, labels, nil
+}
+
+func (h *hub) CreateCheckRun(_ context.Context, _ api.RepoRef, c api.CheckRun) (api.CheckRun, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.checks = append(h.checks, c)
+	return c, nil
 }
 
 // openIssues are the open issues the App opened (numbers from 1000), not the request issues.

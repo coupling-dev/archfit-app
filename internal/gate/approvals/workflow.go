@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/alexei-led/archfit-app/internal/gate/proposals"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
@@ -40,6 +41,7 @@ func (s *Service) WorkflowPushed(ctx context.Context, p Push) (Outcome, error) {
 	if err := records.ConsumeWorkflow(ctx, s.store, tenant(p.Repo), p.Repo.FullName, merged.id, merged.commit); err != nil {
 		return Outcome{}, fmt.Errorf("approvals: consume workflow proposal %s: %w", merged.id, err)
 	}
+	s.retire(ctx, p.Repo, merged, proposals.RetiredUsed)
 	return Outcome{Judged: JudgedConsumed, Proposal: merged.id}, nil
 }
 
@@ -121,4 +123,14 @@ func (s *Service) stillApplies(ctx context.Context, r api.Repo, repo records.Rep
 		}
 	}
 	return true, nil
+}
+
+// retire takes back the verdict on p's head once p is used or void (M2 review H2): the App squash-merges, so that commit
+// is not on the default branch, and another pull request at it would otherwise merge on its old success. It is a
+// notification of a step that stands: a failure is logged, and a pull request opened at that commit is retired when it
+// opens (gate, owner.go).
+func (s *Service) retire(ctx context.Context, r api.Repo, p *proposal, why string) {
+	if err := proposals.Retire(ctx, s.gh, r, p.rec.HeadSHA, p.rec.PullRequest, p.id, why, s.now()); err != nil {
+		logFailure(ctx, r, "retire a proposal head's check", err)
+	}
 }

@@ -12,6 +12,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate/proposals"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -60,6 +61,7 @@ type GitHub interface {
 	CloseIssue(ctx context.Context, r api.RepoRef, number int) error
 	ReopenIssue(ctx context.Context, r api.RepoRef, number int) error
 	SetAssigneesAndLabels(ctx context.Context, r api.RepoRef, number int, assignees, labels []string) ([]string, []string, error)
+	CreateCheckRun(ctx context.Context, r api.RepoRef, c api.CheckRun) (api.CheckRun, error)
 }
 
 // Service judges the pushes of the repositories of one App.
@@ -155,6 +157,7 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error) {
 			if err := s.consume(ctx, p.Repo, merged, push, digest); err != nil {
 				return Outcome{}, err
 			}
+			s.retire(ctx, p.Repo, merged, proposals.RetiredUsed)
 			s.closeReverted(ctx, p.Repo, merged)
 			return s.consumed(ctx, p.Repo, merged.id)
 		}
@@ -435,6 +438,7 @@ func (s *Service) void(ctx context.Context, r api.Repo, p *proposal) error {
 			if err != nil {
 				return fmt.Errorf("approvals: void proposal %s: %w", p.id, err)
 			}
+			s.retire(ctx, r, p, proposals.RetiredVoid)
 			return nil
 		}
 		if err := records.Load(ctx, s.store, t, records.ProposalKey(r.FullName, p.id), &p.rec); err != nil {

@@ -573,7 +573,7 @@ func TestAnAnswerThatWritesNoLineResyncsWithoutMerging(t *testing.T) {
 		kept := w.mustAnswer(olivia, 432, requests.Answer{Kind: policy3.Approve}, true)
 		w.hub.push(fakeBase, policyPath, strings.Replace(testPolicy, "  pkg_util:\n    paths: [pkg/util/**]\n", "", 1))
 		w.approveTip() // the change of the default branch was judged and approved
-		checks := len(w.hub.checks)
+		checks, old := len(w.hub.checks), w.proposalOf(kept).HeadSHA
 
 		out := w.mustAnswer(oscar, 433, requests.Answer{Kind: policy3.Reject, Instead: "Call pkg_net."}, false)
 		if out.PullRequest != 0 || len(w.hub.merges) != 0 {
@@ -585,8 +585,10 @@ func TestAnAnswerThatWritesNoLineResyncsWithoutMerging(t *testing.T) {
 			strings.Contains(branch, "request #431") || !strings.Contains(branch, "request #432") {
 			t.Errorf("proposal %+v, branch:\n%s", p, branch)
 		}
-		if len(w.hub.checks) != checks+1 || w.hub.checks[len(w.hub.checks)-1].HeadSHA != p.HeadSHA {
-			t.Errorf("checks %+v; want one on the new head", w.hub.checks[checks:])
+		added := w.hub.checks[checks:]
+		if len(added) != 2 || added[0].HeadSHA != old || added[0].Conclusion != conclusionNoVerdict ||
+			added[1].HeadSHA != p.HeadSHA || added[1].Conclusion != conclusionSuccess {
+			t.Errorf("checks %+v; want the old head retired, then the new head's", added)
 		}
 		if got := w.requestState(431); got != records.StateOpen {
 			t.Errorf("request 431 = %q, want open again", got)

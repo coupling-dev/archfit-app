@@ -57,6 +57,10 @@ separate, testable steps. Without this module a report is a self-reported file a
   `sweep.AfterAnswer`): a re-run when the four conditions hold, else a branch update with the App token; the path is
   recorded in the pull record and on each request issue. Its failure is returned, so the delivery is retried. The same push is then judged for the
   workflow approval it uses (`approvals.WorkflowPushed`, façade file `owner.go`).
+- When a pull request into the default branch opens or moves to a head whose latest `archfit/gate` is a proposal's
+  success (external id `proposal:<id>`) and it is not that proposal's own open pull request, take that success back
+  first (`proposals.Retire`, M2 review H2, façade file `owner.go`): an approval is valid once, for its own pull request.
+  A failed read or write is returned, so the delivery is retried.
 - Take the owner actions outside requests (M2 task 23, façade file `owner.go`, `OwnerActions`): the first approval of an
   onboarding pull request or of the policy already on the default branch, a workflow approval (`gate/approvals`), and
   the confirm or revert of a policy changed outside the flow (confirm `gate/approvals`, revert `gate/proposals`).
@@ -551,7 +555,7 @@ Steps, in order:
 | `target_sha` is `T` or behind it (`Compare(target_sha, T)` is `identical` or `ahead`; a commit GitHub does not know is not) | `target_not_on_branch` | run the check again |
 | `policy_digest` is the digest of `.archfit.yaml` at `target_sha` (a policy from the head fails here) | `policy_not_target` | restore the policy from the default branch |
 | the digest at `target_sha` is the digest at `T` | `policy_changed` | the check runs again |
-| `.github/workflows/archfit.yaml` at the run's commit (`Binding4.RunSHA`, the test merge commit of a pull request) is `T`'s (same blob), or differs only in the ref and the version comment (` # v4.0.1`) of whole `uses: alexei-led/archfit-action@<ref>` lines (LF line ends, optional matching quotes), each new ref a commit manifest 4 lists (`manifest.ActionApproved`); any other text, a reference inside a script, a CR, NEL or U+2028 stays compared; or the file has the digest an owner approved for this pull request's head (an open `first` or `workflow` proposal pinned to the upload's head, `records.FileDigest`, M2 task 23) | `workflow_changed` | update the branch; if the pull request changes the workflow, an owner approves it in the App (task 23) |
+| `.github/workflows/archfit.yaml` at the run's commit (`Binding4.RunSHA`, the test merge commit of a pull request) is `T`'s (same blob, both ids present: an empty id proves nothing, review M1), or differs only in the ref and the version comment (` # v4.0.1`) of whole `uses: alexei-led/archfit-action@<ref>` lines (LF line ends, optional matching quotes), each new ref a commit manifest 4 lists (`manifest.ActionApproved`); any other text, a reference inside a script, a CR, NEL or U+2028 stays compared; or the file has the digest an owner approved for this pull request's head (an open `first` or `workflow` proposal pinned to the upload's head, `records.FileDigest`, M2 task 23) | `workflow_changed` | update the branch; if the pull request changes the workflow, an owner approves it in the App (task 23) |
 
 A later push to a pull request needs a new approval: a proposal pinned to another head lifts nothing. The policy rules are skipped on a first policy, and the `target_sha` digest rules after `target_not_on_branch`. The two
 state rules come first among the policy rules; `outside_flow` is checked before `first_approval`, and
@@ -2121,6 +2125,10 @@ are driven only as far as they go without GitHub. Child internals are tested in 
   **Expected behavior**: no re-run; `archfit/gate` `action_required` with a record that says the head is approved,
   names the condition (`no_run`, `base_changed`) and the way out (push a commit, update the branch; then approve the
   new head).
+- **Test name**: `TestAConsumedProposalsHeadMergesNothing`, `TestAPullRequestAtAProposalsHeadTakesBackItsSuccess`
+  **Scenario**: the App's policy pull request merged and its push used its approvals, then another pull request opens
+  at its old head; a success left on a proposal's head when another pull request opens there.
+  **Expected behavior**: the latest `archfit/gate` on that head is not a success (M2 review H2).
 - **Test name**: `TestAStaleFirstApprovalAdmitsNothingOnceChangeControlStarts`
   **Scenario**: an onboarding pull request approved, then the repository approved another way, or outside the flow,
   with no policy on the default branch.

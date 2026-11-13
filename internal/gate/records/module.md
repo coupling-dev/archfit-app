@@ -28,8 +28,9 @@ its index could drift apart.
   approval joining its proposal (created when new) pinned to the head and digest. Void an approval whose change no
   longer applies, opening its request again (`Void`), and void a proposal (`VoidProposal`).
 - Consume a proposal once (`Consume`, M2 task 20): open to merged with the merge commit, its index entry removed, the
-  repository's approved digest set (only when the default branch's tip holds that digest and the repository is not
-  outside the flow), the requests of its approvals out of the request index, and the push recorded, in one swap; the
+  repository's approved digest set (only when the default branch's tip holds that digest, the repository is not
+  outside the flow, and it has an approved policy already or the proposal is a `first` one: an ordinary proposal
+  never starts change control, M2 review H1), the requests of its approvals out of the request index, and the push recorded, in one swap; the
   same commit again is a no-op success.
 - Record a default-branch push whose policy no approval made (`Outside`): the repository is "policy changed outside
   the flow" (design 7.1) until an owner confirms or reverts it (M2 task 23), and the issue opened for it
@@ -272,7 +273,7 @@ sweep) read and write through this module;
   `TestApproveCurrentStartsChangeControlAtItsCommit`, `TestConfirmEndsTheStateAtItsCommit`,
   `TestARevertConsumeEndsTheState`, `TestAWorkflowProposalIsConsumedByItsMergeOnce`,
   `TestAProposalApprovedInAStateThatEndedIsNotConsumed` (a first approval after change control started, a revert after
-  a confirm or after a later change: `ErrMoved`, nothing written); `TestAnswerRefusesAndWritesNothing`
+  a confirm or after a later change: `ErrMoved`, nothing written), `TestAnOrdinaryProposalNeverStartsChangeControl`; `TestAnswerRefusesAndWritesNothing`
   covers a repository outside the flow.
 - `TestArchfit3KeysAreNeitherReadNorWritten`: every Archfit 3 key of `store/module.md` seeded; every helper runs;
   only `v4/` keys are touched and the Archfit 3 bytes are unchanged.

@@ -61,6 +61,9 @@ direct push to the policy is the new rule with no owner's word.
   policy or is outside the flow (another onboarding pull request started change control), and one holding a revert
   that no longer holds (`records.Revert.Holds`: the changed policy and the approved one it was made against), as after
   a confirm, or a later change, even when the same change is pushed again.
+- After a consume, and after a void, the proposal's head is retired (`proposals.Retire`, M2 review H2): its success is
+  taken back, so another pull request at that commit merges on nothing. A failure is logged; `gate` retires it again
+  when such a pull request opens.
 - After a consume whose proposal holds a revert (M2 task 23, `gate/proposals`) ended the state, the issue of the state
   gets a note and is closed (a notification: a failure is logged, a delivery again does not repeat it).
 - `WorkflowPushed` judges a default-branch push for the workflow approval it uses (M2 task 23): the open `workflow`
@@ -232,7 +235,8 @@ assigned to the owners; a later direct push is outside the flow), `TestAWorkflow
 `TestAWorkflowMergedWithAnotherFileVoidsItsApproval`, `TestAWorkflowApprovalRefuses`,
 `TestOnlyAnOwnerOfTheApprovedPolicyConfirms` (the owner a direct push named is refused),
 `TestAConfirmWaitsForTheJudgementOfALaterChange`, `TestARevertConsumeEndsTheStateAndClosesItsIssue`,
-`TestAFirstApprovalMergedAfterChangeControlStartedIsOutsideTheFlow`, `TestARevertMergedAfterAConfirmIsOutsideTheFlow`.
+`TestAFirstApprovalMergedAfterChangeControlStartedIsOutsideTheFlow`, `TestARevertMergedAfterAConfirmIsOutsideTheFlow`,
+`TestAUsedOrVoidProposalTakesBackItsHeadsVerdict`.
 
 In `internal/gate` (`approvals_test.go`), over the gate's fake GitHub: `TestADirectPushPutsEveryUploadOutsideTheFlow`
 (one issue, the upload `unknown` with `outside_flow` naming it), `TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed`,

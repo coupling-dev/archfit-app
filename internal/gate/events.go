@@ -70,6 +70,9 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 		if otherBase(e.DefaultBranch, e.BaseRef) {
 			return g.sharedHeadOpened(ctx, e)
 		}
+		if err := g.retireForeignProposal(ctx, eventTarget(e)); err != nil {
+			return reactionNone, err
+		}
 		reaction, err := g.newHead(ctx, eventTarget(e))
 		if e.Kind == webhook.PullSynchronized {
 			err = errors.Join(err, g.requests.HeadMoved(ctx, eventTarget(e), g.now()))

@@ -145,6 +145,9 @@ func (s *Service) revert(ctx context.Context, r api.Repo, in RevertInput) (Outco
 
 	after, cancel := context.WithTimeout(context.WithoutCancel(ctx), afterTimeout)
 	defer cancel()
+	if cur != nil && pin.HeadSHA != cur.rec.HeadSHA {
+		s.retire(after, r, cur.rec.HeadSHA, cur.rec.PullRequest, cur.id, RetiredSuperseded)
+	}
 	out := Outcome{Approval: id, PullRequest: pin.PullRequest}
 	out.State, out.Merge = s.publish(after, r, tip, *pin, listed, in.Later)
 	if rev.Issue != 0 {

@@ -467,3 +467,37 @@ func TestARevertMergedAfterAConfirmIsOutsideTheFlow(t *testing.T) {
 		t.Errorf("outcome %+v, want the revert's proposal void", out)
 	}
 }
+
+// TestAUsedOrVoidProposalTakesBackItsHeadsVerdict: the App squash-merges, so a proposal's head is not on the default
+// branch; once its approvals are used, or void, its head carries no success another pull request could merge on.
+func TestAUsedOrVoidProposalTakesBackItsHeadsVerdict(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		merged int // the policy version the merge lands; the approval wrote version 1
+		why    string
+	}{
+		{"consumed", 1, "its approvals were used"},
+		{"void", 2, "its approvals were not used"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld(t)
+			w.approved(digestV(0))
+			w.gh.commit("c0", policyV(0))
+			w.answered(431, "graph a b", "p1", 21, digestV(1))
+			w.merge(21, "c1", tc.merged)
+			w.push("c0", "c1")
+
+			head := "head-" + digestV(1)
+			var retired *api.CheckRun
+			for i, c := range w.gh.checks {
+				if c.HeadSHA == head {
+					retired = &w.gh.checks[i]
+				}
+			}
+			if retired == nil || retired.Name != "archfit/gate" || retired.Status != "completed" ||
+				retired.Conclusion == "success" || !strings.Contains(retired.Summary, tc.why) {
+				t.Errorf("the head's check = %+v, want a completed archfit/gate without success saying %q", retired, tc.why)
+			}
+		})
+	}
+}

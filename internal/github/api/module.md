@@ -304,7 +304,8 @@ type Repos interface {
     ListRepos(ctx context.Context, installationID int64) ([]Repo, error)
     // ResolveRepo finds the installation that covers fullName using the App JWT.
     ResolveRepo(ctx context.Context, fullName string) (Repo, error)
-    // File returns the raw bytes and git blob SHA of path at ref. ErrNotFound if absent.
+    // File returns the raw bytes and git blob SHA of path at ref. ErrNotFound if absent. A response without a valid
+    // blob SHA (40 or 64 lowercase hex) is an error: the blob SHA proves two reads are the same file.
     File(ctx context.Context, r RepoRef, ref, path string) (content []byte, blobSHA string, err error)
     // BranchHead returns the head commit SHA of branch. ErrNotFound if the branch does not exist.
     BranchHead(ctx context.Context, r RepoRef, branch string) (string, error)

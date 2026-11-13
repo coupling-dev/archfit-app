@@ -114,3 +114,18 @@ func revertNote(login, passkey string, out Outcome) string {
 	}
 	return text
 }
+
+// The words of a proposal head's check once its verdict is taken back (M2 review H2).
+const retiredTitle = "archfit: no verdict, this approval is spent"
+
+func retiredSummary(pull int, why string) string {
+	what := map[string]string{
+		RetiredUsed:       "its approvals were used when it merged",
+		RetiredVoid:       "its approvals were not used: it closed, merged another policy, or no longer applied",
+		RetiredSuperseded: "the App wrote a newer head for it",
+		RetiredForeign:    "another pull request has this commit as its head",
+	}[why]
+	return "This commit was the head of the App's policy pull request #" + strconv.Itoa(pull) + ", and " + what +
+		". It carries no verdict now: an approval is valid once, for its own pull request. A pull request at this commit " +
+		"gets its verdict from its own run.\n"
+}

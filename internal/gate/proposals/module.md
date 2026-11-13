@@ -15,9 +15,11 @@ notes the answer on the request issue. Without it an answer is a record nobody a
 ## Functional Responsibilities
 
 - `Digest`: the change digest of an answer, which the owner's passkey step-up is bound to (`control/passkey` Purpose).
-- While the repository's policy changed outside the flow (`records.Repo.OutsideFlow`), `Digest` and `Answer` refuse
-  with `ErrOutsideFlow`, and so does `records.Answer` inside its swap (M2 task 23): an answer would be written on a
-  policy no owner approved, by owners that policy names. An owner confirms or reverts first.
+- An answer needs the repository under change control (M2 task 23, review H1): `Digest` and `Answer` refuse without
+  an approved policy (`ErrFirstApproval`: only an administrator's first approval starts change control, never an
+  answer), outside the flow (`ErrOutsideFlow`, also inside `records.Answer`'s swap: an answer would be written on a
+  policy no owner approved, by owners that policy names), and, in `Answer`, while the default branch's policy is not
+  the approved one (`ErrPolicyUnapproved`: a change that waits to be judged, such as the merge just made).
 - `Answer`, under a per-repository lease (`records.ProposalLeaseKey`, 60 s; a second answer waits at most 10 s, then
   `ErrBusy`). One answer ends within 50 s, inside the App's 55 s UI deadline: 10 s for the lease, 15 s on the caller's
   context up to the record, then 25 s on a context the caller cannot cancel, so a closed tab or a deadline never leaves
@@ -54,7 +56,15 @@ notes the answer on the request issue. Without it an answer is a record nobody a
 - The D13 check, read again from GitHub before `archfit/gate` is set to success on the pinned head: `archfit/policy`
   is at that head; the pull request's head is that branch of this repository, its base the default branch, and it is
   open; from the tip the head changes `.archfit.yaml` and nothing else (not truncated); the policy at the head has the
-  pinned digest, which is the digest of the recorded approvals written on the tip. Any condition false sets nothing.
+  pinned digest, which is the digest of the recorded approvals written on the tip; the repository is under change
+  control and the tip holds its approved policy, or, for a proposal with a revert, the revert still holds and the tip
+  holds the change it replaces (review H1). Any condition false sets nothing.
+- A head whose verdict no longer stands is retired (`Retire`, review H2): a newer, completed `archfit/gate` run on it,
+  `action_required`, external id `proposal:<id>:retired`, saying why. GitHub ties the check to the commit and the App
+  squash-merges, so another pull request at that commit would otherwise merge on the old success. Here: the old head
+  when the App writes a newer one for the proposal, and the head of a proposal voided because its pull request closed
+  or none of its answers applies any more. A failure is logged; `gate` retires it again when another pull request
+  opens at that commit.
 - The merge: wait at most 10 s for the pull request to show the head (GitHub moves it after the ref), then
   `MergePull(number, head)` (squash, expected head, no bypass actor: design appendix D.2). On any refusal (405, 409,
   422) read the pull request: merged anyway (an owner, an earlier attempt; unmeasured) is `merged`, else it stays open
@@ -212,4 +222,7 @@ an `archfit/gate` success on the head (design appendix D.2), and the memory Stor
   the revert; the issue and the pull request record owner and passkey), `TestOnlyAnOwnerOfTheApprovedPolicyReverts`,
   `TestARevertRefuses` (inside the flow, moved, nothing to revert), `TestARevertRestoresADeletedPolicy`,
   `TestARevertIsBoundToTheChangeTheOwnerSaw` (a later push, not judged), `TestAConfirmEndsAnOpenRevert`,
-  `TestAProposalOfAPullRequestSomeoneElseWroteIsNotThePolicyPullRequest`.
+  `TestAProposalOfAPullRequestSomeoneElseWroteIsNotThePolicyPullRequest`, `TestAnAnswerNeverStartsChangeControl` (no
+  approved record: refused, nothing written), `TestThePolicyPullRequestPassesOnlyUnderChangeControl` (no success, no
+  merge); `TestAMergedProposalWaitsForItsPushAndANewOneOpens` asserts `ErrPolicyUnapproved` until the merge's push is
+  judged; the resync test asserts the old head retired before the new head's check.

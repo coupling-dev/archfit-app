@@ -1,10 +1,12 @@
 package gate
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -284,4 +286,39 @@ func (g *Gate) workflowPushed(ctx context.Context, e webhook.Event) error {
 func logOwner(ctx context.Context, r api.Repo, step string, err error) {
 	slog.Default().WarnContext(ctx, "gate owner action step failed", "installation_id", r.InstallationID,
 		"repository_id", r.ID, "step", step, "status", api.Status(err), "rate_limited", errors.Is(err, api.ErrRateLimited))
+}
+
+// retireForeignProposal takes back the verdict of a proposal's head from pull request t when t is not that proposal's
+// own open pull request (M2 review H2): GitHub ties archfit/gate to the commit, so a pull request opened at a proposal's
+// head would otherwise merge on a success the App set for another pull request. The pull request then gets its verdict
+// from its own run. A failed read or write is returned, so the delivery is retried.
+func (g *Gate) retireForeignProposal(ctx context.Context, t inputs.Target) error {
+	if g.checks == nil || t.PullRequest == 0 || t.HeadSHA == "" {
+		return nil
+	}
+	runs, err := g.checks.CheckRuns(ctx, t.Repo.RepoRef, t.HeadSHA, proposals.GateCheck)
+	if err != nil {
+		return fmt.Errorf("gate: read the check of the head: %w", err)
+	}
+	if len(runs) == 0 {
+		return nil
+	}
+	latest := slices.MaxFunc(runs, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) })
+	id, ok := proposals.ProposalOf(latest)
+	if !ok || latest.Conclusion != "success" {
+		return nil
+	}
+	var p records.Proposal
+	err = records.Load(ctx, g.v4.store, store.Tenant(t.Repo.InstallationID), records.ProposalKey(t.Repo.FullName, id), &p)
+	switch {
+	case err == nil && p.State == records.StateOpen && p.PullRequest == t.PullRequest:
+		return nil // the proposal's own pull request
+	case err != nil && !errors.Is(err, records.ErrNoRecord):
+		return fmt.Errorf("gate: read proposal %s: %w", id, err)
+	}
+	pull := p.PullRequest
+	if pull == 0 {
+		pull = t.PullRequest
+	}
+	return proposals.Retire(ctx, g.checks, t.Repo, t.HeadSHA, pull, id, proposals.RetiredForeign, g.now())
 }

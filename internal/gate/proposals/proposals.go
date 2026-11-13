@@ -259,6 +259,9 @@ func (s *Service) answer(ctx context.Context, r api.Repo, in Input) (Outcome, er
 	// The answer stands from here on. What follows is done as far as GitHub allows, whatever becomes of the caller.
 	after, cancel := context.WithTimeout(context.WithoutCancel(ctx), afterTimeout)
 	defer cancel()
+	if cur != nil && pin != nil && pin.HeadSHA != cur.rec.HeadSHA {
+		s.retire(after, r, cur.rec.HeadSHA, cur.rec.PullRequest, cur.id, RetiredSuperseded)
+	}
 	if !joins && cur != nil && len(voided) > 0 {
 		pin = s.resync(after, r, cur, tip, file, kept)
 	}
@@ -403,6 +406,7 @@ func (s *Service) current(ctx context.Context, r api.Repo) (*proposal, error) {
 			if err := records.VoidProposal(ctx, s.store, t, r.FullName, p.id); err != nil {
 				return nil, fmt.Errorf("proposals: void proposal %s: %w", p.id, err)
 			}
+			s.retire(ctx, r, p.rec.HeadSHA, p.rec.PullRequest, p.id, RetiredVoid)
 			continue
 		case open != nil:
 			return nil, fmt.Errorf("proposals: two open proposals, %s and %s", open.id, p.id)
@@ -544,13 +548,18 @@ func (s *Service) resync(ctx context.Context, r api.Repo, cur *proposal, tip str
 	if len(kept) == 0 {
 		if err := records.VoidProposal(ctx, s.store, t, r.FullName, cur.id); err != nil {
 			logFailure(ctx, r, "void the proposal", err)
+			return nil
 		}
+		s.retire(ctx, r, cur.rec.HeadSHA, cur.rec.PullRequest, cur.id, RetiredVoid)
 		return nil
 	}
 	pin := records.Pin{Proposal: cur.id, PullRequest: cur.rec.PullRequest, HeadSHA: head, Digest: policy3.Digest(file)}
 	if err := records.Join(ctx, s.store, t, r.FullName, kept[0].id, cur.id, head, pin.Digest); err != nil {
 		logFailure(ctx, r, "pin the proposal", err)
 		return nil
+	}
+	if head != cur.rec.HeadSHA {
+		s.retire(ctx, r, cur.rec.HeadSHA, cur.rec.PullRequest, cur.id, RetiredSuperseded)
 	}
 	return &pin
 }
