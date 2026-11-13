@@ -89,3 +89,9 @@ Over a fake `gate.Answers` that calls `Redeem` for a loosening answer, as `gate/
 
 - `TestAnAnswerRedeemsTheTokenForItsRequestKindAndDigest`: the Purpose, the user id, the token, and what the gate gets.
 - `TestARejectRedeemsNothing`, `TestARefusedTokenRefusesTheAnswer`, `TestDigestAsksTheGate`.
+
+Owner page submissions carry both the unchanged M2 `Digest` and `ViewDigest`. Before entering the
+action, and again in its existing `Redeem` callback, `OwnerView` is re-read and both bindings must
+match. The callback refuses a different underlying digest; it never substitutes a fresh one.
+Only then is the passkey token redeemed for `ViewDigest`. M2 change-bound API tokens remain
+change-bound; a page's view-bound token cannot be redeemed through that path.

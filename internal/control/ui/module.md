@@ -82,3 +82,6 @@ bytes, immutable refs, SHA-256s, rendered diffs, the M2 action digest and the se
 The server registers `/r/{o}/{n}/owner/{first|workflow|confirm|revert}` as signed-in shell routes.
 The client validates the action, pull query and owner-view JSON before showing an action.
 Each view has one submit button, which starts the passkey ceremony for the displayed view digest.
+
+The owner action POST accepts `view_digest` beside the original M2 `digest`. It forwards both
+unchanged to control/answers, which checks the view twice and binds the passkey to the view.

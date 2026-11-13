@@ -64,6 +64,12 @@ policy pull request. It also shows those answers relative to the approved policy
 An approval does not mean the check passed: the outcome says whether a new run was requested, is pending,
 or could not be started.
 
+**Known limits:** Submit re-reads the displayed files, refs and open proposal answers before the passkey is
+consumed. A difference refuses the action and asks you to reload. GitHub and the Store do not provide one
+atomic snapshot: a ref can still move after the last read. Proposal consumption re-checks its files and
+digest, and outside-flow reconciliation surfaces a later default-branch policy change. The passkey binds
+the displayed view; it does not remove this residual window or prove that the owner read the files.
+
 ## Register a passkey
 
 Open `/r/<owner>/<repo>/passkeys` after signing in. A policy owner can register a passkey; before the first policy, a repository administrator can register one. Follow the browser's registration prompt. Registration opens a GitHub issue notifying the user and owners. A second passkey and each removal require an existing passkey. The App uses user verification for the assertion; it does not prove that the owner read the request.

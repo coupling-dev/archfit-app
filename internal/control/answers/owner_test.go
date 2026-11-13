@@ -11,10 +11,14 @@ import (
 )
 
 type ownerGate struct {
-	target gate.Target
-	action gate.OwnerAction
-	in     gate.OwnerInput
-	err    error
+	target       gate.Target
+	action       gate.OwnerAction
+	in           gate.OwnerInput
+	err          error
+	view         gate.OwnerView
+	viewCalls    int
+	beforeRedeem func()
+	redeemDigest string
 }
 
 func (g *ownerGate) OwnerDigest(_ context.Context, target gate.Target, a gate.OwnerAction) (string, error) {
@@ -26,7 +30,14 @@ func (g *ownerGate) OwnerAct(ctx context.Context, target gate.Target, in gate.Ow
 	if g.err != nil {
 		return gate.OwnerOutcome{}, g.err
 	}
-	credential, err := in.Redeem(ctx, "sha256:rebound")
+	if g.beforeRedeem != nil {
+		g.beforeRedeem()
+	}
+	digest := g.redeemDigest
+	if digest == "" {
+		digest = "sha256:rebound"
+	}
+	credential, err := in.Redeem(ctx, digest)
 	if err != nil {
 		return gate.OwnerOutcome{}, err
 	}
@@ -89,5 +100,6 @@ func TestOwnerActionsPreserveGateAndPasskeyRefusals(t *testing.T) {
 
 func (g *ownerGate) OwnerView(_ context.Context, target gate.Target, a gate.OwnerAction) (gate.OwnerView, error) {
 	g.target, g.action = target, a
-	return gate.OwnerView{}, g.err
+	g.viewCalls++
+	return g.view, g.err
 }

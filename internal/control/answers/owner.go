@@ -10,11 +10,12 @@ import (
 
 // OwnerAction is an owner action outside a request. Digest is what the owner saw before step-up.
 type OwnerAction struct {
-	Kind   string
-	Pull   int
-	Digest string
-	Later  bool
-	Token  string
+	Kind       string
+	Pull       int
+	Digest     string
+	ViewDigest string // a page binds the complete displayed artifact, separate from the M2 digest
+	Later      bool
+	Token      string
 }
 
 // Owners binds owner actions to the signed-in user's passkey.
@@ -37,10 +38,27 @@ func (s *owners) OwnerDigest(ctx context.Context, r api.Repo, a OwnerAction) (st
 }
 
 func (s *owners) OwnerAct(ctx context.Context, r api.Repo, u gate.OwnerUser, a OwnerAction) (gate.OwnerOutcome, error) {
+	if a.ViewDigest != "" {
+		if err := s.checkView(ctx, r, a); err != nil {
+			return gate.OwnerOutcome{}, err
+		}
+	}
+
 	return s.gate.OwnerAct(ctx, gate.Target{Repo: r}, gate.OwnerInput{
 		Action: gate.OwnerAction{Kind: a.Kind, Pull: a.Pull}, User: u,
 		Digest: a.Digest, Later: a.Later,
 		Redeem: func(ctx context.Context, digest string) (string, error) {
+			if a.ViewDigest != "" {
+				// OwnerAct must redeem the exact underlying binding that accompanied the displayed view.
+				// Never replace it with a newly computed M2 digest, even after a successful view check.
+				if digest != a.Digest {
+					return "", gate.ErrOwnerMoved
+				}
+				if err := s.checkView(ctx, r, a); err != nil {
+					return "", err
+				}
+				digest = a.ViewDigest
+			}
 			return s.passkeys.Redeem(ctx, r, u.ID, a.Token, passkey.Purpose{Action: a.Kind, Digest: digest})
 		},
 	})
@@ -48,4 +66,15 @@ func (s *owners) OwnerAct(ctx context.Context, r api.Repo, u gate.OwnerUser, a O
 
 func (s *owners) OwnerView(ctx context.Context, r api.Repo, a OwnerAction) (gate.OwnerView, error) {
 	return s.gate.OwnerView(ctx, gate.Target{Repo: r}, gate.OwnerAction{Kind: a.Kind, Pull: a.Pull})
+}
+
+func (s *owners) checkView(ctx context.Context, r api.Repo, a OwnerAction) error {
+	v, err := s.OwnerView(ctx, r, a)
+	if err != nil {
+		return err
+	}
+	if v.Digest != a.ViewDigest || v.ActionDigest != a.Digest {
+		return gate.ErrOwnerMoved
+	}
+	return nil
 }
