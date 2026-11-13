@@ -18,6 +18,7 @@ const port = Number(process.env.E2E_PORT);
 // mocked in the browser, so it needs no Go server and no GitHub.
 export default defineConfig({
   testDir: "e2e",
+  snapshotPathTemplate: "{testDir}/goldens/{arg}{ext}",
   forbidOnly: !!process.env.CI,
   reporter: process.env.CI ? "github" : "list",
   use: { baseURL: `http://127.0.0.1:${port}` },
