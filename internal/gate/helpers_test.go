@@ -166,7 +166,7 @@ func (w *world) push(p *pull) {
 	p.head, p.runID = pl.HeadSHA, w.nextRun
 	w.gh.runs[p.runID] = api.WorkflowRun{
 		ID: p.runID, Attempt: 1, Event: "pull_request", HeadSHA: p.head, HeadRepo: pl.HeadRepo,
-		WorkflowPath: testWorkflow, Status: runCompleted, PullRequests: []int{p.number},
+		WorkflowPath: testWorkflow, Status: runCompleted, PullRequests: []int{p.number}, CreatedAt: w.now,
 	}
 }
 

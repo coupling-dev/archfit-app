@@ -52,9 +52,11 @@ separate, testable steps. Without this module a report is a self-reported file a
   merge of a proposal with the policy its approvals wrote consumes them, once; in a repository with an approved policy,
   any other change puts it "outside the flow" (design 7.1): one issue opens to the owners, and every envelope 2 upload
   is `unknown` with a record that names it until an owner confirms or reverts (task 23). A repository without an
-  approved policy is not under change control yet: the push is recorded, and its uploads say `first_approval`. The requests and pull requests of a consumed
-  proposal are handed to the re-check (task 21; logged as `gate recheck handed` until it lands). The same push is then
-  judged for the workflow approval it uses (`approvals.WorkflowPushed`, façade file `owner.go`).
+  approved policy is not under change control yet: the push is recorded, and its uploads say `first_approval`. The pull requests waiting on a
+  consumed proposal's requests get a fresh result without their authors (design 10.5, M2 task 21,
+  `sweep.AfterAnswer`): a re-run when the four conditions hold, else a branch update with the App token; the path is
+  recorded in the pull record and on each request issue. Its failure is returned, so the delivery is retried. The same push is then judged for the
+  workflow approval it uses (`approvals.WorkflowPushed`, façade file `owner.go`).
 - Take the owner actions outside requests (M2 task 23, façade file `owner.go`, `OwnerActions`): the first approval of an
   onboarding pull request or of the policy already on the default branch, a workflow approval (`gate/approvals`), and
   the confirm or revert of a policy changed outside the flow (confirm `gate/approvals`, revert `gate/proposals`).
@@ -563,7 +565,8 @@ change of the workflow on `T` reads `unknown` until its branch is updated.
 4. The pull record (M2 D6, `records.Pull` at `PullKey` with its `PullIndexKey` entry, one `records.Indexed` swap):
    pull request uploads only. It holds the run id and attempt, the payload digest, the status the App gave, and the
    result's error keys only when no rule failed. A record of a newer run, or a newer attempt of the same run, is never
-   replaced: run ids grow, so a late upload of an older head cannot win. Push and merge group uploads store nothing
+   replaced: run ids grow, so a late upload of an older head cannot win. A newer record keeps the old one's `rechecks`
+   markers (the re-check after an answer, M2 task 21). Push and merge group uploads store nothing
    here (task 22 owns push results).
 5. The check and the comment (`feedback.Publisher4`, M2 task 15; see `gate/feedback`, "Archfit 4 publication"):
    `archfit/gate` on the head and, for a pull request, its one comment. The result shown is the engine's with the
@@ -965,7 +968,8 @@ type Repairer interface {
   error with `RateLimited` set when GitHub's rate limit stopped the pass. `RunRepo` is the same pass for one
   repository, and it returns the rate limit as an error that wraps `api.ErrRateLimited`; it needs only `RepoRef` and `Private` of the `Repo` it is given. `Errors` counts skipped units.
   The sweep owns the rules the façade also needs, and exports them: the re-run guard (`Rerun`, called for
-  `ReviewChanged`), the publication for a target without a report (`Without`, called for the fork refusal of a
+  `ReviewChanged`), the re-check after an answer (`AfterAnswer`, called by `approvals.go` when a push consumes a
+  proposal), the publication for a target without a report (`Without`, called for the fork refusal of a
   new head), the withdrawn-approval rule 5a (`Withdrawn` and `Withdrawal`, called for `ReviewChanged`), and the
   correction of a merge group's check (`GroupWithdrawal`, called for `MergeGroupDestroyed` and for a review of a queued
   pull request). The
@@ -973,24 +977,38 @@ type Repairer interface {
 
 <!-- contract: New — restated from internal/gate/sweep/module.md -->
 ```go
-func New(repos Repos, pulls Pulls, actions Actions, r Resolver, p Publisher, c Config) Sweeper
+func New(repos Repos, pulls Pulls, actions Runs, r Resolver, p Publisher, admit Admitter, d Decisions, c Config) Sweeper
 ```
 
-<!-- contract: RerunResult, Rerun — restated from internal/gate/sweep/module.md -->
+<!-- contract: RerunResult, Unmet, Runs, RerunInput, Rerun, AfterAnswer — restated from internal/gate/sweep/module.md -->
 ```go
-// RerunResult is what the re-run guard found or did. It is meaningful only with a nil error.
 type RerunResult int
 
 const (
-    RerunInFlight   RerunResult = iota // the run is queued or in progress: wait for its upload
+    RerunInFlight   RerunResult = iota // the run, or a newer run of the head, is queued or in progress
     RerunRequested                     // Actions.Rerun accepted the request
-    RerunImpossible                    // rc.RunID is 0, the run is gone, or a newer attempt already completed
+    RerunImpossible                    // a condition of design 10.5 does not hold (Unmet names it)
 )
 
-// Rerun is the re-run guard, the only caller of Actions.Rerun on the gate path. It requests a re-run of
-// rc.RunID only while that run is completed and still at rc.RunAttempt, so a receipt is re-run at most once.
-// rc.RunID == 0 and ErrNotFound from Actions.Run are RerunImpossible with a nil error.
-func Rerun(ctx context.Context, actions Actions, r RepoRef, rc Receipt) (RerunResult, error)
+// Unmet: "" | "no_run" | "not_latest" | "policy_not_from_tip" | "too_old" | "base_changed".
+type Unmet string
+
+type Runs interface { Actions; WorkflowRuns; Commits }
+
+type RerunInput struct {
+    Receipt   Receipt // RunID and RunAttempt name the run to re-run
+    Head      string  // the head now
+    EventBase string  // the base of the event the run measured; "" when unknown
+    Tip       string  // the default branch's head now; "" when unknown
+    ReadsTip  bool    // the run's workflow reads the policy from the target tip
+}
+
+// Rerun is the re-run guard, the only caller of Actions.Rerun on the gate path: it requests a re-run only when the
+// four conditions of design 10.5 hold, and names the first one that fails.
+func Rerun(ctx context.Context, gh Runs, r RepoRef, in RerunInput, now time.Time) (RerunResult, Unmet, error)
+
+// AfterAnswer re-checks the pull requests waiting on the requests of a consumed proposal: a re-run, else a branch update.
+func AfterAnswer(ctx context.Context, gh AnswerGitHub, s Store, r Repo, c Consumed, now time.Time) error
 ```
 
 <!-- contract: Without, Withdrawn, Withdrawal — restated from internal/gate/sweep/module.md -->
@@ -1074,9 +1092,9 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 - **Balanced?**: yes
 - **Shared knowledge**: `Service` (`Pushed`, `WorkflowPushed`, `Bind`, `Act`), built with the gate's GitHub client and
   Store; `Push`, `Outcome`, the judgements, the owner action types and errors. The façade file `approvals.go` calls
-  `Pushed` on `DefaultBranchPush` and logs the outcome with identifiers only (`gate policy push`, `gate recheck
-  handed`); `owner.go` calls `WorkflowPushed` after it, and `Bind` and `Act` for `OwnerActions`. `upload4.go` reads the
-  state it records (`records.Repo`) and the open first and workflow proposals.
+  `Pushed` on `DefaultBranchPush`, logs the outcome with identifiers only (`gate policy push`) and hands a consume to
+  `sweep.AfterAnswer`; `owner.go` calls `WorkflowPushed` after it, and `Bind` and `Act` for `OwnerActions`.
+  `upload4.go` reads the state it records (`records.Repo`) and the open first and workflow proposals.
 
 ### wire/manifest
 
@@ -1595,7 +1613,7 @@ the comment links to the App's pull request page), `feedback.NewRepairer(d.GitHu
 | `inputs`   | `Trusted` for a `Target`; owns the `Entitlement` and `Admission` records, the digest predicate and the protected path set | none                                                        |
 | `verdict`  | `Outcome` from `Facts`; `Without`, `Suspended`                                                           | `ingest` (`Problem`), `inputs` (`Trusted`) — model            |
 | `feedback` | checks, comment, receipt, repair issue; `State`, `Pending`, `Warn`, `Repair`                             | `verdict` (`Outcome`), `inputs` (`Target`, `Trusted`) — model |
-| `sweep`    | reconciliation of open PRs; owns `Rerun` and `Without`                                                   | `inputs`, `feedback`, `verdict` — contract                    |
+| `sweep`    | reconciliation of open PRs and the re-check after an answer; owns `Rerun`, `Without`, `AfterAnswer`                                                   | `inputs`, `feedback`, `verdict`, `records` — contract                    |
 
 ### Report upload flow
 
@@ -1720,7 +1738,11 @@ the check runs). In required mode, when the current receipt is `sweep.Withdrawn`
 `sweep.Withdrawal(target, current, trusted)`: `owner_approval_missing` under the current receipt's run identity,
 with the protected paths in `Detail`, logged as `approval_withdrawn`, and no re-run. This is rule 5a of the sweep,
 which repairs a lost event within the hour. After `owner_approval_missing`, once `!verdict.Unapproved(trusted)`
-(approval granted, or no longer required), it calls `sweep.Rerun` inside the same lease and publishes nothing.
+(approval granted, or no longer required), it calls `sweep.Rerun` inside the same lease and publishes nothing. The
+guard's inputs: the event's head; the receipt's base, else the pull request's base (`Pulls.Pull`); the default
+branch's head (`BranchHead`); and "reads the policy from the tip", which the Archfit 3 Action does (design D.2). A failed
+read of the base or the tip is returned, so the delivery is retried; one GitHub does not have is unknown, and no re-run
+is requested.
 
 Because nothing is decided outside the lease, every ordering of these events and an upload ends right:
 
@@ -1747,8 +1769,8 @@ Re-run guard: `sweep.Rerun` is the only implementation; the façade has none. It
 | `RerunRequested`                                                                | logged as `rerun`; nil                                                         |
 | `RerunInFlight` (queued or in progress)                                         | nothing; nil. A redelivered event lands here                                   |
 | `RerunImpossible`: `receipt.RunID == 0`                                         | nothing; nil; no GitHub call                                                   |
-| `RerunImpossible`: `Actions.Run` returned `api.ErrNotFound`, or a newer attempt | nothing; nil (skip). Rule 7b of the next sweep pass publishes `missing_upload` |
-| an error (any other `Actions.Run` failure, or a failed `Actions.Rerun`)         | the wrapped error                                                              |
+| `RerunImpossible`: the run is gone, a newer attempt or run, an older head, 30 days old, or a target that changed in more than the policy | nothing; nil (skip). Rule 7b of the next sweep pass publishes `missing_upload` |
+| an error (a failed `Actions.Run`, `HeadRuns`, `Compare` or `Actions.Rerun`)     | the wrapped error                                                              |
 
 The handler is idempotent. An error is returned to `app` (which logs it); the sweep repairs what a failed or lost
 event left undone.

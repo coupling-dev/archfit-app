@@ -18,7 +18,7 @@ import (
 type sweeper struct {
 	repos     api.Repos
 	pulls     api.Pulls
-	actions   api.Actions
+	actions   Runs
 	resolver  inputs.Resolver
 	publisher feedback.Publisher
 	admit     Admitter
@@ -37,6 +37,13 @@ type pass struct {
 	sum     Summary
 	recheck bool                     // only rule 5c runs
 	tips    map[api.RepoRef]*tipView // the default-branch tip of each repository, read at most once
+	bases   map[pullRef]string       // the base SHA of each open pull request, as the listing states it
+}
+
+// pullRef names a pull request of a repository.
+type pullRef struct {
+	repo   api.RepoRef
+	number int
 }
 
 func (s *sweeper) Run(ctx context.Context, now time.Time) (Summary, error) {
@@ -156,6 +163,10 @@ func (p *pass) repo(ctx context.Context, r api.Repo) error {
 			Repo: r, PullRequest: pl.Number, HeadSHA: pl.HeadSHA, BaseRef: pl.BaseRef,
 			Fork: pl.HeadRepo != r.FullName,
 		}
+		if p.bases == nil {
+			p.bases = map[pullRef]string{}
+		}
+		p.bases[pullRef{r.RepoRef, pl.Number}] = pl.BaseSHA
 		if err := p.pull(ctx, t, SharedWith(pulls, t.PullRequest, t.HeadSHA, r.DefaultBranch), notOnboarded); err != nil {
 			if err := p.skip(ctx, err, "pull", targetAttrs(t)...); err != nil {
 				return err

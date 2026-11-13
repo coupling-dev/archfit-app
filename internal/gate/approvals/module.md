@@ -82,9 +82,9 @@ direct push to the policy is the new rule with no owner's word.
   Owners are read from the policy at `Repo.ApprovedCommit`, never from the default branch: a policy changed outside the
   flow could name anyone.
 
-Not provided: the re-check of the waiting pull requests (task 21; the gate logs the hand-off), the revert (written by
-`gate/proposals` as an answer is), the re-run that gives an approved head its verdict (`gate`, `owner.go`), the sweep's
-comparison of the tip with the approved digest when a push event is lost (task 22).
+Not provided: the re-check of the waiting pull requests (`sweep.AfterAnswer`, called by the gate), the revert
+(written by `gate/proposals` as an answer is), the re-run that gives an approved head its verdict (`gate`, `owner.go`),
+the sweep's comparison of the tip with the approved digest when a push event is lost (task 22).
 
 ## Subdomain Classification
 
@@ -145,9 +145,10 @@ var ErrNotAdmin, ErrNotOwner, ErrNotDue, ErrNotApprovable, ErrMoved, ErrNeedsPas
 ## Integrations
 
 - **gate** (parent): builds the `Service` with the gate's GitHub client and Store; `events.go` calls `Pushed` through
-  the façade file `approvals.go` and `WorkflowPushed` through `owner.go` on every `DefaultBranchPush`, before the
-  repository sweep, and logs the hand-off of a consume (`gate recheck handed`). `owner.go` calls `Bind` and `Act`.
-  `upload4.go` reads the state it sets (`Repo.OutsideFlow`, `ApprovedDigest`) and the open first and workflow proposals.
+  the façade file `approvals.go` on every `DefaultBranchPush`, before the repository sweep, and hands a consume's
+  waiting pull requests to `sweep.AfterAnswer` (the re-check after an answer, M2 task 21); it then calls
+  `WorkflowPushed` through `owner.go`. `owner.go` calls `Bind` and `Act`. `upload4.go` reads the state it sets
+  (`Repo.OutsideFlow`, `ApprovedDigest`) and the open first and workflow proposals.
 - **gate/records**: `Consume` (`Merge`), `Outside`, `Unguarded`, `OutsideIssue`, `Void`, `VoidProposal`, `First`,
   `Workflow`, `ConsumeWorkflow`, `ApproveCurrent`, `Confirm`, `FileDigest`, `Push`, the keys and values.
   **gate/requests**: `PasskeyShown`.
@@ -157,7 +158,6 @@ var ErrNotAdmin, ErrNotOwner, ErrNotDue, ErrNotApprovable, ErrMoved, ErrNeedsPas
 ## Change Vectors
 
 - Milestone 3 (owner action page): `Bind` is what the page shows before the step-up.
-- Task 21 replaces the logged hand-off with the re-check.
 
 ## Constraints and Invariants
 

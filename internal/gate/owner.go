@@ -64,7 +64,7 @@ type OwnerOutcome struct {
 	Merge       string // revert: the merge commit, when merged
 	Issue       int    // the issue that records a first approval of the default branch's policy, or a confirm ended
 	// Check says how the approved head of a first or workflow approval gets its verdict: CheckRerun, CheckPending or
-	// CheckGone.
+	// CheckBlocked.
 	Check string
 }
 
@@ -72,7 +72,7 @@ type OwnerOutcome struct {
 const (
 	CheckRerun   = "rerun"   // the App re-ran the head's run
 	CheckPending = "pending" // the head's run has not uploaded yet, or is running: its upload gets the verdict
-	CheckGone    = "gone"    // the head's run cannot run again: the check says to run it again
+	CheckBlocked = "blocked" // the App could not re-run it: the check says why and what to do
 )
 
 // The refusals of an owner action, besides the passkey's, which Redeem returns as they are.
@@ -107,9 +107,9 @@ func (g *Gate) OwnerDigest(ctx context.Context, t Target, a OwnerAction) (string
 
 // OwnerAct makes an owner action on t's repository. A revert goes through the App's policy pull request
 // (gate/proposals); the others are recorded at once (gate/approvals). A first or a workflow approval of a pull request
-// then gets that head its verdict: the App re-runs the head's stored run, whose upload now passes the approval
-// (manager, 2026-11-13). A first approval of the default branch's policy and a confirm re-run every open pull request
-// that has no verdict.
+// then gets that head its verdict: the App re-runs the head's stored run through the re-run guard, and the upload passes
+// the approval (manager, 2026-11-13). A first approval of the default branch's policy and a confirm do the same for
+// every open pull request whose stored status is unknown.
 func (g *Gate) OwnerAct(ctx context.Context, t Target, in OwnerInput) (OwnerOutcome, error) {
 	if err := g.admitted(ctx, t); err != nil {
 		return OwnerOutcome{}, err
@@ -129,9 +129,9 @@ func (g *Gate) OwnerAct(ctx context.Context, t Target, in OwnerInput) (OwnerOutc
 	after, cancel := context.WithTimeout(context.WithoutCancel(ctx), ownerAfterTimeout)
 	defer cancel()
 	if c := done.Change; c.Pull > 0 {
-		out.Check = g.checkApproved(after, t.Repo, c.Pull, c.HeadSHA)
+		out.Check = g.recheckPull(after, t.Repo, c.Pull, c.HeadSHA)
 	} else {
-		g.rerunUnknown(after, t.Repo)
+		g.recheckUnknown(after, t.Repo)
 	}
 	return out, nil
 }
@@ -139,51 +139,111 @@ func (g *Gate) OwnerAct(ctx context.Context, t Target, in OwnerInput) (OwnerOutc
 // ownerAfterTimeout bounds what follows an owner's approval: the re-runs.
 const ownerAfterTimeout = 25 * time.Second
 
-// checkApproved gets the approved head of pull request pull its verdict. The pull record of its newest run (M2 D6)
-// names the run: a completed one is re-run, and its upload passes the approval. A head with no stored run, or a run
-// still running, gets its verdict from that run's upload. A run GitHub can no longer re-run leaves the check unknown,
-// and the App says so on it, with the way out.
-func (g *Gate) checkApproved(ctx context.Context, r api.Repo, pull int, head string) string {
+// recheckPull gets pull request pull its verdict after an owner action, on head: the approved head of a first or
+// workflow approval, or "" for the head its pull record names. The re-run guard (sweep.Rerun, design 10.5) re-runs the
+// newest stored run of the head when every condition holds; a run of the head still running uploads by itself, and so
+// does the first run of a head with no stored run. Otherwise the check stays unknown and the App says on it which
+// condition kept the re-run back and what to do (manager, 2026-11-13). The run's workflow is taken as reading the
+// policy from the target tip: it is the workflow of the default branch or the one an owner approved for this head, and
+// the upload of the re-run is decided by every rule again.
+func (g *Gate) recheckPull(ctx context.Context, r api.Repo, pull int, head string) string {
 	var rec records.Pull
 	err := records.Load(ctx, g.v4.store, store.Tenant(r.InstallationID), records.PullKey(r.FullName, pull), &rec)
 	switch {
-	case errors.Is(err, records.ErrNoRecord) || err == nil && rec.HeadSHA != head:
+	case errors.Is(err, records.ErrNoRecord):
 		return CheckPending
 	case err != nil:
 		logOwner(ctx, r, "read the pull record", err)
-		return CheckPending
+		return CheckBlocked // nothing can say why on the check: the record is unreadable
 	}
-	res, err := sweep.Rerun(ctx, g.actions, r.RepoRef, feedback.Receipt{RunID: rec.RunID, RunAttempt: rec.RunAttempt})
+	bound := head != ""
+	if !bound {
+		head = rec.HeadSHA
+	}
+	if rec.HeadSHA != head {
+		return CheckPending // the head's own run uploads
+	}
+	pl, err := g.pulls.Pull(ctx, r.RepoRef, pull)
+	switch {
+	case errors.Is(err, api.ErrNotFound):
+		return CheckPending
+	case err != nil:
+		return g.cannotRecheck(ctx, r, pull, rec, bound, "", err)
+	case pl.State != "open" || pl.HeadSHA != head:
+		return CheckPending // closed, or a newer head whose run decides
+	}
+	tip, err := g.repos.BranchHead(ctx, r.RepoRef, r.DefaultBranch)
+	if err != nil {
+		return g.cannotRecheck(ctx, r, pull, rec, bound, "", err)
+	}
+	in := sweep.RerunInput{Receipt: feedback.Receipt{RunID: rec.RunID, RunAttempt: rec.RunAttempt}, Head: head,
+		EventBase: pl.BaseSHA, Tip: tip, ReadsTip: true}
+	res, unmet, err := sweep.Rerun(ctx, g.actions, r.RepoRef, in, g.now())
 	switch {
 	case err != nil:
-		logOwner(ctx, r, "re-run the approved head", err)
-		return CheckPending
+		return g.cannotRecheck(ctx, r, pull, rec, bound, "", err)
 	case res == sweep.RerunRequested:
 		return CheckRerun
 	case res == sweep.RerunInFlight:
 		return CheckPending
 	}
-	err = g.v4.publisher.Publish4(ctx, feedback.Publication4{
-		Target:     inputs.Target{Repo: r, PullRequest: pull, HeadSHA: head, BaseRef: r.DefaultBranch},
+	return g.cannotRecheck(ctx, r, pull, rec, bound, unmet, nil)
+}
+
+// cannotRecheck says on the check of rec's head that the App could not re-run it after an owner action: the condition of
+// design 10.5 that is not met, or the failure, and what to do. bound says the action approved this head, so a new
+// head needs a new approval.
+func (g *Gate) cannotRecheck(ctx context.Context, r api.Repo, pull int, rec records.Pull, bound bool, unmet sweep.Unmet, cause error) string {
+	if cause != nil {
+		logOwner(ctx, r, "re-run after an owner action", cause)
+	}
+	what, next := recheckWords(unmet, bound)
+	err := g.v4.publisher.Publish4(ctx, feedback.Publication4{
+		Target:     inputs.Target{Repo: r, PullRequest: pull, HeadSHA: rec.HeadSHA, BaseRef: r.DefaultBranch},
 		RunID:      rec.RunID,
 		RunAttempt: rec.RunAttempt,
 		Digest:     rec.PayloadDigest,
 		Result: result.Result{Status: result.StatusUnknown, Summary: summaryUnknown, Unknown: []result.Unknown{{
-			Cause: "tool",
-			What:  "this head is approved, and its run cannot run again",
-			Why:   "only a run of the approved head gives it a verdict",
-			Next:  result.Next{Kind: "fix", Text: "run the Archfit check again: re-run the workflow, or push a commit and approve it again"},
+			Cause: "tool", What: what, Why: "only a new run of this head gives it a verdict",
+			Next: result.Next{Kind: "fix", Text: next},
 		}}},
 	})
 	if err != nil {
-		logOwner(ctx, r, "say the approved head's run is gone", err)
+		logOwner(ctx, r, "say why the re-run did not start", err)
 	}
-	return CheckGone
+	return CheckBlocked
 }
 
-// rerunUnknown re-runs the newest run of every open pull request whose stored status is unknown: a first approval or a
-// confirm gives them a verdict again. A run that cannot run again keeps its record, which names the way out.
-func (g *Gate) rerunUnknown(ctx context.Context, r api.Repo) {
+// recheckWords is the record of a re-run that did not start: what happened, with the unmet condition's code, and what
+// to do. bound says a new head needs a new approval.
+func recheckWords(unmet sweep.Unmet, bound bool) (what, next string) {
+	approved, newHead := "the policy is approved", "push a commit to run the check again"
+	if bound {
+		approved, newHead = "this head is approved", "push a commit; an owner then approves the new head"
+	}
+	rerun := "re-run the Archfit workflow of this head"
+	switch unmet {
+	case sweep.UnmetNoRun:
+		return approved + ", and its run is gone (" + string(unmet) + ")", newHead
+	case sweep.UnmetNotLatest:
+		return approved + ", and its stored run is not the latest run of the head (" + string(unmet) + ")", rerun
+	case sweep.UnmetTooOld:
+		return approved + ", and its run is too old to run again (" + string(unmet) + ")", newHead
+	case sweep.UnmetBaseChanged:
+		update := "update the branch"
+		if bound {
+			update += "; an owner then approves the new head"
+		}
+		return approved + ", and the default branch changed in more than the policy since its run (" + string(unmet) + ")", update
+	case sweep.UnmetPolicyNotFromTip:
+		return approved + ", and its run did not read the policy from the default branch (" + string(unmet) + ")", newHead
+	}
+	return approved + ", and the App could not start its run again", rerun
+}
+
+// recheckUnknown runs recheckPull for every open pull request whose stored status is unknown: a first approval of the
+// default branch's policy or a confirm gives them a verdict again.
+func (g *Gate) recheckUnknown(ctx context.Context, r api.Repo) {
 	t, name := store.Tenant(r.InstallationID), r.FullName
 	index := records.Index{Schema: records.SchemaPullIndex}
 	if err := records.Load(ctx, g.v4.store, t, records.PullIndexKey(name), &index); err != nil {
@@ -201,9 +261,7 @@ func (g *Gate) rerunUnknown(ctx context.Context, r api.Repo) {
 		if err := records.Load(ctx, g.v4.store, t, records.PullKey(name, pull), &rec); err != nil || rec.Status != string(result.StatusUnknown) {
 			continue
 		}
-		if _, err := sweep.Rerun(ctx, g.actions, r.RepoRef, feedback.Receipt{RunID: rec.RunID, RunAttempt: rec.RunAttempt}); err != nil {
-			logOwner(ctx, r, "re-run an open pull request", err)
-		}
+		g.recheckPull(ctx, r, pull, "")
 	}
 }
 

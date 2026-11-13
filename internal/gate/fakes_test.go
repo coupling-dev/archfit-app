@@ -984,6 +984,19 @@ type fakeActions struct {
 	refs        []api.RepoRef
 }
 
+// HeadRuns lists the one run when it is of this head and workflow.
+func (a *fakeActions) HeadRuns(_ context.Context, _ api.RepoRef, workflowPath, headSHA string) ([]api.WorkflowRun, error) {
+	if a.run.HeadSHA == headSHA && a.run.WorkflowPath == workflowPath {
+		return []api.WorkflowRun{a.run}, nil
+	}
+	return nil, nil
+}
+
+// Compare knows no commit: the guard compares only when the base is not the tip.
+func (a *fakeActions) Compare(context.Context, api.RepoRef, string, string) (api.Comparison, error) {
+	return api.Comparison{}, api.ErrNotFound
+}
+
 func (a *fakeActions) Run(_ context.Context, r api.RepoRef, runID int64) (api.WorkflowRun, error) {
 	a.ran = append(a.ran, runID)
 	a.refs = append(a.refs, r)

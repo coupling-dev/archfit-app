@@ -117,7 +117,7 @@ func TestBasePolicyChangeRerunsOpenPulls(t *testing.T) {
 }
 
 func TestExpiryBlocksUnrelatedPullsWithoutNewCommit(t *testing.T) {
-	e := t0.Add(30 * day)
+	e := t0.Add(10 * day)   // the run (created a day before t0) is still younger than 30 days then
 	next := e.Add(60 * day) // another waiver, still valid after e
 	start := func(t *testing.T) (*world, inputs.Target) {
 		w := newWorld(t)

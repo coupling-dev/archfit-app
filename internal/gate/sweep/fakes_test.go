@@ -21,8 +21,9 @@ import (
 var t0 = time.Unix(1782000000, 0).UTC()
 
 const (
-	day    = 24 * time.Hour
-	marker = "MARKER"
+	day          = 24 * time.Hour
+	marker       = "MARKER"
+	workflowPath = ".github/workflows/archfit.yaml"
 )
 
 var (
@@ -93,6 +94,11 @@ type fakeActions struct {
 	artifacts     map[int64][]byte // report artifact by run; a missing run has none (api.ErrNotFound)
 	artifactErrs  map[int64]error
 	artifactCalls []int64
+	headRunsErr   error
+	headRunsCalls []string                  // heads, in call order
+	compares      map[string]api.Comparison // by "<base>..<head>"; an unscripted compare is an error
+	compareErrs   map[string]error
+	compareCalls  []string
 }
 
 func (f *fakeActions) Artifact(_ context.Context, _ api.RepoRef, runID int64, name string, _ int64) ([]byte, error) {
@@ -120,6 +126,34 @@ func (f *fakeActions) Run(_ context.Context, _ api.RepoRef, runID int64) (api.Wo
 		return api.WorkflowRun{}, fmt.Errorf("run %d: %w", runID, api.ErrNotFound)
 	}
 	return *run, nil
+}
+
+// HeadRuns lists the runs of the map whose head and workflow are these, as GitHub lists a head's runs.
+func (f *fakeActions) HeadRuns(_ context.Context, _ api.RepoRef, workflowPath, headSHA string) ([]api.WorkflowRun, error) {
+	f.headRunsCalls = append(f.headRunsCalls, headSHA)
+	if f.headRunsErr != nil {
+		return nil, f.headRunsErr
+	}
+	var out []api.WorkflowRun
+	for _, run := range f.runs {
+		if run.HeadSHA == headSHA && run.WorkflowPath == workflowPath {
+			out = append(out, *run)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeActions) Compare(_ context.Context, _ api.RepoRef, base, head string) (api.Comparison, error) {
+	key := base + ".." + head
+	f.compareCalls = append(f.compareCalls, key)
+	if err := f.compareErrs[key]; err != nil {
+		return api.Comparison{}, err
+	}
+	c, ok := f.compares[key]
+	if !ok {
+		return api.Comparison{}, fmt.Errorf("fake: unscripted compare %s", key)
+	}
+	return c, nil
 }
 
 // Rerun behaves like GitHub: a successful request queues the next attempt.
@@ -321,7 +355,8 @@ func newWorld(t *testing.T) *world {
 		repos: &fakeRepos{repos: map[int64][]api.Repo{}, listReposErr: map[int64]error{}, tips: map[string]string{}, tipErrs: map[string]error{}},
 		pulls: &fakePulls{open: map[string][]api.Pull{}, errs: map[string]error{}},
 		actions: &fakeActions{runs: map[int64]*api.WorkflowRun{}, runErrs: map[int64]error{}, rerunErrs: map[int64]error{},
-			artifacts: map[int64][]byte{}, artifactErrs: map[int64]error{}},
+			artifacts: map[int64][]byte{}, artifactErrs: map[int64]error{},
+			compares: map[string]api.Comparison{}, compareErrs: map[string]error{}},
 		resolver: &fakeResolver{trusted: map[string]inputs.Trusted{}, errs: map[string]error{}},
 		pub:      &fakePublisher{states: map[string]feedback.CheckState{}, errs: map[string]error{}},
 	}
@@ -363,6 +398,9 @@ func (w *world) pull(r api.Repo, number int, tr inputs.Trusted) inputs.Target {
 func (w *world) pullWith(r api.Repo, p api.Pull, tr inputs.Trusted) inputs.Target {
 	p.State = "open"
 	p.HeadSHA = fmt.Sprintf("sha%d-%d", r.ID, p.Number)
+	if p.BaseSHA == "" {
+		p.BaseSHA = tip0 // opened on the default tip
+	}
 	w.pulls.open[r.FullName] = append(w.pulls.open[r.FullName], p)
 	tg := inputs.Target{Repo: r, PullRequest: p.Number, HeadSHA: p.HeadSHA, BaseRef: p.BaseRef, Fork: p.HeadRepo != r.FullName}
 	w.resolver.trusted[pullKey(tg)] = tr
@@ -371,11 +409,12 @@ func (w *world) pullWith(r api.Repo, p api.Pull, tr inputs.Trusted) inputs.Targe
 
 func (w *world) trust(tg inputs.Target, tr inputs.Trusted) { w.resolver.trusted[pullKey(tg)] = tr }
 
-// check puts a completed gate check on the target's head; a run for its receipt exists, completed.
+// check puts a completed gate check on the target's head; a run of the head for its receipt exists, completed.
 func (w *world) check(tg inputs.Target, rc feedback.Receipt, startedAt time.Time) {
 	w.pub.states[checkKey(tg)] = feedback.CheckState{Exists: true, StartedAt: startedAt, Receipt: rc}
 	if rc.RunID != 0 {
 		w.run(rc.RunID, rc.RunAttempt, "completed")
+		w.actions.runs[rc.RunID].HeadSHA = tg.HeadSHA
 	}
 }
 
@@ -383,8 +422,10 @@ func (w *world) pendingCheck(tg inputs.Target, startedAt time.Time) {
 	w.pub.states[checkKey(tg)] = feedback.CheckState{Exists: true, Pending: true, StartedAt: startedAt}
 }
 
+// run is a pull_request run of the Archfit workflow created a day before t0.
 func (w *world) run(id int64, attempt int, status string) {
-	w.actions.runs[id] = &api.WorkflowRun{ID: id, Attempt: attempt, Status: status}
+	w.actions.runs[id] = &api.WorkflowRun{ID: id, Attempt: attempt, Status: status, Event: "pull_request",
+		WorkflowPath: workflowPath, CreatedAt: t0.Add(-day)}
 }
 
 func (w *world) state(tg inputs.Target) feedback.CheckState { return w.pub.states[checkKey(tg)] }

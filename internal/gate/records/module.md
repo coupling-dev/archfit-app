@@ -34,6 +34,8 @@ its index could drift apart.
 - Record a default-branch push whose policy no approval made (`Outside`): the repository is "policy changed outside
   the flow" (design 7.1) until an owner confirms or reverts it (M2 task 23), and the issue opened for it
   (`OutsideIssue`). Record a policy push to a repository without an approved policy (`Unguarded`).
+- Record in a pull record how the re-check after an answer got its pull request a fresh result (`Rechecked`, M2 task
+  21); uploads keep it.
 - Record the owner actions outside requests (M2 task 23), each in one swap: a first approval of an onboarding pull
   request (`First`) and a workflow approval (`Workflow`), proposals of that pull request bound to its head, policy
   digest and workflow digest; a first approval of the policy already on the default branch (`ApproveCurrent`) and a
@@ -97,7 +99,7 @@ writes the repository's proposal.
 | `v4/approval/<repo>/<id>` | `Approval` | `archfit-app.approval.v1` | kind, request, change (raw JSON, owned by the policy writer), owner (user id and login), credential, time, proposal (set once), state `open` or `void` |
 | `v4/proposal/<repo>/<id>` | `Proposal` | `archfit-app.proposal.v1` | kind (none for the App's policy pull request, `first` or `workflow` for a pull request someone else wrote), ordered approval ids (at most `MaxApprovals` = 9), pull request, head SHA, expected digest, the workflow digest its merge must land (`first`, `workflow`), state `open`, `merged` or `void`, consuming commit |
 | `v4/policy-push/<repo>/<before>..<after>` | `PolicyPush` | `archfit-app.policy-push.v1` | the policy digest of a default-branch push that changed the policy, and the proposal it consumed, or `unguarded` (no approved policy yet); neither: outside the flow. `<before>` is 40 zeros for a push that created the branch |
-| `v4/pull/<repo>/<pr>` | `Pull` | `archfit-app.pull.v1` | head SHA, run id, run attempt, payload digest, status, error keys and the request key of each error ("" when it has none), for the preview (M2 D6; no result bytes) |
+| `v4/pull/<repo>/<pr>` | `Pull` | `archfit-app.pull.v1` | head SHA, run id, run attempt, payload digest, status, error keys and the request key of each error ("" when it has none), for the preview (M2 D6; no result bytes); `rechecks` (optional): the proposal, path, unmet condition and head of each re-check after an answer, the latest last, at most `MaxRechecks` (16) (M2 task 21) |
 
 Functions, all under one installation tenant:
 
@@ -178,6 +180,12 @@ Functions, all under one installation tenant:
     flow with digest `rev.Outside` (else `ErrMoved`).
   - `FileDigest(file) string`: `sha256:` and the hex SHA-256 of a file's bytes, the digest a workflow approval binds.
 
+- `Rechecked(ctx, s, t, repo, pr, rc Recheck) (bool, error)`: appends `rc` to `Pull.Rechecks` in the pull record,
+  whatever run it names now, keeping the latest `MaxRechecks`, and reports whether it wrote; no record is left as it is
+  (false). An empty proposal or path is an error. `gate/sweep` (`AfterAnswer`) writes it and asks `Pull.Rechecked(id)`.
+  The markers belong to the pull request: `gate`'s upload keeps them when it writes a newer run's record, so a delivery
+  of a consuming push again finds its proposal, after the re-run's own upload and after later proposals.
+
 Every write goes through `store.Update`; after 5 lost swaps it returns `store.ErrConflict`, and the caller may read
 again and retry.
 
@@ -240,6 +248,9 @@ sweep) read and write through this module;
 - `TestOutside`: the state and the push recorded; the issue recorded once, a second one returns the first; the same
   push again changes no byte; a later push keeps the issue; a consumed push is `ErrMoved`; `OutsideIssue` inside the
   flow is `ErrMoved`.
+- `TestRechecked` (memory store and emulator): the record of the run read, of a newer attempt and of a newer head each
+  get the marker and keep the rest; an earlier proposal's marker is kept; no record stays absent; past `MaxRechecks` the
+  oldest goes; an empty recheck is refused.
 - On the memory store and on the Firestore emulator (`FIRESTORE_EMULATOR_HOST`, run by the CI emulator job):
   `TestAConsumeWinsOnce` (two commits, one wins, the other `ErrMoved`),
   `TestTheSameCommitConsumesConcurrentlyWithoutError`, `TestAnApprovalJoinsOneProposalOnly` (two proposals race for

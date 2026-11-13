@@ -130,15 +130,15 @@ func TestAFirstApprovalOnAHeadWhoseRunIsGoneSaysSo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Check != CheckGone {
-		t.Fatalf("check = %q, want %q", out.Check, CheckGone)
+	if out.Check != CheckBlocked {
+		t.Fatalf("check = %q, want %q", out.Check, CheckBlocked)
 	}
 	run, ok := w.latestGate(p.head)
 	if !ok || run.Conclusion != "action_required" {
 		t.Fatalf("archfit/gate = %+v, want action_required", run)
 	}
-	if text := run.Summary; !strings.Contains(text, "this head is approved, and its run cannot run again") ||
-		!strings.Contains(text, "run the Archfit check again") {
+	if text := run.Summary; !strings.Contains(text, "this head is approved, and its run is gone (no_run)") ||
+		!strings.Contains(text, "push a commit; an owner then approves the new head") {
 		t.Errorf("the check does not say what happened and what to do:\n%s", text)
 	}
 }
