@@ -65,6 +65,9 @@ func Decode(data []byte) (File, error) {
 	return f, nil
 }
 
+// ErrVersion2 identifies the previous policy format.
+var ErrVersion2 = errors.New(`version 2 is the Archfit 3 policy format: run "archfit init" to convert it to version 3`)
+
 // checkVersion reads only the version, before the strict decode, so a version 2 file
 // gets the conversion message instead of its first unknown key.
 func checkVersion(data []byte) error {
@@ -87,7 +90,7 @@ func checkVersion(data []byte) error {
 		case Version:
 			return nil
 		case 2:
-			return errors.New(`version 2 is the Archfit 3 policy format: run "archfit init" to convert it to version 3`)
+			return ErrVersion2
 		}
 	}
 	return fmt.Errorf("version %v: this engine reads version 3", yamlValue(header.Version))

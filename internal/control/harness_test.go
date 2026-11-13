@@ -49,6 +49,7 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	d := Deps{
 		GitHub: h.gh.client(), Tokens: fakeTokens{}, OAuth: fakeOAuth{}, Store: h.store, Receiver: h.receiver,
 		Admissions:   admissions,
+		PolicyViews:  g,
 		RequestViews: g,
 		Answers:      g,
 		Sandbox:      h.sandbox, CookieKey: testCookieKey, BaseURL: testBaseURL, Now: h.clock.Now,

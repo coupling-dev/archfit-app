@@ -467,7 +467,7 @@ func newSystem(t *testing.T, w *world, o options) *system {
 	})
 	s.ctl, err = control.New(control.Deps{
 		GitHub: gh, Tokens: tokens, OAuth: oauth, Store: o.store, Receiver: gate.NewReceiver(gh, verifier, baseURL, admissions),
-		Admissions: admissions, RequestViews: s.gate, Answers: s.gate, Operators: []int64{operatorID}, Sandbox: o.sandbox, CookieKey: []byte(cookieKey), BaseURL: baseURL, Now: s.clock.Now,
+		Admissions: admissions, PolicyViews: s.gate, RequestViews: s.gate, Answers: s.gate, Operators: []int64{operatorID}, Sandbox: o.sandbox, CookieKey: []byte(cookieKey), BaseURL: baseURL, Now: s.clock.Now,
 	})
 	if err != nil {
 		t.Fatal(err)

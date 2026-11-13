@@ -1,0 +1,187 @@
+{
+  "owners": [
+    "alexei-led"
+  ],
+  "gate": "required",
+  "layers": [
+    "core",
+    "cmd"
+  ],
+  "modules": [
+    {
+      "name": "cmd",
+      "paths": [
+        "cmd/**"
+      ],
+      "public": [
+        "cmd"
+      ],
+      "volatility": "low",
+      "subdomain": "supporting",
+      "layer": "cmd",
+      "depends_on": [
+        "pkg_chaos",
+        "pkg_container",
+        "pkg_runtime"
+      ]
+    },
+    {
+      "name": "pkg_chaos",
+      "paths": [
+        "pkg/chaos/**"
+      ],
+      "public": [
+        "pkg/chaos",
+        "pkg/chaos/cliflags",
+        "pkg/chaos/*/cmd"
+      ],
+      "volatility": "high",
+      "subdomain": "core",
+      "layer": "core",
+      "depends_on": [
+        "pkg_container",
+        "pkg_util"
+      ]
+    },
+    {
+      "name": "pkg_container",
+      "paths": [
+        "pkg/container/**"
+      ],
+      "public": [
+        "pkg/container"
+      ],
+      "volatility": "medium",
+      "subdomain": "core",
+      "layer": "core",
+      "depends_on": null
+    },
+    {
+      "name": "pkg_runtime",
+      "paths": [
+        "pkg/runtime/**"
+      ],
+      "public": [
+        "pkg/runtime/*"
+      ],
+      "volatility": "high",
+      "subdomain": "core",
+      "layer": "core",
+      "depends_on": [
+        "pkg_container",
+        "pkg_tc"
+      ]
+    },
+    {
+      "name": "pkg_tc",
+      "paths": [
+        "pkg/tc/**"
+      ],
+      "public": [
+        "pkg/tc"
+      ],
+      "volatility": "high",
+      "subdomain": "core",
+      "layer": "core",
+      "depends_on": null
+    },
+    {
+      "name": "pkg_util",
+      "paths": [
+        "pkg/util/**"
+      ],
+      "public": [
+        "pkg/util"
+      ],
+      "volatility": "low",
+      "subdomain": "supporting",
+      "layer": "core",
+      "depends_on": null
+    }
+  ],
+  "builtin": {
+    "graph": "",
+    "coupling": "",
+    "duplication": "",
+    "cycle": "",
+    "layers": "",
+    "unowned": "",
+    "min_balance": null
+  },
+  "rules": [
+    {
+      "id": "no-container-to-chaos",
+      "deny": {
+        "from": [
+          "pkg_container"
+        ],
+        "to": [
+          "pkg_chaos"
+        ]
+      },
+      "not_checked": false,
+      "why": "pkg/container is the domain model that chaos consumes. Importing chaos inverts the dependency and couples the model to every chaos action.",
+      "instead": "Move the shared type or value into pkg/container, and import it from pkg/chaos."
+    },
+    {
+      "id": "no-chaos-to-runtime",
+      "deny": {
+        "from": [
+          "pkg_chaos"
+        ],
+        "to": [
+          "pkg_runtime"
+        ]
+      },
+      "not_checked": false,
+      "why": "Chaos says what to do through the container.Client interface; runtime adapters say how. A direct import bypasses the interface and ties chaos actions to one runtime.",
+      "instead": "Add the method to a container.Client sub-interface in pkg/container/client.go, and implement it in the runtime adapters."
+    },
+    {
+      "id": "no-util-to-domain",
+      "deny": {
+        "from": [
+          "pkg_util"
+        ],
+        "to": [
+          "pkg_chaos"
+        ]
+      },
+      "not_checked": false,
+      "why": "pkg/util must stay domain-agnostic so any package can use it without pulling in chaos behavior.",
+      "instead": "Keep code that needs chaos types in pkg/chaos; give pkg/util functions plain values."
+    }
+  ],
+  "exceptions": [
+    {
+      "rule": "duplication",
+      "from": "cmd",
+      "to": "pkg_chaos",
+      "why": "The error existed when archfit init wrote this policy."
+    },
+    {
+      "rule": "duplication",
+      "from": "cmd",
+      "to": "pkg_runtime",
+      "why": "The error existed when archfit init wrote this policy."
+    },
+    {
+      "rule": "duplication",
+      "from": "pkg_chaos",
+      "to": "pkg_runtime",
+      "why": "The error existed when archfit init wrote this policy."
+    },
+    {
+      "rule": "duplication",
+      "from": "pkg_container",
+      "to": "pkg_runtime",
+      "why": "The error existed when archfit init wrote this policy."
+    }
+  ],
+  "yaml": "# The Archfit policy, converted by archfit init from the Archfit 3 files and reviewed.\n# docs/architecture.md explains it. Change it with `archfit request`, never by hand.\nversion: 3\nowners:\n  - alexei-led\ngate: required\nlayers:\n  - core\n  - cmd\nmodules:\n  cmd:\n    paths:\n      - cmd/**\n    public:\n      - cmd\n    volatility: low\n    subdomain: supporting\n    layer: cmd\n    depends_on:\n      - pkg_chaos\n      - pkg_container\n      - pkg_runtime\n  pkg_chaos:\n    paths:\n      - pkg/chaos/**\n    public:\n      - pkg/chaos\n      - pkg/chaos/cliflags\n      - pkg/chaos/*/cmd\n    volatility: high\n    subdomain: core\n    layer: core\n    depends_on:\n      - pkg_container\n      - pkg_util\n  pkg_container:\n    paths:\n      - pkg/container/**\n    public:\n      - pkg/container\n    volatility: medium\n    subdomain: core\n    layer: core\n  pkg_runtime:\n    paths:\n      - pkg/runtime/**\n    public:\n      - pkg/runtime/*\n    volatility: high\n    subdomain: core\n    layer: core\n    depends_on:\n      - pkg_container\n      - pkg_tc\n  pkg_tc:\n    paths:\n      - pkg/tc/**\n    public:\n      - pkg/tc\n    volatility: high\n    subdomain: core\n    layer: core\n  pkg_util:\n    paths:\n      - pkg/util/**\n    public:\n      - pkg/util\n    volatility: low\n    subdomain: supporting\n    layer: core\nrules:\n  - id: no-container-to-chaos\n    deny:\n      from: pkg_container\n      to: pkg_chaos\n    why: pkg/container is the domain model that chaos consumes. Importing chaos inverts the dependency and couples the model to every chaos action.\n    instead: Move the shared type or value into pkg/container, and import it from pkg/chaos.\n  - id: no-chaos-to-runtime\n    deny:\n      from: pkg_chaos\n      to: pkg_runtime\n    why: Chaos says what to do through the container.Client interface; runtime adapters say how. A direct import bypasses the interface and ties chaos actions to one runtime.\n    instead: Add the method to a container.Client sub-interface in pkg/container/client.go, and implement it in the runtime adapters.\n  - id: no-util-to-domain\n    deny:\n      from: pkg_util\n      to: pkg_chaos\n    why: pkg/util must stay domain-agnostic so any package can use it without pulling in chaos behavior.\n    instead: Keep code that needs chaos types in pkg/chaos; give pkg/util functions plain values.\nexceptions:\n  - rule: duplication\n    from: cmd\n    to: pkg_chaos\n    why: The error existed when archfit init wrote this policy.\n  - rule: duplication\n    from: cmd\n    to: pkg_runtime\n    why: The error existed when archfit init wrote this policy.\n  - rule: duplication\n    from: pkg_chaos\n    to: pkg_runtime\n    why: The error existed when archfit init wrote this policy.\n  - rule: duplication\n    from: pkg_container\n    to: pkg_runtime\n    why: The error existed when archfit init wrote this policy.\ntests:\n  - '**/*_test.go'\n  - '**/tests/**'\ngenerated:\n  - mocks/*.go\n  - pkg/container/mock_Client.go\n  - pkg/container/mock_Executor.go\n  - pkg/container/mock_FilterFunc.go\n  - pkg/container/mock_IPTables.go\n  - pkg/container/mock_Inspector.go\n  - pkg/container/mock_Lifecycle.go\n  - pkg/container/mock_Lister.go\n  - pkg/container/mock_Netem.go\n  - pkg/container/mock_Stressor.go\n  - pkg/runtime/containerd/mock_apiClient.go\n  - pkg/runtime/docker/mock_conn.go\nlanguages:\n  go:\n    enabled: true\n  typescript:\n    enabled: false\n  python:\n    enabled: false\nanalyzers:\n  syntax:\n    enabled: true\n",
+  "digest": "sha256:9965602be855e855a4e8f7967277a01753a7ec9a4038d2991504f45186910815",
+  "edit": {
+    "available": true,
+    "reason": ""
+  }
+}
