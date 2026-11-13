@@ -311,7 +311,8 @@ func TestOnboardingFailureLeavesGateAlone(t *testing.T) {
 		const module = "github.com/alexei-led/archfit-app/internal/"
 		allowed := map[string]bool{
 			"gate": true, "control/proposal": true, "control/account": true, "github/api": true, "github/auth": true,
-			"wire/envelope": true, "wire/settings": true, "wire/policy": true, "wire/manifest": true,
+			"wire/envelope": true, "wire/settings": true, "wire/policy": true, "wire/policy3": true, "wire/manifest": true,
+			"wire/workflow": true,
 		}
 		files, err := filepath.Glob("*.go")
 		if err != nil {

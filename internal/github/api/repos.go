@@ -12,16 +12,20 @@ import (
 const maxFileBytes = 1 << 20
 
 type repoJSON struct {
-	ID            int64  `json:"id"`
-	FullName      string `json:"full_name"`
-	Private       bool   `json:"private"`
+	ID         int64  `json:"id"`
+	FullName   string `json:"full_name"`
+	Private    bool   `json:"private"`
+	Visibility string `json:"visibility"`
+	Owner      struct {
+		Type string `json:"type"`
+	} `json:"owner"`
 	DefaultBranch string `json:"default_branch"`
 }
 
 func (j repoJSON) repo(installationID int64) Repo {
 	return Repo{
 		RepoRef: RepoRef{InstallationID: installationID, FullName: j.FullName},
-		ID:      j.ID, Private: j.Private, DefaultBranch: j.DefaultBranch,
+		ID:      j.ID, Private: j.Private, DefaultBranch: j.DefaultBranch, OwnerType: j.Owner.Type, Visibility: j.Visibility,
 	}
 }
 

@@ -100,13 +100,13 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 			Store:        st,
 			Receiver:     gate.NewReceiver(gh, verifier, c.BaseURL, admissions),
 			Admissions:   admissions,
-			RequestViews: g,
-			Answers:      g,
-			Operators:    c.Operators,
-			Sandbox:      sandbox,
-			CookieKey:    sec.cookieKey,
-			BaseURL:      c.BaseURL,
-			Now:          time.Now,
+			RequestViews: g, OwnerActions: g, SetupViews: g,
+			Answers:   g,
+			Operators: c.Operators,
+			Sandbox:   sandbox,
+			CookieKey: sec.cookieKey,
+			BaseURL:   c.BaseURL,
+			Now:       time.Now,
 		})
 	}
 	if err != nil {

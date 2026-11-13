@@ -128,7 +128,7 @@ func TestAllowedImportMatrix(t *testing.T) {
 	g := importGraph(t)
 	groups := []importGroup{
 		{"wire", func(p string) bool { return under(p, "wire") }, func(pkg, imp string) bool {
-			return strings.HasPrefix(imp, yamlModule) && (pkg == internal+"wire/settings" || pkg == internal+"wire/policy" || pkg == internal+"wire/policy3")
+			return strings.HasPrefix(imp, yamlModule) && (pkg == internal+"wire/settings" || pkg == internal+"wire/policy" || pkg == internal+"wire/policy3" || pkg == internal+"wire/workflow")
 		}},
 		{"store", func(p string) bool { return p == internal+"store" }, func(string, string) bool { return false }},
 		{"queue", func(p string) bool { return under(p, "queue") }, func(pkg, imp string) bool {
@@ -253,7 +253,7 @@ func TestOnlyPlatformSeamsTouchPlatformSDKs(t *testing.T) {
 		}
 	}
 	slices.Sort(yamlImporters)
-	if want := []string{internal + "wire/policy", internal + "wire/policy3", internal + "wire/settings"}; !slices.Equal(yamlImporters, want) {
+	if want := []string{internal + "wire/policy", internal + "wire/policy3", internal + "wire/settings", internal + "wire/workflow"}; !slices.Equal(yamlImporters, want) {
 		t.Errorf("YAML is imported by %v; want %v", yamlImporters, want)
 	}
 }

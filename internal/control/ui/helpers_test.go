@@ -73,6 +73,8 @@ type env struct {
 	passkeys *fakePasskeys
 	requests *fakeRequestViews
 	answers  *fakeAnswers
+	owners   *fakeOwners
+	setups   *fakeSetups
 	oauth    *fakeOAuth
 	store    store.Store
 	admit    *gate.Admissions // acme is approved by configuration; any other account by a Store record
@@ -93,7 +95,8 @@ func newEnv(t *testing.T) *env {
 		admit:    gate.NewAdmissions(reads, []string{"acme", "rival"}),
 		acct:     &fakeAccount{Account: realAccount, status: account.Status{Plan: account.PlanPublic}},
 		consents: newFakeConsents(), onb: &fakeOnboarding{progress: onboarding.Progress{Stage: onboarding.StagePolicyMerged}},
-		passkeys: &fakePasskeys{}, requests: &fakeRequestViews{}, answers: &fakeAnswers{}, oauth: &fakeOAuth{tokens: map[string]auth.UserToken{}},
+		passkeys: &fakePasskeys{}, requests: &fakeRequestViews{}, answers: &fakeAnswers{},
+		owners: &fakeOwners{}, setups: &fakeSetups{}, oauth: &fakeOAuth{tokens: map[string]auth.UserToken{}},
 		now: time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC),
 	}
 	clock := func() time.Time { return e.now }
@@ -103,7 +106,7 @@ func newEnv(t *testing.T) *env {
 	}
 	e.handler = newHandler(Deps{
 		Account: e.acct, Consents: e.consents, Onboarding: e.onb,
-		Admissions: e.admit, RequestViews: e.requests, Answers: e.answers, Passkeys: e.passkeys, Operators: []int64{operatorID}, BaseURL: baseURL, Now: clock,
+		Admissions: e.admit, RequestViews: e.requests, Answers: e.answers, Owners: e.owners, Setups: e.setups, Passkeys: e.passkeys, Operators: []int64{operatorID}, BaseURL: baseURL, Now: clock,
 	}, github{files: gh, checks: gh, actions: gh, pulls: gh, users: gh, installs: gh}, sessions, testWeb)
 
 	e.addRepo(repoName, installA, 10)

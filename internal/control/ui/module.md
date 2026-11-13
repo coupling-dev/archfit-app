@@ -4,6 +4,24 @@
 **Parent**: internal/control/ (Control plane)
 **Submodules**: session, graph
 
+## Archfit 4 setup and owner API
+
+- `GET /api/repos/{o}/{n}/setup` requires repository read access. It returns admission, missing requirements,
+  `state`, optional `first_pull`/`issue`, and ruleset findings (`code`, `state`, `text`).
+- `POST /api/repos/{o}/{n}/owner/{action}/digest` requires read access and CSRF, and returns `digest`.
+- `POST /api/repos/{o}/{n}/owner/{action}` requires read access and CSRF. For `first`, ui additionally
+  reads GitHub repository permission with the signed-in user's token for each action, without the session cache,
+  and passes admin authority to the gate. The gate also requires that user to be an owner in the policy being approved. For `workflow`, `confirm` and `revert`,
+  the gate checks ownership in the approved policy; GitHub admin/write access alone is not ownership.
+- Action bodies accept `pull_request`, `digest`, `merge_later`, `token` only. Workflow requires a PR;
+  confirm/revert forbid it. An onboarding first approval names its PR; an already-converted first approval does not.
+- Refused authority/passkey checks return 403; moved changes and actions not due return 409. Answers refused
+  outside the flow or before first approval also return 409, not an upstream failure. Repository inaccessibility
+  remains 404. User and repository identities always come from the authenticated scope.
+
+These are API routes only. `owner_test.go` and `owner_admin_test.go` cover transport, input, CSRF,
+read/write/admin distinctions, authenticated admin propagation and gate ownership refusals.
+
 ## Purpose
 
 UI is the browser surface of Archfit: sign-in, the organization overview, repository status and

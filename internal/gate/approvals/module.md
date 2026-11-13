@@ -83,7 +83,8 @@ direct push to the policy is the new rule with no owner's word.
   again, refuses a change that is not the one the owner's step-up was bound to (`ErrMoved`, before the step-up is
   used), checks who acts, redeems the step-up, records the approval (`records.First`, `Workflow`, `ApproveCurrent`,
   `Confirm`) and records it on GitHub, naming the owner and the passkey (design 19):
-  - **first** of an onboarding pull request: a repository administrator; the pull request is open, of this repository,
+  - **first** of an onboarding pull request: a repository administrator who is also an owner named in the policy at
+    the PR's immutable head; the pull request is open, of this repository,
     into the default branch, which has no policy of version 3; its head has one and has the workflow file. Recorded on
     the pull request.
   - **first** of the policy already on the default branch (an already-converted repository with no record): a

@@ -17,8 +17,8 @@ import (
 
 // Errors of an owner action outside requests (M2 task 23). None of them writes anything.
 var (
-	// ErrNotAdmin refuses a first approval by a user who is not a repository administrator, or, for a policy already on
-	// the default branch, not also an owner it names (design 9.2; manager, 2026-11-13).
+	// ErrNotAdmin refuses a first approval by a user who is not both a repository administrator and an owner named in
+	// the policy being approved (design 9.2).
 	ErrNotAdmin = errors.New("approvals: the first policy is approved by a repository administrator")
 	// ErrNotOwner refuses a workflow approval or a confirm by a user the approved policy does not name in owners. The
 	// approved policy, not the default branch's: a policy changed outside the flow could name anyone. A revert's is
@@ -229,8 +229,8 @@ func (s *Service) Act(ctx context.Context, r api.Repo, in Input) (Done, error) {
 	return done, nil
 }
 
-// mayAct applies who acts: a first approval, a repository administrator, who for a policy already on the default
-// branch is also one of its owners; any other action, an owner named in the approved policy. It returns the owners
+// mayAct applies who acts: a first approval, a repository administrator who is also an owner of the policy being
+// approved; any other action, an owner named in the approved policy. It returns the owners
 // that the GitHub record is assigned to.
 func (s *Service) mayAct(ctx context.Context, r api.Repo, in Input, c Change) ([]string, error) {
 	named := func(owners []string) bool {
@@ -245,10 +245,11 @@ func (s *Service) mayAct(ctx context.Context, r api.Repo, in Input, c Change) ([
 		if !in.Owner.Admin {
 			return nil, ErrNotAdmin
 		}
+		commit := c.Commit
 		if c.Pull > 0 {
-			return nil, nil
+			commit = c.HeadSHA
 		}
-		owners, err := s.ownersAt(ctx, r.RepoRef, c.Commit)
+		owners, err := s.ownersAt(ctx, r.RepoRef, commit)
 		if err != nil {
 			return nil, err
 		}

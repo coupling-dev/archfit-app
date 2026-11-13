@@ -109,6 +109,8 @@ func TestAnswerAPIRefusals(t *testing.T) {
 		{"answered already", gate.ErrClosedRequest, http.StatusConflict},
 		{"an incomplete answer", gate.ErrAnswer, http.StatusUnprocessableEntity},
 		{"by hand", gate.ErrByHand, http.StatusConflict},
+		{"outside the flow", gate.ErrOutsideFlow, http.StatusConflict},
+		{"first approval is due", gate.ErrFirstApproval, http.StatusConflict},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
