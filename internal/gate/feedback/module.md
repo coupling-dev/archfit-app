@@ -167,11 +167,15 @@ type Publication4 struct {
     RunAttempt int
     Digest     string        // the payload digest of the upload
     Advisory   bool          // the policy's gate is advisory: a fail shows as neutral, with the same records
+    Fresh      bool          // create a fresh check rather than updating an existing one
     Result     result.Result // Status is the status the App gave; the status line and the records are shown as given
 }
 
 // Publisher4 publishes Archfit 4 results. It writes no archfit/state check.
 type Publisher4 interface {
+    // Withdraw4 only publishes unknown and reads the live head receipt inside the same lease. Current still guards
+    // policy and record freshness; a head without a matching pull record cannot retain an old success.
+    Withdraw4(ctx context.Context, p Publication4) error
     // Publish4 writes archfit/gate on p's head and, for a pull request, the one comment, in place, inside the head's
     // publication lease. It never overwrites the check or the comment of a newer run or attempt, and skips the comment
     // of a head that is no longer the pull request's.

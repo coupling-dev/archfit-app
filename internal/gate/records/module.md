@@ -51,6 +51,12 @@ Not provided: GitHub calls, verdicts, the request line, the policy writer, passk
 (`v4/passkey/<github-user-id>`, `v4/challenge/<github-user-id>`) belong to `control/passkey` (M2 task 18), because `control`
 cannot import `gate/*`.
 
+`Merge.Recheck` records `Repo.SweepRecheck` in the consume swap. `SweepRechecked` clears only the matching proposal
+when its after-answer handoff finishes. A crash or transient handoff failure is retried by the next hourly pass.
+The recovery swap also writes `RecoveredPushKey` with immutable `PolicyPush` evidence; `RecoveredDelivery` records an
+actual webhook range only against matching evidence. `OutsideIf` compares approved commit/digest and outside state
+inside the swap, refusing a stale sweep decision after an owner confirms or state otherwise changes.
+
 ## Subdomain Classification
 
 Supporting. The record shapes follow the M2 plan ("App keys", "Approval records"); the consume and the index rule
@@ -98,12 +104,13 @@ writes the repository's proposal.
 
 | Key | Value | `schema` | Holds |
 | --- | --- | --- | --- |
-| `v4/repo/<repo>` | `Repo` | `archfit-app.repo.v1` | approved digest and the merge commit that brought it; the commit of the first approval (change control starts there); outside the flow (digest, issue); drift issue and its body digest; expiry issues (`<exception key> <YYYY-MM-DD>` → issue) |
+| `v4/repo/<repo>` | `Repo` | `archfit-app.repo.v1` | approved digest and the merge commit that brought it; the commit of the first approval (change control starts there); outside the flow (digest, issue); drift issue and its body digest; recovered consume awaiting a recheck handoff (`sweep_recheck`); expiry issues (`<exception key> <YYYY-MM-DD>` → issue) |
 | `v4/request/<repo>/<issue>` | `Request` | `archfit-app.request.v1` | key, reason, numbers (verified, balance), waiting pull requests, state `open`, `answered` or `closed`; rule, path, modules, expiry date and record, so the issue body can be rendered again; the pull requests the body lists |
 | `v4/approval/<repo>/<id>` | `Approval` | `archfit-app.approval.v1` | kind, request, change (raw JSON, owned by the policy writer), owner (user id and login), credential, time, proposal (set once), state `open` or `void` |
 | `v4/proposal/<repo>/<id>` | `Proposal` | `archfit-app.proposal.v1` | kind (none for the App's policy pull request, `first` or `workflow` for a pull request someone else wrote), ordered approval ids (at most `MaxApprovals` = 9), pull request, head SHA, expected digest, the workflow digest its merge must land (`first`, `workflow`), state `open`, `merged` or `void`, consuming commit |
+| `v4/recovered-push/<repo>/<merge>` | `PolicyPush` | `archfit-app.policy-push.v1` | immutable proposal/digest proof, written atomically with a recovered consume; real delayed webhook ranges are recorded against this proof |
 | `v4/policy-push/<repo>/<before>..<after>` | `PolicyPush` | `archfit-app.policy-push.v1` | the policy digest of a default-branch push that changed the policy, and the proposal it consumed, or `unguarded` (no approved policy yet); neither: outside the flow. `<before>` is 40 zeros for a push that created the branch |
-| `v4/pull/<repo>/<pr>` | `Pull` | `archfit-app.pull.v1` | head SHA, run id, run attempt, payload digest, status, the date the result judged exceptions on (an accepted result only), error keys and the request key of each error ("" when it has none), for the preview (M2 D6; no result bytes); `rechecks` (optional): the proposal, path, unmet condition and head of each re-check after an answer, the latest last, at most `MaxRechecks` (16) (M2 task 21) |
+| `v4/pull/<repo>/<pr>` | `Pull` | `archfit-app.pull.v1` | head SHA, run id, run attempt, payload digest, accepted policy digest, status, an unambiguous policy-changed refusal code, ambiguous sweep range (`sweep_note`), the date the result judged exceptions on (an accepted result only), error keys and the request key of each error ("" when it has none), for the preview (M2 D6; no result bytes); `rechecks` (optional): the proposal, path, unmet condition and head of each re-check after an answer, the latest last, at most `MaxRechecks` (16) (M2 task 21) |
 
 Functions, all under one installation tenant:
 

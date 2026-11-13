@@ -190,7 +190,7 @@ beyond the 1 000-item cap the call fails, so such a repository gets no repair is
   whether a request counts (M2 D21).
 - `Run`: `GET /repos/{r}/actions/runs/{id}`; `WorkflowPath` = `path` unchanged; `Event` = `event` unchanged;
   `PullRequests` =
-  `pull_requests[].number` (GitHub leaves it empty for fork PRs); `CreatedAt` = `created_at`, which a re-run keeps.
+  `pull_requests[].number` (GitHub leaves it empty for fork PRs); `CreatedAt` = `created_at`, which a re-run keeps; `UpdatedAt` = `updated_at`, the last status update.
   `Rerun`: `POST .../runs/{id}/rerun`.
 - `HeadRuns` (role `WorkflowRuns`): `GET .../workflows/{file name}/runs?head_sha=` (paged); every run of that head,
   newest first as GitHub lists them, mapped as `Run`. No run → an empty list. 1 000 runs or more → an error: GitHub
@@ -223,7 +223,7 @@ beyond the 1 000-item cap the call fails, so such a repository gets no repair is
   `200` → the merge commit SHA (an answer without `merged: true` and a 40-hex `sha` is an error). `UpdateBranch`:
   `PUT .../pulls/{n}/update-branch` with `expected_head_sha`; `202` → success. GitHub makes the update after the
   answer, so the new head may not exist yet. Neither is repeated after a `5xx`.
-- `Compare` (role `Commits`): `GET /repos/{r}/compare/{base}...{head}?per_page=1`, from the merge base to `head`;
+- `Compare` (role `Commits`): `GET /repos/{r}/compare/{base}...{head}?per_page=100`, from the merge base to `head`;
   `Status` = `status` (`ahead`, `behind`, `identical`, `diverged`; any other value is an error); `Paths` as
   `ChangedFiles` (a rename lists both names); an answer without `files` is an error, never "nothing changed".
 - `UpdatePullBody`: `PATCH .../pulls/{n}`. `MarkReady`: REST cannot leave draft state, so one GraphQL mutation
@@ -535,7 +535,10 @@ type Merges interface {
 }
 
 // Comparison is what changed from one commit to another, as GitHub's compare states it.
+type Commit struct { SHA string; Parents []string }
 type Comparison struct {
+    Commits []Commit // bounded history window; callers verify the parent chain
+    TotalCommits int // complete only when equal to len(Commits)
     Status    string   // "ahead" | "behind" | "identical" | "diverged": head relative to base; any other is an error
     Paths     []string // changed paths; a rename lists both the old and the new path
     Truncated bool     // GitHub lists at most 300 files: true at 300, and callers must assume any path changed
@@ -854,7 +857,7 @@ One test per role interface; each asserts method, route, credential, request bod
 - **Test name**: `TestCompareContract`
   **Scenario**: a modification, a rename and an addition; 300 files; identical commits; an answer without `files`;
   an unknown status; an unknown commit; non-SHA bases and heads.
-  **Expected behavior**: status and both rename names, `per_page=1`; `Truncated`; an empty list; an error; an error;
+  **Expected behavior**: status and both rename names, `per_page=100`; `Truncated`; an empty list; an error; an error;
   `ErrNotFound`; no request.
 - **Test name**: `TestHeadRunsContract`
   **Scenario**: three runs on two pages; a head without runs; 1 001 runs; exactly 1 000 runs, the last page without a

@@ -78,6 +78,8 @@ type Merge struct {
 	// Digest become the approved digest: a consume handled after a later policy push never puts an older digest back,
 	// and never approves a tip that holds a change no approval made.
 	AtTip bool
+	// Recheck records a sweep recovery handoff in the same swap as the consume.
+	Recheck bool
 	// Over is the repository's ApprovedCommit the caller judged AtTip against. With AtTip, a repository that holds
 	// another one now (a consume landed in between) is ErrApprovedMoved: read it again and judge again.
 	Over string
@@ -87,7 +89,7 @@ type Merge struct {
 var ErrApprovedMoved = errors.New("records: the approved commit moved")
 
 // Consume is the one-use step of a proposal: its merge commit landed on the default branch with the expected
-// digest. In one CompareAndSwapAll of five keys it moves the proposal from open to merged and records the merge
+// digest. In one CompareAndSwapAll of five keys (six with recovered-merge evidence) it moves the proposal from open to merged and records the merge
 // commit, removes the proposal from the proposal index, makes the digest the repository's approved digest (see
 // Merge.AtTip), removes the requests of its approvals from the request index (an answered request covers its key
 // until its proposal is consumed), and records the push at PolicyPushKey. The approvals of the proposal count as
@@ -158,6 +160,9 @@ func approvalsOf(ctx context.Context, s store.Store, t store.Tenant, fullName, p
 func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string, m Merge, approvals map[string]joined) error {
 	keys := []string{ProposalKey(fullName, m.Proposal), ProposalIndexKey(fullName), RepoKey(fullName),
 		RequestIndexKey(fullName), PolicyPushKey(fullName, m.Push)}
+	if m.Recheck {
+		keys = append(keys, RecoveredPushKey(fullName, m.Commit))
+	}
 	approvedMoved, stale := false, false
 	err := store.Update(ctx, s, t, keys, func(cur [][]byte) ([][]byte, error) {
 		approvedMoved, stale = false, false
@@ -174,7 +179,16 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 		case p.State != StateOpen || p.PullRequest == 0 || p.ExpectedDigest != m.Digest:
 			return nil, ErrMoved
 		}
-		push := PolicyPush{Digest: m.Digest, Proposal: m.Proposal}
+		push := PolicyPush{Schema: SchemaPolicyPush, Digest: m.Digest, Proposal: m.Proposal}
+		if m.Recheck && cur[5] != nil {
+			var proof PolicyPush
+			if err := Decode(cur[5], &proof); err != nil {
+				return nil, err
+			}
+			if proof != push {
+				return nil, ErrMoved
+			}
+		}
 		if cur[4] != nil {
 			var was PolicyPush
 			if err := Decode(cur[4], &was); err != nil {
@@ -249,13 +263,20 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 				r.GuardedSince = m.Commit // the first approval: change control starts here
 			}
 			r.ApprovedDigest, r.ApprovedCommit, r.OutsideFlow = m.Digest, m.Commit, nil
+			if m.Recheck {
+				r.SweepRecheck = m.Proposal
+			}
 		}
 
 		out, err := encodeAll(&p, &r, &push)
 		if err != nil {
 			return nil, err
 		}
-		return [][]byte{out[0], proposalIndex, out[1], requestIndex, out[2]}, nil
+		values := [][]byte{out[0], proposalIndex, out[1], requestIndex, out[2]}
+		if m.Recheck {
+			values = append(values, out[2])
+		}
+		return values, nil
 	})
 	switch {
 	case err == nil && stale:
@@ -285,7 +306,16 @@ func applies(p Proposal, r Repo, revs []Revert) bool {
 // (design 7.1) until an owner confirms or reverts it (M2 task 23). One swap sets Repo.OutsideFlow to digest, keeping
 // an issue already opened for it, and records the push at PolicyPushKey. A push already recorded outside the flow
 // changes nothing and marked is false; one recorded with another judgement is ErrMoved. r is the repository afterwards.
-func Outside(ctx context.Context, s store.Store, t store.Tenant, fullName string, push Push, digest string) (r Repo, marked bool, err error) {
+func Outside(ctx context.Context, s store.Store, t store.Tenant, fullName string, push Push, digest string) (Repo, bool, error) {
+	return outside(ctx, s, t, fullName, push, digest, nil)
+}
+
+// OutsideIf applies a sweep decision only while the approved commit, digest and outside state are unchanged.
+func OutsideIf(ctx context.Context, s store.Store, t store.Tenant, fullName string, push Push, digest string, expected Repo) (Repo, bool, error) {
+	return outside(ctx, s, t, fullName, push, digest, &expected)
+}
+
+func outside(ctx context.Context, s store.Store, t store.Tenant, fullName string, push Push, digest string, expected *Repo) (r Repo, marked bool, err error) {
 	if push.After == "" {
 		return Repo{}, false, errors.New("records: outside: an empty commit")
 	}
@@ -296,6 +326,9 @@ func Outside(ctx context.Context, s store.Store, t store.Tenant, fullName string
 			if err := Decode(cur[0], &r); err != nil {
 				return nil, err
 			}
+		}
+		if expected != nil && (r.ApprovedDigest != expected.ApprovedDigest || r.ApprovedCommit != expected.ApprovedCommit || (r.OutsideFlow == nil) != (expected.OutsideFlow == nil) || r.OutsideFlow != nil && *r.OutsideFlow != *expected.OutsideFlow) {
+			return nil, ErrMoved
 		}
 		if cur[1] != nil {
 			var was PolicyPush

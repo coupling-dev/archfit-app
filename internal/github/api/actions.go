@@ -30,12 +30,13 @@ type workflowRunJSON struct {
 		Number int `json:"number"`
 	} `json:"pull_requests"`
 	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func (j workflowRunJSON) run() WorkflowRun {
 	run := WorkflowRun{
 		ID: j.ID, Attempt: j.RunAttempt, Event: j.Event, HeadSHA: j.HeadSHA, WorkflowPath: j.Path,
-		Status: j.Status, Conclusion: j.Conclusion, CreatedAt: j.CreatedAt,
+		Status: j.Status, Conclusion: j.Conclusion, CreatedAt: j.CreatedAt, UpdatedAt: j.UpdatedAt,
 	}
 	if j.HeadRepository != nil {
 		run.HeadRepo = j.HeadRepository.FullName

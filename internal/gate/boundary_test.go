@@ -340,7 +340,8 @@ func TestStoreWritesOnlyLeasesAndInputsRecords(t *testing.T) {
 	}
 	written := map[string]bool{}
 	for i, tenant := range w.store.recordTenants {
-		if tenant != store.Tenant(12) {
+		// The v4 sweep probes each repository for approval state, including the legacy shop under tenant 11.
+		if tenant != store.Tenant(12) && (tenant != store.Tenant(shopInstallation) || w.store.recordKeys[i] != records.RepoKey(shopName)) {
 			t.Errorf("record %s under tenant %d", w.store.recordKeys[i], tenant)
 		}
 		written[strings.SplitN(w.store.recordKeys[i], "/", 2)[0]+"/"] = true

@@ -393,8 +393,8 @@ func TestGateSurvivesControlPlaneFailure(t *testing.T) {
 		if err := s.ctl.Sweep(context.Background()); err == nil {
 			t.Fatal("the control sweep succeeded; the failure is not being exercised")
 		}
-		if sum := s.sweep(); sum.Errors != 2 || sum.Pulls != 2 {
-			t.Errorf("gate sweep summary = %+v; want both pull requests visited, each an error", sum)
+		if sum := s.sweep(); sum.Errors != 3 || sum.Pulls != 2 {
+			t.Errorf("gate sweep summary = %+v; want two legacy pull errors and one v4 repository probe error", sum)
 		}
 		for _, head := range []string{demoHead, strings.Repeat("7c", 20)} {
 			if c := w.check(demoRepo, head, checkGate); c != nil {

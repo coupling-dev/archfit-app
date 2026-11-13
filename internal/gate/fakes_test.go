@@ -663,7 +663,7 @@ const (
 	requestKeyPrefix         = "v4/request/" // the requests of M2 task 16
 	requestIndexKeyPrefix    = "v4/request-index/"
 	answerKeyPrefixes        = "v4/approval/ v4/proposal/ v4/proposal-index/ v4/proposal-lease/" // M2 task 19
-	pushKeyPrefixes          = "v4/repo/ v4/policy-push/"                                        // M2 task 20
+	pushKeyPrefixes          = "v4/repo/ v4/policy-push/ v4/recovered-push/"                     // M2 task 20
 	reposKey                 = "v4/repos"                                                        // M2 task 23
 )
 

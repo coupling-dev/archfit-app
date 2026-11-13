@@ -60,6 +60,11 @@ func PolicyPushKey(fullName string, p Push) string {
 	return "v4/policy-push/" + repo(fullName) + "/" + before + ".." + p.After
 }
 
+// RecoveredPushKey holds the immutable PolicyPush evidence for a merge recovered by the sweep.
+func RecoveredPushKey(fullName, commit string) string {
+	return "v4/recovered-push/" + repo(fullName) + "/" + commit
+}
+
 // PullKey holds the pull record of a pull request (Pull).
 func PullKey(fullName string, pr int) string {
 	return "v4/pull/" + repo(fullName) + "/" + strconv.Itoa(pr)

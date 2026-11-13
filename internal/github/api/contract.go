@@ -229,6 +229,7 @@ type WorkflowRun struct {
 	Conclusion   string
 	PullRequests []int     // PR numbers GitHub associates with the run
 	CreatedAt    time.Time // when the run was created; a re-run keeps it
+	UpdatedAt    time.Time // the last status update, used to age a completed run
 }
 
 // RunFilter narrows LatestRun. Each non-empty field is sent as the GitHub query parameter of the same name.
@@ -270,10 +271,19 @@ type Collaborators interface {
 	CollaboratorPermission(ctx context.Context, r RepoRef, login string) (string, error)
 }
 
+// Commit names one commit and its immediate parents, for bounded history proofs.
+type Commit struct {
+	SHA     string
+	Parents []string
+}
+
 // Comparison is what changed from one commit to another, as GitHub's compare states it.
 type Comparison struct {
-	Status string   // "ahead" | "behind" | "identical" | "diverged": head relative to base; any other is an error
-	Paths  []string // changed paths; a rename lists both the old and the new path
+	// Commits is a bounded history window. It is complete only when len(Commits) equals TotalCommits.
+	Commits      []Commit
+	TotalCommits int
+	Status       string   // "ahead" | "behind" | "identical" | "diverged": head relative to base; any other is an error
+	Paths        []string // changed paths; a rename lists both the old and the new path
 	// Truncated is true when GitHub's file list may be cut off (it lists at most 300 files): callers must assume any
 	// path changed.
 	Truncated bool

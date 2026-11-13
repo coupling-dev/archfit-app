@@ -19,7 +19,11 @@ import (
 // retry finds the judgement and only finishes it.
 func (g *Gate) policyPushed(ctx context.Context, e webhook.Event) error {
 	t := eventTarget(e)
-	out, err := g.approvals.Pushed(ctx, approvals.Push{Repo: t.Repo, Before: e.Before, After: e.HeadSHA, ChangedPaths: e.ChangedPaths})
+	push := approvals.Push{Repo: t.Repo, Before: e.Before, After: e.HeadSHA, ChangedPaths: e.ChangedPaths}
+	out, err := g.approvals.Recovered(ctx, push)
+	if err == nil && out.Judged == approvals.JudgedNone {
+		out, err = g.approvals.Pushed(ctx, push)
+	}
 	if err != nil {
 		return fmt.Errorf("gate: judge the policy push: %w", err)
 	}

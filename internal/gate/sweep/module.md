@@ -537,8 +537,10 @@ An error (a failed read, a transient update error) is returned after the pull re
 returns it, so the delivery is retried, `gate/approvals` finds its judgement again, and step 1 skips what was recorded.
 A pull request without a pull record is acted on but not recorded; a delivery again acts on it again.
 
-Not done here: a run that was `running` and read the old tip uploads `policy_changed` (unknown, "the check runs
-again"); the task 22 sweep re-checks it.
+The v4 hourly pass in `gate/sweep4.go` handles a run marked `running` whose upload received only `policy_changed`:
+once completed, it invokes this guard with the current tip. Other upload refusals never gain permission to re-run.
+The v4 pass also owns D19/D20, missing-upload and stale-policy repair, and pull-index cleanup; it does not apply
+legacy rule 5c because result v1 carries no module graph.
 
 ### Errors
 

@@ -182,7 +182,7 @@ func TestUpload4AcceptsAPullRequest(t *testing.T) {
 
 			rec, head := w.pullRecord(p)
 			want := records.Pull{Schema: records.SchemaPull, HeadSHA: p.head, RunID: p.runID, RunAttempt: 1,
-				PayloadDigest: s.env.PayloadDigest, Status: tc.status, Date: "2026-11-10", Errors: tc.errors,
+				PayloadDigest: s.env.PayloadDigest, PolicyDigest: s.env.PolicyDigest, Status: tc.status, Date: "2026-11-10", Errors: tc.errors,
 				RequestKeys: tc.requestKeys}
 			if fmt.Sprint(rec) != fmt.Sprint(want) || head != p.head {
 				t.Errorf("pull record = %+v, index head %q; want %+v, %q", rec, head, want, p.head)

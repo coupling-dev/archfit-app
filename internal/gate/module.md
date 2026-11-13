@@ -78,6 +78,40 @@ separate, testable steps. Without this module a report is a self-reported file a
   and the sweep types.
 - Stay operational when the control plane, billing, UI or an LLM provider fails.
 
+## Archfit 4 hourly reconciliation (M2 task 22)
+
+After the legacy pass, `Gate.Sweep` runs `sweep4.go` over admitted installations and repositories with a schema 3
+policy or approved v4 state. It never applies legacy approval rules or rule 5c to a v4 result: result v1 has no module
+graph. A rate limit stops the pass with `Summary.RateLimited`; other failed units are counted and skipped.
+
+- `approvals.Reconcile` repairs only a proven single policy change on a complete linear range from the approved
+  commit to the tip. A matching proposal is consumed with a retryable `Repo.SweepRecheck` handoff to `AfterAnswer`.
+  A proven direct change with no proposal goes outside the flow. An ambiguous range consumes and voids nothing:
+  its endpoints are logged and stored in `Pull.SweepNote`, and the check stays unknown. Follow-up 3 is only partially
+  satisfied: multiple policy changes, non-linear/cut/unreadable history, or unmatched proposals require owner action.
+- Reconciliation notification or handoff errors are counted and retried independently of enforcement: the pass
+  reloads authority and withdraws affected checks even when an outside-flow issue cannot be created.
+- `expiry.Approved` reads authority independently of `Warn`: a warning failure never prevents expiry enforcement.
+  From the UTC day after `expires`, a result judged on or before that date is re-run under the 10.5 guard, or receives
+  the expired-exception failure when refused. The old success is withdrawn before any re-run read/request, so a failed re-run call also leaves unknown,
+  never a stale pass. The expired-exception failure is published only when the guard refuses.
+- A stale accepted policy digest, or an unambiguous `policy_changed` upload with a matching `running` after-answer
+  marker, is re-run under the same guard once completed. A refusal asks for a branch update. No new webhook is used.
+- A missing result for the live head becomes unknown after the latest relevant completed run's last status update
+  is more than 60 minutes old; this includes a newer run or attempt missing its upload after an older result.
+  Without a run, the pull request's update time is used. In-flight runs are left alone.
+- A ten-day waiting check is replaced with a fresh check, after reading the artifact, matching its payload digest,
+  strict decoding and head/policy binding, and covering its errors again against current requests. Unverifiable
+  artifacts become unknown; transient reads are retried, never treated as clean. The head lease rechecks the live
+  pull, default tip, approval state, pull record, latest check and request coverage. A force-pushed-back head with
+  no matching pull record is withdrawn using its live check receipt inside the lease (`Withdraw4`), never a zero
+  identity that an old success could outrank.
+- Indexed pull requests absent from the open listing are read individually; closed or gone ones leave the index
+  while their records remain. The App's policy proposal verdict is left to the owner flow.
+
+Regression coverage is in `sweep4_test.go`, `sweep4_race_test.go`, `sweep_record_test.go`, the records handoff test,
+the feedback Fresh test, and the GitHub history/update-time contract tests.
+
 ## Subdomain Classification
 
 Core: the part that makes the product worth paying for. Volatility: high; trust rules, outcome mapping and
