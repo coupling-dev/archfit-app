@@ -297,3 +297,17 @@ sweep) read and write through this module;
   covers a repository outside the flow.
 - `TestArchfit3KeysAreNeitherReadNorWritten`: every Archfit 3 key of `store/module.md` seeded; every helper runs;
   only `v4/` keys are touched and the Archfit 3 bytes are unchanged.
+
+## Additive Home drift snapshot
+
+`Repo.Drift` is optional (`json:"drift,omitempty"`) under the unchanged `archfit-app.repo.v1` schema.
+Old records omit it and decode unchanged. `DriftState` has `head`, `state`, `errors` (rule, from and to only),
+and `unread`. Nil means no snapshot, not clean; `errors: []` with `unread: true` is partial evidence;
+a clean state with no errors and `unread: false` is a fully read clean result.
+
+`StoreDrift` replaces only this snapshot through `editRepo` and the Store CAS loop, preserving approvals,
+outside-flow state and notification bookkeeping. Drift issue close/update helpers do not clear it.
+`drift_test.go` tests old-record round trips and unrelated field preservation on memory and the official
+Firestore emulator (when `FIRESTORE_EMULATOR_HOST` is set), plus clean/partial and canceled writes.
+
+`StoreDrift` deduplicates map triples and fits the complete record within the Store limit. If entries do not fit, it keeps a prefix and marks the evidence unread. A failed CAS is returned for retry.
