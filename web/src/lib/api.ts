@@ -76,40 +76,6 @@ export interface WorkflowFile {
   add_url: string; // GitHub's new-file page on branch, filled in
 }
 
-export interface Finding {
-  rule: string;
-  rule_id: string;
-  meta: string;
-  violation: boolean;
-  from: string;
-  to: string;
-  origin: '' | 'added' | 'existing';
-  why: string;
-  fix: string;
-  alternatives: string[] | null;
-  locations: string[];
-  locations_total: number; // the engine's full count; locations holds at most 50 of them
-  strength: string;
-  distance: string;
-  volatility: string;
-  move: string; // the engine's balancing move for the seam, worded as the PR comment words it; '' for none
-  metric: string; // a metric ratchet, which has no edge: "metric <name>: before → after (threshold)"
-  owner_decision: boolean; // the engine leaves the move to the repository's owner
-  also: string[] | null; // on a violation: the advisories on the same dependency, "rule · severity", as the comment says
-}
-
-export interface Cycle {
-  modules: string[];
-  rule: string;
-  rule_id: string;
-  meta: string;
-  violation: boolean;
-  why: string;
-  fixes: string[] | null;
-  alternatives: string[] | null;
-  directions: Finding[];
-}
-
 export interface Dimension {
   key: string;
   name: string;
@@ -181,33 +147,6 @@ export interface Decision {
   unevaluated: { rule_id: string; reason: string }[];
   origin_reasons: string[];
 }
-
-// Findings is a report's findings in the PR comment's groups, its evidence and its agent tasks.
-export interface Findings {
-  violation_count: number;
-  cycles: Cycle[] | null;
-  other: Finding[] | null;
-  advisory_count: number;
-  advisories: Finding[] | null;
-  accepted_count: number;
-  accepted: Finding[] | null;
-  advisories_elsewhere: boolean; // an advisory joined a violation's row, so the rest are on other dependencies
-  fixed_count: number;
-  fixed: Finding[] | null; // known issues the report no longer finds
-  omitted: number;
-  dimensions: Dimension[] | null;
-  unknowns: { dimension: string; fact: string; reason: string }[] | null;
-  tasks: string;
-  task_count: number;
-}
-
-// RepoFindings is the latest report of the default branch, for the overview.
-export type RepoFindings = Findings & {
-  unavailable: string;
-  branch: string;
-  no_baseline: boolean;
-  attention_reason: string; // why the engine's verdict is needs_attention; '' otherwise
-};
 
 export interface Notice {
   notice?: string;

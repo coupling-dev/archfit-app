@@ -56,6 +56,3 @@ export function flaggedSummary(links: GLink[]): string {
   if (deploy) s += `; ${deploy} of them across a deploy unit, a distributed monolith`;
   return s + '.';
 }
-
-// ownerDecisionTitle explains an agent task the engine marks needs_owner_decision.
-export const ownerDecisionTitle = 'Archfit leaves this to the repository owner: a policy decision, not a code change.';

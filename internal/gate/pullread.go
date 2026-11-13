@@ -135,6 +135,10 @@ func (v *pullViews) PullPage(ctx context.Context, r api.Repo, number int) (PullP
 	if err != nil && !errors.Is(err, records.ErrNoRecord) {
 		return out, err
 	}
+	if rec.RunID == 0 && err == nil {
+		out.Message = "The App published a result it cannot show yet."
+		return out, nil
+	}
 	newer := pub.RunID > rec.RunID || pub.RunID == rec.RunID && pub.RunAttempt >= rec.RunAttempt
 	if err == nil && pub.HeadSHA == pl.HeadSHA && newer {
 		if pub.Pending {
