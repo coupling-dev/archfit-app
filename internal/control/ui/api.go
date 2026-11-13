@@ -76,12 +76,11 @@ func (s *server) answer(w http.ResponseWriter, r *http.Request, sc scope, next a
 }
 
 type errorJSON struct {
-	Error       string           `json:"error"`
-	Diagnostics []diagnosticJSON `json:"diagnostics,omitempty"` // the problems of a refused policy text
-	Waiting     string           `json:"waiting,omitempty"`     // the account waiting for approval: the Waiting page
+	Error   string `json:"error"`
+	Waiting string `json:"waiting,omitempty"` // the account waiting for approval: the Waiting page
 }
 
-// failJSON is fail for /api: the documented status and sentence, as JSON, and the problems of a refused policy.
+// failJSON is fail for /api: the documented status and sentence, as JSON.
 func (s *server) failJSON(w http.ResponseWriter, r *http.Request, err error) {
 	status, outcome, sentence := explain(err)
 	logOf(r).outcome = outcome
@@ -90,10 +89,6 @@ func (s *server) failJSON(w http.ResponseWriter, r *http.Request, err error) {
 	}
 	body := errorJSON{Error: sentence}
 	body.Waiting, _ = errorsAsWaiting(err)
-	var problems *policyProblems
-	if errors.As(err, &problems) {
-		body.Diagnostics = diagnosticsJSON(problems.list)
-	}
 	writeJSON(w, r, status, body)
 }
 

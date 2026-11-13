@@ -18,12 +18,9 @@ import (
 type pullJSON struct {
 	pullHead
 	findingsJSON
-	Approval *approvalJSON `json:"approval,omitempty"` // only when the pull request changes a protected file
 	// FirstScreen is the first screen of the PR comment for this result, as lines of text, worded by the code that words
 	// the comment. Absent when the comment would show no report.
 	FirstScreen []screenLineJSON `json:"first_screen,omitempty"`
-	// Decisions are the decision requests of unattended agents on the pull request; absent when there are none.
-	Decisions []decisionRequestJSON `json:"decisions,omitempty"`
 }
 
 type screenLineJSON struct {
@@ -232,12 +229,6 @@ func (s *server) apiPull(r *http.Request, sc scope) (any, error) {
 		for _, l := range gate.FirstScreen(screenInput(sc, pull, rep)) {
 			body.FirstScreen = append(body.FirstScreen, screenLineJSON{l.Kind, l.Text})
 		}
-	}
-	if body.Approval, err = s.approval(r.Context(), sc, pull.Pull); err != nil {
-		return nil, err
-	}
-	if body.Decisions, err = s.decisionRequests(r.Context(), sc, pull.Pull); err != nil {
-		return nil, err
 	}
 	return body, nil
 }

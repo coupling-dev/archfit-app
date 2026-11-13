@@ -85,66 +85,16 @@ func (f *fakeRepos) headReads() []string {
 }
 
 type fakePulls struct {
-	api.Pulls // unused methods panic: inputs must never call them
-	changed   []string
-	truncated bool
-	reviews   []api.Review
-	teams     map[string][]string // "org/team-slug" -> member logins
-
-	requestedUsers, requestedTeams         []string
-	requestedErr, requestErr               error
-	requestCalls                           int
-	lastRequestedUsers, lastRequestedTeams []string
-
-	changedErr, reviewsErr, teamErr error
-
-	changedCalls, reviewsCalls int
-	teamCalls                  []string // "team:login"
+	api.Pulls    // unused methods panic: inputs must never call them
+	changed      []string
+	truncated    bool
+	changedErr   error
+	changedCalls int
 }
 
 func (f *fakePulls) ChangedFiles(context.Context, api.RepoRef, int) ([]string, bool, error) {
 	f.changedCalls++
 	return f.changed, f.truncated, f.changedErr
-}
-
-func (f *fakePulls) Reviews(context.Context, api.RepoRef, int) ([]api.Review, error) {
-	f.reviewsCalls++
-	return f.reviews, f.reviewsErr
-}
-
-func (f *fakePulls) RequestedReviewers(context.Context, api.RepoRef, int) ([]string, []string, error) {
-	if f.requestedErr != nil {
-		return nil, nil, f.requestedErr
-	}
-	return slices.Clone(f.requestedUsers), slices.Clone(f.requestedTeams), nil
-}
-
-func (f *fakePulls) RequestReviewers(_ context.Context, _ api.RepoRef, _ int, users, teams []string) error {
-	f.requestCalls++
-	f.lastRequestedUsers, f.lastRequestedTeams = slices.Clone(users), slices.Clone(teams)
-	if f.requestErr != nil {
-		return f.requestErr
-	}
-	f.requestedUsers = append(f.requestedUsers, users...)
-	for _, team := range teams {
-		if !slices.Contains(f.requestedTeams, team) {
-			f.requestedTeams = append(f.requestedTeams, team)
-		}
-	}
-	return nil
-}
-
-func (f *fakePulls) TeamMember(_ context.Context, _ api.RepoRef, team, login string) (bool, error) {
-	f.teamCalls = append(f.teamCalls, team+":"+login)
-	if f.teamErr != nil {
-		return false, f.teamErr
-	}
-	for _, m := range f.teams[team] {
-		if strings.EqualFold(m, login) {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 // stubStore answers Get only; any other Store method panics, which proves the paths that use it only read.
@@ -167,7 +117,7 @@ type fixture struct {
 	store store.Store
 }
 
-// newFixture has all four trusted files on base, every protected file edited at head, and no reviews.
+// newFixture has all four trusted files on base, every protected file edited at head, and nothing more.
 func newFixture() *fixture {
 	return &fixture{
 		repos: &fakeRepos{
@@ -186,7 +136,6 @@ func newFixture() *fixture {
 		},
 		pulls: &fakePulls{
 			changed: []string{"internal/x/x.go"},
-			teams:   map[string][]string{teamOwner: {"carol"}},
 		},
 		store: store.NewMemory(),
 	}
@@ -234,10 +183,6 @@ func pushTarget() Target {
 	t := pullTarget()
 	t.PullRequest = 0
 	return t
-}
-
-func approved(login, sha string) api.Review {
-	return api.Review{Reviewer: login, State: "APPROVED", CommitSHA: sha}
 }
 
 func captureLogs(t *testing.T) *bytes.Buffer {

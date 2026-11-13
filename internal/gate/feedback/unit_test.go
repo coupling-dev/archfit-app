@@ -215,8 +215,6 @@ func TestSanitizeEngineStrings(t *testing.T) {
 		Report:   evilReport(),
 		Trusted:  trusted(settings.GateRequired),
 	}
-	p.Trusted.Approval = "granted"
-	p.Trusted.ApprovedBy = evil
 	if err := h.pub.Publish(context.Background(), p); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}

@@ -17,7 +17,7 @@ type DataMode string
 
 const (
 	DataCustomer DataMode = "customer" // source never reaches Archfit
-	DataManaged  DataMode = "managed"  // managed discovery and managed LLM allowed after consent
+	DataManaged  DataMode = "managed"  // managed discovery allowed after consent
 )
 
 // Settings is the App-owned file. The engine policy schema is untouched by it.

@@ -6,7 +6,7 @@
 
 ## Purpose
 
-`feedback` is the writer of the gate/state assessments, their result comment, pending checks, the pre-report architecture-decision banner and the default-branch repair issue. Authenticated decision-reason comments are mirrored by `gate/inputs` from its durable ledger. Feedback also makes each check its own receipt, so GitHub holds the idempotency key and facts a later sweep compares. The Store contains short-lived per-head publication leases only.
+`feedback` is the writer of the gate/state assessments, their result comment, pending checks and the default-branch repair issue. Feedback also makes each check its own receipt, so GitHub holds the idempotency key and facts a later sweep compares. The Store contains short-lived per-head publication leases only.
 
 For Archfit 4 (envelope 2), `Publisher4` writes `archfit/gate` and the pull request's one comment from the status the
 App gave a result: the record of design 8, the same on the check and in the comment. It writes no `archfit/state`
@@ -19,8 +19,7 @@ check. The v1 writers above stay, unchanged, until M2 task 25 removes the envelo
   status line as the title, the text record as the summary and one annotation per error on its line; for a pull
   request, the one comment, edited in place: the status line as the heading, the records, one line for the author and
   one for the owner (design 8.2, 11.6, 12.5). No `archfit/state`, no JSON block.
-- Publish one `Publication`: `archfit/state` always, `archfit/gate` only in required mode, and the result comment for pull requests. Include the protected-path decision banner within the byte budget of check summaries and the result comment, without treating report claims as authority. Keep the comment marker and receipt first for ordering and waiver updates.
-- Create the pre-report App-authored decision comment for a protected-path PR and, in required mode, the pending (`in_progress`) gate check with the same banner. Update the banner idempotently as the candidate changes.
+- Publish one `Publication`: `archfit/state` always, `archfit/gate` only in required mode, and the result comment for pull requests. Keep the comment marker and receipt first for ordering and waiver updates.
 - Read back the gate check of a head SHA as `CheckState`, including the parsed `Receipt`.
 - Add or refresh the waiver-expiry notice in the comment.
 - Render the comment's first screen for a person: the assessment with what the App checked it with (the approved
@@ -39,7 +38,7 @@ check. The v1 writers above stay, unchanged, until M2 task 25 removes the envelo
 - Render the policy change card (`policyCard`) in the comment and the `archfit/state` check when the publication
   carries an engine classification of a change to the protected policy: the direction, the changes in plain words
   (each value cut to 80 characters, the list bounded to about 3 KB, then a count: the card sits in a block that is never
-  cut and the author controls the values), and the approval rule; a `policy_authority` rung held at human says so.
+  cut and the author controls the values), and the rule that only the App's policy pull request changes the policy; a `policy_authority` rung held at human says so.
   Display only. The classification is the Action's, carried by the upload (engine v3.4.0 or later) and passed on by `gate`
   only when its own trusted inputs say the pull request changes the policy file; a sweep publication has no envelope and
   carries no card. No card means "not classified", never "no change".
@@ -108,7 +107,7 @@ type Publication struct {
     PolicyChange *PolicyChange // the Action's classification, set only for a pull request that changes the policy file; nil on a sweep
     Trusted  Trusted
     // Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
-    // written. When the result differs from Trusted in any field (a digest, the owner approval, the settings) or no
+    // written. When the result differs from Trusted in any field (a digest, the protected paths, the settings) or no
     // longer accepts a Receipt digest, the decision was computed from inputs that are no longer current: Publish
     // writes nothing and returns ErrStaleInputs, so it never replaces a publication computed from newer inputs. nil
     // skips the check; sweep corrections, which are never a success, leave it nil.
@@ -128,12 +127,9 @@ type CheckState struct {
 }
 
 type Publisher interface {
-    // Publish writes archfit/state, archfit/gate (only when Settings.Gate is required) and the PR result comment. A
-    // decision banner is prepended when protected paths change. It is idempotent per Receipt and never overwrites newer feedback.
+    // Publish writes archfit/state, archfit/gate (only when Settings.Gate is required) and the PR result comment. It is
+    // idempotent per Receipt and never overwrites newer feedback.
     Publish(ctx context.Context, p Publication) error
-    // DecisionBanner writes the protected-path/owner/source/mode banner before a report exists. In required mode it
-    // creates or updates the pending gate check; otherwise it writes the App-authored PR banner comment.
-    DecisionBanner(ctx context.Context, t Target, tr Trusted) error
     // Pending creates the in_progress gate check if none exists on the head SHA.
     Pending(ctx context.Context, t Target) error
     State(ctx context.Context, t Target) (CheckState, error)
@@ -154,7 +150,7 @@ type Decision func(ctx context.Context, current CheckState) (*Publication, error
 ```
 
 ```go
-// New returns a Publisher that is safe for concurrent use, also across instances that share s: Publish, DecisionBanner,
+// New returns a Publisher that is safe for concurrent use, also across instances that share s: Publish,
 // Pending, Warn and Reconcile hold a per-head publication lease in s, so that two publishers for one head SHA never interleave
 // their reads and writes. It keeps no other state between calls; GitHub holds the receipts.
 // appURL is the App's base URL without a trailing slash (ARCHFIT_BASE_URL); the PR comment links to the App's pull
@@ -228,8 +224,7 @@ decided here; it restates what the check recorded.
 | `external_id`         | `v1:<run_id>:<attempt>:<report_digest>`; empty for a pending check              |
 | `external_id`, Archfit 4 | `v2:<run_id>:<attempt>:<payload_digest>`; the whole receipt, no summary marker |
 | Receipt marker        | `<!-- archfit:receipt {compact JSON of Receipt} -->`, last line of each summary |
-| Owner decision banner marker | `<!-- archfit-owner-decision-banner:v1 -->`, first line until a result is written; it is retained above the result section |
-| Comment marker        | `<!-- archfit:comment -->`, first line of the result comment (after the banner when present) |
+| Comment marker        | `<!-- archfit:comment -->`, first line of the result comment |
 | Comment head marker   | `<!-- archfit:head <sha> run <id>.<attempt> -->`, second line                   |
 | Waiver notice section | `<!-- archfit:waiver <YYYY-MM-DD> -->` … `<!-- /archfit:waiver -->`             |
 | Agent task block      | `<!-- archfit:agent-tasks -->`, a `json` fence, `<!-- /archfit:agent-tasks -->` |
@@ -251,8 +246,6 @@ marker and an `external_id` with run ID, attempt and report digest exist.
 | Push (`Target.PullRequest == 0`)              | yes             | no                                             | no      |
 | Merge group (`Target.MergeGroup`), `GateRequired` | yes         | yes, `Conclusion = string(Outcome.Conclusion)`, on the group commit | no |
 | Merge group, advisory                         | yes             | no                                             | no      |
-
-`DecisionBanner` separately runs for a new protected-path PR before a report exists: it writes one marked App PR comment and, in required mode, a pending `archfit/gate` check. The first result publication reuses the marked comment rather than creating a second result comment.
 
 `archfit/state` conclusion:
 
@@ -372,7 +365,7 @@ The run identity orders two uploads, but not an upload and a sweep correction: t
 the lease while the sweep, already reading P2, writes `stale_inputs` would then replace the correction with its P1
 `success`. So, inside the lease and before its first GitHub request, `Publish` calls `Publication.Resolve` when it is
 set and checks two things against the result. It must equal `Publication.Trusted` in every field, so that a change
-the digests do not show (an owner approval dismissed, settings edited, a subscription suspended) also makes the
+the digests do not show (settings edited, a protected path changed, a subscription suspended) also makes the
 decision stale; whole-value equality covers every field `verdict.Decide`, the receipt and the rendering read, now and
 after a field is added. And each receipt digest (`PolicyDigest`, `BaselineDigest`, `LabelsDigest`) must pass
 `inputs.Accepts`: the sweep's stale condition, negated. A result that fails either writes nothing and returns
@@ -381,14 +374,13 @@ lease at once. `gate` sets `Resolve` on every upload publication; the sweep's pu
 just resolved from and are never a success, so they leave it nil.
 
 `Reconcile(ctx, target, decide)` is for a caller whose decision depends on the gate check itself: the withdrawal of
-an owner approval (sweep rule 5a and `ReviewChanged` in `gate`), which replaces a receipt that asked for no action,
-and the re-run after `owner_approval_missing`. Inside one hold of the lease it calls `State`, passes the result to
+a decided result over a protected change (sweep rule 5a), which replaces a receipt that asked for no action,
+and the correction of a merge group's check. Inside one hold of the lease it calls `State`, passes the result to
 `decide`, and publishes the publication `decide` returns (with the `Resolve` check above when it is set). `decide`
 resolves the trusted inputs itself, inside the lease, so the read, the decision and the write see no other
 publication for the head in between: a newer run that turned green while the caller waited is the receipt it
-decides about, and a review that lands after the read is handled by its own event, which waits for this lease and
-then reads the written check. A nil publication writes nothing. A `State` or `decide` error writes no check and
-releases the lease at once; `decide` may have requested a re-run, which writes no check. Without the lease nothing
+decides about. A nil publication writes nothing. A `State` or `decide` error writes no check and
+releases the lease at once. Without the lease nothing
 is read and `decide` is not called.
 
 ### Repair issue
@@ -665,7 +657,7 @@ type Entitlement struct {
 }
 ```
 
-<!-- contract: Target, Trusted, Approval — restated from internal/gate/inputs/module.md -->
+<!-- contract: Target, Trusted — restated from internal/gate/inputs/module.md -->
 ```go
 // Target is the pull request (or default-branch push, or merge group) whose trusted inputs are resolved.
 type Target struct {
@@ -677,24 +669,14 @@ type Target struct {
     MergeGroup  bool // HeadSHA is a merge group commit of BaseRef's merge queue
 }
 
-type Approval string
-
-const (
-    ApprovalNotRequired Approval = "not_required" // no protected path changed
-    ApprovalGranted     Approval = "granted"      // a base-version owner, no agent, approved this exact head SHA
-    ApprovalMissing     Approval = "missing"
-)
-
 // Trusted is everything the gate believes, all read from the protected ref or GitHub itself.
 type Trusted struct {
     Settings             Settings
     SettingsFound        bool
-    PolicyDigests        []string // base digest, plus the head digest when Approval == ApprovalGranted
+    PolicyDigests        []string // the protected ref's digest; empty = no policy on the protected ref
     BaselineDigests      []string // same rule; empty = no baseline on the protected ref
     LabelsDigests        []string // same rule; empty = no labels file on the protected ref
-    ProtectedPaths       []string // protected paths this PR changes
-    Approval             Approval
-    ApprovedBy           string
+    ProtectedPaths       []string // protected paths this PR changes; nothing approves such a change
     EarliestWaiverExpiry time.Time // zero = no waivers
     Suspended            bool
     Entitlement          Entitlement
@@ -1087,7 +1069,7 @@ func Current() Entry
   missing object. `ChangedFiles` lists the old and the new path of a rename and sets `truncated` when GitHub cut the
   list off. `AppIssues` returns only open issues the App's bot user opened, never a pull request; `CloseIssue` refuses
   a pull request; an issue body over 65 536 characters is an error from the client. Used methods: all of `Checks`,
-  `Comments` and `Issues`, `Pulls.Pull`, `Pulls.ChangedFiles` and `Repos.BranchHead`. `Review` is not used here.
+  `Comments` and `Issues`, `Pulls.Pull`, `Pulls.ChangedFiles` and `Repos.BranchHead`.
 
 <!-- contract: RepoRef, Repo, ErrNotFound, ErrRateLimited — restated from internal/github/api/module.md -->
 ```go
@@ -1111,7 +1093,7 @@ var (
 )
 ```
 
-<!-- contract: Pulls, Pull, Review — restated from internal/github/api/module.md -->
+<!-- contract: Pulls, Pull — restated from internal/github/api/module.md -->
 ```go
 type Pull struct {
     Number       int
@@ -1131,12 +1113,6 @@ type Pull struct {
     UpdatedAt    time.Time
 }
 
-type Review struct {
-    Reviewer  string // login
-    State     string // "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED"
-    CommitSHA string // the head SHA the review was submitted on
-}
-
 type Pulls interface {
     Pull(ctx context.Context, r RepoRef, number int) (Pull, error)
     OpenPulls(ctx context.Context, r RepoRef) ([]Pull, error)
@@ -1145,9 +1121,6 @@ type Pulls interface {
     // ChangedFiles lists changed paths; a rename lists both the old and the new path.
     // truncated is true when GitHub's file list was cut off: callers must assume any path changed.
     ChangedFiles(ctx context.Context, r RepoRef, number int) (paths []string, truncated bool, err error)
-    Reviews(ctx context.Context, r RepoRef, number int) ([]Review, error)
-    // TeamMember reports whether login belongs to "org/team-slug".
-    TeamMember(ctx context.Context, r RepoRef, team, login string) (bool, error)
 }
 ```
 
@@ -1618,8 +1591,8 @@ Golden files hold rendered bodies for the wire fixtures.
   **Scenario**: a held call that fails with a possibly sent write (`context.DeadlineExceeded`), and one that fails with `ErrStaleInputs`; then a second holder whose waits advance the clock 20 s each.
   **Expected behavior**: the first keeps its lease and the second holder waits 60 s, until it expires; the second releases at once and the next holder does not wait.
 - **Test name**: `TestStaleDecisionNeverReplacesNewerInputs`
-  **Scenario**: a sweep-style `stale_inputs` correction with policy P2 and run 7.1, then an upload of run 7.1 decided `success` from P1 whose `Resolve` returns P2; the same with `Resolve` failing; an upload decided from P2 with owner approval `granted` whose `Resolve` returns the same inputs with approval `missing`; and two uploads decided from P2 over a correction from P1 whose `Resolve` returns exactly the inputs they were decided from, one without and one with a granted approval.
-  **Expected behavior**: the first and third return `ErrStaleInputs`, the second the `Resolve` error, and in all three the gate check stays `action_required`/`stale_inputs`; the last two write `success`. No lease is left. Without the check the first three end `success`; with a digest-only check the third does.
+  **Scenario**: a sweep-style `stale_inputs` correction with policy P2 and run 7.1, then an upload of run 7.1 decided `success` from P1 whose `Resolve` returns P2; the same with `Resolve` failing; an upload decided from P2 whose `Resolve` returns the same inputs with a protected path changed; and an upload decided from P2 over a correction from P1 whose `Resolve` returns exactly the inputs it was decided from.
+  **Expected behavior**: the first and third return `ErrStaleInputs`, the second the `Resolve` error, and in all three the gate check stays `action_required`/`stale_inputs`; the last writes `success`. No lease is left. Without the check the first three end `success`; with a digest-only check the third does.
 - **Test name**: `TestChangedFilesErrorStillPublishes`
   **Scenario**: in required mode with a pending gate check, `ChangedFiles` fails once with `ErrRateLimited`, and once with another error; then a retry 60 s later.
   **Expected behavior**: the gate check is completed as `failure`, one state run without annotations and the comment are written; `ErrRateLimited` is returned, the other error is not. The retry adds a state run with the two annotations and no second gate check or comment.

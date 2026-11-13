@@ -136,13 +136,19 @@ type Approval struct {
 
 // Proposal is the pull request that carries approvals to the default branch, at ProposalKey.
 type Proposal struct {
-	Schema         string   `json:"schema"`
+	Schema string `json:"schema"`
+	// Kind is "" for the App's policy pull request on archfit/policy, else ProposalFirst or ProposalWorkflow: a pull
+	// request someone else wrote, which an owner approved as it is (M2 task 23).
+	Kind           string   `json:"kind,omitempty"`
 	Approvals      []string `json:"approvals"` // ordered approval ids, at most MaxApprovals
 	PullRequest    int      `json:"pull_request,omitempty"`
 	HeadSHA        string   `json:"head_sha,omitempty"`
 	ExpectedDigest string   `json:"expected_digest"`
-	State          string   `json:"state"`
-	Commit         string   `json:"commit,omitempty"` // the consuming merge commit
+	// WorkflowDigest is the FileDigest of .github/workflows/archfit.yaml at HeadSHA that the approval admits; "" when it
+	// admits none. Its merge must land that file too.
+	WorkflowDigest string `json:"workflow_digest,omitempty"`
+	State          string `json:"state"`
+	Commit         string `json:"commit,omitempty"` // the consuming merge commit
 }
 
 // PolicyPush is the judgement of one default-branch push that changed the policy, at PolicyPushKey: the policy digest

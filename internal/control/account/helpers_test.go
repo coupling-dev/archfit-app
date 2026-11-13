@@ -29,10 +29,10 @@ var (
 
 func day(n int) time.Time { return t0.Add(time.Duration(n) * 24 * time.Hour) }
 
-func newTest(s store.Store) (Account, Consents, Budget, *bytes.Buffer) {
+func newTest(s store.Store) (Account, Consents, *bytes.Buffer) {
 	var buf bytes.Buffer
-	a, c, b := newWithLogger(s, slog.New(slog.NewJSONHandler(&buf, nil)))
-	return a, c, b, &buf
+	a, c := newWithLogger(s, slog.New(slog.NewJSONHandler(&buf, nil)))
+	return a, c, &buf
 }
 
 type call struct {
@@ -204,15 +204,6 @@ func wantInSync(t *testing.T, s store.Store, id int64, now time.Time) {
 	if got := rawKey(t, s, id, gate.EntitlementKey); !bytes.Equal(got, want) {
 		t.Errorf("entitlement out of step with the record:\n got %s\nwant %s", got, want)
 	}
-}
-
-func counter(t *testing.T, s store.Store, month string) int64 {
-	t.Helper()
-	v, err := s.Add(context.Background(), store.SystemTenant, "llm-budget/"+month, 0)
-	if err != nil {
-		t.Fatalf("read counter: %v", err)
-	}
-	return v
 }
 
 func mustNil(t *testing.T, err error) {

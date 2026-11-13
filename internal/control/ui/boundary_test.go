@@ -13,7 +13,6 @@ import (
 	"os"
 	"reflect"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,7 +20,6 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
-	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -55,26 +53,14 @@ func TestHistoricalRecoveryClassificationUsesOnlyGateFacade(t *testing.T) {
 // noWrites fails the test if any sibling module or GitHub write was reached.
 func (e *env) noWrites(t *testing.T) {
 	t.Helper()
-	if n := e.props.writes(); n != 0 {
-		t.Errorf("proposal writes = %d", n)
-	}
 	if e.consents.writes != 0 {
 		t.Errorf("consent writes = %d", e.consents.writes)
 	}
 	if len(e.onb.customer)+len(e.onb.managed) != 0 {
 		t.Error("onboarding was started")
 	}
-	if len(e.assist.calls) != 0 {
-		t.Error("assist was called")
-	}
 	if len(e.gh.called("Dispatch")) != 0 {
 		t.Error("a workflow was dispatched")
-	}
-	if len(e.decisions.approved)+len(e.decisions.declined) != 0 {
-		t.Error("a decision request was decided")
-	}
-	if len(e.approvals.approved)+len(e.approvals.reevaluated) != 0 {
-		t.Error("an owner approval was recorded or the pull request re-decided")
 	}
 }
 
@@ -111,7 +97,6 @@ func TestTenantIdentityOnlyFromSession(t *testing.T) {
 
 	e := newEnv(t)
 	c := e.as("alice", permAdmin)
-	e.props.push(repoName, "archfit/edit-alice", policyText+"# draft\n")
 	e.publishReport(repoName, artifact(t, "healthy"))
 
 	for _, rt := range repoRoutes(otherRepo) {
@@ -125,7 +110,6 @@ func TestTenantIdentityOnlyFromSession(t *testing.T) {
 	e.noWrites(t)
 
 	for _, rt := range repoRoutes(repoName) {
-		rt = rt.withHead(e.props.drafts[repoName+"@archfit/edit-alice"].HeadSHA)
 		if got := send(c, rt); got != http.StatusOK {
 			t.Errorf("%s %s = %d, want success", rt.method, rt.path, got)
 		}
@@ -147,16 +131,6 @@ func TestTenantIdentityOnlyFromSession(t *testing.T) {
 	for _, call := range append(e.onb.customer, e.onb.managed...) {
 		if call.repo.InstallationID != installA {
 			t.Errorf("onboarding got %+v", call.repo)
-		}
-	}
-	for _, call := range e.assist.calls {
-		if call.req.Repo.InstallationID != installA || call.req.Repo.FullName != repoName {
-			t.Errorf("assist got %+v", call.req.Repo)
-		}
-	}
-	for _, call := range e.props.proposes {
-		if call.change.Repo != (api.RepoRef{InstallationID: installA, FullName: repoName}) {
-			t.Errorf("proposal got %+v", call.change.Repo)
 		}
 	}
 }
@@ -209,7 +183,7 @@ func TestNewRejectsBadSessionConfig(t *testing.T) {
 			_, wantErr := session.New(session.Config{CookieKey: tt.key, BaseURL: tt.baseURL}, e.oauth, gh, gh, clock)
 			h, err := New(Deps{
 				OAuth: e.oauth, CookieKey: tt.key, BaseURL: tt.baseURL, GitHub: gh, Account: e.acct, Consents: e.consents,
-				Onboarding: e.onb, Assist: e.assist, Proposals: e.props, Now: clock,
+				Onboarding: e.onb, Now: clock,
 			})
 			if (wantErr != nil) != tt.wantErr {
 				t.Fatalf("session.New error = %v, want error: %v", wantErr, tt.wantErr)
@@ -234,7 +208,6 @@ func TestCSRFRequiredOnEveryPost(t *testing.T) {
 	routes := append(repoRoutes(repoName), route{http.MethodPost, "/auth/logout", "", nil, nil})
 	e := newEnv(t)
 	c := e.as("alice", permAdmin)
-	e.props.push(repoName, "archfit/edit-alice", policyText+"# draft\n")
 	bob := csrfToken(session.User{Token: e.user("bob").AccessToken})
 
 	for _, rt := range routes {
@@ -284,13 +257,7 @@ func TestOversizedAndInvalidInput(t *testing.T) {
 		body       any
 		want       int
 	}{
-		{"600 KB body", "/policy", editOf("", "", "#"+strings.Repeat("a", 600<<10)), http.StatusRequestEntityTooLarge},
 		{"600 KB JSON body", "/onboarding", onboardingJSON{Mode: "customer", Owners: strings.Repeat("a", 600<<10)}, http.StatusRequestEntityTooLarge},
-		{"300 KB policy", "/policy", editOf("", "", "#"+strings.Repeat("a", 300<<10)), http.StatusUnprocessableEntity},
-		{"300 KB policy through assist", "/assist", assistOf("", "#"+strings.Repeat("a", 300<<10)), http.StatusUnprocessableEntity},
-		{"300 KB policy to check", "/policy/check", checkPolicyJSON{Content: "#" + strings.Repeat("a", 300<<10)}, http.StatusUnprocessableEntity},
-		{"invalid UTF-8", "/policy", editOf("", "", "modules: {}\n# \xff\xfe\n"), http.StatusUnprocessableEntity},
-		{"tab indent", "/policy", editOf("", "", "modules:\n\ta: {}\n"), http.StatusUnprocessableEntity},
 		{"malformed owner", "/onboarding", onboardingJSON{Mode: "customer", Owners: strings.Join(owners, "\n")}, http.StatusUnprocessableEntity},
 		{"no owner", "/onboarding", onboardingJSON{Mode: "customer", Owners: " \n"}, http.StatusUnprocessableEntity},
 		{"unknown mode", "/onboarding", onboardingJSON{Mode: "magic", Owners: "alice"}, http.StatusUnprocessableEntity},
@@ -298,15 +265,6 @@ func TestOversizedAndInvalidInput(t *testing.T) {
 			map[string]string{"mode": "customer", "owners": "alice", "repo": otherRepo}, http.StatusUnprocessableEntity},
 		{"not JSON", "/onboarding", json.RawMessage(`"mode=customer"`), http.StatusUnprocessableEntity},
 		{"a field discovery does not take", "/discover", map[string]string{"repo": otherRepo}, http.StatusUnprocessableEntity},
-		{"a field save does not take", "/policy",
-			map[string]string{"content": policyText + "# x\n", "repo": otherRepo}, http.StatusUnprocessableEntity},
-		{"malformed head_sha", "/policy", editOf("", "HEAD~1", policyText+"# x\n"), http.StatusUnprocessableEntity},
-		{"7-character head_sha", "/policy", editOf("", "abc1234", policyText+"# x\n"), http.StatusUnprocessableEntity},
-		{"malformed head_sha to ready", "/policy/ready", readyJSON{HeadSHA: "HEAD~1"}, http.StatusUnprocessableEntity},
-		{"a branch outside archfit/", "/policy", editOf("main", "", policyText+"# x\n"), http.StatusUnprocessableEntity},
-		{"a branch that climbs out of archfit/", "/assist",
-			assistJSON{editJSON: editOf("archfit/../main", "", policyText), Instruction: "x", Mode: "customer"}, http.StatusUnprocessableEntity},
-		{"unknown assist mode", "/assist", assistJSON{editJSON: editOf("", "", policyText), Mode: "magic"}, http.StatusUnprocessableEntity},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -365,52 +323,6 @@ func TestOwnersRuleIsSettings(t *testing.T) {
 	}
 }
 
-func TestSaveRejectsForeignDocuments(t *testing.T) {
-	tests := []struct {
-		name, content string
-		want          int
-		problem       diagnosticJSON
-	}{
-		{"prose with a colon", "Reminder: ask Bob about the layers", http.StatusUnprocessableEntity,
-			diagnosticJSON{Line: 1, Column: 1, Message: "Unknown key `Reminder`."}},
-		{"JSON with foreign keys", `{"schema_version": 3, "findings": []}`, http.StatusUnprocessableEntity,
-			diagnosticJSON{Line: 1, Column: 2, Message: "Unknown key `schema_version`."}},
-		{"mapping without version", "modules:\n  a:\n    layer: core\n", http.StatusUnprocessableEntity,
-			diagnosticJSON{Line: 1, Column: 1, Message: "Missing required key `version`."}},
-		{"one unknown top-level key", policyText + "reminder: true\n", http.StatusUnprocessableEntity,
-			diagnosticJSON{Line: 9, Column: 1, Message: "Unknown key `reminder`."}},
-		{"valid policy", policyText + "# edit\n", http.StatusOK, diagnosticJSON{}},
-	}
-	for _, tt := range tests {
-		for _, route := range []struct {
-			path string
-			body any
-		}{{policyAPI, editOf("", "", tt.content)}, {assistAPI, assistOf("", tt.content)}} {
-			t.Run(tt.name+" "+route.path, func(t *testing.T) {
-				e := newEnv(t)
-				res := e.as("alice", permAdmin).postJSON(route.path, route.body)
-				wantStatus(t, res, tt.want)
-				if tt.want == http.StatusOK {
-					if n := len(e.props.proposes); n != 1 {
-						t.Errorf("Propose calls = %d, want 1", n)
-					}
-					return
-				}
-				e.noWrites(t)
-				refusal := decodeAs[errorJSON](t, res)
-				if refusal.Error != policyProblemsSentence || !slices.Contains(refusal.Diagnostics, tt.problem) {
-					t.Errorf("refusal = %+v, want %q with %+v", refusal, policyProblemsSentence, tt.problem)
-				}
-				for _, leak := range []string{"engine config key", "is absent", "document is empty"} {
-					if strings.Contains(res.Body.String(), leak) {
-						t.Errorf("answer echoes Validate's error text %q", leak)
-					}
-				}
-			})
-		}
-	}
-}
-
 // The shell's nonce is random base64 and can read as "32/5"; it is not a number the page shows.
 var customerData = regexp.MustCompile(`(?s)"content":"(?:[^"\\]|\\.)*"|<script type="application/json".*?</script>|<meta name="csp-nonce" content="[^"]*">`)
 
@@ -433,12 +345,10 @@ func TestNoScoreAnywhere(t *testing.T) {
 				i++
 			}
 			c := e.as("alice", permAdmin)
-			draft := e.props.push(repoName, "archfit/edit-alice", policyText+"# draft\n")
-			e.gh.checks[repoName+"@"+draft.HeadSHA+"#"+checkGate] = []api.CheckRun{{Conclusion: "failure", Title: "New violations"}}
 			e.publishReport(repoName, artifact(t, fixture))
 			e.acct.status = account.Status{Plan: account.PlanTrial, TrialEnds: e.now.AddDate(0, 0, 9)}
 
-			for _, path := range []string{"/api/repos", "/api/repos/" + repoName + "/overview", "/api/repos/" + repoName + "/pulls/4", "/api/repos/" + repoName + "/graph", "/api/repos/" + repoName + "/findings", policyAPI, "/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/api/repos/" + repoName + "/data-sharing"} {
+			for _, path := range []string{"/api/repos", "/api/repos/" + repoName + "/overview", "/api/repos/" + repoName + "/pulls/4", "/api/repos/" + repoName + "/graph", "/api/repos/" + repoName + "/findings", "/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/api/repos/" + repoName + "/data-sharing"} {
 				res := c.get(path)
 				wantStatus(t, res, http.StatusOK)
 				// Policy text and the view model are the customer's own data, not something ui computes.
@@ -498,7 +408,7 @@ func TestShellNonceIsFreshPerResponse(t *testing.T) {
 	e := newEnv(t)
 	c := e.as("alice", permAdmin)
 	seen := map[string]bool{}
-	for _, path := range []string{"/", "/r/" + repoName, "/r/" + repoName + "/policy", "/r/" + repoName + "/policy", "/r/" + repoName + "/data-sharing"} {
+	for _, path := range []string{"/", "/r/" + repoName, "/r/" + repoName + "/graph", "/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing"} {
 		res := c.get(path)
 		wantStatus(t, res, http.StatusOK)
 		m := shellNonce.FindStringSubmatch(res.Header().Get("Content-Security-Policy"))
@@ -517,7 +427,7 @@ func TestShellNonceIsFreshPerResponse(t *testing.T) {
 			t.Errorf("%s: Cache-Control = %q, want no-store", path, got)
 		}
 	}
-	for _, path := range []string{policyAPI, "/assets/app-1a2b.js", "/schema/policy.json"} {
+	for _, path := range []string{"/api/repos/" + repoName + "/overview", "/assets/app-1a2b.js", "/schema/policy.json"} {
 		if got := c.get(path).Header().Get("Content-Security-Policy"); got != wantCSP {
 			t.Errorf("%s: CSP = %q, want the policy without a nonce", path, got)
 		}
@@ -538,16 +448,15 @@ func TestHostileStringsAreEscaped(t *testing.T) {
 	c := e.as("alice", permAdmin)
 
 	hostilePolicy := policyText + "  \"" + hostileModule + "\":\n    layer: '" + hostileText + "'\n"
-	draft := e.props.push(repoName, "archfit/edit-alice", hostilePolicy)
-	e.gh.checks[repoName+"@"+draft.HeadSHA+"#"+checkState] = []api.CheckRun{{Conclusion: "failure", Title: hostileText}}
+	e.gh.setFile(repoName, mainBranch, ".archfit.yaml", hostilePolicy)
 	e.publishReport(repoName, artifact(t, "healthy"))
 	pull := e.gh.pulls[repoName+"#4"]
 	pull.Title, pull.Author, pull.HeadRef = hostileText, hostileModule, hostileText
 	e.gh.pulls[repoName+"#4"] = pull
 	e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{ID: 1, Conclusion: "neutral", Title: hostileText, ExternalID: "v1:0:0:"}}
 
-	for _, path := range []string{"/", "/api/repos", "/r/" + repoName, "/api/repos/" + repoName + "/overview", "/r/" + repoName + "/policy",
-		policyAPI, "/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/r/" + repoName + "/pull/4", "/api/repos/" + repoName + "/pulls/4", "/r/" + repoName + "/pull/4/graph",
+	for _, path := range []string{"/", "/api/repos", "/r/" + repoName, "/api/repos/" + repoName + "/overview",
+		"/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/r/" + repoName + "/pull/4", "/api/repos/" + repoName + "/pulls/4", "/r/" + repoName + "/pull/4/graph",
 		"/api/repos/" + repoName + "/graph", "/api/repos/" + repoName + "/pulls/4/graph"} {
 		res := c.get(path)
 		wantStatus(t, res, http.StatusOK)
@@ -587,10 +496,6 @@ func TestNoAPIResponseHoldsASecret(t *testing.T) {
 		c.get(api + "/findings"),
 		c.postJSON(api+"/onboarding", onboardingJSON{Mode: "customer", Owners: "alice"}),
 		c.postJSON(api+"/discover", struct{}{}),
-		c.get(api + "/policy"),
-		c.postJSON(api+"/policy/check", checkPolicyJSON{Content: policyText}),
-		c.postJSON(api+"/policy", editOf("", "", policyText+"# edit\n")),
-		c.postJSON(api+"/assist", assistOf("", policyText+"# edit\n")),
 		c.get("/api/nothing"),
 	}
 	secrets := []string{c.token}
@@ -615,28 +520,19 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	e.acct.err = fmt.Errorf("MARKER-error")
 	base := "/r/" + repoName
 
-	wantStatus(t, c.postJSON(policyAPI, editOf("", "", policyText+"# MARKER-content\n")), http.StatusOK)
-	wantStatus(t, c.postJSON(policyAPI, editOf("", "", "MARKER-broken: [")), http.StatusUnprocessableEntity)
-	wantStatus(t, c.postJSON(policyAPI+"/check", checkPolicyJSON{Content: "MARKER-broken: ["}), http.StatusOK)
-	req := assistOf(e.props.drafts[repoName+"@archfit/edit-alice"].HeadSHA, policyText+"# MARKER-content two\n")
-	req.Instruction = "MARKER-instruction"
-	wantStatus(t, c.postJSON(assistAPI, req), http.StatusOK)
-	e.assist.propose = failingAssist(fmt.Errorf("MARKER-assist: %w", assist.ErrProvider))
-	req.HeadSHA = e.props.drafts[repoName+"@archfit/edit-alice"].HeadSHA
-	wantStatus(t, c.postJSON(assistAPI, req), http.StatusServiceUnavailable)
 	sharing := "/api/repos/" + repoName + "/data-sharing"
 	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "MARKER-kind", Action: actionAllow}), http.StatusBadRequest)
-	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "managed_llm", Action: "MARKER-action"}), http.StatusBadRequest)
-	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "managed_llm", Action: actionAllow}), http.StatusOK)
-	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "managed_llm", Action: actionAllow}), http.StatusOK)
-	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "managed_llm", Action: actionRevoke}), http.StatusOK)
+	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "source_processing", Action: "MARKER-action"}), http.StatusBadRequest)
+	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "source_processing", Action: actionAllow}), http.StatusOK)
+	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "source_processing", Action: actionAllow}), http.StatusOK)
+	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "source_processing", Action: actionRevoke}), http.StatusOK)
 	wantStatus(t, c.get(base+"/graph"), http.StatusOK)
 	wantStatus(t, c.get(base), http.StatusOK)
 	wantStatus(t, c.get("/api/repos"), http.StatusOK)
 	wantStatus(t, c.get("/api/repos/"+repoName+"/overview"), http.StatusOK) // reads account.Status, which fails with the marker
 
 	out := logs.String()
-	if !strings.Contains(out, `"route":"POST /api/repos/{o}/{n}/policy"`) || !strings.Contains(out, `"installation_id":1`) {
+	if !strings.Contains(out, `"route":"POST /api/repos/{o}/{n}/data-sharing"`) || !strings.Contains(out, `"installation_id":1`) {
 		t.Fatalf("no request log line: %.300s", out)
 	}
 	var audit []string
@@ -650,7 +546,7 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 		t.Fatalf("consent audit lines = %d, want one per allow or revoke that was accepted:\n%s", len(audit), strings.Join(audit, ""))
 	}
 	for i, outcome := range []string{"consent_recorded", "consent_kept", "consent_revoked"} {
-		for _, want := range []string{`"level":"INFO"`, `"outcome":"` + outcome + `"`, `"kind":"managed_llm"`, `"installation_id":1`, `"user_id":` + alice} {
+		for _, want := range []string{`"level":"INFO"`, `"outcome":"` + outcome + `"`, `"kind":"source_processing"`, `"installation_id":1`, `"user_id":` + alice} {
 			if !strings.Contains(audit[i], want) {
 				t.Errorf("audit line %d lacks %s: %s", i, want, audit[i])
 			}
@@ -722,7 +618,7 @@ func TestRepositoryPagesAreOneShell(t *testing.T) {
 		h.Del("X-Request-Id") // per request, as the nonce
 		return strings.ReplaceAll(fmt.Sprint(res.Code, h, res.Body.String()), m[1], "NONCE")
 	}
-	for _, suffix := range []string{"", "/graph", "/pull/4", "/pull/4/graph", "/policy", "/data-sharing"} {
+	for _, suffix := range []string{"", "/graph", "/pull/4", "/pull/4/graph", "/data-sharing", "/passkeys"} {
 		var want string
 		for _, repo := range []string{repoName, otherRepo, "acme/missing"} {
 			res := c.get("/r/" + repo + suffix)

@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/alexei-led/archfit-app/internal/control/proposal"
+
 	"github.com/alexei-led/archfit-app/internal/control/account"
-	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/passkey"
-	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -65,63 +65,14 @@ var sentinels = []struct {
 		"Another answer for this repository is being written. Nothing was changed. Try again in a minute."},
 	{gate.ErrProposalFull, http.StatusConflict, "proposal_full",
 		"The policy pull request holds the most answers it can. Merge it first, then answer. Your answer was not recorded."},
-	{proposal.ErrStale, http.StatusConflict, "stale",
-		"The draft changed on GitHub after this page was loaded. Nothing was saved. Reload the draft and apply your edit again."},
-	{assist.ErrInvalidRequest, http.StatusUnprocessableEntity, "invalid", "The request is not valid: write a short instruction and try again."},
-	{assist.ErrInvalidProposal, http.StatusUnprocessableEntity, "invalid_proposal",
-		"The assistant did not produce a usable policy. Nothing was changed."},
-	{assist.ErrNoDraft, http.StatusConflict, "no_draft", "There is no open draft yet. Save the policy first, then ask again."},
 	{account.ErrNoConsent, http.StatusConflict, "no_consent",
-		"Managed AI needs the recorded consent of a repository administrator."},
-	{assist.ErrNotManaged, http.StatusConflict, "not_managed",
-		"The settings of this repository do not allow managed mode. Use customer mode."},
-	{assist.ErrPolicyTooLarge, http.StatusConflict, "policy_too_large", "The draft policy is too large for managed mode."},
-	{assist.ErrNoAssistWorkflow, http.StatusConflict, "no_assist_workflow",
-		"The assist workflow is not on the draft branch. Add " + assist.AssistWorkflowPath + " first."},
+		"Managed discovery needs the recorded consent of a repository administrator."},
 	{onboarding.ErrNoSandbox, http.StatusConflict, "no_sandbox", "Managed discovery is not available."},
 	{onboarding.ErrAlreadyOnboarded, http.StatusConflict, "already_onboarded",
 		"This repository is already onboarded. Reload the page to see its state."},
 	{onboarding.ErrBusy, http.StatusConflict, "onboarding_busy",
 		"Managed discovery is busy with other repositories. Try again in a few minutes."},
-	{assist.ErrBusy, http.StatusTooManyRequests, "busy", "A request for this draft is still running. Wait for it to finish."},
-	{assist.ErrManagedUnavailable, http.StatusServiceUnavailable, "managed_unavailable",
-		"Managed AI is not configured on this service. Editing and saving still work."},
-	{account.ErrBudgetExhausted, http.StatusServiceUnavailable, "budget_exhausted",
-		"The managed AI budget is used up for now. Editing and saving still work."},
-	{assist.ErrProvider, http.StatusServiceUnavailable, "provider", "The AI provider failed. Editing and saving still work."},
 	{api.ErrRateLimited, http.StatusServiceUnavailable, "rate_limited", "GitHub is rate limiting Archfit. Try again in a minute."},
-	{gate.ErrNothingToApprove, http.StatusConflict, "nothing_to_approve",
-		"This pull request changes no protected file, so there is nothing to approve."},
-	{gate.ErrForkPull, http.StatusConflict, "fork",
-		"A pull request from a fork cannot be approved. Push the branch to this repository."},
-	{gate.ErrAgentIdentity, http.StatusForbidden, "agent_identity",
-		"An agent identity cannot approve. Sign in as a person who is an architecture owner."},
-	{gate.ErrNotOwner, http.StatusForbidden, "not_owner",
-		"Only an architecture owner named in .archfit-app.yaml on the base branch can approve."},
-	{gate.ErrDecisionRequester, http.StatusForbidden, "decision_requester",
-		"The login that filed a request cannot decide it. Another architecture owner decides."},
-	{gate.ErrDecisionSettled, http.StatusConflict, "decision_settled",
-		"This request was already decided or is out of date. Nothing was changed. Reload the page."},
-	{gate.ErrDecisionStale, http.StatusConflict, "decision_stale",
-		"The pull request or the policy changed since the agent filed this request, so it is out of date and no proposal was opened. " +
-			"The agent files a new request."},
-	{gate.ErrDecisionProposal, http.StatusBadGateway, "decision_proposal",
-		"The pull request opened for this request is not the draft Archfit expected, so nothing was recorded. Check it on GitHub."},
-	{gate.ErrDecisionNotFound, http.StatusNotFound, "not_found", "Not found."},
-	{gate.ErrStatusComment, http.StatusBadGateway, "decision_comment",
-		"The decision was recorded, but its status comment on the pull request could not be updated. Reload the page."},
-	{gate.ErrActiveObjections, http.StatusConflict, "active_objections",
-		"Another owner has requested changes. Review the displayed objection and use Override and approve with a reason, or resolve the objection."},
-	{gate.ErrOwnerDecisionStale, http.StatusConflict, "decision_stale",
-		"The candidate or objection set changed since this page was loaded. Nothing was saved. Reload and review the current decisions."},
-	{gate.ErrDecisionReason, http.StatusUnprocessableEntity, "decision_reason",
-		"Enter a reason. It will be posted to the pull request."},
-	{gate.ErrNoApprovalToWithdraw, http.StatusConflict, "no_approval_to_withdraw",
-		"You do not have an active architecture approval for this candidate to withdraw. Reload the page."},
-	{gate.ErrDecisionHistoryFull, http.StatusConflict, "decision_history_full",
-		"Decision history is full. Nothing was saved. Close this PR if its approval must be withdrawn; open a replacement for a fresh owner decision."},
-	{gate.ErrDigestsChanged, http.StatusConflict, "digests_changed",
-		"The protected files changed since this page was loaded. Nothing was approved. Reload the page and review them again."},
 	{passkey.ErrNotOwner, http.StatusForbidden, "not_owner",
 		"Only an owner named in the policy, or a repository administrator before the first policy, can register a passkey here."},
 	{passkey.ErrNeedsPasskey, http.StatusConflict, "needs_passkey",
@@ -239,17 +190,6 @@ func banner(st account.Status) string {
 }
 
 var notices = map[string]string{
-	"saved":              "Saved as a commit on the draft pull request.",
-	"unchanged":          "Nothing to save: the text is already on the branch.",
-	"ready":              "The draft pull request is marked ready for review.",
-	"proposed":           "The proposal is a new commit on the draft pull request. Review the diff on GitHub.",
-	"requested":          "The assist workflow is running in your CI. Its proposal arrives as a new commit on the draft pull request.",
-	"onboarding":         "The onboarding pull request is open. Next: add the workflow file to it.",
-	"discover":           "Discovery was dispatched. The policy proposal arrives as a pull request.",
-	"declined":           "Declined. The agent sees the answer in the pull request thread, and it stays until the policy changes.",
-	"decision_approved":  "Approved. A draft pull request with the proposed policy is open; an architecture owner approves it like any policy change.",
-	"approved":           "Architecture approval saved for this exact commit. Check results refresh separately; this does not merge or publish the change.",
-	"changes_requested":  "Changes requested. The pull request stays open; the owner reason was recorded and the check will refresh.",
-	"approval_withdrawn": "Your architecture approval was withdrawn for Archfit. The pull request stays open; native GitHub reviews are unchanged.",
-	"override_approved":  "Override and approval saved for the objections shown on this exact candidate. GitHub-native review requirements remain independent.",
+	"onboarding": "The onboarding pull request is open. Next: add the workflow file to it.",
+	"discover":   "Discovery was dispatched. The policy proposal arrives as a pull request.",
 }

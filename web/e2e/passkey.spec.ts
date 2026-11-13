@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { assertion, authenticator, ceremony, creation, expectClean, open, origin, type Handlers } from './support';
+import { assertion, authenticator, ceremony, creation, expectClean, expectNoNotUsedWord, open, origin, type Handlers } from './support';
 
 const page = '/r/acme/app/passkeys';
 const api = '/api/repos/acme/app/passkeys';
@@ -100,6 +100,7 @@ test('passkeys: a second passkey and a removal are each confirmed with a passkey
   await p.getByRole('button', { name: 'Add a passkey' }).click();
   await expect(p.getByRole('status')).toHaveText('Passkey registered. An issue tells you and the owners.');
   await expect(p.locator('.lede')).toHaveText('You have 2 passkeys in this App installation.');
+  await expectNoNotUsedWord(p);
   expect(issued.get('token-1')).toEqual({ action: 'register' });
   expect(writes[2].postDataJSON()).toEqual({ token: 'token-1' });
 
@@ -144,4 +145,5 @@ test('passkeys: a device that already holds a passkey of the user does not make 
   );
   expect(writes.map((w) => new URL(w.url()).pathname)).toEqual([`${api}/step-up`, `${api}/step-up/finish`, `${api}/register`]);
   await expect(p.getByRole('listitem')).toHaveCount(1);
+  await expectNoNotUsedWord(p);
 });

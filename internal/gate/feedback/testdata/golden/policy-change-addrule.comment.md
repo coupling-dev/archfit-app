@@ -12,7 +12,7 @@ This pull request tightens the policy (1 change).
 
 - Rule added: `no_direct_a_dependency` (blocks)
 
-A change to the protected policy needs an architecture owner's approval of this exact commit.
+Only the App's policy pull request changes the policy. Revert this change and ask with a request; an owner answers in the App.
 
 **Next:** Nothing to do.
 

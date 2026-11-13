@@ -27,7 +27,7 @@
       </li>
       <li class="mid">
         <span class="ic" aria-hidden="true">2</span><strong>A report, no source code</strong>
-        <span>Modules, dependencies and findings. Signed by GitHub, so nobody can fake it.</span>
+        <span>Modules, dependencies and errors. GitHub signs the report to show where it came from.</span>
       </li>
       <li class="end">
         <span class="ic" aria-hidden="true">✓</span><strong>A check on the pull request</strong>
@@ -41,7 +41,7 @@
     <h2 id="pitch-get">What you get</h2>
     <div class="pitch-cards">
       <div>
-        <span class="k">Drift</span><strong>Catch boundary breaks in review</strong>
+        <span class="k">Drift</span><strong>Catch boundary breaks before merge</strong>
         <span>A pull request that makes <code>api</code> reach into <code>billing</code> internals is flagged before merge.</span>
       </div>
       <div>
@@ -50,11 +50,11 @@
       </div>
       <div>
         <span class="k">Owners</span><strong>Only owners loosen the rules</strong>
-        <span>A change to the policy needs an architecture owner's approval on that exact commit.</span>
+        <span>Workers ask with a request. An owner answers in Archfit with a passkey.</span>
       </div>
       <div>
-        <span class="k">Baseline</span><strong>Old debt does not block</strong>
-        <span>Existing problems are recorded once. Only new ones count.</span>
+        <span class="k">Baseline</span><strong>Existing errors do not block</strong>
+        <span>Only new errors in the change count.</span>
       </div>
     </div>
   </section>
@@ -64,7 +64,7 @@
     <div class="box">
       <div class="box-row pitch-check">
         <span class="sev danger" aria-hidden="true">✕</span><code>archfit/state</code>
-        <span class="muted">1 rule violation: <code>api → billing</code> crosses a layer boundary</span>
+        <span class="muted">1 rule error: <code>api → billing</code> crosses a layer boundary</span>
       </div>
       <div class="box-row pitch-check">
         <span class="sev attention" aria-hidden="true">●</span><code>archfit/gate</code>

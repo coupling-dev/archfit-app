@@ -34,20 +34,6 @@ export interface PullRow {
   rerun?: string; // the pull request waits for an update after the target branch moved: the next step, with the modules
 }
 
-// DecisionRow is a decision request of an unattended agent. Every text is data written by an agent or GitHub.
-export interface DecisionRow {
-  pull: number;
-  title?: string;
-  status: 'pending' | 'approved' | 'declined' | 'stale';
-  finding: string; // short ID
-  rule: string;
-  edge: string; // "from → to"
-  requester: string; // whoever commented; never an approval
-  head: string; // short
-  created: string; // RFC 3339
-  href: string; // the pull request page
-}
-
 export interface Step {
   label: string;
   done: boolean;
@@ -66,9 +52,6 @@ export interface Overview {
   pulls_error: boolean;
   pulls_to_update: number; // listed pull requests that wait for an update after the target moved
   pulls_unread: number; // listed pull requests whose check could not be read: pulls_to_update is a floor
-  decisions_pending: number; // decision requests that wait for an owner, in all pull requests
-  decisions: DecisionRow[]; // the first few
-  decisions_error: boolean;
   steps: Step[];
   next: string;
   next_how: string;
@@ -78,7 +61,6 @@ export interface Overview {
   draft_state: string;
   banner: string;
   admin: boolean;
-  managed_ai?: ShareState; // for an administrator only
   can_start: boolean;
   can_discover: boolean;
   pulls_url: string;
@@ -219,53 +201,6 @@ export interface Findings {
   task_count: number;
 }
 
-export interface OwnerObjection {
-  id: string; // GitHub review ID or App decision version; sent back only for explicit override
-  login: string;
-  source: 'github' | 'app';
-  reason: string; // imported review body or authenticated App reason; text only
-  head_sha: string;
-  at: string;
-  overridden: boolean; // Archfit authorization only; a native review remains on GitHub
-}
-
-export interface OwnerDecisionHistory {
-  id: string;
-  login: string;
-  action: 'approve' | 'request_changes' | 'withdraw' | 'override';
-  reason?: string;
-  head_sha: string;
-  base_sha: string;
-  at: string;
-  overrode?: string[];
-  overrode_objections?: OwnerObjection[];
-}
-
-// Approval is the trusted owner-decision context for a protected-path change; no report is needed to resolve it.
-export interface Approval {
-  head_sha: string;
-  base_sha: string; // exact protected-ref commit the page showed
-  paths: string[];
-  digests: Record<string, string> | null; // each path at the head; null for a fork, whose head is not read
-  short_digests: Record<string, string> | null;
-  state: 'granted' | 'missing';
-  by?: string;
-  can_decide: boolean; // current owner with the repository access required for App decisions
-  can_approve: boolean;
-  can_withdraw: boolean; // this user has an App or native grant they can withdraw for this candidate
-  notification_problem: boolean; // reviewer request failed; never changes authority
-  owners: string[]; // principals from protected settings; one eligible owner is sufficient
-  settings_ref: string;
-  settings_url: string;
-  gate_mode: 'required' | 'advisory' | '';
-  required: boolean;
-  decision_url: string;
-  objections: OwnerObjection[];
-  history: OwnerDecisionHistory[];
-  reason?: string;
-  author_is_agent: boolean;
-}
-
 // ScreenLine is one line of the comment's first screen, as plain text.
 export interface ScreenLine {
   kind: 'headline' | 'heading' | 'text' | 'item';
@@ -273,7 +208,7 @@ export interface ScreenLine {
 }
 
 export type Pull = PullHead &
-  Findings & { approval?: Approval; first_screen?: ScreenLine[] };
+  Findings & { first_screen?: ScreenLine[] };
 
 // RepoFindings is the latest report of the default branch, for the overview.
 export type RepoFindings = Findings & {
@@ -287,9 +222,6 @@ export interface Notice {
   notice?: string;
   location?: string;
 }
-
-// unknown is "could not be read", never "not allowed".
-export type ShareState = 'allowed' | 'not_allowed' | 'unknown';
 
 export interface Precondition {
   label: string;

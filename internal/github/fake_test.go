@@ -389,7 +389,7 @@ func (f *fakeGitHub) contents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"type": "file", "encoding": "base64", "size": len(fileContent), "sha": "blob-sha-1",
+		"type": "file", "encoding": "base64", "size": len(fileContent), "sha": "b10b5ea1b10b5ea1b10b5ea1b10b5ea1b10b5ea1",
 		"content": base64.StdEncoding.EncodeToString([]byte(fileContent)),
 	})
 }

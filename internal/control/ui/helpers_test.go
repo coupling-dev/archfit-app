@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
-	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/gate"
@@ -66,22 +65,17 @@ func TestMain(m *testing.M) {
 
 // env is ui behind the real session and graph children, with every sibling and GitHub faked by hand.
 type env struct {
-	t         *testing.T
-	gh        *fakeGH
-	props     *fakeProposals
-	acct      *fakeAccount
-	consents  *fakeConsents
-	onb       *fakeOnboarding
-	assist    *fakeAssist
-	approvals *fakeApprovals
-	decisions *fakeDecisions
-	queue     *fakeDecisionQueue
-	passkeys  *fakePasskeys
-	requests  *fakeRequestViews
-	answers   *fakeAnswers
-	oauth     *fakeOAuth
-	store     store.Store
-	admit     *gate.Admissions // acme is approved by configuration; any other account by a Store record
+	t        *testing.T
+	gh       *fakeGH
+	acct     *fakeAccount
+	consents *fakeConsents
+	onb      *fakeOnboarding
+	passkeys *fakePasskeys
+	requests *fakeRequestViews
+	answers  *fakeAnswers
+	oauth    *fakeOAuth
+	store    store.Store
+	admit    *gate.Admissions // acme is approved by configuration; any other account by a Store record
 	// readsDown makes every approval read fail, as a Firestore outage does.
 	readsDown *atomic.Bool
 	now       time.Time
@@ -92,14 +86,14 @@ func newEnv(t *testing.T) *env {
 	t.Helper()
 	gh := newFakeGH()
 	mem := store.NewMemory()
-	realAccount, _, _ := account.New(mem)
+	realAccount, _ := account.New(mem)
 	reads := &downable{Store: mem}
 	e := &env{
-		t: t, gh: gh, props: newFakeProposals(gh), store: mem, readsDown: &reads.down,
+		t: t, gh: gh, store: mem, readsDown: &reads.down,
 		admit:    gate.NewAdmissions(reads, []string{"acme", "rival"}),
 		acct:     &fakeAccount{Account: realAccount, status: account.Status{Plan: account.PlanPublic}},
 		consents: newFakeConsents(), onb: &fakeOnboarding{progress: onboarding.Progress{Stage: onboarding.StagePolicyMerged}},
-		assist: &fakeAssist{}, approvals: &fakeApprovals{}, decisions: &fakeDecisions{}, queue: &fakeDecisionQueue{}, passkeys: &fakePasskeys{}, requests: &fakeRequestViews{}, answers: &fakeAnswers{}, oauth: &fakeOAuth{tokens: map[string]auth.UserToken{}},
+		passkeys: &fakePasskeys{}, requests: &fakeRequestViews{}, answers: &fakeAnswers{}, oauth: &fakeOAuth{tokens: map[string]auth.UserToken{}},
 		now: time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC),
 	}
 	clock := func() time.Time { return e.now }
@@ -108,9 +102,9 @@ func newEnv(t *testing.T) *env {
 		t.Fatalf("session.New: %v", err)
 	}
 	e.handler = newHandler(Deps{
-		Account: e.acct, Consents: e.consents, Onboarding: e.onb, Assist: e.assist, Proposals: e.props,
-		Admissions: e.admit, Approvals: e.approvals, Decisions: e.decisions, DecisionQueue: e.queue, RequestViews: e.requests, Answers: e.answers, Passkeys: e.passkeys, Operators: []int64{operatorID}, BaseURL: baseURL, Now: clock,
-	}, github{files: gh, heads: gh, checks: gh, actions: gh, pulls: gh, users: gh, installs: gh}, sessions, testWeb)
+		Account: e.acct, Consents: e.consents, Onboarding: e.onb,
+		Admissions: e.admit, RequestViews: e.requests, Answers: e.answers, Passkeys: e.passkeys, Operators: []int64{operatorID}, BaseURL: baseURL, Now: clock,
+	}, github{files: gh, checks: gh, actions: gh, pulls: gh, users: gh, installs: gh}, sessions, testWeb)
 
 	e.addRepo(repoName, installA, 10)
 	e.addRepo(otherRepo, installB, 20)
@@ -251,30 +245,6 @@ func (c *client) getJSON(path string, out any) {
 	if err := json.Unmarshal(res.Body.Bytes(), out); err != nil {
 		c.e.t.Fatalf("decode %s: %v", path, err)
 	}
-}
-
-// policyAPI and assistAPI are the API paths of the test repository's policy page and its AI request.
-const (
-	policyAPI = "/api/repos/" + repoName + "/policy"
-	assistAPI = "/api/repos/" + repoName + "/assist"
-)
-
-// editOf is the body of a save as the web app sends it.
-func editOf(branch, headSHA, content string) editJSON {
-	return editJSON{Branch: branch, HeadSHA: headSHA, Content: content}
-}
-
-// assistOf is a customer-mode request of the AI for content.
-func assistOf(headSHA, content string) assistJSON {
-	return assistJSON{editJSON: editOf("", headSHA, content), Instruction: "split module a", Mode: string(assist.ModeCustomer)}
-}
-
-// policy reads the policy page of the test repository; query is "" or "?…".
-func (c *client) policy(query string) policyJSON {
-	c.e.t.Helper()
-	var p policyJSON
-	c.getJSON(policyAPI+query, &p)
-	return p
 }
 
 // decodeAs reads a JSON answer, whatever its status.

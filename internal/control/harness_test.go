@@ -30,33 +30,28 @@ type harness struct {
 	clock    *clock
 	receiver *fakeReceiver
 	sandbox  *fakeSandbox
-	provider *fakeProvider
 	// status reads the account records of the same Store without going through the façade.
 	status account.Account
 }
 
 type harnessOption func(*Deps)
 
-func withoutSandbox(d *Deps)  { d.Sandbox = nil }
-func withoutProvider(d *Deps) { d.Provider = nil }
+func withoutSandbox(d *Deps) { d.Sandbox = nil }
 
 func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	t.Helper()
 	h := &harness{
 		t: t, gh: newFakeGitHub(t), store: &flakyStore{Store: store.NewMemory()}, clock: newClock(),
-		receiver: &fakeReceiver{}, sandbox: &fakeSandbox{}, provider: &fakeProvider{},
+		receiver: &fakeReceiver{}, sandbox: &fakeSandbox{},
 	}
 	admissions := gate.NewAdmissions(h.store, testAccounts)
 	g := gate.New(gate.Deps{GitHub: h.gh.client(), Store: h.store, Admissions: admissions, Audience: testBaseURL, Now: h.clock.Now})
 	d := Deps{
 		GitHub: h.gh.client(), Tokens: fakeTokens{}, OAuth: fakeOAuth{}, Store: h.store, Receiver: h.receiver,
-		Admissions:    admissions,
-		Decisions:     g,
-		Approvals:     gate.New(gate.Deps{GitHub: h.gh.client(), Store: h.store, Admissions: admissions, Audience: testBaseURL, Now: h.clock.Now}),
-		DecisionQueue: gate.New(gate.Deps{GitHub: h.gh.client(), Store: h.store, Admissions: admissions, Audience: testBaseURL, Now: h.clock.Now}),
-		RequestViews:  g,
-		Answers:       g,
-		Sandbox:       h.sandbox, Provider: h.provider, CookieKey: testCookieKey, BaseURL: testBaseURL, Now: h.clock.Now,
+		Admissions:   admissions,
+		RequestViews: g,
+		Answers:      g,
+		Sandbox:      h.sandbox, CookieKey: testCookieKey, BaseURL: testBaseURL, Now: h.clock.Now,
 	}
 	for _, o := range opts {
 		o(&d)
@@ -66,7 +61,7 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 		t.Fatalf("New: %v", err)
 	}
 	h.c = c
-	h.status, _, _ = account.New(h.store)
+	h.status, _ = account.New(h.store)
 	return h
 }
 
@@ -96,22 +91,6 @@ func (h *harness) tenants() map[store.Tenant]bool {
 	return out
 }
 
-// budgetBooked reports whether the SystemTenant counters sum to want micro-USD.
-func (h *harness) budgetBooked(want int64) bool {
-	h.t.Helper()
-	h.store.mu.Lock()
-	defer h.store.mu.Unlock()
-	var sum int64
-	for key := range h.store.addKeys {
-		v, err := h.store.Store.Add(context.Background(), store.SystemTenant, key, 0)
-		if err != nil {
-			h.t.Fatalf("read budget counter: %v", err)
-		}
-		sum += v
-	}
-	return sum == want
-}
-
 // flakyStore fails on demand; the embedded memory Store stays readable for assertions.
 type flakyStore struct {
 	store.Store
@@ -122,8 +101,6 @@ type flakyStore struct {
 	failDelete map[store.Tenant]bool
 	failList   bool
 	writes     int
-	adds       int
-	addKeys    map[string]bool // SystemTenant counters touched through Add
 }
 
 func (s *flakyStore) set(f func(*flakyStore)) {
@@ -172,15 +149,6 @@ func (s *flakyStore) CompareAndSwapAll(ctx context.Context, t store.Tenant, swap
 func (s *flakyStore) Add(ctx context.Context, t store.Tenant, key string, delta int64) (int64, error) {
 	s.mu.Lock()
 	fail := s.failAll
-	if !fail {
-		s.adds++
-		if t == store.SystemTenant {
-			if s.addKeys == nil {
-				s.addKeys = map[string]bool{}
-			}
-			s.addKeys[key] = true
-		}
-	}
 	s.mu.Unlock()
 	if fail {
 		return 0, errBoom
@@ -268,33 +236,6 @@ func (f *fakeSandbox) count() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.jobs)
-}
-
-type fakeProvider struct {
-	mu      sync.Mutex
-	maxCost int64
-	answer  Completion
-	err     error
-	calls   int
-}
-
-func (f *fakeProvider) MaxCostMicroUSD(Prompt) int64 {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.maxCost
-}
-
-func (f *fakeProvider) Complete(context.Context, Prompt) (Completion, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls++
-	return f.answer, f.err
-}
-
-func (f *fakeProvider) count() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.calls
 }
 
 // rewriteTransport sends every api.github.com request to the fake server.

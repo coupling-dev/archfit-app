@@ -1,7 +1,6 @@
 package gate
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -15,10 +14,8 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/approvals"
-	"github.com/alexei-led/archfit-app/internal/gate/decisions"
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
-	"github.com/alexei-led/archfit-app/internal/gate/sweep"
 	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
@@ -328,7 +325,7 @@ func newPipelineFakes() *pipelineFakes {
 	}
 	gh := newFakeGitHub()
 	f.gh = gh
-	f.gate = newGate(f.receiver, f.resolver, decisions.New(store.NewMemory(), gh, gh, func() time.Time { return testStart }), f.publisher, f.repairer, f.sweeper, f.actions, gh, gh, gh, gh, &fakeAdmitter{refused: map[int64]bool{}}, func() time.Time { return testStart })
+	f.gate = newGate(f.receiver, f.resolver, f.publisher, f.repairer, f.sweeper, gh, gh, &fakeAdmitter{refused: map[int64]bool{}}, func() time.Time { return testStart })
 	f.gate.approvals = approvals.New(gh, store.NewMemory())
 	return f
 }
@@ -421,7 +418,6 @@ func TestDefaultBranchPushRechecksTheTarget(t *testing.T) {
 	}{
 		{"unprotected push", webhook.DefaultBranchPush, []string{"pkg/a/a.go"}, 0, []recheckCall{{api.Repo{RepoRef: api.RepoRef{InstallationID: 11, FullName: shopName}, DefaultBranch: testBranch}, tip}}},
 		{"protected push", webhook.DefaultBranchPush, []string{"pkg/a/a.go", settings.Path}, 1, nil},
-		{"push to another branch", webhook.BranchPush, []string{"pkg/a/a.go"}, 0, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -518,7 +514,7 @@ func TestUploadPipeline(t *testing.T) {
 	}}
 	trusted := inputs.Trusted{
 		SettingsFound: true, Settings: settings.Settings{Gate: settings.GateRequired, Workflow: testWorkflow},
-		PolicyDigests: []string{"aa11"}, Approval: inputs.ApprovalNotRequired,
+		PolicyDigests: []string{"aa11"},
 	}
 
 	t.Run("pull request upload", func(t *testing.T) {
@@ -674,8 +670,6 @@ func TestHandleEventRules(t *testing.T) {
 		PullRequest: 7, HeadSHA: "head", BaseRef: "main",
 	}
 	required := inputs.Trusted{SettingsFound: true, Settings: settings.Settings{Gate: settings.GateRequired}}
-	missing := feedback.CheckState{Exists: true, Receipt: feedback.Receipt{RunID: 9, RunAttempt: 2, Reason: verdict.ReasonOwnerApprovalMissing}}
-	granted := inputs.Trusted{SettingsFound: true, Approval: inputs.ApprovalGranted}
 	boom := errors.New("boom")
 
 	t.Run("target is built from the verified event", func(t *testing.T) {
@@ -727,128 +721,6 @@ func TestHandleEventRules(t *testing.T) {
 		}
 	})
 
-	noRun := feedback.CheckState{Exists: true, Receipt: feedback.Receipt{Reason: verdict.ReasonOwnerApprovalMissing}}
-	rerun := []struct {
-		name    string
-		state   feedback.CheckState
-		trusted inputs.Trusted
-		run     api.WorkflowRun
-		reran   bool
-		tip     string // the default branch's head; "" is the receipt's base
-	}{
-		{"receipt without a run", noRun, granted, api.WorkflowRun{Status: runCompleted}, false, ""},
-		{"completed run at the receipt's attempt", missing, granted, api.WorkflowRun{Status: runCompleted, Attempt: 2}, true, ""},
-		{"run in progress", missing, granted, api.WorkflowRun{Status: runInProgress, Attempt: 2}, false, ""},
-		{"newer attempt already ran", missing, granted, api.WorkflowRun{Status: runCompleted, Attempt: 3}, false, ""},
-		{"approval still missing", missing, inputs.Trusted{SettingsFound: true, Approval: inputs.ApprovalMissing}, api.WorkflowRun{Status: runCompleted, Attempt: 2}, false, ""},
-		{"approval no longer needed", missing, inputs.Trusted{SettingsFound: true, Approval: inputs.ApprovalNotRequired}, api.WorkflowRun{Status: runCompleted, Attempt: 2}, true, ""},
-		{"another receipt reason", feedback.CheckState{Exists: true, Receipt: feedback.Receipt{RunID: 9, RunAttempt: 2, Reason: verdict.ReasonPolicyMismatch}}, granted, api.WorkflowRun{Status: runCompleted, Attempt: 2}, false, ""},
-		{"pending check", feedback.CheckState{Exists: true, Pending: true}, granted, api.WorkflowRun{Status: runCompleted}, false, ""},
-		{"no check", feedback.CheckState{}, granted, api.WorkflowRun{Status: runCompleted}, false, ""},
-		{"a run 30 days old", missing, granted, api.WorkflowRun{Status: runCompleted, Attempt: 2, CreatedAt: testStart.Add(-30 * 24 * time.Hour)}, false, ""},
-		{"a target that moved in more than the policy", missing, granted, api.WorkflowRun{Status: runCompleted, Attempt: 2}, false, "moved"},
-	}
-	for _, tc := range rerun {
-		t.Run("review: "+tc.name, func(t *testing.T) {
-			f := newPipelineFakes()
-			// The run of the event's head, measured on the receipt's base (design 10.5).
-			run := tc.run
-			run.HeadSHA, run.WorkflowPath = "head", testWorkflow
-			if run.CreatedAt.IsZero() {
-				run.CreatedAt = testStart.Add(-time.Hour)
-			}
-			state := tc.state
-			if state.Receipt.RunID != 0 {
-				state.Receipt.BaseSHA = "base"
-			}
-			tip := cmp.Or(tc.tip, "base")
-			f.gh.heads[branchKey(shopName, "")] = tip
-			f.publisher.state, f.resolver.trusted, f.actions.run = state, tc.trusted, run
-			if err := f.gate.HandleEvent(ctx, pullEvent(webhook.ReviewChanged)); err != nil {
-				t.Fatal(err)
-			}
-			if got := len(f.actions.reran) == 1; got != tc.reran {
-				t.Errorf("reran = %v, want %v", f.actions.reran, tc.reran)
-			}
-			if tc.reran && (f.actions.reran[0] != 9 || f.actions.refs[0] != wantTarget.Repo.RepoRef) {
-				t.Errorf("re-ran run %v of %+v", f.actions.reran, f.actions.refs)
-			}
-			if len(f.publisher.published)+len(f.publisher.pended) != 0 {
-				t.Error("a review event wrote feedback")
-			}
-			if tc.state.Receipt.RunID == 0 && len(f.actions.ran) != 0 {
-				t.Errorf("a receipt without a run read runs %v", f.actions.ran)
-			}
-		})
-	}
-
-	// One behavior with the sweep: a run that is gone is skipped, and rule 7b of the next pass repairs it.
-	t.Run("review: run not found is skipped", func(t *testing.T) {
-		f := newPipelineFakes()
-		f.publisher.state, f.resolver.trusted = missing, granted
-		f.actions.runErr = fmt.Errorf("run 9: %w", api.ErrNotFound)
-		if err := f.gate.HandleEvent(ctx, pullEvent(webhook.ReviewChanged)); err != nil {
-			t.Fatalf("err = %v, want nil", err)
-		}
-		if len(f.actions.ran) != 1 || len(f.actions.reran) != 0 || len(f.publisher.published) != 0 {
-			t.Errorf("ran %v, reran %v, published %d", f.actions.ran, f.actions.reran, len(f.publisher.published))
-		}
-	})
-
-	green := feedback.CheckState{Exists: true, Receipt: feedback.Receipt{
-		RunID: 9, RunAttempt: 2, ReportDigest: "rd", PolicyDigest: "aa11", Conclusion: verdict.Success, Reason: verdict.ReasonHealthy,
-	}}
-	withdrawn := inputs.Trusted{
-		SettingsFound: true, Settings: settings.Settings{Gate: settings.GateRequired}, PolicyDigests: []string{"aa11"},
-		ProtectedPaths: []string{settings.Path}, Approval: inputs.ApprovalMissing,
-	}
-	t.Run("review: a withdrawn approval ends a green receipt", func(t *testing.T) {
-		f := newPipelineFakes()
-		f.publisher.state, f.resolver.trusted = green, withdrawn
-		if err := f.gate.HandleEvent(ctx, pullEvent(webhook.ReviewChanged)); err != nil {
-			t.Fatal(err)
-		}
-		if len(f.publisher.published) != 1 || len(f.actions.ran)+len(f.actions.reran) != 0 {
-			t.Fatalf("published %d, ran %v, reran %v; want one publication and no re-run",
-				len(f.publisher.published), f.actions.ran, f.actions.reran)
-		}
-		pub := f.publisher.published[0]
-		want := sweep.Without(verdict.ReasonOwnerApprovalMissing, wantTarget, withdrawn, green.Receipt)
-		if !reflect.DeepEqual(pub, want) {
-			t.Errorf("publication =\n %+v, want\n %+v", pub, want)
-		}
-		if !slices.Equal(f.resolver.nows, []time.Time{testStart}) || len(f.publisher.states) != 1 {
-			t.Errorf("resolved at %v after %d check reads, want one of each inside Reconcile", f.resolver.nows, len(f.publisher.states))
-		}
-	})
-	quiet := []struct {
-		name          string
-		state         feedback.CheckState
-		trusted       inputs.Trusted
-		wantPublished bool
-	}{
-		{"the approval still holds", green, func() inputs.Trusted { tr := withdrawn; tr.Approval = inputs.ApprovalGranted; return tr }(), false},
-		{"advisory mode withdraws stale state too", green, func() inputs.Trusted { tr := withdrawn; tr.Settings.Gate = settings.GateAdvisory; return tr }(), true},
-		{"the check already asks for action", feedback.CheckState{Exists: true, Receipt: feedback.Receipt{
-			RunID: 9, RunAttempt: 2, Conclusion: verdict.ActionRequired, Reason: verdict.ReasonPolicyMismatch,
-		}}, withdrawn, false},
-	}
-	for _, tc := range quiet {
-		t.Run("review: owner objection: "+tc.name, func(t *testing.T) {
-			f := newPipelineFakes()
-			f.publisher.state, f.resolver.trusted = tc.state, tc.trusted
-			if err := f.gate.HandleEvent(ctx, pullEvent(webhook.ReviewChanged)); err != nil {
-				t.Fatal(err)
-			}
-			if got := len(f.publisher.published) == 1; got != tc.wantPublished || len(f.actions.reran) != 0 {
-				t.Errorf("published %d, reran %v; want published=%t and no rerun", len(f.publisher.published), f.actions.reran, tc.wantPublished)
-			}
-			if tc.wantPublished && f.publisher.published[0].Receipt.Reason != verdict.ReasonOwnerApprovalMissing {
-				t.Errorf("advisory state reason = %q, want owner_approval_missing", f.publisher.published[0].Receipt.Reason)
-			}
-		})
-	}
-
 	errs := []struct {
 		name  string
 		kind  webhook.EventKind
@@ -856,24 +728,7 @@ func TestHandleEventRules(t *testing.T) {
 	}{
 		{"resolve", webhook.PullOpened, func(f *pipelineFakes) { f.resolver.err = boom }},
 		{"pending", webhook.PullOpened, func(f *pipelineFakes) { f.resolver.trusted = required; f.publisher.pendingErr = boom }},
-		{"state", webhook.ReviewChanged, func(f *pipelineFakes) { f.publisher.stateErr = boom }},
-		{"review resolve", webhook.ReviewChanged, func(f *pipelineFakes) { f.publisher.state = missing; f.resolver.err = boom }},
-		{"run", webhook.ReviewChanged, func(f *pipelineFakes) {
-			f.publisher.state, f.resolver.trusted, f.actions.runErr = missing, granted, boom
-		}},
-		{"rerun", webhook.ReviewChanged, func(f *pipelineFakes) {
-			f.publisher.state, f.resolver.trusted, f.actions.rerunErr = missing, granted, boom
-			f.publisher.state.Receipt.BaseSHA, f.gh.heads[branchKey(shopName, "")] = "base", "base"
-			f.actions.run = api.WorkflowRun{Status: runCompleted, Attempt: 2, HeadSHA: "head", WorkflowPath: testWorkflow, CreatedAt: testStart}
-		}},
-		{"pull request base read for the re-run guard", webhook.ReviewChanged, func(f *pipelineFakes) {
-			f.publisher.state, f.resolver.trusted, f.gh.fail["Pull"] = missing, granted, boom // a receipt without a base
-			f.actions.run = api.WorkflowRun{Status: runCompleted, Attempt: 2, HeadSHA: "head", WorkflowPath: testWorkflow, CreatedAt: testStart}
-		}},
 		{"repository sweep", webhook.DefaultBranchPush, func(f *pipelineFakes) { f.sweeper.err = boom }},
-		{"withdrawal", webhook.ReviewChanged, func(f *pipelineFakes) {
-			f.publisher.state, f.resolver.trusted, f.publisher.publishErr = green, withdrawn, boom
-		}},
 	}
 	for _, tc := range errs {
 		t.Run("error is returned: "+tc.name, func(t *testing.T) {

@@ -1,16 +1,15 @@
-package wording_test
+package wording
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"maps"
 	"os"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
-
-	"github.com/alexei-led/archfit-app/internal/wire/wording"
 )
 
 const wordingFile = "wording.go.txt"
@@ -52,21 +51,37 @@ func TestVendoredFileMatchesSchemaSource(t *testing.T) {
 }
 
 func TestNotUsedMatchesAsTheEngine(t *testing.T) {
-	for _, tc := range []struct {
-		text string
-		want []string
-	}{
-		{text: "pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency\n"},
-		{text: "a decision request", want: []string{"decision", "decision request"}},
-		{text: "needs\n  attention", want: []string{"needs attention"}},
-		{text: "config_file edge_count tasks"},
-		{text: "the check archfit/gate failed; gate: required"},
-		{text: "the gate is closed", want: []string{"gate"}},
-		{text: "A Finding, a WAIVER", want: []string{"waiver", "finding"}},
-	} {
-		if got := wording.NotUsedIn(tc.text); !slices.Equal(got, tc.want) {
-			t.Errorf("NotUsedIn(%q) = %q, want %q", tc.text, got, tc.want)
+	var cases []struct {
+		Text string   `json:"text"`
+		Want []string `json:"want"`
+	}
+	if err := json.Unmarshal(read(t, "../../../web/e2e/wording-cases.json"), &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range cases {
+		if got := NotUsedIn(tc.Text); !slices.Equal(got, tc.Want) {
+			t.Errorf("NotUsedIn(%q) = %q, want %q", tc.Text, got, tc.Want)
 		}
+	}
+}
+
+func TestWebWordsMatchVendoredEngine(t *testing.T) {
+	var web struct {
+		Words     []string `json:"words"`
+		GateNames string   `json:"gateNames"`
+		Source    string   `json:"source"`
+	}
+	if err := json.Unmarshal(read(t, "../../../web/e2e/not-used.json"), &web); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(web.Words, notUsed.list) {
+		t.Errorf("web words = %q, engine words = %q", web.Words, notUsed.list)
+	}
+	if web.GateNames != notUsed.gateNames.String() {
+		t.Errorf("web gate names = %q, engine = %q", web.GateNames, notUsed.gateNames)
+	}
+	if web.Source != "internal/wire/wording/wording.go.txt" {
+		t.Errorf("web source = %q", web.Source)
 	}
 }
 

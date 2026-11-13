@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,7 +25,7 @@ func TestStoreFailureNeverSuspends(t *testing.T) {
 		for _, op := range []string{"Observe", "Refresh", "Grant"} {
 			t.Run(failure+" fails during "+op, func(t *testing.T) {
 				s := newSpy()
-				a, _, _, _ := newTest(s)
+				a, _, _ := newTest(s)
 				mustNil(t, a.Observe(ctx, instA, true, day(0)))
 				before := rawKey(t, s.Store, instA, gate.EntitlementKey)
 				putsBefore := len(s.writes(recordKeyName)) + len(s.writes(gate.EntitlementKey))
@@ -55,7 +53,7 @@ func TestStoreFailureNeverSuspends(t *testing.T) {
 
 	t.Run("Status returns the Get error", func(t *testing.T) {
 		s := newSpy()
-		a, _, _, _ := newTest(s)
+		a, _, _ := newTest(s)
 		s.getErr = errBoom
 		if _, err := a.Status(ctx, instA, day(0)); !errors.Is(err, errBoom) {
 			t.Errorf("err = %v, want the Store error", err)
@@ -68,7 +66,7 @@ func TestCorruptRecordIsAnError(t *testing.T) {
 	corrupt := []byte(`{"first_private_at":`)
 	s := newSpy()
 	mustNil(t, s.Store.Put(ctx, store.Tenant(instA), recordKeyName, corrupt))
-	a, _, _, _ := newTest(s)
+	a, _, _ := newTest(s)
 
 	ops := accountWrites(a, instA, day(1))
 	ops["Status"] = func(ctx context.Context) error {
@@ -94,7 +92,7 @@ func TestInvalidInstallationID(t *testing.T) {
 	ctx := context.Background()
 	for _, id := range []int64{0, -1} {
 		s := newSpy()
-		a, c, _, _ := newTest(s)
+		a, c, _ := newTest(s)
 		ops := accountWrites(a, id, day(0))
 		ops["Status"] = func(ctx context.Context) error {
 			_, err := a.Status(ctx, id, day(0))
@@ -102,18 +100,18 @@ func TestInvalidInstallationID(t *testing.T) {
 		}
 		ops["Forget"] = func(ctx context.Context) error { return a.Forget(ctx, id) }
 		ops["Record"] = func(ctx context.Context) error {
-			return c.Record(ctx, id, Consent{Kind: ConsentManagedLLM, By: "octocat", ByID: 1, At: day(0)})
+			return c.Record(ctx, id, Consent{Kind: ConsentSourceProcessing, By: "octocat", ByID: 1, At: day(0)})
 		}
-		ops["Revoke"] = func(ctx context.Context) error { return c.Revoke(ctx, id, ConsentManagedLLM) }
+		ops["Revoke"] = func(ctx context.Context) error { return c.Revoke(ctx, id, ConsentSourceProcessing) }
 		for name, op := range ops {
 			if err := op(ctx); err == nil {
 				t.Errorf("%s(%d): no error", name, id)
 			}
 		}
-		if c.Has(ctx, id, ConsentManagedLLM) {
+		if c.Has(ctx, id, ConsentSourceProcessing) {
 			t.Errorf("Has(%d) = true", id)
 		}
-		if _, ok, err := c.Get(ctx, id, ConsentManagedLLM); ok || err == nil {
+		if _, ok, err := c.Get(ctx, id, ConsentSourceProcessing); ok || err == nil {
 			t.Errorf("Get(%d) = %v, %v; want false and an error", id, ok, err)
 		}
 		if n := s.count(); n != 0 {
@@ -135,7 +133,7 @@ func TestConsentRejectsInvalid(t *testing.T) {
 	for name, mutate := range invalid {
 		t.Run(name, func(t *testing.T) {
 			s := newSpy()
-			_, c, _, _ := newTest(s)
+			_, c, _ := newTest(s)
 			in := valid
 			mutate(&in)
 			if err := c.Record(ctx, instA, in); err == nil {
@@ -149,7 +147,7 @@ func TestConsentRejectsInvalid(t *testing.T) {
 
 	t.Run("Has with a failing Store", func(t *testing.T) {
 		s := newSpy()
-		_, c, _, _ := newTest(s)
+		_, c, _ := newTest(s)
 		mustNil(t, c.Record(ctx, instA, valid))
 		s.getErr = errBoom
 		if c.Has(ctx, instA, valid.Kind) {
@@ -162,10 +160,10 @@ func TestConsentRejectsInvalid(t *testing.T) {
 
 	t.Run("a record from before the user ID is still a consent", func(t *testing.T) {
 		s := store.NewMemory()
-		_, c, _, _ := newTest(s)
-		mustNil(t, s.Put(ctx, store.Tenant(instA), "consent/managed_llm", []byte(`{"kind":"managed_llm","by":"octocat","at":"2026-09-01T00:00:00Z"}`)))
-		got, ok, err := c.Get(ctx, instA, ConsentManagedLLM)
-		if !ok || err != nil || got.By != "octocat" || got.ByID != 0 || !c.Has(ctx, instA, ConsentManagedLLM) {
+		_, c, _ := newTest(s)
+		mustNil(t, s.Put(ctx, store.Tenant(instA), "consent/source_processing", []byte(`{"kind":"source_processing","by":"octocat","at":"2026-09-01T00:00:00Z"}`)))
+		got, ok, err := c.Get(ctx, instA, ConsentSourceProcessing)
+		if !ok || err != nil || got.By != "octocat" || got.ByID != 0 || !c.Has(ctx, instA, ConsentSourceProcessing) {
 			t.Errorf("Get = %+v, %v, %v; want octocat with no user ID, and Has true", got, ok, err)
 		}
 	})
@@ -177,7 +175,7 @@ func TestConsentRejectsInvalid(t *testing.T) {
 	} {
 		t.Run("Has with a corrupt value: "+name, func(t *testing.T) {
 			s := store.NewMemory()
-			_, c, _, _ := newTest(s)
+			_, c, _ := newTest(s)
 			mustNil(t, s.Put(ctx, store.Tenant(instA), "consent/source_processing", []byte(value)))
 			if c.Has(ctx, instA, ConsentSourceProcessing) {
 				t.Error("Has = true")
@@ -189,92 +187,10 @@ func TestConsentRejectsInvalid(t *testing.T) {
 	}
 }
 
-func TestBudgetRejectsAndFailsClosed(t *testing.T) {
-	ctx := context.Background()
-	now := day(3)
-
-	t.Run("non-positive cost", func(t *testing.T) {
-		s := newSpy()
-		_, _, b, _ := newTest(s)
-		for _, cost := range []int64{0, -1} {
-			if err := b.Reserve(ctx, cost, now); err == nil || errors.Is(err, ErrBudgetExhausted) {
-				t.Errorf("Reserve(%d) = %v, want a plain error", cost, err)
-			}
-		}
-		if n := s.count(); n != 0 {
-			t.Errorf("%d Store calls, want 0", n)
-		}
-	})
-
-	t.Run("Add fails on reserve", func(t *testing.T) {
-		s := newSpy()
-		_, _, b, _ := newTest(s)
-		s.failAddOn = 1
-		err := b.Reserve(ctx, 1_000_000, now)
-		if !errors.Is(err, errBoom) || errors.Is(err, ErrBudgetExhausted) {
-			t.Errorf("err = %v, want the Store error only", err)
-		}
-		if got := counter(t, s.Store, "2026-09"); got != 0 {
-			t.Errorf("counter = %d, want 0", got)
-		}
-	})
-
-	t.Run("compensating Add fails", func(t *testing.T) {
-		s := newSpy()
-		_, _, b, _ := newTest(s)
-		mustNil(t, b.Reserve(ctx, capMicroUSD, now))
-		s.failAddOn = s.adds + 2
-		if err := b.Reserve(ctx, 5_000_000, now); err == nil {
-			t.Error("no error")
-		}
-		if got := counter(t, s.Store, "2026-09"); got != capMicroUSD+5_000_000 {
-			t.Errorf("counter = %d, want %d (over-reserved, never lower)", got, capMicroUSD+5_000_000)
-		}
-		if err := b.Reserve(ctx, 1, now); !errors.Is(err, ErrBudgetExhausted) {
-			t.Errorf("next reserve: %v, want ErrBudgetExhausted", err)
-		}
-	})
-
-	t.Run("Settle returns the Store error", func(t *testing.T) {
-		s := newSpy()
-		_, _, b, _ := newTest(s)
-		s.failAddOn = 1
-		if err := b.Settle(ctx, 5_000_000, 1_000_000, now); !errors.Is(err, errBoom) {
-			t.Errorf("err = %v, want the Store error", err)
-		}
-	})
-}
-
-func TestConcurrentReserveNeverExceedsCap(t *testing.T) {
-	ctx := context.Background()
-	s := store.NewMemory()
-	_, _, b, _ := newTest(s)
-	var ok atomic.Int64
-	var wg sync.WaitGroup
-	for range 100 {
-		wg.Go(func() {
-			err := b.Reserve(ctx, 1_000_000, day(3))
-			switch {
-			case err == nil:
-				ok.Add(1)
-			case !errors.Is(err, ErrBudgetExhausted):
-				t.Errorf("unexpected error: %v", err)
-			}
-		})
-	}
-	wg.Wait()
-	if got := ok.Load(); got != 20 {
-		t.Errorf("successful reservations = %d, want 20", got)
-	}
-	if got := counter(t, s, "2026-09"); got != capMicroUSD {
-		t.Errorf("counter = %d, want %d", got, capMicroUSD)
-	}
-}
-
 func TestOnlyDocumentedKeys(t *testing.T) {
 	ctx := context.Background()
 	s := newSpy()
-	a, c, b, _ := newTest(s)
+	a, c, _ := newTest(s)
 	now := day(3)
 
 	mustNil(t, a.Observe(ctx, instA, false, now))
@@ -283,21 +199,16 @@ func TestOnlyDocumentedKeys(t *testing.T) {
 	mustNil(t, a.Refresh(ctx, instA, now))
 	_, err := a.Status(ctx, instA, now)
 	mustNil(t, err)
-	for _, k := range []ConsentKind{ConsentSourceProcessing, ConsentManagedLLM} {
+	for _, k := range []ConsentKind{ConsentSourceProcessing} {
 		mustNil(t, c.Record(ctx, instA, Consent{Kind: k, By: "octocat", ByID: 1, At: now}))
 		c.Has(ctx, instA, k)
 		mustNil(t, c.Revoke(ctx, instA, k))
 	}
-	mustNil(t, b.Reserve(ctx, capMicroUSD, now))
-	if err := b.Reserve(ctx, 1, now); !errors.Is(err, ErrBudgetExhausted) {
-		t.Fatalf("err = %v, want ErrBudgetExhausted", err)
-	}
-	mustNil(t, b.Settle(ctx, capMicroUSD, 1_000_000, now))
 	mustNil(t, a.Forget(ctx, instA))
 
 	installationKeys := map[string]bool{
 		"account": true, "entitlement": true,
-		"consent/source_processing": true, "consent/managed_llm": true,
+		"consent/source_processing": true,
 	}
 	seen := map[string]bool{}
 	for _, call := range s.calls {
@@ -305,13 +216,11 @@ func TestOnlyDocumentedKeys(t *testing.T) {
 		case call.op == "DeleteTenant" && call.tenant == store.Tenant(instA):
 		case call.tenant == store.Tenant(instA) && installationKeys[call.key]:
 			seen[call.key] = true
-		case call.tenant == store.SystemTenant && call.op == "Add" && call.key == "llm-budget/2026-09":
-			seen[call.key] = true
 		default:
 			t.Errorf("undocumented call: %s tenant=%d key=%q", call.op, call.tenant, call.key)
 		}
 	}
-	if len(seen) != len(installationKeys)+1 {
+	if len(seen) != len(installationKeys) {
 		t.Errorf("keys touched = %v, want all documented keys", seen)
 	}
 }

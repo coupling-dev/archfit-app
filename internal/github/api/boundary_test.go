@@ -96,7 +96,7 @@ func TestRevokedAccessAndRemovedRepository(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		etagJSON(w, r, `"policy-v1"`, map[string]any{"type": "file", "encoding": "base64", "content": "c2VjcmV0", "sha": "blob"})
+		etagJSON(w, r, `"policy-v1"`, map[string]any{"type": "file", "encoding": "base64", "content": "c2VjcmV0", "sha": "b10b5ea1b10b5ea1b10b5ea1b10b5ea1b10b5ea1"})
 	}))
 
 	for range 2 {
@@ -162,10 +162,6 @@ func repoRefCalls(c *Client, r RepoRef) map[string]func(context.Context) (bool, 
 		"Pulls.ChangedFiles": func(ctx context.Context) (bool, error) {
 			paths, truncated, err := c.ChangedFiles(ctx, r, 1)
 			return paths != nil || truncated, err
-		},
-		"Pulls.Reviews": func(ctx context.Context) (bool, error) {
-			rv, err := c.Reviews(ctx, r, 1)
-			return rv != nil, err
 		},
 		"Checks.CheckRuns": func(ctx context.Context) (bool, error) {
 			runs, err := c.CheckRuns(ctx, r, "abc", "archfit")
@@ -293,12 +289,6 @@ func TestCrossInstallationRepoRef(t *testing.T) {
 			}
 		})
 	}
-	t.Run("Pulls.TeamMember", func(t *testing.T) {
-		member, err := env.c.TeamMember(context.Background(), crossed, "b-org/core", "alice")
-		if member || err != nil {
-			t.Errorf("TeamMember = %v, %v; want false", member, err)
-		}
-	})
 	if env.ts.mintedFor(2) != 0 || env.ts.mintedFor(1) == 0 {
 		t.Errorf("tokens minted for %v, want installation 1 only", env.ts.minted)
 	}
@@ -458,8 +448,6 @@ func TestErrorsCarryNoSecretsOrContent(t *testing.T) {
 		check(t, "bad full name", err)
 		_, _, err = env.c.File(context.Background(), repoA, "main", pathMark+"/../x")
 		check(t, "bad path", err)
-		_, err = env.c.TeamMember(context.Background(), repoA, pathMark, "alice")
-		check(t, "bad team", err)
 		_, err = env.c.CreateComment(context.Background(), repoA, 1, strings.Repeat(bodyMark, 10000))
 		check(t, "long comment", err)
 	})

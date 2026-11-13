@@ -63,7 +63,6 @@ func healthyFacts() Facts {
 			PolicyDigests:   []string{basePolicy},
 			BaselineDigests: []string{baseBaseline},
 			LabelsDigests:   []string{baseLabels},
-			Approval:        inputs.ApprovalNotRequired,
 		},
 	}
 }
@@ -88,7 +87,6 @@ func baselineMismatch(f *Facts) {
 }
 func labelsMismatch(f *Facts) { f.LabelsDigest = headLabels }
 func approvalMissing(f *Facts) {
-	f.Trusted.Approval = inputs.ApprovalMissing
 	f.Trusted.ProtectedPaths = []string{".archfit.yaml"}
 }
 func unevaluated(f *Facts) {
@@ -209,7 +207,7 @@ func successAllowed(f Facts) bool {
 	if !f.WorkflowApproved || !f.IdentityApproved {
 		return false
 	}
-	if f.Trusted.Approval != inputs.ApprovalNotRequired && f.Trusted.Approval != inputs.ApprovalGranted {
+	if len(f.Trusted.ProtectedPaths) > 0 {
 		return false
 	}
 	if g := f.Trusted.Group; g != nil && (g.Problem != "" || g.Unapproved != "") {
@@ -286,8 +284,7 @@ func fuzzFacts(rng *rand.Rand) Facts {
 		f.Trusted.LabelsDigests = list()
 	}
 	if hit() {
-		f.Trusted.Approval = pick(rng, inputs.ApprovalGranted, inputs.ApprovalMissing, inputs.Approval(""), inputs.Approval("skipped"))
-		f.Trusted.ProtectedPaths = []string{".archfit.yaml", ".archfit-app.yaml"}
+		f.Trusted.ProtectedPaths = pick(rng, []string(nil), []string{".archfit.yaml", ".archfit-app.yaml"})
 	}
 	if hit() {
 		f.Trusted.Group = &inputs.Group{

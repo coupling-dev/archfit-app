@@ -2,6 +2,7 @@
 // production CSP, a Chromium virtual authenticator, the "Not used" words check (design 5), and axe.
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { notUsedIn } from './wording';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page, type Request } from '@playwright/test';
 
@@ -42,12 +43,20 @@ export async function open(page: Page, path: string, handlers: Handlers): Promis
   return writes;
 }
 
+export async function expectNoNotUsedWord(page: Page) {
+  expect(notUsedIn(await page.locator('body').innerText())).toEqual([]);
+}
+
+export async function expectPageText(page: Page, name: string) {
+  expect(await page.locator('main').innerText()).toMatchSnapshot(name + '.txt');
+}
+
 // expectClean fails on a CSP violation, an axe violation in either scheme, a word of the "Not used" column, or a page
 // wider than a phone at phone width.
 export async function expectClean(page: Page) {
   const violations = await page.evaluate(() => (window as unknown as { cspViolations: string[] }).cspViolations);
   expect(violations).toEqual([]);
-  expect(notUsedIn(await page.locator('body').innerText())).toEqual([]);
+  await expectNoNotUsedWord(page);
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     const axe = await new AxeBuilder({ page }).analyze();
@@ -57,35 +66,6 @@ export async function expectClean(page: Page) {
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   if (size) await page.setViewportSize(size);
-}
-
-// The "Not used" words of design 5, matched as the engine matches them (internal/wire/wording): whole words in any case,
-// a phrase across any white space, after the two gate names are removed.
-const notUsed = JSON.parse(readFileSync(new URL('./not-used.json', import.meta.url), 'utf8')) as {
-  words: string[];
-  gateNames: string;
-};
-// not-used.json is a copy of the App's vendored engine file; a re-vendor that changes the list fails every spec here
-// until the copy follows.
-const vendored = readFileSync(new URL('../../internal/wire/wording/wording.go.txt', import.meta.url), 'utf8');
-const vendoredWords = [...(/var notUsedWords = \[\]string\{([\s\S]*?)\n\}/.exec(vendored)?.[1] ?? '').matchAll(/"([^"]*)"/g)].map(
-  (m) => m[1],
-);
-const vendoredGate = /regexp\.MustCompile\(`([^`]*)`\)/.exec(vendored)?.[1];
-if (JSON.stringify(vendoredWords) !== JSON.stringify(notUsed.words) || vendoredGate !== notUsed.gateNames)
-  throw new Error('web/e2e/not-used.json differs from internal/wire/wording/wording.go.txt: copy the list again');
-const gateNames = new RegExp(notUsed.gateNames.replace(/^\(\?i\)/, ''), 'gi');
-const patterns = notUsed.words.map((w) => {
-  const phrase = w
-    .split(/\s+/)
-    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('\\s+');
-  return { w, re: new RegExp(`(^|[^\\p{L}\\p{N}_])${phrase}($|[^\\p{L}\\p{N}_])`, 'iu') };
-});
-
-export function notUsedIn(text: string): string[] {
-  const t = text.replace(gateNames, ' ');
-  return patterns.filter((p) => p.re.test(t)).map((p) => p.w);
 }
 
 // Device is a Chromium virtual authenticator with user verification, like a platform passkey.

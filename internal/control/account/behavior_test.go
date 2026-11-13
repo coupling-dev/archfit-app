@@ -16,7 +16,7 @@ import (
 func TestTrialGraceSuspensionTimeline(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
-	a, _, _, _ := newTest(s)
+	a, _, _ := newTest(s)
 	mustNil(t, a.Observe(ctx, instA, true, day(0)))
 
 	for h := range 40 * 24 {
@@ -44,7 +44,7 @@ func TestTrialGraceSuspensionTimeline(t *testing.T) {
 func TestRestoredEntitlementOnlyMovesTheDate(t *testing.T) {
 	ctx := context.Background()
 	s := newSpy()
-	a, _, _, _ := newTest(s)
+	a, _, _ := newTest(s)
 	mustNil(t, a.Observe(ctx, instA, true, day(0)))
 	now := day(45)
 	mustNil(t, a.Refresh(ctx, instA, now))
@@ -68,39 +68,10 @@ func TestRestoredEntitlementOnlyMovesTheDate(t *testing.T) {
 	}
 }
 
-func TestBudgetExhaustionTouchesNothingElse(t *testing.T) {
-	ctx := context.Background()
-	s := store.NewMemory()
-	a, c, b, _ := newTest(s)
-	now := day(3)
-	mustNil(t, a.Observe(ctx, instA, true, now))
-	mustNil(t, c.Record(ctx, instA, Consent{Kind: ConsentManagedLLM, By: "octocat", ByID: 1, At: now}))
-	before := rawKey(t, s, instA, gate.EntitlementKey)
-
-	mustNil(t, b.Reserve(ctx, capMicroUSD, now))
-	if err := b.Reserve(ctx, 1, now); !errors.Is(err, ErrBudgetExhausted) {
-		t.Fatalf("err = %v, want ErrBudgetExhausted", err)
-	}
-
-	mustNil(t, a.Observe(ctx, instA, true, now))
-	mustNil(t, a.Refresh(ctx, instA, now))
-	st, err := a.Status(ctx, instA, now)
-	mustNil(t, err)
-	if st.Plan != PlanTrial {
-		t.Errorf("Plan = %q, want trial", st.Plan)
-	}
-	if !c.Has(ctx, instA, ConsentManagedLLM) {
-		t.Error("Has = false")
-	}
-	if !bytes.Equal(rawKey(t, s, instA, gate.EntitlementKey), before) {
-		t.Error("entitlement record changed")
-	}
-}
-
 func TestReinstallStartsNewTenant(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
-	a, _, _, _ := newTest(s)
+	a, _, _ := newTest(s)
 	mustNil(t, a.Observe(ctx, instA, true, day(0)))
 	mustNil(t, a.Forget(ctx, instA))
 
@@ -127,7 +98,7 @@ func TestCrashBetweenWritesChangesNothing(t *testing.T) {
 	for _, op := range []string{"Observe", "Refresh", "Grant"} {
 		t.Run(op, func(t *testing.T) {
 			s := newSpy()
-			a, _, _, _ := newTest(s)
+			a, _, _ := newTest(s)
 			mustNil(t, a.Observe(ctx, instA, true, day(0)))
 			mustNil(t, a.Refresh(ctx, instA, day(20)))
 			recordBefore := rawKey(t, s, instA, recordKeyName)
@@ -152,7 +123,7 @@ func TestCrashBetweenWritesChangesNothing(t *testing.T) {
 func TestConcurrentGrantDuringObserveIsKept(t *testing.T) {
 	ctx := context.Background()
 	s := newSpy()
-	a, _, _, _ := newTest(s)
+	a, _, _ := newTest(s)
 	s.beforeWrite = func() { mustNil(t, a.Grant(ctx, instA, day(90), day(0))) }
 
 	mustNil(t, a.Observe(ctx, instA, true, day(0)))
@@ -167,7 +138,7 @@ func TestConcurrentGrantDuringObserveIsKept(t *testing.T) {
 func TestEndlessConcurrentWritesAreAnError(t *testing.T) {
 	ctx := context.Background()
 	s := newSpy()
-	a, _, _, _ := newTest(s)
+	a, _, _ := newTest(s)
 	mustNil(t, a.Observe(ctx, instA, true, day(0)))
 
 	// Another writer changes the entitlement before every swap of this call.

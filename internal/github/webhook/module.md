@@ -42,14 +42,14 @@ delivery ID header are not covered by the signature; only the body is.
 - `pull_request`: `opened`, `reopened`, `ready_for_review` → `PullOpened`; `synchronize` → `PullSynchronized`;
   `closed` → `PullClosed` (merged or not); every other action → `Ignored`. A base change (`edited`) is `Ignored`
   **[default]**: a pending check already exists on the head, and the sweep repairs stale inputs.
-- `pull_request_review`: `submitted`, `edited`, `dismissed` → `ReviewChanged`.
+- `pull_request_review`, any action → `Ignored`: a review approves nothing.
 - `issue_comment`: `created` on a pull request (`issue.pull_request` present) → `PullCommented`; every other action,
   and a comment on a plain issue → `Ignored`. An edited comment is not read again (M2 plan, "The request line").
   GitHub delivers the event only after the owner subscribes the App to "Issue comment"; until then nothing arrives.
 - `issues`: `opened` on an issue that is not a pull request → `IssueOpened`; every other action → `Ignored`. GitHub
   delivers it only after the owner subscribes the App to "Issues" (Issues permission).
 - `push`: `ref` equals `refs/heads/` + `repository.default_branch` and `deleted` is false → `DefaultBranchPush`;
-  any other branch ref with `deleted` false → `BranchPush`; a tag or a deletion → `Ignored`.
+  any other branch ref, a tag or a deletion → `Ignored`.
 - `merge_group`: `checks_requested` → `MergeGroupRequested`; `destroyed` → `MergeGroupDestroyed`; every other action
   → `Ignored`. GitHub delivers the event only after the owner subscribes the App to "Merge group" (repository
   permission Merge queues: Read).
@@ -61,16 +61,12 @@ delivery ID header are not covered by the signature; only the body is.
 ### Field sources
 
 - `InstallationID`: `installation.id`. `Repo`: `repository.full_name`. `RepoPrivate`: `repository.private`.
-- Pull request kinds and `ReviewChanged`: `PullRequest` = `pull_request.number`, `HeadSHA` = `pull_request.head.sha`,
+- Pull request kinds: `PullRequest` = `pull_request.number`, `HeadSHA` = `pull_request.head.sha`,
   `HeadRepo` = `pull_request.head.repo.full_name`, `BaseRef` = `pull_request.base.ref`. A deleted fork has
   `head.repo: null`; `HeadRepo` is then `""`, which differs from `Repo`, so it still reads as a fork.
 - `DefaultBranchPush`: `HeadSHA` = `after`, `BaseRef` = the default branch name, `HeadRepo` = `Repo`, `PullRequest` 0,
-  `Branch` = `ref` without `refs/heads/`, `Pusher` = `sender.login`, `Before` = `before` (`""` when it is all zeros, the
+  `Branch` = `ref` without `refs/heads/`, `Before` = `before` (`""` when it is all zeros, the
   push created the branch, or not a commit SHA): the gate judges the policy change of the push against it.
-- `BranchPush`: as `DefaultBranchPush` for `HeadSHA`, `HeadRepo`, `PullRequest`, `Branch` and `Pusher`; `BaseRef` is `""`
-  and `ChangedPaths` is `nil`. `Pusher` is the actor GitHub names for the push; it is never a git author or
-  committer, which a pusher can set freely. A missing `sender` leaves `Pusher` empty. `PusherType` is the payload's
-  top-level `pusher_type` verbatim, `""` when absent; this package does not judge it.
 - `MergeGroupRequested`, `MergeGroupDestroyed`: `HeadSHA` = `merge_group.head_sha` (the group commit), `HeadRepo` =
   `Repo`, `BaseRef` = `merge_group.base_ref` without `refs/heads/`, `PullRequest` 0, `GroupReason` = the payload's
   `reason` verbatim (`MergeGroupDestroyed` only: `merged`, `dequeued`, `invalidated`; `""` when absent).
@@ -109,11 +105,9 @@ const (
     PullOpened         EventKind = "pull_opened"         // opened, reopened, ready_for_review
     PullSynchronized   EventKind = "pull_synchronized"   // new head SHA
     PullClosed         EventKind = "pull_closed"
-    ReviewChanged      EventKind = "review_changed"      // submitted, edited, dismissed
     PullCommented      EventKind = "pull_commented"      // a comment created on a pull request
     IssueOpened        EventKind = "issue_opened"        // an issue opened; never a pull request
     DefaultBranchPush  EventKind = "default_branch_push"
-    BranchPush         EventKind = "branch_push"         // a push to a branch other than the default branch
     InstallationAdded  EventKind = "installation_added"  // created, or repositories added
     InstallationRemoved EventKind = "installation_removed" // deleted
     ReposRemoved       EventKind = "repos_removed"
@@ -136,8 +130,6 @@ type Event struct {
     BaseRef        string
     DefaultBranch  string   // the repository's default branch; "" when the payload does not name one
     Branch         string   // push kinds only: the branch, without "refs/heads/"
-    Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
-    PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
     ChangedPaths   []string // default_branch_push only
     Before         string   // default_branch_push only: the commit before the push; "" when the push created the branch
     CommentID      int64    // pull_commented only
@@ -169,9 +161,8 @@ const (
 )
 ```
 
-`BranchPush` is the kind for a push to a branch other than the default branch. `PullOpened` is the kind for a pull request that needs a first look. `PullSynchronized` is the kind for a new
-head SHA. `PullClosed` is the kind for a closed or merged pull request. `ReviewChanged` is the kind for any
-review change. `PullCommented` is the kind for a new comment on a pull request. `IssueOpened` is the kind for a new issue. `DefaultBranchPush` is the kind for a push to the default branch. `InstallationAdded` is the
+`PullOpened` is the kind for a pull request that needs a first look. `PullSynchronized` is the kind for a new
+head SHA. `PullClosed` is the kind for a closed or merged pull request. `PullCommented` is the kind for a new comment on a pull request. `IssueOpened` is the kind for a new issue. `DefaultBranchPush` is the kind for a push to the default branch. `InstallationAdded` is the
 kind for a new installation or added repositories. `InstallationRemoved` is the kind for an uninstall.
 `ReposRemoved` is the kind for repositories taken out of an installation. `MergeGroupRequested` is the kind for a
 merge group commit GitHub built and wants checked. `MergeGroupDestroyed` is the kind for a merge group that was merged,
@@ -227,10 +218,9 @@ home of `Event`, so nothing is restated for the consumers below.
 - **Volatility**: High (the gate side)
 - **Balanced?**: Yes
 - **Shared knowledge**: `Event`, `EventKind`. `gate` reacts to `PullOpened`, `PullSynchronized` (pending check or
-  fork refusal, fork = `HeadRepo != Repo`; pending decision requests of the pull request go stale), `PullClosed` (the same),
-  `PullCommented` (a request line, or a decision request in the comment), `IssueOpened` (a request issue the CLI
-  opened), `PullClosed` (also drops the pull request from the Archfit 4 pull index), `ReviewChanged` (re-run, and a re-check of the queued merge groups at and behind the pull request), `MergeGroupRequested` (pending `archfit/gate` on the group commit, required mode only), `MergeGroupDestroyed` (a reason other than `merged`: correct a pending or decided group check), `BranchPush` and `DefaultBranchPush` (record `Pusher` as
-  the pusher of `HeadSHA`, then re-evaluate the open pull request on that head). It builds its repository reference from
+  fork refusal, fork = `HeadRepo != Repo`), `PullClosed` (the same),
+  `PullCommented` (a request line; a comment without one is ignored), `IssueOpened` (a request issue the CLI
+  opened), `PullClosed` (also drops the pull request from the Archfit 4 pull index), `MergeGroupRequested` (pending `archfit/gate` on the group commit, required mode only), `MergeGroupDestroyed` (a reason other than `merged`: correct a pending or decided group check), `DefaultBranchPush` (re-evaluate the open pull request on that head). It builds its repository reference from
   `InstallationID` and `Repo`, which is why both must come from the signed body.
 
 ### control
@@ -254,8 +244,7 @@ home of `Event`, so nothing is restated for the consumers below.
 - **Balanced?**: Yes: contract strength tolerates the distance
 - **Shared knowledge**: headers `X-Hub-Signature-256`, `X-GitHub-Event`, `X-GitHub-Delivery`; the event types,
   actions and JSON fields listed under Encapsulated Knowledge. The App subscribes to `pull_request`,
-  `pull_request_review`, `push`, `merge_group`, `installation`, `installation_repositories`, and, from the release that brings decision
-  requests, `issue_comment`. GitHub may redeliver, reorder,
+  `push`, `merge_group`, `installation`, `installation_repositories`, `issue_comment` and `issues`. GitHub may redeliver, reorder,
   or drop deliveries; nothing here assumes otherwise.
 
 ## Change Vectors
@@ -303,15 +292,9 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
 - **Test name**: `TestParseFields`
   **Scenario**: one fixture per non-ignored kind.
   **Expected behavior**: every `Event` field equals the Field sources rule; unused fields are zero.
-- **Test name**: `TestBranchPushFields`
-  **Scenario**: a push to `feature/x` with a sender, not the default branch.
-  **Expected behavior**: `Kind == BranchPush`; `HeadSHA`, `HeadRepo == Repo`, `Branch == "feature/x"`, `Pusher` from `sender.login`; `BaseRef` and `ChangedPaths` empty.
 - **Test name**: `TestDefaultBranchPushCarriesBefore`
   **Scenario**: a default-branch push with `before` a commit, all zeros, absent, not a SHA; a feature-branch push.
   **Expected behavior**: `Before` is the commit, then `""` three times; the feature-branch push has `""`.
-- **Test name**: `TestBranchPushCarriesPusherType`
-  **Scenario**: a push to a feature branch with `pusher_type` absent, `"user"` and `"deploy_key"`.
-  **Expected behavior**: `PusherType` is `""`, `"user"`, `"deploy_key"`; `Pusher` is the sender in all three.
 - **Test name**: `TestParseFields` (merge group rows)
   **Scenario**: the fixtures `merge_group_checks_requested.json` and `merge_group_destroyed.json` (reason `dequeued`).
   **Expected behavior**: `MergeGroupRequested` and `MergeGroupDestroyed`; `HeadSHA` the group commit, `HeadRepo == Repo`, `BaseRef` without `refs/heads/`, `DefaultBranch` set, `PullRequest` 0; `GroupReason` `"dequeued"` for the destroyed one, `""` for the requested one.
@@ -357,8 +340,8 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
 - **Test name**: `TestPushWithoutRepositoryIsAnError`
   **Scenario**: table of pushes (feature branch, tag, branch deletion), each with `repository` missing, `full_name`
   empty, and `full_name` without a slash; the same pushes unbroken.
-  **Expected behavior**: an error and the zero `Event` for each broken row; unbroken, `BranchPush` for the feature
-  branch and `Ignored` for the tag and the deletion, no error.
+  **Expected behavior**: an error and the zero `Event` for each broken row; unbroken, `Ignored` for the feature
+  branch, the tag and the deletion, no error.
 - **Test name**: `TestParseMalformedJSON`
   **Scenario**: truncated JSON, a JSON array, and `null` for each known event type.
   **Expected behavior**: error.
@@ -384,7 +367,7 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
 - **Test name**: `TestPullRequestLifecycle`
   **Scenario**: deliveries for open, push to the PR, review submitted, review dismissed, convert to draft, ready for
   review, close, reopen.
-  **Expected behavior**: `PullOpened`, `PullSynchronized`, `ReviewChanged`, `ReviewChanged`, `Ignored`, `PullOpened`,
+  **Expected behavior**: `PullOpened`, `PullSynchronized`, `Ignored`, `Ignored`, `Ignored`, `PullOpened`,
   `PullClosed`, `PullOpened`; the head SHA follows the payload each time.
 - **Test name**: `TestInstallationLifecycle` (T07: removed repositories, uninstall)
   **Scenario**: installation created; repositories added; repositories removed; suspend; installation deleted.
@@ -393,5 +376,5 @@ Payload fixtures are trimmed copies of real GitHub deliveries under `testdata/`,
 - **Test name**: `TestPushKinds`
   **Scenario**: push to `main` (default), to a feature branch, a tag push, deletion of the default branch and of a
   feature branch, push when the default branch is `trunk`, push to `main` when the default is `trunk`.
-  **Expected behavior**: `DefaultBranchPush` only for the default branch of that payload; `BranchPush` for another
-  branch; `Ignored` for the tag and for both deletions.
+  **Expected behavior**: `DefaultBranchPush` only for the default branch of that payload; `Ignored` for another
+  branch, the tag and both deletions.

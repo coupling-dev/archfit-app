@@ -6,7 +6,6 @@
   import { basisText, resultWord } from '../lib/evidence';
   import Skeleton from '../components/Skeleton.svelte';
   import { explainLoad, repoAPI, type ApiError, type Pull } from '../lib/api';
-  import { digestWord } from '../lib/approval';
   import { firstJSON } from '../lib/early';
   import { repoPage, type Repo } from '../lib/route';
   import { trustSentence } from '../lib/feedback';
@@ -48,128 +47,6 @@
     {#snippet screen()}{#if first.length}<FirstScreen lines={first} />{/if}{/snippet}
   </PullHead>
   <DecisionLine decision={body.decision} />
-  {#if body.approval}
-    {@const a = body.approval}
-    {@const githubPR = `https://github.com/${encodeURIComponent(route.owner)}/${encodeURIComponent(route.name)}/pull/${route.number}`}
-    {@const activeObjections = a.objections.filter((objection) => !objection.overridden)}
-    {@const nativeObjections = activeObjections.filter((objection) => objection.source === 'github')}
-    {@const overriddenObjections = a.objections.filter((objection) => objection.overridden)}
-    {@const overriddenNative = overriddenObjections.filter((objection) => objection.source === 'github')}
-    {@const openForDecision = body.state === 'open' || body.state === 'draft'}
-    <section class="box" aria-labelledby="architecture-decision">
-      <div class="box-head">
-        <h2 id="architecture-decision">Architecture decision</h2>
-        <span class="status {activeObjections.length ? 'attention' : a.state === 'granted' ? 'success' : 'attention'}">
-          {activeObjections.length ? 'changes requested' : a.state === 'granted' ? 'approval saved' : 'decision needed'}
-        </span>
-      </div>
-      <div class="box-body stack-sm">
-        <p>This PR changes protected architecture files:</p>
-        {#if a.author_is_agent}
-          <p class="flash warn">The pull request author is a configured agent identity. Review the changes to the protected files before you decide.</p>
-        {/if}
-        <ul class="plain" aria-label="Protected files this pull request changes">
-          {#each a.paths as path (path)}
-            <li><code>{path}</code></li>
-          {/each}
-        </ul>
-
-        <h3>Who can decide</h3>
-        <p>Any one eligible owner may decide; not everyone listed must approve. Agents never decide.</p>
-        <ul class="plain" aria-label="Configured architecture owners">
-          {#each a.owners as owner (owner)}<li><code>{owner}</code></li>{/each}
-        </ul>
-        <p class="muted small">Owners come from <a href={a.settings_url} target="_blank" rel="noreferrer">protected .archfit-app.yaml settings</a>.</p>
-        {#if a.required}
-          <p class="muted small">Required mode: Archfit's gate requires a current owner approval. GitHub's branch rules decide whether this blocks merging.</p>
-        {:else}
-          <p class="flash">Advisory mode: this architecture decision does not prevent merging.</p>
-        {/if}
-        <p><a href={`${githubPR}/files`} target="_blank" rel="noreferrer">Review proposed changes on GitHub</a></p>
-        {#if a.notification_problem}
-          <p class="flash warn">Reviewer requests are not confirmed. Ask the configured owners on GitHub. This does not change who may decide.</p>
-        {/if}
-        <p class="muted small">A new push invalidates approval. Approval is not a successful check or merge.</p>
-
-        {#if activeObjections.length}
-          <section aria-labelledby="active-objections">
-            <h3 id="active-objections">Active owner objections</h3>
-            <ul class="plain">
-              {#each activeObjections as objection (objection.id)}
-                <li>
-                  <strong>@{objection.login}</strong> · {objection.source === 'github' ? 'GitHub review' : 'Archfit App decision'}
-                  {#if objection.head_sha}<span class="muted small"> on <code>{objection.head_sha.slice(0, 7)}</code></span>{/if}
-                  <p>{objection.reason || 'No reason was supplied.'}</p>
-                </li>
-              {/each}
-            </ul>
-            {#if nativeObjections.length}
-              <p class="flash warn">This GitHub review may also block merging. An Archfit override leaves it unchanged; resolve or dismiss it on GitHub.</p>
-            {/if}
-          </section>
-        {/if}
-
-        {#if a.state === 'granted'}
-          <p class="flash success">An eligible owner approved this exact candidate{a.by ? ` (@${a.by})` : ''}. The check result refreshes separately.</p>
-        {:else if activeObjections.length}
-          <p class="flash warn">Changes are requested. The pull request remains open while its contributor or an owner responds.</p>
-        {:else}
-          <p class="flash warn">Decision needed. No current eligible owner approval exists for this candidate.</p>
-        {/if}
-
-        {#if !openForDecision}
-          <p class="flash">This pull request is {body.state}. No new architecture decision is available.</p>
-        {/if}
-
-        {#if overriddenObjections.length}
-          <section aria-labelledby="earlier-overrides">
-            <h3 id="earlier-overrides">Earlier overridden objections</h3>
-            <ul class="plain">
-              {#each overriddenObjections as objection (objection.id)}
-                <li><strong>@{objection.login}</strong> · {objection.source === 'github' ? 'GitHub review' : 'Archfit App decision'}<p>{objection.reason}</p></li>
-              {/each}
-            </ul>
-            {#if overriddenNative.length}
-              <h3>GitHub review remains independent</h3>
-              <p class="flash warn">The Archfit override did not dismiss the native review. GitHub may still require it to be resolved before merge.</p>
-            {/if}
-          </section>
-        {/if}
-
-        <p class="muted small">Latest Archfit state: {body.result || body.unavailable || 'no report received for this commit yet'}. A saved decision can still be waiting for evidence or other checks.</p>
-        <p><a href={githubPR} target="_blank" rel="noreferrer">Open GitHub PR to merge or close it</a></p>
-        <details class="disclosure">
-          <summary>Decision details</summary>
-          <div class="details-body stack-sm">
-            <p class="muted small">Candidate <code>{a.head_sha}</code>. Protected settings commit <code>{a.settings_ref}</code>.</p>
-            <ul class="plain">
-              {#each a.paths as path (path)}<li><code>{path}</code> · {digestWord(a, path)}</li>{/each}
-            </ul>
-          </div>
-        </details>
-        {#if a.history.length}
-          <details class="disclosure">
-            <summary>Decision history <span class="counter">{a.history.length}</span></summary>
-            <ol class="details-body">
-              {#each a.history as decision (decision.id)}
-                <li>
-                  <strong>@{decision.login}</strong> · {decision.action.replaceAll('_', ' ')} · {decision.at} · candidate <code>{decision.head_sha.slice(0, 7)}</code> · settings <code>{decision.base_sha.slice(0, 7)}</code>
-                  {#if decision.reason}<p>{decision.reason}</p>{/if}
-                  {#if decision.overrode_objections?.length}
-                    <ul>
-                      {#each decision.overrode_objections as objection (objection.id)}
-                        <li>Overrode <code>{objection.id}</code> · @{objection.login} · {objection.source}{#if objection.reason}<p>{objection.reason}</p>{/if}</li>
-                      {/each}
-                    </ul>
-                  {/if}
-                </li>
-              {/each}
-            </ol>
-          </details>
-        {/if}
-      </div>
-    </section>
-  {/if}
   {#if !first.length && !body.unavailable && body.required && body.result !== 'action required' && body.decision?.hard_gates === 'pass' && body.decision.blockers === 0 && !body.decision.unevaluated.length && body.violation_count === 0}
     <p class="flash success">No required architecture change requested in the evaluated scope.{body.accepted_count ? ' Accepted debt remains.' : ''}</p>
   {/if}

@@ -48,3 +48,5 @@ in `SCHEMA_SOURCE`, then run the tests.
 
 - Standard library only; no import of any internal package.
 - `TestVendoredFileMatchesSchemaSource` fails when the file and its `SCHEMA_SOURCE` line disagree.
+- `TestWebWordsMatchVendoredEngine` keeps `web/e2e/not-used.json` aligned with the embedded list and gate-name pattern.
+- `web/e2e/wording-cases.json` supplies matcher cases to Go and vitest.

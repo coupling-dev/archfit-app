@@ -4,11 +4,12 @@ package gate
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/approvals"
-	"github.com/alexei-led/archfit-app/internal/gate/decisions"
 	"github.com/alexei-led/archfit-app/internal/gate/drift"
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
@@ -23,8 +24,7 @@ import (
 )
 
 // Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. The Store holds entitlements,
-// admissions, pusher attribution, bounded gate/inputs owner decisions and reviewer-request notifications, gate/decisions
-// agent requests, and gate/feedback publication leases.
+// admissions, the Archfit 4 records (requests, proposals, approvals), and gate/feedback publication leases.
 type Deps struct {
 	GitHub     *api.Client
 	OIDC       oidc.Verifier
@@ -39,21 +39,18 @@ type Deps struct {
 type Gate struct {
 	receiver   ingest.Receiver
 	resolver   inputs.Resolver
-	requests   requests
 	publisher  feedback.Publisher
 	repairer   feedback.Repairer
 	sweeper    sweep.Sweeper
-	actions    sweep.Runs
 	repos      api.Repos
 	pulls      api.Pulls
-	queues     api.MergeQueues
-	comments   api.Comments
 	admissions admitter
 	now        func() time.Time
 	v4         *upload4           // the envelope 2 upload path
 	asks       *asks.Service      // request lines: issues and the status waiting (M2 task 16)
 	proposals  *proposals.Service // owners' answers and the policy pull request (M2 task 19)
 	approvals  *approvals.Service // the judgement of a default-branch push that changes the policy (M2 task 20)
+	checks     api.Checks         // a proposal head's check, taken back from another pull request (M2 review H2)
 	recheckGH  sweep.AnswerGitHub // the re-check after an answer (M2 task 21)
 	drift      *drift.Service     // the drift issue from a push run's repository block (M2 task 22)
 	store      store.Store
@@ -62,6 +59,21 @@ type Gate struct {
 // admitter is the one method of Admissions every gate path asks before it does anything for an installation.
 type admitter interface {
 	Admitted(ctx context.Context, installationID int64, owner string) (bool, error)
+}
+
+// errNotAdmitted refuses an installation no operator approved. The App's pages answer it before they get here.
+var errNotAdmitted = errors.New("gate: installation not admitted")
+
+// admitted is the gate's own admission guard for the entry points the App's pages call.
+func (g *Gate) admitted(ctx context.Context, t Target) error {
+	ok, err := g.admissions.Admitted(ctx, t.Repo.InstallationID, inputs.Owner(t.Repo.FullName))
+	if err != nil {
+		return fmt.Errorf("gate: read admission: %w", err)
+	}
+	if !ok {
+		return errNotAdmitted
+	}
+	return nil
 }
 
 // github is every role of github/api the gate path uses. *api.Client implements it; the façade
@@ -92,10 +104,9 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 		now = time.Now
 	}
 	resolver := inputs.New(gh, gh, gh, s)
-	reqs := decisions.New(s, gh, gh, now)
 	publisher := feedback.New(gh, gh, gh, s, audience, now) // the audience is the App's base URL
-	g := newGate(newReceiver(gh, v, audience, adm), resolver, reqs, publisher, feedback.NewRepairer(gh, gh, gh, gh, s, now),
-		sweep.New(gh, gh, gh, resolver, publisher, adm, reqs, c), gh, gh, gh, gh, gh, adm, now)
+	g := newGate(newReceiver(gh, v, audience, adm), resolver, publisher, feedback.NewRepairer(gh, gh, gh, gh, s, now),
+		sweep.New(gh, gh, gh, resolver, publisher, adm, c), gh, gh, adm, now)
 	// One Archfit 4 publisher, so an upload and a request line take the same head lease.
 	publisher4 := feedback.New4(gh, gh, gh, s, audience, now)
 	g.v4 = newUpload4(ingest.NewV2(gh, gh, gh, gh, gh, v, audience, adm), gh, gh, s, publisher4)
@@ -103,12 +114,13 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 	g.proposals = proposals.New(gh, s, now)
 	g.approvals = approvals.New(gh, s)
 	g.drift = drift.New(gh, s)
+	g.checks = gh
 	g.recheckGH, g.store = gh, s
 	return g
 }
 
-func newGate(rc ingest.Receiver, rs inputs.Resolver, rq requests, p feedback.Publisher, rp feedback.Repairer, sw sweep.Sweeper, a sweep.Runs, repos api.Repos, pl api.Pulls, q api.MergeQueues, cm api.Comments, adm admitter, now func() time.Time) *Gate {
-	return &Gate{receiver: rc, resolver: rs, requests: rq, publisher: p, repairer: rp, sweeper: sw, actions: a, repos: repos, pulls: pl, queues: q, comments: cm, admissions: adm, now: now}
+func newGate(rc ingest.Receiver, rs inputs.Resolver, p feedback.Publisher, rp feedback.Repairer, sw sweep.Sweeper, repos api.Repos, pl api.Pulls, adm admitter, now func() time.Time) *Gate {
+	return &Gate{receiver: rc, resolver: rs, publisher: p, repairer: rp, sweeper: sw, repos: repos, pulls: pl, admissions: adm, now: now}
 }
 
 // UploadHandler serves POST /v1/reports: envelope 2 uploads on the Archfit 4 path, every other upload on the
@@ -149,35 +161,8 @@ func NewAdmissions(s store.Store, auto []string) *Admissions { return inputs.New
 // EntitlementKey is owned by gate/inputs.
 const EntitlementKey = inputs.EntitlementKey
 
-// Target, Candidate and the refusals of an owner approval are owned by gate/inputs.
-type (
-	Target          = inputs.Target
-	Candidate       = inputs.Candidate
-	DecisionAction  = inputs.DecisionAction
-	Objection       = inputs.Objection
-	DecisionHistory = inputs.DecisionHistory
-)
-
-var (
-	ErrNothingToApprove     = inputs.ErrNothingToApprove
-	ErrForkPull             = inputs.ErrForkPull
-	ErrAgentIdentity        = inputs.ErrAgentIdentity
-	ErrNotOwner             = inputs.ErrNotOwner
-	ErrDigestsChanged       = inputs.ErrDigestsChanged
-	ErrActiveObjections     = inputs.ErrActiveObjections
-	ErrOwnerDecisionStale   = inputs.ErrOwnerDecisionStale
-	ErrDecisionReason       = inputs.ErrDecisionReason
-	ErrNoApprovalToWithdraw = inputs.ErrNoApprovalToWithdraw
-	ErrDecisionInvalid      = inputs.ErrDecisionInvalid
-	ErrDecisionHistoryFull  = inputs.ErrDecisionHistoryFull
-)
-
-const (
-	DecisionApprove        = inputs.DecisionApprove
-	DecisionRequestChanges = inputs.DecisionRequestChanges
-	DecisionWithdraw       = inputs.DecisionWithdraw
-	DecisionOverride       = inputs.DecisionOverride
-)
+// Target is owned by gate/inputs.
+type Target = inputs.Target
 
 // Entitlement is owned by gate/inputs.
 type Entitlement = inputs.Entitlement

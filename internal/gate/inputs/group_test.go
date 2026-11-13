@@ -2,10 +2,8 @@ package inputs
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 
@@ -37,12 +35,10 @@ type groupWorld struct {
 	entries []api.QueueEntry
 	pulls   map[int]api.Pull
 	changed map[int][]string
-	reviews map[int][]api.Review
-	teams   map[string][]string
 	store   store.Store
 
-	queueErr, headErr, pullErr error
-	fileErr                    map[fileCall]error
+	queueErr, headErr, pullErr, changedErr error
+	fileErr                                map[fileCall]error
 }
 
 func newGroupWorld() *groupWorld {
@@ -59,8 +55,6 @@ func newGroupWorld() *groupWorld {
 			3: {Number: 3, State: "open", HeadSHA: "sha-pr3-head", HeadRepo: repoFull, BaseRef: baseRef},
 		},
 		changed: map[int][]string{1: {"a.go"}, 2: {"b.go"}, 3: {policy.PolicyPath}},
-		reviews: map[int][]api.Review{},
-		teams:   map[string][]string{teamOwner: {"carol"}},
 		store:   store.NewMemory(),
 	}
 	for _, sha := range []string{tipSHA, groupSHA, pr1Head, pr2Head} {
@@ -75,10 +69,6 @@ func newGroupWorld() *groupWorld {
 func (w *groupWorld) changePolicy(n int, head string, raw []byte) {
 	w.changed[n] = append(w.changed[n], policy.PolicyPath)
 	w.files[fileCall{head, policy.PolicyPath}] = raw
-}
-
-func (w *groupWorld) approve(n int, login, head string) {
-	w.reviews[n] = append(w.reviews[n], api.Review{Reviewer: login, State: reviewApproved, CommitSHA: head})
 }
 
 func (w *groupWorld) resolve(t *testing.T) Trusted {
@@ -148,15 +138,10 @@ func (w groupPulls) PullByHead(context.Context, api.RepoRef, string) (api.Pull, 
 }
 
 func (w groupPulls) ChangedFiles(_ context.Context, _ api.RepoRef, n int) ([]string, bool, error) {
+	if w.changedErr != nil {
+		return nil, false, w.changedErr
+	}
 	return w.changed[n], false, nil
-}
-
-func (w groupPulls) Reviews(_ context.Context, _ api.RepoRef, n int) ([]api.Review, error) {
-	return w.reviews[n], nil
-}
-
-func (w groupPulls) TeamMember(_ context.Context, _ api.RepoRef, team, login string) (bool, error) {
-	return slices.Contains(w.teams[team], login), nil
 }
 
 type groupQueues struct {
@@ -170,109 +155,77 @@ func (w groupQueues) MergeQueue(_ context.Context, _ api.RepoRef, branch string)
 	return w.entries, w.queueErr
 }
 
+// Nothing approves a protected change in a merge group (M2 task 26): every member that changes a protected path is
+// named, also when an owner approved its head, and the group keeps the snapshot's inputs.
 func TestMergeGroupInputs(t *testing.T) {
 	digest := policy.Digest
+	base := []string{digest(basePolicy)}
 	tests := []struct {
 		name         string
 		setup        func(w *groupWorld)
-		approval     Approval
 		problem      GroupProblem
-		policy       []string
 		protected    []string
 		unapproved   string
-		approvedBy   string
 		detailSubstr string
 	}{
-		{"code-only group uses the snapshot's inputs", func(*groupWorld) {},
-			ApprovalNotRequired, "", []string{digest(basePolicy)}, nil, "", "", ""},
-		{"an approved policy change is the exact combined blob", func(w *groupWorld) {
+		{"code-only group uses the snapshot's inputs", func(*groupWorld) {}, "", nil, "", ""},
+		{"a member's policy change is refused", func(w *groupWorld) {
 			w.changePolicy(1, pr1Head, policyA)
-			w.approve(1, "alice", pr1Head)
 			w.files[fileCall{groupSHA, policy.PolicyPath}] = policyA
-		}, ApprovalGranted, "", []string{digest(policyA)}, []string{policy.PolicyPath}, "", "alice (#1)", ""},
-		{"an owner team member approves", func(w *groupWorld) {
+		}, "", []string{policy.PolicyPath}, "#1 .archfit.yaml", ""},
+		{"a member change is refused", func(w *groupWorld) {
 			w.changePolicy(2, pr2Head, policyA)
-			w.approve(2, "carol", pr2Head)
 			w.files[fileCall{groupSHA, policy.PolicyPath}] = policyA
-		}, ApprovalGranted, "", []string{digest(policyA)}, []string{policy.PolicyPath}, "", "carol (#2)", ""},
-		{"an unapproved member change is refused", func(w *groupWorld) {
+		}, "", []string{policy.PolicyPath}, "#2 .archfit.yaml", ""},
+		{"a member change the group reverts is still refused", func(w *groupWorld) {
 			w.changePolicy(1, pr1Head, policyA)
-			w.files[fileCall{groupSHA, policy.PolicyPath}] = policyA
-		}, ApprovalMissing, "", []string{digest(basePolicy)}, []string{policy.PolicyPath}, "#1 .archfit.yaml", "", ""},
-		{"an unapproved change the group reverts is still refused", func(w *groupWorld) {
-			w.changePolicy(1, pr1Head, policyA)
-		}, ApprovalMissing, "", []string{digest(basePolicy)}, []string{policy.PolicyPath}, "#1 .archfit.yaml", "", ""},
-		{"an agent's approval approves nothing", func(w *groupWorld) {
-			w.changePolicy(1, pr1Head, policyA)
-			w.approve(1, "bot-agent", pr1Head)
-			w.files[fileCall{groupSHA, policy.PolicyPath}] = policyA
-		}, ApprovalMissing, "", []string{digest(basePolicy)}, []string{policy.PolicyPath}, "#1 .archfit.yaml", "", ""},
-		{"an approval of an older head approves nothing", func(w *groupWorld) {
-			w.changePolicy(1, pr1Head, policyA)
-			w.approve(1, "alice", oldSHA)
-			w.files[fileCall{groupSHA, policy.PolicyPath}] = policyA
-		}, ApprovalMissing, "", []string{digest(basePolicy)}, []string{policy.PolicyPath}, "#1 .archfit.yaml", "", ""},
-		{"a withdrawn approval approves nothing", func(w *groupWorld) {
-			w.changePolicy(1, pr1Head, policyA)
-			w.approve(1, "alice", pr1Head)
-			w.reviews[1] = append(w.reviews[1], api.Review{Reviewer: "alice", State: reviewChangesRequested, CommitSHA: pr1Head})
-			w.files[fileCall{groupSHA, policy.PolicyPath}] = policyA
-		}, ApprovalMissing, "", []string{digest(basePolicy)}, []string{policy.PolicyPath}, "#1 .archfit.yaml", "", ""},
-		{"two approved members change one protected file", func(w *groupWorld) {
+		}, "", []string{policy.PolicyPath}, "#1 .archfit.yaml", ""},
+		{"two members change one protected file", func(w *groupWorld) {
 			w.changePolicy(1, pr1Head, policyA)
 			w.changePolicy(2, pr2Head, policyAB)
-			w.approve(1, "alice", pr1Head)
-			w.approve(2, "carol", pr2Head)
 			w.files[fileCall{groupSHA, policy.PolicyPath}] = policyAB
-		}, ApprovalMissing, GroupConflict, []string{digest(basePolicy)}, []string{policy.PolicyPath}, "", "", "changed by #1 and #2"},
-		{"the combined file is not the approved head's", func(w *groupWorld) {
-			w.changePolicy(1, pr1Head, policyA)
-			w.approve(1, "alice", pr1Head)
-			w.files[fileCall{groupSHA, policy.PolicyPath}] = policyAB
-		}, ApprovalMissing, GroupConflict, []string{digest(basePolicy)}, []string{policy.PolicyPath}, "", "", "not the file an owner approved on #1"},
+		}, "", []string{policy.PolicyPath}, "#1 .archfit.yaml; #2 .archfit.yaml", ""},
 		{"a change no member makes", func(w *groupWorld) {
 			w.files[fileCall{groupSHA, policy.LabelsPath}] = headLabels
-		}, ApprovalMissing, GroupConflict, []string{digest(basePolicy)}, []string{policy.LabelsPath}, "", "", "changed by no queued pull request"},
-		{"a member deletes the baseline with approval", func(w *groupWorld) {
+		}, GroupConflict, []string{policy.LabelsPath}, "", "changed by no queued pull request"},
+		{"a member deletes the baseline", func(w *groupWorld) {
 			w.changed[1] = append(w.changed[1], policy.BaselinePath)
 			delete(w.files, fileCall{pr1Head, policy.BaselinePath})
 			delete(w.files, fileCall{groupSHA, policy.BaselinePath})
-			w.approve(1, "alice", pr1Head)
-		}, ApprovalGranted, "", []string{digest(basePolicy)}, []string{policy.BaselinePath}, "", "alice (#1)", ""},
+		}, "", []string{policy.BaselinePath}, "#1 " + policy.BaselinePath, ""},
 		{"a member behind the group does not count", func(w *groupWorld) {
-			// #3 changes the policy without approval, but it is behind #2: the group commit does not hold it.
-		}, ApprovalNotRequired, "", []string{digest(basePolicy)}, nil, "", "", ""},
-		{"a fork member", func(w *groupWorld) { w.entries[0].CrossRepo = true },
-			ApprovalNotRequired, GroupFork, []string{digest(basePolicy)}, nil, "", "", "#1"},
+			// #3 changes the policy, but it is behind #2: the group commit does not hold it.
+		}, "", nil, "", ""},
+		{"a fork member", func(w *groupWorld) { w.entries[0].CrossRepo = true }, GroupFork, nil, "", "#1"},
 		{"a fork member GraphQL does not flag", func(w *groupWorld) {
 			p := w.pulls[1]
 			p.HeadRepo = "mallory/shop"
 			w.pulls[1] = p
-		}, ApprovalNotRequired, GroupFork, []string{digest(basePolicy)}, nil, "", "", "#1"},
+		}, GroupFork, nil, "", "#1"},
 		{"a member whose head moved", func(w *groupWorld) {
 			p := w.pulls[1]
 			p.HeadSHA = "sha-pr1-pushed"
 			w.pulls[1] = p
-		}, ApprovalNotRequired, GroupUnverified, []string{digest(basePolicy)}, nil, "", "", "#1"},
+		}, GroupUnverified, nil, "", "#1"},
 		{"a member into another base", func(w *groupWorld) {
 			p := w.pulls[2]
 			p.BaseRef = "release"
 			w.pulls[2] = p
-		}, ApprovalNotRequired, GroupUnverified, []string{digest(basePolicy)}, nil, "", "", "#2"},
+		}, GroupUnverified, nil, "", "#2"},
 		{"a member that merged since the queue read still counts", func(w *groupWorld) {
 			p := w.pulls[1]
 			p.State, p.Merged = "closed", true
 			w.pulls[1] = p
 			w.changePolicy(1, pr1Head, policyA)
 			w.files[fileCall{groupSHA, policy.PolicyPath}] = policyA
-		}, ApprovalMissing, "", []string{digest(basePolicy)}, []string{policy.PolicyPath}, "#1 .archfit.yaml", "", ""},
+		}, "", []string{policy.PolicyPath}, "#1 .archfit.yaml", ""},
 		{"a closed member", func(w *groupWorld) {
 			p := w.pulls[1]
 			p.State = "closed"
 			w.pulls[1] = p
-		}, ApprovalNotRequired, GroupUnverified, []string{digest(basePolicy)}, nil, "", "", "#1"},
+		}, GroupUnverified, nil, "", "#1"},
 		{"the group commit is no longer queued", func(w *groupWorld) { w.entries = w.entries[:1] },
-			ApprovalNotRequired, GroupUnverified, []string{digest(basePolicy)}, nil, "", "", "no entry"},
+			GroupUnverified, nil, "", "no entry"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -282,17 +235,17 @@ func TestMergeGroupInputs(t *testing.T) {
 			if got.Group == nil {
 				t.Fatal("Group is nil for a merge-group target")
 			}
-			if got.Approval != tt.approval || got.Group.Problem != tt.problem {
-				t.Errorf("approval %q problem %q (%s); want %q %q", got.Approval, got.Group.Problem, got.Group.Detail, tt.approval, tt.problem)
+			if got.Group.Problem != tt.problem {
+				t.Errorf("problem %q (%s); want %q", got.Group.Problem, got.Group.Detail, tt.problem)
 			}
-			if !reflect.DeepEqual(got.PolicyDigests, tt.policy) {
-				t.Errorf("policy digests %v, want %v", got.PolicyDigests, tt.policy)
+			if !reflect.DeepEqual(got.PolicyDigests, base) {
+				t.Errorf("policy digests %v, want the snapshot's %v", got.PolicyDigests, base)
 			}
 			if !reflect.DeepEqual(got.ProtectedPaths, tt.protected) {
 				t.Errorf("protected paths %v, want %v", got.ProtectedPaths, tt.protected)
 			}
-			if got.Group.Unapproved != tt.unapproved || got.ApprovedBy != tt.approvedBy {
-				t.Errorf("unapproved %q approved by %q; want %q %q", got.Group.Unapproved, got.ApprovedBy, tt.unapproved, tt.approvedBy)
+			if got.Group.Unapproved != tt.unapproved {
+				t.Errorf("unapproved %q; want %q", got.Group.Unapproved, tt.unapproved)
 			}
 			if !strings.Contains(got.Group.Detail, tt.detailSubstr) {
 				t.Errorf("detail %q does not name %q", got.Group.Detail, tt.detailSubstr)
@@ -304,51 +257,11 @@ func TestMergeGroupInputs(t *testing.T) {
 				if c.ref == baseRef {
 					t.Fatalf("read %s by the branch name, not a commit", c.path)
 				}
+				if c.ref == pr1Head || c.ref == pr2Head {
+					t.Errorf("read %s at a member head: nothing of a member's head is trusted", c.path)
+				}
 			}
 		})
-	}
-}
-
-func TestMergeGroupWaiversComeFromTheAcceptedPolicy(t *testing.T) {
-	w := newGroupWorld()
-	w.changePolicy(1, pr1Head, headPolicy)
-	w.approve(1, "alice", pr1Head)
-	w.files[fileCall{groupSHA, policy.PolicyPath}] = headPolicy
-	got := w.resolve(t)
-	if got.Approval != ApprovalGranted || got.EarliestWaiverExpiry.IsZero() {
-		t.Fatalf("approval %q expiry %v; want the approved policy's waiver", got.Approval, got.EarliestWaiverExpiry)
-	}
-}
-
-func TestMergeGroupSoleOwnerApprovesInTheApp(t *testing.T) {
-	w := newGroupWorld()
-	w.changePolicy(1, pr1Head, policyA)
-	w.files[fileCall{groupSHA, policy.PolicyPath}] = policyA
-	rec, err := json.Marshal(approvalRecord{Login: "alice", HeadSHA: pr1Head,
-		Digests: map[string]string{policy.PolicyPath: policy.Digest(policyA)}, At: now})
-	if err != nil {
-		t.Fatal(err)
-	}
-	pr1 := Target{Repo: groupTarget().Repo, PullRequest: 1, HeadSHA: pr1Head}
-	if _, err := w.store.CompareAndSwap(context.Background(), store.Tenant(installation), approvalKey(pr1), nil, rec); err != nil {
-		t.Fatal(err)
-	}
-	got := w.resolve(t)
-	if got.Approval != ApprovalGranted || got.ApprovedBy != "alice (#1)" {
-		t.Fatalf("approval %q by %q; want the App-recorded approval of #1's own head", got.Approval, got.ApprovedBy)
-	}
-	// A record of the group commit is not an approval: only a member's own head is.
-	w2 := newGroupWorld()
-	w2.changePolicy(1, pr1Head, policyA)
-	w2.files[fileCall{groupSHA, policy.PolicyPath}] = policyA
-	groupRec := Target{Repo: groupTarget().Repo, PullRequest: 1, HeadSHA: groupSHA}
-	rec2, _ := json.Marshal(approvalRecord{Login: "alice", HeadSHA: groupSHA,
-		Digests: map[string]string{policy.PolicyPath: policy.Digest(policyA)}, At: now})
-	if _, err := w2.store.CompareAndSwap(context.Background(), store.Tenant(installation), approvalKey(groupRec), nil, rec2); err != nil {
-		t.Fatal(err)
-	}
-	if got := w2.resolve(t); got.Approval != ApprovalMissing {
-		t.Fatalf("approval %q; a record of the group commit must approve nothing", got.Approval)
 	}
 }
 
@@ -361,12 +274,7 @@ func TestMergeGroupReadFailuresAreErrors(t *testing.T) {
 		"pull request rate limited":           func(w *groupWorld) { w.pullErr = api.ErrRateLimited },
 		"settings unreadable at the snapshot": func(w *groupWorld) { w.fileErr = map[fileCall]error{{tipSHA, settings.Path}: boom} },
 		"policy unreadable at the group":      func(w *groupWorld) { w.fileErr = map[fileCall]error{{groupSHA, policy.PolicyPath}: boom} },
-		"policy unreadable at a member head": func(w *groupWorld) {
-			w.changePolicy(1, pr1Head, policyA)
-			w.approve(1, "alice", pr1Head)
-			w.files[fileCall{groupSHA, policy.PolicyPath}] = policyA
-			w.fileErr = map[fileCall]error{{pr1Head, policy.PolicyPath}: boom}
-		},
+		"member changes unreadable":           func(w *groupWorld) { w.changedErr = boom },
 	} {
 		t.Run(name, func(t *testing.T) {
 			w := newGroupWorld()
@@ -387,28 +295,5 @@ func TestMergeGroupWithoutSettingsIsNotOnboarded(t *testing.T) {
 	delete(w.files, fileCall{tipSHA, settings.Path})
 	if got := w.resolve(t); got.SettingsFound {
 		t.Fatalf("settings found without a settings file at the snapshot: %+v", got)
-	}
-}
-
-func TestQueuedAppApprovalSurvivesAnUnrelatedBaseMove(t *testing.T) {
-	w := newGroupWorld()
-	w.changePolicy(1, pr1Head, policyA)
-	w.files[fileCall{groupSHA, policy.PolicyPath}] = policyA
-	oldTip := "previous-main-tip"
-	for _, path := range []string{settings.Path, policy.PolicyPath, policy.BaselinePath} {
-		w.files[fileCall{oldTip, path}] = w.files[fileCall{tipSHA, path}]
-	}
-	target := Target{Repo: groupTarget().Repo, PullRequest: 1, HeadSHA: pr1Head, BaseRef: baseRef, BaseSHA: oldTip}
-	r := New(groupRepos{w}, groupPulls{w}, groupQueues{w}, w.store)
-	candidate, err := r.Candidate(t.Context(), target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := r.Decide(t.Context(), target, "alice", candidate.Digests, DecisionApprove, "", nil, now); err != nil {
-		t.Fatal(err)
-	}
-	got := w.resolve(t)
-	if got.Approval != ApprovalGranted || got.Group.Problem != "" {
-		t.Fatalf("queued approval after unrelated merge = %+v", got)
 	}
 }

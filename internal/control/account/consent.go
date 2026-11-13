@@ -23,7 +23,7 @@ type consentRecord struct {
 
 func (c consentRecord) validate() error {
 	switch {
-	case c.Kind != ConsentSourceProcessing && c.Kind != ConsentManagedLLM:
+	case c.Kind != ConsentSourceProcessing:
 		return fmt.Errorf("account: unknown consent kind %q", c.Kind)
 	case c.By == "":
 		return errors.New("account: consent without an administrator login")

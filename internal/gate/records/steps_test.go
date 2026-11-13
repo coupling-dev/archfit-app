@@ -460,6 +460,40 @@ func TestAConsumeWinsOnce(t *testing.T) {
 	})
 }
 
+// landsBefore is a Store whose first read of key first runs land on the store beneath: another writer whose swap
+// lands between two reads of one Update.
+type landsBefore struct {
+	store.Store
+	key  string
+	once sync.Once
+	land func()
+}
+
+func (l *landsBefore) Get(ctx context.Context, t store.Tenant, key string) ([]byte, error) {
+	if key == l.key {
+		l.once.Do(l.land)
+	}
+	return l.Store.Get(ctx, t, key)
+}
+
+func TestAConsumeThatLandsBetweenTwoReadsMakesTheOtherErrMoved(t *testing.T) {
+	ctx := context.Background()
+	s := store.NewMemory()
+	openProposal(t, s, "p1", 50, "d")
+	torn := &landsBefore{Store: s, key: records.RepoKey(repoName), land: func() {
+		if err := records.Consume(ctx, s, tenant, repoName, merge("p1", "c0", "d")); err != nil {
+			t.Errorf("the winning consume: %v", err)
+		}
+	}}
+
+	if err := records.Consume(ctx, torn, tenant, repoName, merge("p1", "c1", "d")); !errors.Is(err, records.ErrMoved) {
+		t.Errorf("the losing consume = %v, want ErrMoved", err)
+	}
+	if p := load[records.Proposal](t, s, records.ProposalKey(repoName, "p1")); p.Commit != "c0" {
+		t.Errorf("consumed by %q, want c0", p.Commit)
+	}
+}
+
 func TestTheSameCommitConsumesConcurrentlyWithoutError(t *testing.T) {
 	forEachBackend(t, 2, func(t *testing.T, clients []store.Store) {
 		ctx := context.Background()
@@ -564,11 +598,6 @@ func TestArchfit3KeysAreNeitherReadNorWritten(t *testing.T) {
 		records.Join(ctx, s, tenant, repoName, "a1", "p1", "h2", "d2"),
 		records.Consume(ctx, s, tenant, repoName, merge("p1", "c1", "d2")),
 		records.Consume(ctx, s, tenant, repoName, merge("p1", "c1", "d2")),
-		func() error {
-			_, _, err := records.Outside(ctx, s, tenant, repoName, records.Push{After: "c9"}, "d9")
-			return err
-		}(),
-		func() error { _, err := records.OutsideIssue(ctx, s, tenant, repoName, 9); return err }(),
 		records.Load(ctx, s, tenant, records.PullKey(repoName, 5), &records.Pull{}),
 		openRequest(ctx, s, 432, "graph c d"),
 		records.Answer(ctx, s, tenant, repoName, "a2", records.Approval{Kind: records.KindApprove, Request: 432},
@@ -583,6 +612,23 @@ func TestArchfit3KeysAreNeitherReadNorWritten(t *testing.T) {
 			return err
 		}(),
 		records.ExpiryClosed(ctx, s, tenant, repoName, "exception graph a b 2026-11-19", 12),
+		records.ApproveCurrent(ctx, s, tenant, repoName, "a5", ownerApproval(records.KindFirst), "c1", "d2"),
+		func() error {
+			_, _, err := records.Outside(ctx, s, tenant, repoName, records.Push{After: "c9"}, "d9")
+			return err
+		}(),
+		func() error { _, err := records.OutsideIssue(ctx, s, tenant, repoName, 9); return err }(),
+		records.RevertTo(ctx, s, tenant, repoName, "a3", ownerApproval(records.KindRevert),
+			records.Revert{Commit: "c1", Digest: "d2", Outside: "d9", Issue: 9},
+			records.Pin{Proposal: "p3", PullRequest: 52, HeadSHA: "h4", Digest: "d2"}),
+		func() error {
+			_, err := records.Confirm(ctx, s, tenant, repoName, "a4", ownerApproval(records.KindConfirm), "c10", "d9")
+			return err
+		}(),
+		records.First(ctx, s, tenant, "Acme/Other", "f1", ownerApproval(records.KindFirst), bound("pf", "h1")),
+		records.ApproveCurrent(ctx, s, tenant, "Acme/Third", "f2", ownerApproval(records.KindFirst), "c1", "dp"),
+		records.Workflow(ctx, s, tenant, "Acme/Third", "w1", ownerApproval(records.KindWorkflow), bound("pw", "h1")),
+		records.ConsumeWorkflow(ctx, s, tenant, "Acme/Third", "pw", "m1"),
 	}
 	for i, err := range steps {
 		if err != nil && !errors.Is(err, records.ErrNoRecord) {
@@ -690,7 +736,10 @@ func TestAPushBackToAJudgedCommitIsAnotherPush(t *testing.T) {
 func TestAConsumeApprovesOverTheApprovedCommitItRead(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
-	openProposal(t, s, "p1", 50, "d1")
+	b := records.Bound{Proposal: "p1", PullRequest: 50, HeadSHA: "h1", Digest: "d1"}
+	if err := records.First(ctx, s, tenant, repoName, "f1", ownerApproval(records.KindFirst), b); err != nil {
+		t.Fatal(err)
+	}
 	first := merge("p1", "c1", "d1")
 	if err := records.Consume(ctx, s, tenant, repoName, first); err != nil {
 		t.Fatal(err)

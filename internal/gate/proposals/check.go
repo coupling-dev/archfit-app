@@ -2,6 +2,7 @@ package proposals
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -25,11 +26,17 @@ const (
 //   - the pull request's head is that branch of this repository, its base the default branch, and it is open;
 //   - from the tip, the head changes .archfit.yaml and nothing else;
 //   - the policy at the head has the pinned digest, which is the digest of the recorded approvals written, in order,
-//     on the tip's policy.
+//     on the tip's policy;
+//   - the repository is under change control and the tip holds its approved policy, or, for a proposal with a revert,
+//     the state the revert was made in still holds and the tip holds the change it replaces (M2 task 23, review H1):
+//     an answer never starts change control.
 //
 // Any condition false sets nothing: a ruleset that requires the check then refuses the merge.
 func (s *Service) check(ctx context.Context, r api.Repo, tip string, pin records.Pin, listed []approved) error {
 	ref := r.RepoRef
+	if err := s.stateAllows(ctx, r, tip, listed); err != nil {
+		return err
+	}
 	head, err := s.gh.BranchHead(ctx, ref, Branch)
 	if err != nil {
 		return fmt.Errorf("proposals: read %s: %w", Branch, err)
@@ -63,7 +70,7 @@ func (s *Service) check(ctx context.Context, r api.Repo, tip string, pin records
 	_, err = s.gh.CreateCheckRun(ctx, ref, api.CheckRun{
 		Name:       gateCheck,
 		HeadSHA:    head,
-		ExternalID: "proposal:" + pin.Proposal,
+		ExternalID: ExternalID(pin.Proposal),
 		Status:     statusCompleted,
 		Conclusion: conclusionSuccess,
 		Title:      checkTitle,
@@ -71,4 +78,35 @@ func (s *Service) check(ctx context.Context, r api.Repo, tip string, pin records
 		StartedAt:  s.now().UTC(),
 	})
 	return err
+}
+
+// stateAllows is the last condition of check: the repository's state lets the proposal pass. Without a revert in
+// listed, the repository has an approved policy, is not outside the flow, and the tip holds that policy. With one,
+// every revert still holds (records.Revert.Holds) and the tip holds the change it replaces.
+func (s *Service) stateAllows(ctx context.Context, r api.Repo, tip string, listed []approved) error {
+	repo, err := s.repo(ctx, r)
+	if err != nil {
+		return err
+	}
+	tipFile, _, err := s.gh.File(ctx, r.RepoRef, tip, policyPath)
+	if err != nil && !errors.Is(err, api.ErrNotFound) {
+		return fmt.Errorf("proposals: read the policy: %w", err)
+	}
+	want, reverts := repo.ApprovedDigest, false
+	for _, a := range listed {
+		if a.revert == nil {
+			continue
+		}
+		if !a.revert.Holds(repo) {
+			return fmt.Errorf("%w: a revert of a state that ended", errRefused)
+		}
+		want, reverts = a.revert.Outside, true
+	}
+	switch {
+	case !reverts && (repo.ApprovedDigest == "" || repo.OutsideFlow != nil):
+		return fmt.Errorf("%w: the repository is not under change control", errRefused)
+	case digestOf(tipFile) != want:
+		return fmt.Errorf("%w: %s does not hold the policy the proposal was written against", errRefused, r.DefaultBranch)
+	}
+	return nil
 }

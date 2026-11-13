@@ -37,8 +37,6 @@ type fakeGitHub struct {
 	files         map[string][]byte           // fileKey
 	pulls         map[string]api.Pull         // pullKey
 	changed       map[string][]string         // pullKey
-	reviews       map[string][]api.Review     // pullKey
-	teams         map[string]bool             // "team|login"
 	runs          map[int64]api.WorkflowRun   // run IDs are unique across the fake
 	checks        map[string][]api.CheckRun   // by full name
 	comments      map[string][]api.Comment    // pullKey; an issue's comments under its number
@@ -57,6 +55,7 @@ type fakeGitHub struct {
 	commentOps  int            // comments created or updated
 	issueEdits  int            // issue bodies updated
 	reruns      []int64
+	noBlobIDs   bool // File returns no blob id
 	// beforeCheckWrite runs once, unlocked, at the start of the next check run create or update: what it does
 	// happens after that publisher's reads and before its first write.
 	beforeCheckWrite func()
@@ -85,8 +84,6 @@ func newFakeGitHub() *fakeGitHub {
 		files:    map[string][]byte{},
 		pulls:    map[string]api.Pull{},
 		changed:  map[string][]string{},
-		reviews:  map[string][]api.Review{},
-		teams:    map[string]bool{},
 		runs:     map[int64]api.WorkflowRun{},
 		checks:   map[string][]api.CheckRun{},
 		comments: map[string][]api.Comment{},
@@ -173,6 +170,9 @@ func (f *fakeGitHub) File(_ context.Context, r api.RepoRef, ref, path string) ([
 	}
 	if !ok {
 		return nil, "", api.ErrNotFound
+	}
+	if f.noBlobIDs {
+		return slices.Clone(raw), "", nil // a client that lost the blob id
 	}
 	sum := sha256.Sum256(raw) // the same bytes give the same blob, as in git
 	return slices.Clone(raw), hex.EncodeToString(sum[:20]), nil
@@ -290,24 +290,6 @@ func (f *fakeGitHub) ChangedFiles(_ context.Context, r api.RepoRef, number int) 
 		return nil, false, err
 	}
 	return slices.Clone(f.changed[pullKey(r.FullName, number)]), false, nil
-}
-
-func (f *fakeGitHub) Reviews(_ context.Context, r api.RepoRef, number int) ([]api.Review, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.enter("Reviews", r); err != nil {
-		return nil, err
-	}
-	return slices.Clone(f.reviews[pullKey(r.FullName, number)]), nil
-}
-
-func (f *fakeGitHub) TeamMember(_ context.Context, r api.RepoRef, team, login string) (bool, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.enter("TeamMember", r); err != nil {
-		return false, err
-	}
-	return f.teams[team+"|"+login], nil
 }
 
 func (f *fakeGitHub) Run(_ context.Context, r api.RepoRef, runID int64) (api.WorkflowRun, error) {
@@ -682,6 +664,7 @@ const (
 	requestIndexKeyPrefix    = "v4/request-index/"
 	answerKeyPrefixes        = "v4/approval/ v4/proposal/ v4/proposal-index/ v4/proposal-lease/" // M2 task 19
 	pushKeyPrefixes          = "v4/repo/ v4/policy-push/"                                        // M2 task 20
+	reposKey                 = "v4/repos"                                                        // M2 task 23
 )
 
 // isRecord reports whether key is a pusher or an approval record of gate/inputs, a request record of gate/decisions,
@@ -701,7 +684,7 @@ func isV4Record(key string) bool {
 			return true
 		}
 	}
-	return false
+	return key == reposKey
 }
 
 // guardStore proves the gate path writes nothing but publication leases and the records of gate/inputs: every other
@@ -771,7 +754,8 @@ func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key str
 }
 
 // CompareAndSwapAll is allowed for decision request records and Archfit 4 pull, request, approval and proposal records,
-// the proposal lease, the repository record and the judgement of a policy push only, every key of the call.
+// the proposal lease, the repository record and its index, and the judgement of a policy push only, every key of the
+// call.
 func (s *guardStore) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
 	s.mu.Lock()
 	for _, sw := range swaps {
@@ -828,51 +812,12 @@ type fakeResolver struct {
 	err     error
 	targets []inputs.Target
 	nows    []time.Time
-	pushers []string // logins recorded by RecordPusher, in call order
 }
 
 func (r *fakeResolver) Resolve(_ context.Context, t inputs.Target, now time.Time) (inputs.Trusted, error) {
 	r.targets = append(r.targets, t)
 	r.nows = append(r.nows, now)
 	return r.trusted, r.err
-}
-
-func (r *fakeResolver) RecordPusher(_ context.Context, _ inputs.Target, login string) error {
-	r.pushers = append(r.pushers, login)
-	return nil
-}
-
-// The approval methods run only over the real resolver, in the world.
-func (r *fakeResolver) Candidate(context.Context, inputs.Target) (inputs.Candidate, error) {
-	panic("fakeResolver: Candidate")
-}
-
-func (r *fakeResolver) CanApprove(context.Context, inputs.Target, string) error {
-	panic("fakeResolver: CanApprove")
-}
-
-func (r *fakeResolver) CanDecide(context.Context, inputs.Target, string) error {
-	panic("fakeResolver: CanDecide")
-}
-
-func (r *fakeResolver) CanWithdraw(context.Context, inputs.Target, string) (bool, error) {
-	panic("fakeResolver: CanWithdraw")
-}
-
-func (r *fakeResolver) Decide(context.Context, inputs.Target, string, map[string]string, inputs.DecisionAction, string, []string, time.Time) error {
-	panic("fakeResolver: Decide")
-}
-
-func (r *fakeResolver) MirrorDecisions(context.Context, inputs.Target, api.Comments) error {
-	return nil
-}
-
-func (r *fakeResolver) RequestEligibleReviewers(context.Context, inputs.Target, string, time.Time) bool {
-	return false
-}
-
-func (r *fakeResolver) Approve(context.Context, inputs.Target, string, map[string]string, time.Time) error {
-	panic("fakeResolver: Approve")
 }
 
 type fakePublisher struct {
@@ -1009,5 +954,3 @@ func (a *fakeActions) Rerun(_ context.Context, r api.RepoRef, runID int64) error
 	a.refs = append(a.refs, r)
 	return nil
 }
-
-func (r *fakeResolver) ReviewerNotificationProblem(context.Context, inputs.Target) bool { return false }

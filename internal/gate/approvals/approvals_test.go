@@ -32,10 +32,13 @@ type hub struct {
 	mu        sync.Mutex
 	history   []string          // the default branch's commits, oldest first; the last is its tip
 	files     map[string]string // commit → policy; a missing commit has no policy
+	workflows map[string]string // commit → the workflow file; a missing commit has none
 	pulls     map[int]api.Pull
 	issues    map[int]bool // number → open
 	comments  map[int][]string
 	assignees map[int][]string
+	checks    []api.CheckRun
+	checkErr  error // CreateCheckRun refuses with it
 	next      int
 	fail      map[string]error
 }
@@ -46,8 +49,9 @@ func (h *hub) File(_ context.Context, _ api.RepoRef, ref, path string) ([]byte, 
 	if err := h.fail["File"]; err != nil {
 		return nil, "", err
 	}
-	text, ok := h.files[ref]
-	if !ok || path != PolicyPath {
+	files := map[string]map[string]string{PolicyPath: h.files, WorkflowPath: h.workflows}[path]
+	text, ok := files[ref]
+	if !ok {
 		return nil, "", api.ErrNotFound
 	}
 	return []byte(text), "blob-" + ref, nil
@@ -138,6 +142,29 @@ func (h *hub) SetAssigneesAndLabels(_ context.Context, _ api.RepoRef, number int
 	return assignees, labels, nil
 }
 
+func (h *hub) CheckRuns(_ context.Context, _ api.RepoRef, headSHA, name string) ([]api.CheckRun, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []api.CheckRun
+	for i, c := range h.checks {
+		if c.HeadSHA == headSHA && c.Name == name {
+			c.ID = int64(i + 1)
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+func (h *hub) CreateCheckRun(_ context.Context, _ api.RepoRef, c api.CheckRun) (api.CheckRun, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.checkErr != nil {
+		return api.CheckRun{}, h.checkErr
+	}
+	h.checks = append(h.checks, c)
+	return c, nil
+}
+
 // openIssues are the open issues the App opened (numbers from 1000), not the request issues.
 func (h *hub) openIssues() []int {
 	h.mu.Lock()
@@ -160,7 +187,7 @@ type world struct {
 }
 
 func newWorld(t *testing.T) *world {
-	gh := &hub{files: map[string]string{}, pulls: map[int]api.Pull{}, issues: map[int]bool{}, comments: map[int][]string{},
+	gh := &hub{files: map[string]string{}, workflows: map[string]string{}, pulls: map[int]api.Pull{}, issues: map[int]bool{}, comments: map[int][]string{},
 		assignees: map[int][]string{}, next: 1000, fail: map[string]error{}}
 	mem := store.NewMemory()
 	return &world{t: t, gh: gh, mem: mem, svc: New(gh, mem)}
@@ -480,21 +507,24 @@ func TestARepositoryWithoutAnApprovedPolicyIsNotJudged(t *testing.T) {
 	if out := w.push("c0", "c1"); out.Judged != JudgedUnguarded || len(w.gh.openIssues()) != 0 || w.repo().OutsideFlow != nil {
 		t.Errorf("outcome %+v, issues %v, repository %+v", out, w.gh.openIssues(), w.repo())
 	}
+	// Only a first approval starts change control (M2 review H1): an ordinary proposal's merge approves nothing.
 	w.answered(431, "graph a b", "p1", 21, digestV(2))
 	w.merge(21, "c2", 2)
-	if out := w.push("c1", "c2"); out.Judged != JudgedConsumed || w.repo().ApprovedDigest != digestV(2) {
-		t.Errorf("outcome %+v, repository %+v; want the first consume to approve", out, w.repo())
+	if out := w.push("c1", "c2"); out.Judged != JudgedConsumed || w.repo().ApprovedDigest != "" {
+		t.Errorf("outcome %+v, repository %+v; want the proposal consumed and nothing approved", out, w.repo())
 	}
 }
 
-// TestAConsumeOutsideTheFlowKeepsTheState: the merged policy also carries the change no approval made.
+// TestAConsumeOutsideTheFlowKeepsTheState: an answer made before a direct push merges after it; the merged policy also
+// carries the change no approval made.
 func TestAConsumeOutsideTheFlowKeepsTheState(t *testing.T) {
 	w := newWorld(t)
 	w.approved(digestV(0))
 	w.gh.commit("c0", policyV(0))
+	w.answered(431, "graph a b", "p1", 21, digestV(2))
+	w.gh.pulls[21] = api.Pull{Number: 21, State: "open"}
 	w.gh.commit("c1", policyV(1))
 	outside := w.push("c0", "c1")
-	w.answered(431, "graph a b", "p1", 21, digestV(2))
 	w.merge(21, "c2", 2)
 	if out := w.push("c1", "c2"); out.Judged != JudgedConsumed {
 		t.Fatalf("outcome %+v, want consumed", out)
@@ -528,7 +558,11 @@ func TestAFailedIssueIsOpenedOnTheRetry(t *testing.T) {
 func TestTextsUseNoNotUsedWord(t *testing.T) {
 	for name, text := range map[string]string{
 		"title": outsideTitle, "body": outsideBody("main", "c1"), "changed again": changedAgainNote("c2"),
-		"duplicate": duplicateNote(12), "merged other": mergedOtherNote(21),
+		"duplicate": duplicateNote(12), "merged other": mergedOtherNote(21), "reverted": revertedNote(40, "m3"),
+		"first title": firstTitle, "first body": firstBody("main", Change{Commit: "c0", Policy: "sha256:p"}, "olivia", "pk"),
+		"first pull":    approvedPullNote(Change{Kind: records.KindFirst, HeadSHA: "h1", Policy: "sha256:p"}, "olivia", "pk"),
+		"workflow pull": approvedPullNote(Change{Kind: records.KindWorkflow, HeadSHA: "h1"}, "olivia", "pk"),
+		"confirmed":     confirmedNote(Change{Commit: "c1", Policy: "sha256:x"}, "olivia", "pk"),
 	} {
 		if words := wording.NotUsedIn(text); len(words) > 0 {
 			t.Errorf("%s uses %v:\n%s", name, words, text)
@@ -674,7 +708,7 @@ func TestALatePushFromBeforeTheFirstApprovalIsNotOutsideTheFlow(t *testing.T) {
 	w := newWorld(t)
 	w.gh.commit("c0", policyV(0))
 	w.gh.commit("c1", policyV(1)) // a direct push, its event delayed
-	w.answered(431, "graph a b", "p1", 21, digestV(2))
+	w.firstApproved("p1", 21, digestV(2))
 	w.merge(21, "c2", 2)
 
 	if out := w.push("c1", "c2"); out.Judged != JudgedConsumed || w.repo().ApprovedDigest != digestV(2) {
@@ -736,6 +770,7 @@ func TestAConsumeThatLosesARaceKeepsTheNewerApproval(t *testing.T) {
 func TestARewrittenHistoryDoesNotStopLaterApprovals(t *testing.T) {
 	w := newWorld(t)
 	w.gh.commit("c0", policyV(0))
+	w.approved(digestV(0))
 	w.answered(431, "graph a b", "p1", 21, digestV(1))
 	w.merge(21, "c1", 1)
 	w.push("c0", "c1")

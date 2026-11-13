@@ -115,7 +115,6 @@ func trusted(gate settings.GateMode) inputs.Trusted {
 		PolicyDigests:   []string{policyDigest},
 		BaselineDigests: []string{baselineDigest},
 		LabelsDigests:   []string{labelsDigest},
-		Approval:        inputs.ApprovalNotRequired,
 	}
 }
 

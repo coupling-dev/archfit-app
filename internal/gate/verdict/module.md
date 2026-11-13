@@ -14,9 +14,9 @@ precondition holds.
 ## Functional Responsibilities
 
 - `Decide`: map `Facts` to an `Outcome` in a fixed order: subscription, settings, source and producer
-  eligibility, governance (owner approval), input integrity, evidence completeness, engine decision.
+  eligibility, governance (a protected change), input integrity, evidence completeness, engine decision.
 - `Without`: the fixed outcome for a target that has no report (missing upload, stale inputs, expired
-  waiver, fork, suspension, withdrawn owner approval).
+  waiver, fork, suspension, a decided result over a protected change).
 - Keep architecture, evidence, governance and subscription outcomes apart through `Category`.
 - Preserve secondary reasons (for example unevaluated required rules beside a blocker) for feedback.
 - Give every reason a recovery action (`Next`).
@@ -92,7 +92,7 @@ const (
     ReasonTargetMoved         ReasonCode = "target_moved" // the default branch moved and, with this change, closes a module cycle
     ReasonSharedHead          ReasonCode = "shared_head"  // another open pull request into a non-default branch has this head commit
     ReasonSuspended           ReasonCode = "subscription_suspended"
-    // ReasonMergeGroupConflict: a protected file a merge group changes is not exactly one owner-approved member's file.
+    // ReasonMergeGroupConflict: a protected file of the merge group differs from the default branch and no queued pull request changes it.
     ReasonMergeGroupConflict  ReasonCode = "merge_group_conflict"
     // ReasonMergeGroupUnverified: GitHub does not confirm the merge group: it is gone, or a member is not the queued pull request.
     ReasonMergeGroupUnverified ReasonCode = "merge_group_unverified"
@@ -140,7 +140,7 @@ type Facts struct {
 }
 
 // Decide is a pure function. It checks, in order: subscription, settings, source and producer eligibility,
-// governance (owner approval), input integrity, evidence completeness, then the engine decision.
+// governance (a protected change, which nothing approves), input integrity, evidence completeness, then the engine decision.
 // The step table of gate/verdict is the normative order.
 func Decide(f Facts) Outcome
 
@@ -150,8 +150,8 @@ func Decide(f Facts) Outcome
 func Without(code ReasonCode) Outcome
 
 // GroupBlocked is the outcome of a merge group whose trusted inputs t no longer allow any result but action_required:
-// a fork member (fork_unsupported), an unverified group, conflicting protected files, or a member change without its
-// owner approval, in that order of checking. ok is false when t is no merge group's or allows a decision.
+// a fork member (fork_unsupported), an unverified group, a protected file changed by no member, or a member that changes
+// a protected path, in that order of checking. ok is false when t is no merge group's or allows a decision.
 func GroupBlocked(t Trusted) (out Outcome, ok bool)
 
 // SharedHead is Without(ReasonSharedHead) for a caller that knows the other pull requests. Detail lists the first five
@@ -175,8 +175,8 @@ func Suspended(e Entitlement) Outcome
 // t.ProtectedPaths, exactly as step 5 of Decide sets it.
 func ApprovalMissing(t Trusted) Outcome
 
-// Unapproved is the condition of step 5: t needs an owner approval that it does not have. Only the two known passing
-// values clear it, so an unknown Approval fails closed.
+// Unapproved is the condition of step 5: t changes a protected path. Nothing approves that change (M2 task 26): only
+// the App's policy pull request changes the policy, and it is not decided here.
 func Unapproved(t Trusted) bool
 ```
 
@@ -190,7 +190,7 @@ func Unapproved(t Trusted) bool
   is `archfit.measurement.v2`; the value lives in the manifest, not here.
 - `WorkflowApproved`: settings were found, `Binding.WorkflowPath` is not empty, and it equals
   `Trusted.Settings.Workflow`. `Binding.WorkflowPath` comes from the verified OIDC `job_workflow_ref`. A workflow
-  file changed by the PR is a protected path, which `gate/inputs` turns into `ApprovalMissing` until an owner approves.
+  file changed by the PR is a protected path, which makes `Unapproved` hold: nothing approves it.
 
 ### Decision order
 
@@ -211,9 +211,9 @@ never empty.
 | 4a   | `!WorkflowApproved`                                                                                             | `workflow_not_approved`       | no             |
 | 4b   | `!IdentityApproved` and `Comparison.MeasurementProfile == nil`                                                  | `measurement_profile_missing` | yes            |
 | 4c   | `!IdentityApproved` and the profile is present                                                                  | `unknown_engine_identity`     | yes            |
-| 5a   | `Trusted.Group.Problem == conflict`                                                                             | `merge_group_conflict`        | no             |
-| 5b   | no 5a, and `Trusted.Group.Unapproved != ""`                                                                     | `owner_approval_missing`      | no             |
-| 5    | no 5a or 5b, and `Trusted.Approval` is neither `ApprovalNotRequired` nor `ApprovalGranted`                      | `owner_approval_missing`      | no             |
+| 5a   | `Trusted.Group.Problem == conflict` (a protected file of the group commit that no queued pull request changes)  | `merge_group_conflict`        | no             |
+| 5b   | no 5a, and `Trusted.Group.Unapproved != ""` (a member changes a protected path in its own pull request)         | `owner_approval_missing`      | no             |
+| 5    | no 5a or 5b, and `len(Trusted.ProtectedPaths) > 0` (`Unapproved(t)`)                                            | `owner_approval_missing`      | no             |
 | 6a   | `len(Trusted.PolicyDigests) == 0` (settings merged, no policy on the protected ref yet)                         | `policy_missing`              | no             |
 | 6b   | `PolicyDigests` not empty and `!Accepts(PolicyDigests, Comparison.ConfigHash)`                                  | `policy_mismatch`             | yes            |
 | 6c   | `!Accepts(Trusted.BaselineDigests, Facts.BaselineDigest)` (digest predicate, below)                             | `baseline_mismatch`           | no             |
@@ -235,13 +235,12 @@ Rules of the table:
 - Problems are read as a set; order and duplicates in `Facts.Problems` do not matter. An unknown `Problem` value counts as `envelope_mismatch` **[default]**.
 - Step 3a0 is appended before 3a: it is the first of the eligibility reasons. A merge group's trust problems are
   eligibility, which no approval cures; `conflict` is governance (5a) and `fork` joins 3a. Step 5a and 5b read
-  `Trusted.Group` before `Approval`, so a conflict or an unapproved member stays a reason even when `Approval` says
-  granted. Their `Detail` is `Group.Detail` and `Group.Unapproved`, not the changed paths.
+  `Trusted.Group` before `ProtectedPaths`. Their `Detail` is `Group.Detail` and `Group.Unapproved`, not the changed paths.
 - `GroupBlocked` repeats these checks without a report, for a caller that corrects a merge group's check
   (`gate/sweep.GroupWithdrawal`): `fork` → `fork_unsupported`, `conflict` → `merge_group_conflict`, any other problem →
   `merge_group_unverified`, `Unapproved` → `owner_approval_missing`, else step 5's `Unapproved(t)`; otherwise ok is false.
-- Step 5 fails closed: only the two known passing values of `Approval` clear it. `ApprovalMissing`, the zero value
-  and any value a later version of `gate/inputs` adds all give `owner_approval_missing`.
+- Step 5 has no exception: a pull request that changes a protected path is `owner_approval_missing`, also when the
+  head is an owner's. Only the App's policy pull request changes the policy.
 - Digest predicate: `gate/inputs` owns it as `Accepts(trusted, claim)`; verdict has no comparison of its own. A
   mismatch is `!Accepts`. Both empty is a match: no baseline (or no labels file) on the protected ref and none used
   by the producer is allowed. `""` against a list with entries is a mismatch: a trusted baseline exists and the
@@ -274,17 +273,14 @@ Rules of the table:
 - A `ReasonCode` appears at most once in `Reasons`.
 - An empty `Trusted.PolicyDigests` means the repository is between onboarding PR 1 (settings) and PR 2 (policy).
   That is `policy_missing` (6a), never `policy_mismatch`: step 6b never compares against an empty list. It sits
-  after step 5 on purpose: the PR that adds the policy changes a protected path, so until an owner approves it
-  `owner_approval_missing` stays `Reasons[0]` (the re-run key); after approval the head digest is in
-  `PolicyDigests` and 6a no longer hits. For every other PR in that window `policy_missing` is first among steps 5 to 8.
+  after step 5 on purpose: the PR that adds the policy changes a protected path, so `owner_approval_missing` stays
+  `Reasons[0]`. For every other PR in that window `policy_missing` is first among steps 5 to 8.
 - Digest comparison is exact string equality. An empty digest never matches.
 - Governance before integrity (step 5 before step 6). In an atomic code-and-policy PR the report's `config_hash` is
-  the head digest, which `gate/inputs` accepts only after an owner approved the exact head. Until then
-  `owner_approval_missing` is `Reasons[0]` and the digest mismatch is appended after it, so the receipt reason is
-  `owner_approval_missing` and a later owner review triggers the re-run. Once approval is granted the head digests
-  are in `PolicyDigests`, `BaselineDigests` and `LabelsDigests`; a mismatch that remains is a true integrity failure,
-  and approval cannot clear it. Steps 6a to 6d never read `Approval`. The comment on `Decide` lists the concerns; this table is the
-  normative order of `Reasons`.
+  the head digest, which `gate/inputs` never accepts. `owner_approval_missing` is `Reasons[0]` and the digest mismatch
+  is appended after it, so the receipt reason is `owner_approval_missing`, which sweep rule 7b keys its re-run on once
+  the protected change is gone. Steps 6a to 6d never read `ProtectedPaths`. The comment on `Decide` lists the concerns;
+  this table is the normative order of `Reasons`.
 - Missing coverage is cleared by supplying the fact, never by approval.
 - Dead selector (7c, 8b): an unevaluated required rule whose `Reason` starts with the exact engine prefix
   `selector matches nothing` (engine form `selector matches nothing: <side> <glob>`). Such a rule is a defect of the
@@ -358,7 +354,7 @@ Categories of integrity, comparability and `Without` codes are **[default]**. `N
 | `unknown_engine_identity`     | evidence     | `action_required`     | empty                                                                                                 | "Move the Archfit workflow to the archfit-action commit and engine image the App approves now; see "Move an installed workflow to a new engine" in the Archfit user guide."                                                     |
 | `measurement_profile_missing` | evidence     | `action_required`     | empty                                                                                                 | "Move the Archfit workflow to the archfit-action commit and engine image the App approves now; see "Move an installed workflow to a new engine" in the Archfit user guide. The report carries no measurement profile."          |
 | `workflow_not_approved`       | evidence     | `action_required`     | empty                                                                                                 | "Upload from the workflow named in `.archfit-app.yaml`."                                                              |
-| `owner_approval_missing`      | governance   | `action_required`     | changed protected paths                                                                               | "An architecture owner must approve this exact commit with a GitHub review. An agent identity cannot approve; a new commit needs a new approval."                                                                                                                 |
+| `owner_approval_missing`      | governance   | `action_required`     | changed protected paths                                                                               | "This pull request changes the policy. Only the App's policy pull request changes it: revert the change and ask with `archfit request -m \"<why>\"` or `/archfit request <why>`; an owner answers in the App."                                                                                                                 |
 | `settings_missing`            | governance   | `action_required`     | empty                                                                                                 | "Merge the Archfit onboarding PR to add `.archfit-app.yaml`."                                                         |
 | `fork_unsupported`            | evidence     | `action_required`     | empty                                                                                                 | "This pull request comes from a fork, which Archfit does not measure. Ask a maintainer to push the branch to this repository and run the workflow there."                                           |
 | `unsupported_event`           | evidence     | `action_required`     | empty                                                                                                 | "Run Archfit on a pull request into the default branch, or on a push to it. A pull request into another branch is not checked."                                                   |
@@ -369,11 +365,11 @@ Categories of integrity, comparability and `Without` codes are **[default]**. `N
 | `waiver_expired`              | governance   | `action_required`     | empty                                                                                                 | "A waiver expired. A re-run was requested; renew the waiver by owner-approved PR or fix the finding."                 |
 | `target_moved`                | evidence     | `action_required`     | the modules of the new cycle and `<base12>..<tip12>` (`TargetMoved`; empty in the catalog)            | "The target branch moved and this pull request cannot be compared with it. Update the branch (Update branch on GitHub, `gh pr update-branch`, or merge the target) to measure it again." `TargetMoved` with a cycle says instead "The target branch moved, and with it this pull request closes a module cycle: <modules>. " and the same recovery. |
 | `shared_head`                 | evidence     | `action_required`     | the other pull requests as `#<n> into <base>`, at most five, then "and N more" (`SharedHead`; empty in the catalog) | "Another open pull request into `<base>` has this head commit, so its checks would show this result. Close that pull request or change its base to the default branch, then run the Archfit workflow again." Recovery owner: the pull request author. |
-| `merge_group_conflict`        | governance   | `action_required`     | `<path> <why>` per file, `; `-separated: `changed by no queued pull request`, `changed by #<n> and #<m>`, `is not the file an owner approved on #<n>` (`Group.Detail`; empty in the catalog) | "Queued pull requests change the same protected file, or the queued file is not the one an owner approved. Remove all but one from the merge queue and queue the others again after it merges, or update the branch and have an owner approve the new head." |
+| `merge_group_conflict`        | governance   | `action_required`     | `<path> changed by no queued pull request` per file, `; `-separated (`Group.Detail`; empty in the catalog) | "A protected file of the merge group differs from the default branch, and no queued pull request changes it. Queue the pull requests again." |
 | `merge_group_unverified`      | evidence     | `action_required`     | `Group.Detail`: `#<n> not found`, `#<n> is not the queued pull request`, or `the merge queue holds no entry with this commit` (empty in the catalog) | "GitHub does not confirm this merge group: it was destroyed or rebuilt, or a queued pull request changed. Queue the pull request again." |
 | `subscription_suspended`      | subscription | `action_required`     | empty                                                                                                 | `Entitlement.Reason` in `Decide` and `Suspended` when not empty; else "Archfit subscription inactive."                |
 
-`Detail` carries protected path names for `owner_approval_missing` (for a merge group, `#<n> <path>, <path>` per member without an approval); these are the five fixed protected
+`Detail` carries protected path names for `owner_approval_missing` (for a merge group, `#<n> <path>, <path>` per member that changes a protected path); these are the five fixed protected
 paths, not customer source paths. The one engine-authored text in a `Detail` is the capped reason list of
 `baseline_not_comparable` (single-line, length-capped by the decoder, no source). No `Detail` carries a finding,
 a file path from the report, or a module name, with these exceptions: `merge_group_conflict`, `merge_group_unverified` and a merge group's `owner_approval_missing` name queued pull request numbers and the fixed protected paths, never content; `shared_head` names the numbers and base branch names of the other pull requests (a base is chosen by
@@ -389,7 +385,7 @@ six listed ones returns `ActionRequired` with `engine_error` **[default]**; `Wit
 `Suspended(e)` and `ApprovalMissing(t)` are the two codes whose `Decide` reason carries record data; each returns
 exactly the `Reasons[0]` that `Decide` gives for the same record, so a sweep correction reads like the upload
 decision it replaces. `Unapproved(t)` is the condition of step 5; `gate/sweep` uses it to find a receipt decided
-under an owner approval that is gone, so the step and the sweep cannot disagree about which approvals clear it.
+while the pull request changes a protected path, so the step and the sweep cannot disagree about it.
 
 ### Why `neutral` and `skipped` cannot be represented
 
@@ -463,7 +459,7 @@ type Upload struct {
 - **Volatility**: high
 - **Balanced?**: yes
 - **Shared knowledge**: `Trusted` fields `Suspended`, `SettingsFound`, `PolicyDigests`, `BaselineDigests`, `LabelsDigests`,
-  `ProtectedPaths`, `Approval`, `Group` and `Entitlement.Reason`. `Target` is not used here. `Settings` is an
+  `ProtectedPaths`, `Group` and `Entitlement.Reason`. `Target` is not used here. `Settings` is an
   opaque part of `Trusted` for this module. Steps 6b to 6d call `Accepts`; `First`, `ProtectedPaths` and
   `MayBeProtected` are not used here.
 
@@ -494,7 +490,7 @@ type Entitlement struct {
 }
 ```
 
-<!-- contract: Target, Trusted, Approval — restated from internal/gate/inputs/module.md -->
+<!-- contract: Target, Trusted — restated from internal/gate/inputs/module.md -->
 ```go
 // Target is the pull request (or default-branch push, or merge group) whose trusted inputs are resolved.
 type Target struct {
@@ -506,24 +502,14 @@ type Target struct {
     MergeGroup  bool // HeadSHA is a merge group commit of BaseRef's merge queue
 }
 
-type Approval string
-
-const (
-    ApprovalNotRequired Approval = "not_required" // no protected path changed
-    ApprovalGranted     Approval = "granted"      // a base-version owner, no agent, approved this exact head SHA
-    ApprovalMissing     Approval = "missing"
-)
-
 // Trusted is everything the gate believes, all read from the protected ref or GitHub itself.
 type Trusted struct {
     Settings             Settings
     SettingsFound        bool
-    PolicyDigests        []string // base digest, plus the head digest when Approval == ApprovalGranted
+    PolicyDigests        []string // the protected ref's digest; empty = no policy on the protected ref
     BaselineDigests      []string // same rule; empty = no baseline on the protected ref
     LabelsDigests        []string // same rule; empty = no labels file on the protected ref
-    ProtectedPaths       []string // protected paths this PR changes
-    Approval             Approval
-    ApprovedBy           string
+    ProtectedPaths       []string // protected paths this PR changes; nothing approves such a change
     EarliestWaiverExpiry time.Time // zero = no waivers
     Suspended            bool
     Entitlement          Entitlement
@@ -535,14 +521,14 @@ type GroupProblem string
 const (
     GroupFork       GroupProblem = "fork"       // a member comes from a fork
     GroupUnverified GroupProblem = "unverified" // the queue, a member or the group commit is not what GitHub says now
-    GroupConflict   GroupProblem = "conflict"   // a changed protected file is not exactly one approved member's file
+    GroupConflict   GroupProblem = "conflict"   // a protected file of the group commit is changed by no queued pull request
 )
 
 // Group names members and paths ("#12 .archfit.yaml"), never content.
 type Group struct {
     Problem    GroupProblem
     Detail     string
-    Unapproved string // each member that changes a protected path without its own owner approval; "" when none
+    Unapproved string // each member that changes a protected path; "" when none
 }
 ```
 
@@ -823,8 +809,8 @@ type Seam struct {
   Imports: standard library, `wire/report`, `gate/ingest`, `gate/inputs` only. Never `control`, `app`, LLM or UI packages.
 - Deterministic: equal `Facts` give equal `Outcome`, including reason order. `Facts` is never mutated.
 - Fail closed: every unrecognized value ends `action_required`. `Success` needs all of: not suspended,
-  settings found, no problems, a report, approved workflow and identity, matching digests, approval not
-  missing, comparable reference, complete coverage, and a passing engine decision.
+  settings found, no problems, a report, approved workflow and identity, matching digests, no protected
+  change, comparable reference, complete coverage, and a passing engine decision.
 - Never `neutral` or `skipped`. Never the word "verified" in any text; OIDC provenance is necessary, not sufficient.
 - Never trust head-tree data: verdict reads only `Trusted` for policy, baseline, owners and settings facts.
 - Never filter by task `origin` or finding `status`; erosion-only adoption is the baseline's job inside the engine.
@@ -851,7 +837,7 @@ type Seam struct {
 ### Unit Tests
 
 - **Test name**: `TestDecideOrder`
-  **Scenario**: table; each row starts from the healthy fixture facts and turns on two conditions from different steps (suspended + blocked, settings missing + fork, approval missing + policy mismatch, approval missing + baseline mismatch, baseline mismatch + labels mismatch, policy mismatch + not comparable, out-of-enum verdict + unmeasured hard gates, missing coverage + blocker).
+  **Scenario**: table; each row starts from the healthy fixture facts and turns on two conditions from different steps (suspended + blocked, settings missing + fork, protected change + policy mismatch, protected change + baseline mismatch, baseline mismatch + labels mismatch, policy mismatch + not comparable, out-of-enum verdict + unmeasured hard gates, missing coverage + blocker).
   **Expected behavior**: the reason of the earlier step is `Reasons[0]` and sets `Conclusion`; the later reason is still present. In particular `owner_approval_missing` precedes both mismatch reasons, and `engine_error` precedes `missing_required_coverage`.
 - **Test name**: `TestReasonCodesAreUnique`
   **Scenario**: `verdict: blocked` with `hard_gates: pass` and an unevaluated rule; `verdict: blocked` with `unmeasured`; fuzzed facts.
@@ -860,7 +846,7 @@ type Seam struct {
   **Scenario**: every row of the engine decision matrix, plus `Verdict` `""`, `"BLOCKED"` and `"error"`, and `HardGates` `""` and `"PASS"`; 20, 21 and 25 unevaluated rules, once missing evidence and once dead selectors.
   **Expected behavior**: the listed reasons in the listed order; unknown values give `engine_error`. The `missing_required_coverage` and `policy_defect` Detail names 20 rule IDs, then `and 1 more` or `and 5 more`.
 - **Test name**: `TestAttentionOnly`
-  **Scenario**: `needs_attention` with `pass` and: two dimensions not measured (`drift` unmeasured, `testability` partial); all measured and advisories with every status plus a gate finding and a finding of an unknown kind; one dimension key missing; an extra map key and a dimension with an unknown status. Each once more with `verdict: healthy`. Then `needs_attention` beside an unevaluated rule, a dead selector, a non-comparable reference, missing approval, suspension.
+  **Scenario**: `needs_attention` with `pass` and: two dimensions not measured (`drift` unmeasured, `testability` partial); all measured and advisories with every status plus a gate finding and a finding of an unknown kind; one dimension key missing; an extra map key and a dimension with an unknown status. Each once more with `verdict: healthy`. Then `needs_attention` beside an unevaluated rule, a dead selector, a non-comparable reference, a protected change, suspension.
   **Expected behavior**: `success` with `attention_only` alone, category architecture; Detail `dimensions not fully measured: testability, drift; active diagnostics: 0`, then `none; active diagnostics: 2` (only advisories that are `new` or `expired_waiver` count), then the missing key, then only `coupling` (an extra key is never named); `Next` says advisories never block; no report text in Detail or `Next`. With `verdict: healthy` the reason is `healthy` with an empty Detail. Beside any other reason `attention_only` never appears.
 - **Test name**: `TestPolicyDefect`
   **Scenario**: dead-selector rules (`selector matches nothing: …`) alone and beside other unevaluated rules, under `unmeasured`, `pass` and `fail` hard gates, with `verdict: blocked` and with an out-of-enum verdict; unmeasured hard gates without rules; near misses (other case, leading space, `the selector matches nothing`, other reasons, empty).
@@ -878,11 +864,11 @@ type Seam struct {
   **Scenario**: a `non_comparable` reference with `Drift` `measurement_profile`, `rubric_version`, both, `classification_hash`, `model_hash`, `labels_hash`, `reference_incomplete`, `measurement_profile` with `classification_hash`, and none.
   **Expected behavior**: the re-anchor `Next` when every class is `measurement_profile` or `rubric_version`; the full-capture `Next` for the others.
 - **Test name**: `TestPolicyDigestSet`
-  **Scenario**: `ConfigHash` equal to the base digest, to the approved head digest, to neither, and with empty `PolicyDigests`.
+  **Scenario**: `ConfigHash` equal to the base digest, to a second trusted digest, to neither, and with empty `PolicyDigests`.
   **Expected behavior**: no reason for the first two; `policy_mismatch` for the third; `policy_missing` (and no `policy_mismatch`) for the empty list, also when `Report` is nil.
 - **Test name**: `TestPolicyMissingWindow`
-  **Scenario**: settings found, `PolicyDigests` empty: a code-only PR (`ApprovalNotRequired`) with a healthy report; the PR that adds the policy before owner approval (`ApprovalMissing`); the same after approval (`PolicyDigests` = head digest).
-  **Expected behavior**: `action_required` with `policy_missing` first (category `governance`, `Next` names the policy PR); `owner_approval_missing` first with `policy_missing` second; `success`.
+  **Scenario**: settings found, `PolicyDigests` empty: a code-only PR with a healthy report; the PR that adds the policy (a protected path).
+  **Expected behavior**: `action_required` with `policy_missing` first (category `governance`, `Next` names the policy PR); `owner_approval_missing` first with `policy_missing` second.
 - **Test name**: `TestIdentityReasons`
   **Scenario**: `IdentityApproved` false with profile nil, with profile present, and with `Report` nil.
   **Expected behavior**: `measurement_profile_missing`, `unknown_engine_identity`, and only `report_invalid` respectively.
@@ -890,8 +876,8 @@ type Seam struct {
   **Scenario**: iterate every `ReasonCode` constant of the contract (twenty-eight).
   **Expected behavior**: each has the catalog category and conclusion (`success` for `healthy` and `attention_only`); every code except `healthy` has a non-empty `Next`; the `Next` texts of `workflow_not_approved` and `settings_missing` name `settings.Path`; those of `unknown_engine_identity` and `measurement_profile_missing` name the user-guide section "Move an installed workflow to a new engine" and never the onboarding workflow, which keeps the pin it was written with.
 - **Test name**: `TestMergeGroupFacts`
-  **Scenario**: `Trusted.Group` empty; an approved policy change; `conflict`, also with `Approval` granted; an unapproved member, also with `Approval` granted; `fork`; `unverified`; an unknown problem; `unverified` without settings; `Without(merge_group_unverified)`.
-  **Expected behavior**: `success`; `success`; `merge_group_conflict` first; `owner_approval_missing` with the member as `Detail`; `fork_unsupported`; `merge_group_unverified` with the group's `Detail`; `merge_group_unverified`; `settings_missing` first; `action_required` with that one reason.
+  **Scenario**: `Trusted.Group` empty; `conflict` (a protected file changed by no member); a member that changes a protected path; `fork`; `unverified`; an unknown problem; `unverified` without settings; `Without(merge_group_unverified)`.
+  **Expected behavior**: `success`; `merge_group_conflict` first; `owner_approval_missing` with the member as `Detail`; `fork_unsupported`; `merge_group_unverified` with the group's `Detail`; `merge_group_unverified`; `settings_missing` first; `action_required` with that one reason.
 - **Test name**: `TestTargetMoved`
   **Scenario**: a cycle of two modules; five; seven; a module name over 80 runes; no cycle with a base; no cycle and no base; nothing known.
   **Expected behavior**: `action_required`, evidence; `Detail` lists the first five modules, then "and N more", each cut to 80 runes, then `; <base12>..<tip12>`; `Next` names the cycle and the update-branch recovery, and without a cycle it is the catalog text, which claims none; `target_moved` is not report-derived (`ReportDerivedAction`, `ClassifyDisplayReason`).
@@ -908,16 +894,16 @@ type Seam struct {
   **Scenario**: an entitlement with a `Reason`; the zero entitlement; `Decide` for suspended facts with the same two records.
   **Expected behavior**: `ActionRequired`, one reason `subscription_suspended` in category `subscription`; `Next` is the record's `Reason`, or the catalog text for the zero record; `Reasons[0]` equals the one `Decide` gives.
 - **Test name**: `TestApprovalMissing`
-  **Scenario**: trusted inputs with a missing approval and one, two or no protected paths; `Decide` for the same inputs.
+  **Scenario**: trusted inputs with one, two or no protected paths; `Decide` for the same inputs.
   **Expected behavior**: `ActionRequired`, one reason `owner_approval_missing`; `Reasons[0]` equals the one `Decide` gives, `Detail` included.
 - **Test name**: `TestUnapproved`
-  **Scenario**: `Approval` `not_required`, `granted`, `missing`, empty, and an unknown value; `Decide` for each.
-  **Expected behavior**: true for the last three only, and `Decide` names `owner_approval_missing` exactly when it is true.
+  **Scenario**: trusted inputs with no protected path, one, and several; `Decide` for each.
+  **Expected behavior**: true for the last two only, and `Decide` names `owner_approval_missing` exactly when it is true.
 
 ### Integration Contract Tests
 
 - **Test name**: `TestDecideWireFixtures`
-  **Scenario**: every report fixture of the shared corpus `internal/wire/testdata/report` (names and `.expect.json` format per `internal/wire/module.md`; verdict keeps no copy). A fixture with `decode: "ok"` is decoded with `report.Decode` as a document of its producer's release (synthetic: v3.0.0); one with `decode: "error"` gives a nil `Report`. The facts are the clean facts of that document: identity and workflow approved, settings found, no approval needed, not suspended, no problems, trusted policy digests = the report's `config_hash`, trusted baseline and labels digests = `policy.Digest` of the `.baseline.json` and `.labels.yaml` siblings (an empty list when there is no sibling), and the same digests as the envelope's claims. The fixture's `facts` object then overrides single facts; an unknown key in `facts` or in the expectation fails the test. The corpus must hold the required fixtures: `healthy`, `attention-pass`, `blocked`, `missing-evidence`, `unknown-identity`, `profile-comparable`, `profile-incompatible`, `invalid-input`, `blocker-and-unevaluated`, `non-applicable-rule`, `locations-empty`, `matched-by-populated`, `repair-kinds`, `waiver-expiry-order`.
+  **Scenario**: every report fixture of the shared corpus `internal/wire/testdata/report` (names and `.expect.json` format per `internal/wire/module.md`; verdict keeps no copy). A fixture with `decode: "ok"` is decoded with `report.Decode` as a document of its producer's release (synthetic: v3.0.0); one with `decode: "error"` gives a nil `Report`. The facts are the clean facts of that document: identity and workflow approved, settings found, no protected change, not suspended, no problems, trusted policy digests = the report's `config_hash`, trusted baseline and labels digests = `policy.Digest` of the `.baseline.json` and `.labels.yaml` siblings (an empty list when there is no sibling), and the same digests as the envelope's claims. The fixture's `facts` object then overrides single facts; an unknown key in `facts` or in the expectation fails the test. The corpus must hold the required fixtures: `healthy`, `attention-pass`, `blocked`, `missing-evidence`, `unknown-identity`, `profile-comparable`, `profile-incompatible`, `invalid-input`, `blocker-and-unevaluated`, `non-applicable-rule`, `locations-empty`, `matched-by-populated`, `repair-kinds`, `waiver-expiry-order`.
   **Expected behavior**: `Decide` returns exactly `gate.conclusion` and the code sequence `gate.reasons` of each fixture. For the named fixtures the document also fixes the first reason: `success`/`healthy` for `healthy` and `non-applicable-rule`; `success`/`attention_only` for `attention-pass`; `failure`/`blocking_findings` for `blocked`; `action_required`/`missing_required_coverage` for `missing-evidence`; `action_required`/`measurement_profile_missing` for `unknown-identity`; `action_required`/`baseline_not_comparable` for `profile-incompatible`; `action_required`/`report_invalid` for `invalid-input`; `failure` with `missing_required_coverage` second for `blocker-and-unevaluated`.
 - **Test name**: `TestReasonsZeroDeterminesConclusion`
   **Scenario**: all outcomes produced by the other tests.
@@ -929,10 +915,10 @@ type Seam struct {
 ### Boundary Tests
 
 - **Test name**: `TestConclusionSetIsClosed`
-  **Scenario**: fuzz `Facts`: random problems (including unknown strings), nil and random reports, random booleans, random digests and approvals; also every `Without` input.
+  **Scenario**: fuzz `Facts`: random problems (including unknown strings), nil and random reports, random booleans, random digests and protected paths; also every `Without` input.
   **Expected behavior**: `Conclusion` is always one of the three constants; never `neutral`, `skipped`, or empty; no panic.
 - **Test name**: `TestSuccessRequiresEverything`
-  **Scenario**: start from the healthy facts; turn off one precondition at a time (suspended, settings missing, each problem, workflow, identity, policy digest, baseline digest, labels digest, approval missing, not comparable, unmeasured, unevaluated rule, dead-selector rule, `verdict: blocked`, out-of-enum verdict, nil report).
+  **Scenario**: start from the healthy facts; turn off one precondition at a time (suspended, settings missing, each problem, workflow, identity, policy digest, baseline digest, labels digest, protected change, not comparable, unmeasured, unevaluated rule, dead-selector rule, `verdict: blocked`, out-of-enum verdict, nil report).
   **Expected behavior**: no variant is `Success`; the fuzz test asserts the same implication in reverse for every `Success` it sees.
 - **Test name**: `TestDecideIsPure`
   **Scenario**: call `Decide` twice on deep-copied facts; inspect the package import list.
@@ -947,14 +933,14 @@ type Seam struct {
   **Scenario**: a report without a measurement profile whose reference also lacks one; a profile-less baseline on the protected ref (`gate_reference.status: non_comparable`); a stale numerical snapshot baseline (`non_comparable`).
   **Expected behavior**: `measurement_profile_missing` for the first; `baseline_not_comparable` for the others; none is `success`.
 - **Test name**: `TestHeadEditsCannotWeakenTheGate` (T12)
-  **Scenario**: report computed with a head-edited policy, baseline or labels file (the envelope states the head digests), approval missing; then the same with a clean engine decision; then a head-computed report while `inputs` saw no protected path change (`ApprovalNotRequired`).
+  **Scenario**: report computed with a head-edited policy, baseline or labels file (the envelope states the head digests), with a protected change; then the same with a clean engine decision; then a head-computed report while `inputs` saw no protected path change.
   **Expected behavior**: `owner_approval_missing` first with `policy_mismatch`, `baseline_mismatch` or `labels_mismatch` after it; a healthy engine decision never turns it into `success`; the third case has the mismatch as `Reasons[0]`; an upload that claims no baseline (`""`) while a baseline exists is `baseline_mismatch`, and a missing or non-comparable gate reference is `baseline_not_comparable` (no blanket re-baseline).
-- **Test name**: `TestAtomicPolicyPullRequestWaitsForOwner` (T14)
-  **Scenario**: the engine ran with the head policy; first `Approval` missing and `PolicyDigests` = base only; then `Approval` granted and `PolicyDigests` = base and head.
-  **Expected behavior**: first `action_required` with `Reasons` = `owner_approval_missing`, `policy_mismatch` (so the receipt reason is `owner_approval_missing` and a review can trigger the re-run); then `success`.
-- **Test name**: `TestIntegrityFailureIsNotClearedByApproval` (T14)
-  **Scenario**: `Approval` granted, but `ConfigHash` is in neither digest of `PolicyDigests`.
-  **Expected behavior**: `policy_mismatch`, `action_required`.
+- **Test name**: `TestCodeAndPolicyPullRequestNeverPasses` (T14)
+  **Scenario**: the engine ran with the head policy (`policy_mismatch`) on a pull request with a protected change; the same with a matching policy digest.
+  **Expected behavior**: `action_required` with `owner_approval_missing` first and `policy_mismatch` second; `owner_approval_missing` alone; never `success`.
+- **Test name**: `TestOwnerApprovalMissingSendsTheAuthorToARequest`
+  **Scenario**: the catalog entry of `owner_approval_missing`.
+  **Expected behavior**: `Next` names `archfit request -m`, `/archfit request` and "an owner answers in the App", and no GitHub review or approve button.
 - **Test name**: `TestMissingEvidenceNeverPasses` (T13)
   **Scenario**: unmeasured hard gates, unevaluated required rule with `verdict: needs_attention`, out-of-enum verdict, nil report, fork, unsupported event (`workflow_run`), every `Without` code.
   **Expected behavior**: `action_required` each time with its own reason.

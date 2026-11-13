@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/control/ui/graph"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
@@ -22,7 +21,6 @@ const (
 
 	noReport          = "No report available. Reports come from push runs on the default branch, and GitHub keeps run artifacts for a limited time."
 	reportUnavailable = "Report unavailable: the latest report could not be read."
-	draftBroken       = "The draft does not parse. The graph shows the policy on the default branch."
 )
 
 // graphJSON is a graph page: the view graph.Build made, or why there is none. The web app renders every string in it
@@ -37,48 +35,37 @@ type graphJSON struct {
 	Added       int         `json:"added"`       // links containing introduced finding evidence (graph.Link.Origin), not newly added pairs/sites
 }
 
-// apiGraph is the repository graph: GET /api/repos/{o}/{n}/graph, from the latest report of the default branch.
+// apiGraph is the repository graph: GET /api/repos/{o}/{n}/graph, from the latest report of the default branch and the
+// policy on the default branch. A missing policy file is an empty text.
 func (s *server) apiGraph(r *http.Request, sc scope) (any, error) {
 	ctx := r.Context()
 	body := graphJSON{Branch: sc.repo.DefaultBranch}
 	// The report and the policy text do not depend on each other: they are read side by side, and the text counts
 	// only once there is a report, as when they were read in turn.
 	var (
-		rep           *report.Report
-		unavailable   string
-		err, draftErr error
-		draft         proposal.Draft
-		text          []byte
+		rep          *report.Report
+		unavailable  string
+		err, textErr error
+		text         []byte
 	)
-	branch, _ := editBranch(sc.user.Login, "")
 	together(
 		func() { rep, unavailable, err = s.latestDecoded(ctx, sc.repo) },
-		func() { draft, text, draftErr = s.current(ctx, sc.repo, branch) },
+		func() {
+			text, _, textErr = s.gh.files.File(ctx, sc.repo.RepoRef, sc.repo.DefaultBranch, policy.PolicyPath)
+			if errors.Is(textErr, api.ErrNotFound) {
+				text, textErr = nil, nil
+			}
+		},
 	)
 	if err != nil || unavailable != "" {
 		body.Unavailable = unavailable
 		return body, err
 	}
-	if draftErr != nil {
-		return nil, draftErr
-	}
-	if _, err := policy.Modules(text); err != nil && isOpen(draft) {
-		text, _, err = s.gh.files.File(ctx, sc.repo.RepoRef, sc.repo.DefaultBranch, policy.PolicyPath)
-		if err != nil && !errors.Is(err, api.ErrNotFound) {
-			return nil, err
-		}
-		body.StaleReason = draftBroken
+	if textErr != nil {
+		return nil, textErr
 	}
 	view := graph.Build(*rep, text)
-	if body.StaleReason != "" {
-		view.Stale = true
-	}
-	// The policy text on GitHub that the view read: the open draft's head, else the default branch.
-	ref := sc.repo.DefaultBranch
-	if isOpen(draft) && body.StaleReason == "" {
-		ref = draft.HeadSHA
-	}
-	body.View, body.PolicyHref = &view, policyBlob(sc.repo.FullName, ref)
+	body.View, body.PolicyHref = &view, policyBlob(sc.repo.FullName, sc.repo.DefaultBranch)
 	return body, nil
 }
 
