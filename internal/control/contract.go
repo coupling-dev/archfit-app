@@ -14,7 +14,6 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/answers"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/passkey"
-	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/control/ui"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -24,13 +23,11 @@ import (
 
 const cookieKeyLen = 32
 
-// Deps are wired by internal/app. Sandbox may be nil: managed discovery then reports "not available".
+// Deps are wired by internal/app.
 type Deps struct {
-	GitHub   *api.Client
-	Tokens   auth.TokenSource
-	OAuth    auth.OAuth
-	Store    store.Store
-	Receiver gate.Receiver
+	GitHub *api.Client
+	OAuth  auth.OAuth
+	Store  store.Store
 	// Admissions says which installations the App serves; Operators (GitHub user IDs) approve the others on /admin.
 	Admissions *gate.Admissions
 	// RequestViews reads a request and the preview of each answer for the request page: the gate façade. It reads only.
@@ -42,7 +39,6 @@ type Deps struct {
 	SetupViews   gate.SetupViews
 	Answers      gate.Answers
 	Operators    []int64
-	Sandbox      Sandbox
 	CookieKey    []byte
 	BaseURL      string
 	Now          func() time.Time
@@ -54,19 +50,15 @@ type tenantLister interface {
 }
 
 type Control struct {
-	account   account.Account
-	repos     api.Repos
-	tenants   tenantLister
-	admit     admitter
-	ui        http.Handler
-	discovery http.Handler
-	baseline  http.Handler
-	reanchor  http.Handler
-	now       func() time.Time
+	account account.Account
+	repos   api.Repos
+	tenants tenantLister
+	admit   admitter
+	ui      http.Handler
+	now     func() time.Time
 
 	// Held for the composition only; the façade never calls them.
-	consents   account.Consents
-	onboarding onboarding.Onboarding
+	consents account.Consents
 }
 
 func New(d Deps) (*Control, error) {
@@ -77,11 +69,6 @@ func New(d Deps) (*Control, error) {
 		d.Now = time.Now
 	}
 	acct, consents := account.New(d.Store)
-	proposals := proposal.New(d.GitHub, d.GitHub)
-	onb := onboarding.New(onboarding.Deps{
-		GitHub: d.GitHub, Tokens: d.Tokens, Receiver: d.Receiver, Proposals: proposals,
-		Consents: consents, Sandbox: d.Sandbox, BaseURL: d.BaseURL, Now: d.Now,
-	})
 	passkeys, err := passkey.New(passkey.Config{BaseURL: d.BaseURL}, d.Store,
 		passkey.NewOwners(d.GitHub), passkey.NewIssues(d.GitHub, d.GitHub), d.Now)
 	if err != nil {
@@ -91,7 +78,7 @@ func New(d Deps) (*Control, error) {
 		Answers: answers.New(d.Answers, passkeys),
 		Owners:  answers.NewOwners(d.OwnerActions, passkeys), Setups: onboarding.NewSetup(d.GitHub, d.SetupViews),
 		OAuth: d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
-		Account: acct, Consents: consents, Onboarding: onb,
+		Account: acct, Consents: consents,
 		Admissions: d.Admissions, PolicyViews: d.PolicyViews, RequestViews: d.RequestViews, Passkeys: passkeys, Operators: d.Operators, Now: d.Now,
 
 		HomeViews: gate.NewHome(d.GitHub, d.Store, d.Admissions),
@@ -99,15 +86,13 @@ func New(d Deps) (*Control, error) {
 	if err != nil {
 		return nil, fmt.Errorf("control: ui: %w", err)
 	}
-	c := newControl(acct, d.GitHub, d.Store, d.Admissions, page, onb.DiscoveryHandler(), d.Now)
-	c.baseline = onb.BaselineHandler()
-	c.reanchor = onb.ReanchorHandler()
-	c.consents, c.onboarding = consents, onb
+	c := newControl(acct, d.GitHub, d.Store, d.Admissions, page, d.Now)
+	c.consents = consents
 	return c, nil
 }
 
 // WorkerDeps are the dependencies of the worker façade: it handles events, the sweep and grants, and serves no UI.
-// So it takes no OAuth, no cookie key, no Receiver and no Sandbox.
+// It takes no UI credentials.
 type WorkerDeps struct {
 	GitHub     *api.Client
 	Store      store.Store
@@ -141,8 +126,6 @@ func (d Deps) validate() error {
 		return errors.New("control: nil OAuth")
 	case d.Store == nil:
 		return errors.New("control: nil Store")
-	case d.Receiver == nil:
-		return errors.New("control: nil Receiver")
 	case d.Admissions == nil:
 		return errors.New("control: nil Admissions")
 	case d.PolicyViews == nil:
@@ -155,15 +138,13 @@ func (d Deps) validate() error {
 		return fmt.Errorf("control: CookieKey must be %d bytes", cookieKeyLen)
 	case d.BaseURL == "":
 		return errors.New("control: empty BaseURL")
-	case d.Sandbox != nil && d.Tokens == nil:
-		return errors.New("control: Sandbox needs Tokens")
 	}
 	return nil
 }
 
 // newControl assembles the façade from already-built parts; tests pass fakes.
-func newControl(a account.Account, repos api.Repos, tenants tenantLister, admit admitter, page, discovery http.Handler, now func() time.Time) *Control {
-	return &Control{account: a, repos: repos, tenants: tenants, admit: admit, ui: recovered(page), discovery: discovery, now: now}
+func newControl(a account.Account, repos api.Repos, tenants tenantLister, admit admitter, page http.Handler, now func() time.Time) *Control {
+	return &Control{account: a, repos: repos, tenants: tenants, admit: admit, ui: recovered(page), now: now}
 }
 
 // admitter answers whether an installation's account is approved: gate.Admissions.
@@ -173,18 +154,6 @@ type admitter interface {
 
 func (c *Control) UIHandler() http.Handler { // "/"
 	return c.ui
-}
-
-func (c *Control) DiscoveryHandler() http.Handler { // POST /v1/discoveries
-	return c.discovery
-}
-
-func (c *Control) BaselineHandler() http.Handler { // POST /v1/baselines
-	return c.baseline
-}
-
-func (c *Control) ReanchorHandler() http.Handler { // POST /v1/reanchors
-	return c.reanchor
 }
 
 // recovered contains a UI panic: 500 for this request, the process and every other handler keep working.
@@ -207,13 +176,3 @@ func recovered(next http.Handler) http.Handler {
 }
 
 // Re-published platform seams. The owning child's module.md is normative.
-
-// Sandbox, DiscoveryJob and DiscoveryResult are owned by control/onboarding.
-type (
-	Sandbox         = onboarding.Sandbox
-	DiscoveryJob    = onboarding.DiscoveryJob
-	DiscoveryResult = onboarding.DiscoveryResult
-)
-
-// ErrNoSandbox is owned by control/onboarding.
-var ErrNoSandbox = onboarding.ErrNoSandbox

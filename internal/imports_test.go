@@ -92,7 +92,7 @@ func under(pkg, path string) bool {
 
 func TestGatePathImportsNothingForbidden(t *testing.T) {
 	deps := closure(t, "./internal/gate/...")
-	if !slices.Contains(deps, internal+"gate") || !slices.Contains(deps, internal+"gate/verdict") {
+	if !slices.Contains(deps, internal+"gate") || !slices.Contains(deps, internal+"gate/ingest") {
 		t.Fatalf("the closure of ./internal/gate/... does not contain the gate packages: %v", deps)
 	}
 	forbidden := []string{"control", "app"}
@@ -128,7 +128,7 @@ func TestAllowedImportMatrix(t *testing.T) {
 	g := importGraph(t)
 	groups := []importGroup{
 		{"wire", func(p string) bool { return under(p, "wire") }, func(pkg, imp string) bool {
-			return strings.HasPrefix(imp, yamlModule) && (pkg == internal+"wire/settings" || pkg == internal+"wire/policy" || pkg == internal+"wire/policy3" || pkg == internal+"wire/workflow")
+			return strings.HasPrefix(imp, yamlModule) && (pkg == internal+"wire/policy3" || pkg == internal+"wire/workflow")
 		}},
 		{"store", func(p string) bool { return p == internal+"store" }, func(string, string) bool { return false }},
 		{"queue", func(p string) bool { return under(p, "queue") }, func(pkg, imp string) bool {
@@ -245,7 +245,7 @@ func TestOnlyPlatformSeamsTouchPlatformSDKs(t *testing.T) {
 				t.Errorf("%s imports %s: go-webauthn's own imports are in the build for control/passkey only", pkg, imp)
 				continue
 			}
-			// Any other SDK belongs to a Store, Sandbox or Provider implementation package.
+			// Any other SDK belongs to a Store implementation package.
 			parent := pkg[:strings.LastIndex(pkg, "/")]
 			if parent != internal+"store" && parent != internal+"control/onboarding" {
 				t.Errorf("%s imports the SDK %s outside a platform seam implementation", pkg, imp)
@@ -253,7 +253,16 @@ func TestOnlyPlatformSeamsTouchPlatformSDKs(t *testing.T) {
 		}
 	}
 	slices.Sort(yamlImporters)
-	if want := []string{internal + "wire/policy", internal + "wire/policy3", internal + "wire/settings", internal + "wire/workflow"}; !slices.Equal(yamlImporters, want) {
+	if want := []string{internal + "wire/policy3", internal + "wire/workflow"}; !slices.Equal(yamlImporters, want) {
 		t.Errorf("YAML is imported by %v; want %v", yamlImporters, want)
+	}
+}
+
+func TestArchfit3PackagesAreRemoved(t *testing.T) {
+	g := importGraph(t)
+	for _, name := range []string{"wire/report", "wire/policy", "wire/settings", "gate/verdict", "control/ui/graph", "control/proposal"} {
+		if _, exists := g.direct[internal+name]; exists {
+			t.Errorf("legacy package still exists: %s", name)
+		}
 	}
 }

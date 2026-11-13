@@ -36,7 +36,7 @@ func TestRepositoryOfWaitingAccountAnswersWaiting(t *testing.T) {
 			t.Errorf("%s: waiting = %q; want stranger", path, got.Waiting)
 		}
 	}
-	wantStatus(t, c.get("/api/repos/"+repoName+"/overview"), http.StatusOK)
+	wantStatus(t, c.get("/api/repos/"+repoName+"/setup"), http.StatusOK)
 
 	var list overviewBody
 	c.getJSON("/api/repos", &list)
@@ -95,11 +95,11 @@ func TestOperatorApprovesThenRevokes(t *testing.T) {
 	if row.Account != "stranger" || row.Auto || row.ApprovedBy != operatorLogin || row.ApprovedAt == nil || !row.ApprovedAt.Equal(e.now) {
 		t.Errorf("approved row = %+v; want stranger by %s at %v", row, operatorLogin, e.now)
 	}
-	wantStatus(t, alice.get("/api/repos/"+strangerRepo+"/overview"), http.StatusOK)
+	wantStatus(t, alice.get("/api/repos/"+strangerRepo+"/setup"), http.StatusOK)
 
 	e.now = e.now.Add(time.Hour)
 	wantStatus(t, ops.postJSON(approvePath(installC, "revoke"), struct{}{}), http.StatusOK)
-	wantStatus(t, alice.get("/api/repos/"+strangerRepo+"/overview"), http.StatusForbidden)
+	wantStatus(t, alice.get("/api/repos/"+strangerRepo+"/setup"), http.StatusForbidden)
 	var revoked adminBody
 	ops.getJSON("/api/admin/installations", &revoked)
 	if len(revoked.Waiting) != 1 || revoked.Waiting[0].ApprovedAt != nil {
@@ -151,12 +151,12 @@ func TestUnreadableApprovalIsNeitherWaitingNorApproved(t *testing.T) {
 	e.readsDown.Store(true)
 
 	// A repository of an account that needs the record: "try again", never the Waiting page.
-	res := alice.get("/api/repos/" + strangerRepo + "/overview")
+	res := alice.get("/api/repos/" + strangerRepo + "/setup")
 	if res.Code < 500 || decodeAs[errorJSON](t, res).Waiting != "" {
 		t.Errorf("overview = %d %s; want a server error without waiting", res.Code, res.Body.String())
 	}
 	// A configured account needs no read.
-	wantStatus(t, alice.get("/api/repos/"+repoName+"/overview"), http.StatusOK)
+	wantStatus(t, alice.get("/api/repos/"+repoName+"/setup"), http.StatusOK)
 
 	// The list reads no state for it either way; the header count is "unknown", and the admin page lists it as waiting.
 	var list overviewBody

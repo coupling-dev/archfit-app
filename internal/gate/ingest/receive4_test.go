@@ -261,8 +261,7 @@ func TestReceiveV2RefusesTheEnvelopeBeforeTheToken(t *testing.T) {
 	}{
 		{"a payload digest mismatch", func(s *v2Scenario) { s.env2.PayloadDigest = "sha256:" + strings.Repeat("0", 64) }, http.StatusBadRequest, codeEnvelopeInvalid},
 		{"an envelope 1", func(s *v2Scenario) {
-			raw, _ := json.Marshal(s.env)
-			s.rawEnvelope = string(raw)
+			s.rawEnvelope = `{"schema_version":"archfit.report-envelope.v1","kind":"report"}`
 		}, http.StatusBadRequest, codeEnvelopeInvalid},
 		{"no envelope", func(s *v2Scenario) { s.noEnvelope = true }, http.StatusBadRequest, codeEnvelopeMissing},
 		{"a GET", func(s *v2Scenario) { s.method = http.MethodGet }, http.StatusBadRequest, codeMethodNotAllowed},
@@ -320,7 +319,7 @@ func TestReceiveV2Problems(t *testing.T) {
 			s.claims.JobWorkflowRef = repoName + "/" + workflowPath + "@refs/heads/release"
 		}, []Problem{ProblemUnsupportedEvent}},
 		{"a workflow_dispatch run", pushScenarioV2, func(s *v2Scenario) {
-			s.run.Event, s.claims.EventName = eventDispatch, eventDispatch
+			s.run.Event, s.claims.EventName = "workflow_dispatch", "workflow_dispatch"
 			s.runs = []api.WorkflowRun{s.run}
 		}, []Problem{ProblemEnvelopeMismatch, ProblemUnsupportedEvent}},
 	}

@@ -134,7 +134,7 @@ func TestEngineApprovedExactMatch(t *testing.T) {
 		{"no digest", Identity{EngineVersion: "v4.0.0-rc.1", Platform: platformAMD64}, false},
 		{"no platform", Identity{EngineVersion: "v4.0.0-rc.1", ImageDigest: testEngine4AMD}, false},
 		{"zero", Identity{}, false},
-		{"an engine 3 row", Current().Identity, false},
+		{"an engine 3 row", Identity{EngineVersion: "v3.4.0", ImageDigest: testEngine4AMD, Platform: platformAMD64}, false},
 	}
 	for _, tt := range tests {
 		if got := EngineApproved(tt.id); got != tt.want {
@@ -154,7 +154,7 @@ func TestActionApproved(t *testing.T) {
 		testActionCommit4[:7]:              false,
 		"v4":                               false,
 		"":                                 false,
-		Current().ActionRef:                false, // the Action 3 commit of manifest 1
+		"2221f4bfece0725a657414fed751cdc090ba1bd4": false, // the Action 3 commit of manifest 1
 	} {
 		if got := ActionApproved(commit); got != want {
 			t.Errorf("ActionApproved(%q) = %v, want %v", commit, got, want)
@@ -185,3 +185,5 @@ func withEngines(t *testing.T, data []byte) {
 	engines = table
 	t.Cleanup(func() { engines = saved })
 }
+
+type row map[string]any

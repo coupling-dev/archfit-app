@@ -181,18 +181,6 @@ func (f *fakeChecks) latest(t *testing.T, headSHA, name string) api.CheckRun {
 	return slices.MaxFunc(runs, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) })
 }
 
-func (f *fakeChecks) count(call string) int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	n := 0
-	for _, c := range f.calls {
-		if c == call {
-			n++
-		}
-	}
-	return n
-}
-
 type fakeComments struct {
 	failures
 	mu       sync.Mutex

@@ -9,23 +9,15 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/oidc"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
 	"github.com/alexei-led/archfit-app/internal/store"
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
-	"github.com/alexei-led/archfit-app/internal/wire/manifest"
-	"github.com/alexei-led/archfit-app/internal/wire/policy"
-	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 const (
@@ -37,14 +29,6 @@ const (
 	shopInstallation = 11
 	shopRepoID       = 101
 	shopName         = "acme/shop"
-
-	fixtureHealthy   = "healthy"
-	fixtureBlocked   = "blocked"
-	fixtureAttention = "attention-warning-only"
-	fixtureNoProfile = "unknown-identity"
-	fixtureCoverage  = "missing-required-evidence"
-
-	basePolicy = "version: 1\nmodules:\n  a:\n    paths: [\"pkg/a/**\"]\n"
 )
 
 var testStart = time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
@@ -78,8 +62,7 @@ func newWorld(t *testing.T) *world {
 	}
 	w.store = &guardStore{inner: w.mem}
 	w.admit = &fakeAdmitter{refused: map[int64]bool{}}
-	w.gate = compose(w.gh, w.oidc, w.store, w.admit, testAudience,
-		Config{MissingUploadAfter: 60 * time.Minute, WaiverWarnBefore: 7 * 24 * time.Hour}, w.clock)
+	w.gate = compose(w.gh, w.oidc, w.store, w.admit, testAudience, w.clock)
 	w.shop = w.addRepo(shopName, shopInstallation, shopRepoID, false)
 	return w
 }
@@ -101,15 +84,7 @@ func (w *world) addRepo(fullName string, installationID, id int64, private bool)
 	if !known {
 		w.gh.installations = append(w.gh.installations, api.Installation{ID: installationID, Account: "acme"})
 	}
-	w.setSettings(r, settings.GateRequired)
-	w.setFile(r, testBranch, policy.PolicyPath, []byte(basePolicy))
 	return r
-}
-
-func (w *world) setSettings(r api.Repo, mode settings.GateMode) {
-	w.setFile(r, testBranch, settings.Path, settings.Render(settings.Settings{
-		Version: 1, Owners: []string{ownerLogin}, Gate: mode, Workflow: testWorkflow, DataMode: settings.DataCustomer,
-	}))
 }
 
 func (w *world) setFile(r api.Repo, ref, path string, raw []byte) {
@@ -118,14 +93,6 @@ func (w *world) setFile(r api.Repo, ref, path string, raw []byte) {
 
 func (w *world) removeFile(r api.Repo, ref, path string) {
 	delete(w.gh.files, fileKey(r.FullName, ref, path))
-}
-
-func (w *world) digestOf(r api.Repo, ref, path string) string {
-	raw, ok := w.gh.files[fileKey(r.FullName, ref, path)]
-	if !ok {
-		w.t.Fatalf("no file %s at %s", path, ref)
-	}
-	return policy.Digest(raw)
 }
 
 func (w *world) sha() string {
@@ -188,14 +155,9 @@ func (w *world) finishRun(p *pull) {
 	w.editRun(p, func(r *api.WorkflowRun) { r.Status = runCompleted })
 }
 
-func (w *world) changes(p *pull, paths ...string) {
-	w.gh.changed[pullKey(p.repo.FullName, p.number)] = paths
-}
-
 // uploadSpec is one POST /v1/reports. spec returns a fully consistent one; tests break single parts of it.
 type uploadSpec struct {
 	body        []byte
-	env         envelope.Envelope
 	rawEnvelope []byte // overrides env when set
 	token       string
 	claims      oidc.Claims
@@ -205,18 +167,8 @@ type uploadSpec struct {
 
 func (w *world) spec(p *pull, body []byte) uploadSpec {
 	run := w.gh.runs[p.runID]
-	pl := w.gh.pulls[pullKey(p.repo.FullName, p.number)]
-	id := manifest.Current().Identity
 	s := uploadSpec{
-		body: body,
-		env: envelope.Envelope{
-			SchemaVersion: envelope.SchemaV1, Kind: envelope.KindReport, Repository: p.repo.FullName,
-			Event: "pull_request", PullRequest: p.number, HeadSHA: p.head, BaseSHA: pl.BaseSHA, MergeBaseSHA: pl.MergeBaseSHA,
-			AnalyzedSHA: pl.MergeCommitSHA, Integration: envelope.IntegrationMerged,
-			RunID: p.runID, RunAttempt: run.Attempt,
-			EngineVersion: id.EngineVersion, ImageDigest: id.ImageDigest, Platform: id.Platform,
-			PayloadDigest: envelope.PayloadDigest(body),
-		},
+		body:  body,
 		token: fmt.Sprintf("token-%d-%d", p.runID, run.Attempt),
 		claims: oidc.Claims{
 			Repository: p.repo.FullName, RepositoryID: p.repo.ID, RunID: p.runID, RunAttempt: run.Attempt,
@@ -232,12 +184,6 @@ func (w *world) spec(p *pull, body []byte) uploadSpec {
 func (w *world) request(s uploadSpec) *http.Request {
 	w.t.Helper()
 	raw := s.rawEnvelope
-	if raw == nil {
-		var err error
-		if raw, err = json.Marshal(s.env); err != nil {
-			w.t.Fatal(err)
-		}
-	}
 	if s.claims != (oidc.Claims{}) { // zero claims: the token is one the test registered itself, or none
 		w.oidc.tokens[s.token] = fakeToken{claims: s.claims}
 	}
@@ -280,73 +226,6 @@ func serve(t *testing.T, g *Gate, req *http.Request) answer {
 	}
 	return a
 }
-
-// upload sends a consistent upload of the fixture for the pull and returns the answer.
-func (w *world) upload(p *pull, fixture string, muts ...func(map[string]any)) answer {
-	w.t.Helper()
-	return w.send(w.spec(p, w.report(p.repo, fixture, muts...)))
-}
-
-func (w *world) wantAnswer(a answer, status int, conclusion, reason string) {
-	w.t.Helper()
-	if a.status != status || a.Conclusion != conclusion || a.Reason != reason {
-		w.t.Fatalf("answer = %d %s, want %d conclusion=%s reason=%s", a.status, a.raw, status, conclusion, reason)
-	}
-}
-
-// report loads a fixture and binds it to the world: the config hash of the policy on the default branch and the
-// profile version of the locked manifest. muts run after that.
-func (w *world) report(r api.Repo, fixture string, muts ...func(map[string]any)) []byte {
-	w.t.Helper()
-	raw, err := os.ReadFile(filepath.Join("testdata", "report", fixture+".json"))
-	if err != nil {
-		w.t.Fatal(err)
-	}
-	var doc map[string]any
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		w.t.Fatal(err)
-	}
-	cmp := doc["comparison"].(map[string]any)
-	if _, ok := w.gh.files[fileKey(r.FullName, testBranch, policy.PolicyPath)]; ok {
-		cmp["config_hash"] = w.digestOf(r, testBranch, policy.PolicyPath)
-	}
-	if profile, ok := cmp["measurement_profile"].(map[string]any); ok {
-		profile["version"] = manifest.Current().ProfileVersion
-	}
-	for _, mut := range muts {
-		mut(doc)
-	}
-	out, err := json.Marshal(doc)
-	if err != nil {
-		w.t.Fatal(err)
-	}
-	return out
-}
-
-func configHash(h string) func(map[string]any) {
-	return func(doc map[string]any) { doc["comparison"].(map[string]any)["config_hash"] = h }
-}
-
-// gateReference states the engine's gate reference. A reference that compares had a baseline; the one that says no
-// baseline file was loaded has none, and a reference that does not compare names the drift of its reason.
-func gateReference(status string, reasons ...string) func(map[string]any) {
-	return func(doc map[string]any) {
-		list := make([]any, len(reasons))
-		for i, r := range reasons {
-			list[i] = r
-		}
-		ref := map[string]any{"status": status, "base_ref": "baseline", "reasons": list, "baseline_present": true}
-		if slices.Contains(reasons, "no baseline file was loaded") {
-			ref["baseline_present"] = false
-			ref["drift"] = []any{"reference_incomplete"}
-		} else if status != "comparable" {
-			ref["drift"] = []any{"measurement_profile"}
-		}
-		doc["gate_reference"] = ref
-	}
-}
-
-func noGateReference(doc map[string]any) { delete(doc, "gate_reference") }
 
 func (w *world) event(kind webhook.EventKind, p *pull) webhook.Event {
 	pl := w.gh.pulls[pullKey(p.repo.FullName, p.number)]
@@ -396,16 +275,6 @@ func (w *world) wantGate(p *pull, status, conclusion string) api.CheckRun {
 	return c
 }
 
-// receipt reads the gate check back through the Publisher contract.
-func (w *world) receipt(p *pull) feedback.Receipt {
-	w.t.Helper()
-	state, err := w.gate.publisher.State(context.Background(), w.target(p))
-	if err != nil {
-		w.t.Fatal(err)
-	}
-	return state.Receipt
-}
-
 func (w *world) target(p *pull) inputs.Target {
 	return inputs.Target{Repo: p.repo, PullRequest: p.number, HeadSHA: p.head, BaseRef: testBranch}
 }
@@ -442,17 +311,6 @@ func (w *world) noSuccess() {
 	}
 }
 
-func (w *world) entitle(installationID int64, e Entitlement) {
-	w.t.Helper()
-	raw, err := json.Marshal(e)
-	if err != nil {
-		w.t.Fatal(err)
-	}
-	if err := w.mem.Put(context.Background(), store.Tenant(installationID), EntitlementKey, raw); err != nil {
-		w.t.Fatal(err)
-	}
-}
-
 // captureLogs swaps the default logger. Tests that use it do not run in parallel.
 func captureLogs(t *testing.T) *bytes.Buffer {
 	t.Helper()
@@ -475,3 +333,5 @@ func (a *fakeAdmitter) Admitted(_ context.Context, installationID int64, _ strin
 	}
 	return !a.refused[installationID], nil
 }
+
+const basePolicy = "version: 2\nmodules:\n  a:\n    paths: [pkg/a/**]\n"

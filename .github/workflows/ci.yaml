@@ -168,7 +168,7 @@ jobs:
         name: Read the pinned Action commits
         run: |
           set -euo pipefail
-          refs=$(jq -ce '[.entries[].action_ref] | if length > 0 and all(.[]; type == "string" and length == 40 and test("^[0-9a-f]{40}$")) then unique else error("manifest needs nonempty 40-hex Action refs") end' internal/wire/manifest/manifest.json)
+          refs=$(jq -ce 'if .version == 2 and (.engines | type == "array") and all(.engines[]; (.action_commits | type == "array" and length > 0) and all(.action_commits[]; type == "string" and length == 40 and test("^[0-9a-f]{40}$"))) then [.engines[].action_commits[]] | unique else error("manifest needs version 2 engines with valid Action refs") end' internal/wire/manifest/manifest4.json)
           while IFS= read -r ref; do
             if [[ -z ${ref//${ref:0:1}/} ]]; then
               echo "::error::manifest Action ref is a placeholder: $ref"
@@ -191,7 +191,11 @@ jobs:
           ACTION_REFS: ${{ needs.action-pin.outputs.refs }}
         run: |
           set -euo pipefail
-          refs=$(jq -er 'if type == "array" and length > 0 and all(.[]; type == "string" and length == 40 and test("^[0-9a-f]{40}$")) then .[] else error("invalid Action refs") end' <<<"$ACTION_REFS")
+          refs=$(jq -ce 'if type == "array" and all(.[]; type == "string" and length == 40 and test("^[0-9a-f]{40}$")) then . else error("invalid Action refs") end' <<<"$ACTION_REFS")
+          if [[ $refs == "[]" ]]; then
+            echo "No approved Action commits in manifest 4." >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           # The hosted runner removes its temporary directory after the job.
           checkout=$(mktemp -d "$RUNNER_TEMP/action-conformance.XXXXXX")
           git -C "$checkout" init --quiet
@@ -202,11 +206,11 @@ jobs:
             fi
             git -C "$checkout" fetch --quiet --depth=1 https://github.com/alexei-led/archfit-action.git "$ref"
             test "$(git -C "$checkout" rev-parse FETCH_HEAD)" = "$ref"
-            git -C "$checkout" show FETCH_HEAD:schema/envelope.v1.schema.json >"$checkout/envelope.json"
-            if ! cmp -s internal/wire/envelope/envelope.v1.schema.json "$checkout/envelope.json"; then
+            git -C "$checkout" show FETCH_HEAD:schema/envelope.v2.schema.json >"$checkout/envelope.json"
+            if ! cmp -s internal/wire/envelope/envelope.v2.schema.json "$checkout/envelope.json"; then
               echo "::error::archfit-action@$ref vendors a different envelope schema; re-vendor it and pin the new commit"
-              diff -u internal/wire/envelope/envelope.v1.schema.json "$checkout/envelope.json" || true
+              diff -u internal/wire/envelope/envelope.v2.schema.json "$checkout/envelope.json" || true
               exit 1
             fi
             echo "### Action envelope schema: identical at archfit-action@\`$ref\`" >>"$GITHUB_STEP_SUMMARY"
-          done <<<"$refs"
+          done < <(jq -r '.[]' <<<"$refs")

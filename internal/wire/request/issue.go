@@ -171,7 +171,10 @@ func parseAnswer(record string) *Answer {
 		return nil
 	}
 	a := &Answer{Rule: rule, From: from, To: to}
-	for _, line := range all[1:] {
+	for i, line := range all[1:] {
+		if line == "policy: not protected" && i == len(all)-2 {
+			continue
+		}
 		if !answerFields.MatchString(line) {
 			return nil
 		}

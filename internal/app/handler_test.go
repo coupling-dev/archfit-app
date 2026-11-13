@@ -81,9 +81,10 @@ func TestRouteTable(t *testing.T) {
 	}{
 		{"health", httptest.NewRequest(http.MethodGet, base+"/health", nil), http.StatusOK, nil},
 		{"reports", httptest.NewRequest(http.MethodPost, base+"/v1/reports", nil), http.StatusCreated, []string{"gate.Upload"}},
-		{"discoveries", httptest.NewRequest(http.MethodPost, base+"/v1/discoveries", nil), http.StatusAccepted, []string{"control.Discovery"}},
-		{"baselines", httptest.NewRequest(http.MethodPost, base+"/v1/baselines", nil), http.StatusAccepted, []string{"control.Baseline"}},
-		{"GET on the baseline path", httptest.NewRequest(http.MethodGet, base+"/v1/baselines", nil), http.StatusOK, []string{"control.UI"}},
+		{"discoveries", httptest.NewRequest(http.MethodPost, base+"/v1/discoveries", nil), http.StatusNotFound, nil},
+		{"baselines", httptest.NewRequest(http.MethodPost, base+"/v1/baselines", nil), http.StatusNotFound, nil},
+		{"reanchors", httptest.NewRequest(http.MethodPost, base+"/v1/reanchors", nil), http.StatusNotFound, nil},
+		{"GET on the baseline path", httptest.NewRequest(http.MethodGet, base+"/v1/baselines", nil), http.StatusNotFound, nil},
 		{"webhook", signed(), http.StatusAccepted, []string{"gate.HandleEvent", "control.HandleEvent"}},
 		{"sweep", operatorRequest(base+"/internal/sweep", testOperatorToken, ""), http.StatusOK, []string{"control.Sweep", "gate.Sweep"}},
 		{"grants", operatorRequest(base+"/internal/grants", testOperatorToken, grant), http.StatusNoContent, []string{"control.Grant"}},
@@ -126,8 +127,6 @@ func TestRouteDeadlines(t *testing.T) {
 		want    []time.Duration // one per fake reached, in order; 0 means no deadline
 	}{
 		{"gate upload", post("/v1/reports"), []time.Duration{short}},
-		{"discovery upload", post("/v1/discoveries"), []time.Duration{short}},
-		{"baseline upload", post("/v1/baselines"), []time.Duration{short}},
 		{"UI page", httptest.NewRequest(http.MethodGet, "/", nil), []time.Duration{short}},
 		{"UI answer", post("/api/repos/octo/repo/requests/431/answer"), []time.Duration{short}},
 		{"the removed assist route has no long deadline", post("/api/repos/octo/repo/assist"), []time.Duration{short}},

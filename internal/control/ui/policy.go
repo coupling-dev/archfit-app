@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
 )
 
@@ -79,7 +78,7 @@ type policyEditJSON struct {
 
 func (s *server) apiPolicy(r *http.Request, sc scope) (any, error) {
 	ctx := r.Context()
-	raw, _, err := s.gh.files.File(ctx, sc.repo.RepoRef, sc.repo.DefaultBranch, policy.PolicyPath)
+	raw, _, err := s.gh.files.File(ctx, sc.repo.RepoRef, sc.repo.DefaultBranch, ".archfit.yaml")
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +162,7 @@ func (s *server) apiPolicy(r *http.Request, sc scope) (any, error) {
 		}
 		for _, p := range pulls {
 			if p.HeadRef == "archfit/policy" && strings.EqualFold(p.HeadRepo, sc.repo.FullName) && p.BaseRef == sc.repo.DefaultBranch && p.State == "open" {
-				data, _, err := s.gh.files.File(ctx, sc.repo.RepoRef, p.HeadSHA, policy.PolicyPath)
+				data, _, err := s.gh.files.File(ctx, sc.repo.RepoRef, p.HeadSHA, ".archfit.yaml")
 				if err != nil {
 					return nil, err
 				}

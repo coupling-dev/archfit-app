@@ -18,8 +18,6 @@ import (
 	"github.com/alexei-led/archfit-app/internal/store"
 )
 
-const policyDraft = "version: 2\n"
-
 // account is the login GitHub reports for the installation: the owner of its first repository.
 func (h *harness) account(id int64) string {
 	var owner string
@@ -45,12 +43,6 @@ func (h *harness) consent(id int64, kinds ...account.ConsentKind) {
 			h.t.Fatalf("Record(%s): %v", k, err)
 		}
 	}
-}
-
-func (h *harness) upload(body string) *httptest.ResponseRecorder {
-	rec := httptest.NewRecorder()
-	h.c.DiscoveryHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/discoveries", strings.NewReader(body)))
-	return rec
 }
 
 func TestUninstallLeavesNoTenantKeys(t *testing.T) {
@@ -113,7 +105,7 @@ func TestOrphanCleanupFailsSafe(t *testing.T) {
 				tt.fail(st)
 			}
 			writes := st.writes
-			c := newControl(acct, tt.repos, st, admitAll{}, okHandler, okHandler, newClock().Now)
+			c := newControl(acct, tt.repos, st, admitAll{}, okHandler, newClock().Now)
 
 			err := c.Sweep(ctx)
 
@@ -153,7 +145,6 @@ func TestRevokedAccessSchedulesNothing(t *testing.T) {
 
 	h.event(webhook.InstallationRemoved, 7)
 	h.gh.uninstall(7) // GitHub answers 404 for the installation from now on
-	h.receiver.answer(gate.Upload{}, &gate.Rejection{Status: http.StatusUnauthorized, Code: "installation_not_found"})
 	h.gh.set(func(g *fakeGitHub) { g.installTokens = nil })
 	writes := h.store.writes
 
@@ -170,16 +161,7 @@ func TestRevokedAccessSchedulesNothing(t *testing.T) {
 	}
 	form.Set("mode", "managed")
 	form.Set("owners", "org7/owners")
-	if rec := b.do(http.MethodPost, "/r/org7/app/onboarding", form); rec.Code != http.StatusNotFound {
-		t.Errorf("POST /r/org7/app/onboarding = %d, want 404", rec.Code)
-	}
-	if rec := h.upload("{}"); rec.Code != http.StatusUnauthorized {
-		t.Errorf("discovery upload = %d, want 401", rec.Code)
-	}
 
-	if h.sandbox.count() != 0 {
-		t.Errorf("sandbox jobs = %d, want none", h.sandbox.count())
-	}
 	if h.tenants()[7] {
 		t.Error("a key was written for the removed tenant")
 	}
@@ -233,29 +215,6 @@ func TestReplayedAndForgedInstallationIDs(t *testing.T) {
 			t.Error("the foreign installation ID was used")
 		}
 	})
-	t.Run("discovery envelope with a foreign installation ID", func(t *testing.T) {
-		if _, err := h.c.onboarding.StartCustomer(ctx, repo(7, "org7/app", true), []string{"org7/owners"}); err != nil {
-			t.Fatalf("StartCustomer: %v", err)
-		}
-		h.gh.merge("org7/app", "archfit/onboarding")
-		h.gh.set(func(g *fakeGitHub) { g.installTokens = nil })
-		h.receiver.answer(gate.Upload{
-			Binding: gate.Binding{Repo: repo(7, "org7/app", true), Event: "workflow_dispatch", BaseRef: "main", WorkflowPath: ".github/workflows/archfit.yaml"},
-			Payload: []byte(policyDraft),
-		}, nil)
-
-		rec := h.upload(`{"installation_id":8,"repository":"org8/app"}`)
-
-		if rec.Code >= 300 {
-			t.Fatalf("discovery upload = %d %s", rec.Code, rec.Body.String())
-		}
-		if got := len(h.gh.pulls("org7/app")); got != 2 {
-			t.Errorf("%d pull requests on the bound repository, want 2", got)
-		}
-		if h.gh.usedTokenOf(8) || len(h.gh.pulls("org8/app")) != 0 || h.tenants()[8] {
-			t.Error("the foreign installation ID was used")
-		}
-	})
 }
 
 type panickingOAuth struct{ auth.OAuth }
@@ -266,7 +225,6 @@ func TestUIPanicIsContained(t *testing.T) {
 	logs := captureLogs(t)
 	h := newHarness(t, func(d *Deps) { d.OAuth = panickingOAuth{} })
 	h.gh.install(7, ghr(70, "org7/app", true))
-	h.receiver.answer(gate.Upload{}, &gate.Rejection{Status: http.StatusUnauthorized, Code: "oidc_invalid"})
 
 	rec := httptest.NewRecorder()
 	h.c.UIHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/auth/login?return=/r/secret-org/secret-repo", nil))
@@ -282,9 +240,6 @@ func TestUIPanicIsContained(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("GET / after the panic = %d, want 200", rec.Code)
 	}
-	if rec := h.upload("{}"); rec.Code != http.StatusUnauthorized {
-		t.Errorf("discovery after the panic = %d, want 401", rec.Code)
-	}
 	h.event(webhook.InstallationAdded, 7)
 	if err := h.c.Sweep(ctx); err != nil {
 		t.Errorf("Sweep after the panic: %v", err)
@@ -293,7 +248,7 @@ func TestUIPanicIsContained(t *testing.T) {
 	t.Run("the façade recovers what the UI does not", func(t *testing.T) {
 		mux := http.NewServeMux()
 		mux.HandleFunc("GET /r/{o}/{n}", func(http.ResponseWriter, *http.Request) { panic("page exploded") })
-		c := newControl(&fakeAccount{}, &fakeRepos{}, &fakeTenants{}, admitAll{}, mux, okHandler, newClock().Now)
+		c := newControl(&fakeAccount{}, &fakeRepos{}, &fakeTenants{}, admitAll{}, mux, newClock().Now)
 		rec := httptest.NewRecorder()
 
 		c.UIHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/r/hidden-org/hidden-repo", nil))
@@ -305,15 +260,10 @@ func TestUIPanicIsContained(t *testing.T) {
 		if !strings.Contains(out, "GET /r/{o}/{n}") || strings.Contains(out, "hidden-") || strings.Contains(out, "page exploded") {
 			t.Errorf("log must name the route pattern only:\n%s", out)
 		}
-		rec = httptest.NewRecorder()
-		c.DiscoveryHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/discoveries", nil))
-		if rec.Code != http.StatusNoContent {
-			t.Errorf("discovery after the panic = %d, want 204", rec.Code)
-		}
 	})
 	t.Run("an aborted response is not swallowed", func(t *testing.T) {
 		c := newControl(&fakeAccount{}, &fakeRepos{}, &fakeTenants{}, admitAll{},
-			http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) }), okHandler, newClock().Now)
+			http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) }), newClock().Now)
 		defer func() {
 			if v := recover(); v != http.ErrAbortHandler { //nolint:errorlint // the sentinel is panicked by identity
 				t.Errorf("recovered %v, want http.ErrAbortHandler", v)

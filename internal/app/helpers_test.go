@@ -335,7 +335,6 @@ func validConfig(t *testing.T) Config {
 		CookieKeyFile:     writeFile(t, dir, "cookie", []byte(testCookieKey)),
 		OperatorTokenFile: writeFile(t, dir, "operator", []byte(testOperatorToken+"\n")),
 		StoreDriver:       storeMemory,
-		SandboxDriver:     sandboxNone,
 		Role:              roleAll,
 		QueueDriver:       queueInline,
 		Operators:         defaultOperators,

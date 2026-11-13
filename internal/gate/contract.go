@@ -16,9 +16,8 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/proposals"
-	asks "github.com/alexei-led/archfit-app/internal/gate/requests" // gate's own requests type is Archfit 3's
+	asks "github.com/alexei-led/archfit-app/internal/gate/requests"
 	"github.com/alexei-led/archfit-app/internal/gate/sweep"
-	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/oidc"
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -32,17 +31,11 @@ type Deps struct {
 	Store      store.Store
 	Admissions *Admissions // which installations the App serves; nothing runs for any other
 	Audience   string      // the App URL; OIDC audience
-	Sweep      Config
 	Now        func() time.Time
 }
 
-// Gate composes the five children. It holds no state of its own: GitHub holds the dedup keys.
+// Gate composes the Archfit 4 upload and change-control services.
 type Gate struct {
-	receiver   ingest.Receiver
-	resolver   inputs.Resolver
-	publisher  feedback.Publisher
-	repairer   feedback.Repairer
-	sweeper    sweep.Sweeper
 	repos      api.Repos
 	pulls      api.Pulls
 	admissions admitter
@@ -97,18 +90,15 @@ type github interface {
 }
 
 func New(d Deps) *Gate {
-	return compose(d.GitHub, d.OIDC, d.Store, d.Admissions, d.Audience, d.Sweep, d.Now)
+	return compose(d.GitHub, d.OIDC, d.Store, d.Admissions, d.Audience, d.Now)
 }
 
 // compose wires the children once. A nil clock means time.Now.
-func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience string, c Config, now func() time.Time) *Gate {
+func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience string, now func() time.Time) *Gate {
 	if now == nil {
 		now = time.Now
 	}
-	resolver := inputs.New(gh, gh, gh, s)
-	publisher := feedback.New(gh, gh, gh, s, audience, now) // the audience is the App's base URL
-	g := newGate(newReceiver(gh, v, audience, adm), resolver, publisher, feedback.NewRepairer(gh, gh, gh, gh, s, now),
-		sweep.New(gh, gh, gh, resolver, publisher, adm, c), gh, gh, adm, now)
+	g := &Gate{repos: gh, pulls: gh, admissions: adm, now: now}
 	// One Archfit 4 publisher, so an upload and a request line take the same head lease.
 	publisher4 := feedback.New4(gh, gh, gh, s, audience, now)
 	g.v4 = newUpload4(ingest.NewV2(gh, gh, gh, gh, gh, v, audience, adm), gh, gh, s, publisher4)
@@ -122,30 +112,9 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 	return g
 }
 
-func newGate(rc ingest.Receiver, rs inputs.Resolver, p feedback.Publisher, rp feedback.Repairer, sw sweep.Sweeper, repos api.Repos, pl api.Pulls, adm admitter, now func() time.Time) *Gate {
-	return &Gate{receiver: rc, resolver: rs, publisher: p, repairer: rp, sweeper: sw, repos: repos, pulls: pl, admissions: adm, now: now}
-}
-
-// UploadHandler serves POST /v1/reports: envelope 2 uploads on the Archfit 4 path, every other upload on the
-// envelope 1 path.
+// UploadHandler serves POST /v1/reports: envelope 2 uploads on the Archfit 4 path, every other envelope is rejected.
 func (g *Gate) UploadHandler() http.Handler {
 	return http.HandlerFunc(g.serveReports)
-}
-
-// NewReceiver exposes the upload authentication and binding step so that the discovery
-// upload endpoint reuses exactly the same provenance checks as the report endpoint.
-func NewReceiver(gh *api.Client, v oidc.Verifier, audience string, adm *Admissions) Receiver {
-	return newReceiver(gh, v, audience, adm)
-}
-
-func newReceiver(gh github, v oidc.Verifier, audience string, adm admitter) Receiver {
-	return ingest.New(gh, gh, gh, gh, v, audience, adm)
-}
-
-// ClassifyDisplayReason republishes verdict's pure display-metadata classification through the gate facade.
-// It does not decide an outcome, change admission, or validate report contents.
-func ClassifyDisplayReason(code, category string) (reportDerived, known bool) {
-	return verdict.ClassifyDisplayReason(verdict.ReasonCode(code), verdict.Category(category))
 }
 
 // Re-published child contracts. The owning child's module.md is normative.
@@ -170,25 +139,14 @@ type Target = inputs.Target
 // Entitlement is owned by gate/inputs.
 type Entitlement = inputs.Entitlement
 
-// Upload, Binding, Problem, Receiver and Rejection are owned by gate/ingest.
+// Problem and Rejection are owned by gate/ingest.
 type (
-	Binding   = ingest.Binding
-	Problem   = ingest.Problem
-	Upload    = ingest.Upload
+	Problem = ingest.Problem
+
 	Rejection = ingest.Rejection
-	Receiver  = ingest.Receiver
 )
 
-const (
-	ProblemEnvelopeMismatch = ingest.ProblemEnvelopeMismatch
-	ProblemUnsupportedEvent = ingest.ProblemUnsupportedEvent
-	ProblemFork             = ingest.ProblemFork
-	ProblemReportInvalid    = ingest.ProblemReportInvalid
-)
-
-// Config, Summary and Sweeper are owned by gate/sweep.
+// Summary is owned by gate/sweep.
 type (
-	Config  = sweep.Config
 	Summary = sweep.Summary
-	Sweeper = sweep.Sweeper
 )

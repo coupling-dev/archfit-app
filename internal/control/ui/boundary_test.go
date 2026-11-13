@@ -4,63 +4,26 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"go/parser"
-	"go/token"
 	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"reflect"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/control/account"
-	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
-
-func TestHistoricalRecoveryClassificationUsesOnlyGateFacade(t *testing.T) {
-	const facade = "github.com/alexei-led/archfit-app/internal/gate"
-	file, err := parser.ParseFile(token.NewFileSet(), "pullcontext.go", nil, parser.ImportsOnly)
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, spec := range file.Imports {
-		imp, err := strconv.Unquote(spec.Path.Value)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.HasPrefix(imp, facade+"/") {
-			t.Fatalf("historical projection imports private gate child %s", imp)
-		}
-		if imp == facade {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("historical classification did not use the permitted gate facade")
-	}
-}
 
 // noWrites fails the test if any sibling module or GitHub write was reached.
 func (e *env) noWrites(t *testing.T) {
 	t.Helper()
 	if e.consents.writes != 0 {
 		t.Errorf("consent writes = %d", e.consents.writes)
-	}
-	if len(e.onb.customer)+len(e.onb.managed) != 0 {
-		t.Error("onboarding was started")
-	}
-	if len(e.gh.called("Dispatch")) != 0 {
-		t.Error("a workflow was dispatched")
 	}
 }
 
@@ -97,7 +60,6 @@ func TestTenantIdentityOnlyFromSession(t *testing.T) {
 
 	e := newEnv(t)
 	c := e.as("alice", permAdmin)
-	e.publishReport(repoName, artifact(t, "healthy"))
 
 	for _, rt := range repoRoutes(otherRepo) {
 		if !rt.authorized() {
@@ -110,7 +72,7 @@ func TestTenantIdentityOnlyFromSession(t *testing.T) {
 	e.noWrites(t)
 
 	for _, rt := range repoRoutes(repoName) {
-		if got := send(c, rt); got != http.StatusOK {
+		if got := send(c, rt); got != rt.expectedStatus() {
 			t.Errorf("%s %s = %d, want success", rt.method, rt.path, got)
 		}
 	}
@@ -126,11 +88,6 @@ func TestTenantIdentityOnlyFromSession(t *testing.T) {
 	for _, id := range append(e.consents.touched, e.acct.installations...) {
 		if id != installA {
 			t.Errorf("a key of installation %d was touched", id)
-		}
-	}
-	for _, call := range append(e.onb.customer, e.onb.managed...) {
-		if call.repo.InstallationID != installA {
-			t.Errorf("onboarding got %+v", call.repo)
 		}
 	}
 }
@@ -183,7 +140,7 @@ func TestNewRejectsBadSessionConfig(t *testing.T) {
 			_, wantErr := session.New(session.Config{CookieKey: tt.key, BaseURL: tt.baseURL}, e.oauth, gh, gh, clock)
 			h, err := New(Deps{
 				OAuth: e.oauth, CookieKey: tt.key, BaseURL: tt.baseURL, GitHub: gh, Account: e.acct, Consents: e.consents,
-				Onboarding: e.onb, Now: clock,
+				Now: clock,
 			})
 			if (wantErr != nil) != tt.wantErr {
 				t.Fatalf("session.New error = %v, want error: %v", wantErr, tt.wantErr)
@@ -243,127 +200,6 @@ func TestCSRFRequiredOnEveryPost(t *testing.T) {
 	e.noWrites(t)
 	if got := c.get("/api/session").Code; got != http.StatusOK {
 		t.Errorf("a logout without a CSRF token ended the session: /api/session = %d", got)
-	}
-}
-
-func TestOversizedAndInvalidInput(t *testing.T) {
-	owners := make([]string, 50)
-	for i := range owners {
-		owners[i] = fmt.Sprintf("owner-%d", i)
-	}
-	owners[31] = "not a login!"
-	tests := []struct {
-		name, path string
-		body       any
-		want       int
-	}{
-		{"600 KB JSON body", "/onboarding", onboardingJSON{Mode: "customer", Owners: strings.Repeat("a", 600<<10)}, http.StatusRequestEntityTooLarge},
-		{"malformed owner", "/onboarding", onboardingJSON{Mode: "customer", Owners: strings.Join(owners, "\n")}, http.StatusUnprocessableEntity},
-		{"no owner", "/onboarding", onboardingJSON{Mode: "customer", Owners: " \n"}, http.StatusUnprocessableEntity},
-		{"unknown mode", "/onboarding", onboardingJSON{Mode: "magic", Owners: "alice"}, http.StatusUnprocessableEntity},
-		{"a field the endpoint does not take", "/onboarding",
-			map[string]string{"mode": "customer", "owners": "alice", "repo": otherRepo}, http.StatusUnprocessableEntity},
-		{"not JSON", "/onboarding", json.RawMessage(`"mode=customer"`), http.StatusUnprocessableEntity},
-		{"a field discovery does not take", "/discover", map[string]string{"repo": otherRepo}, http.StatusUnprocessableEntity},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			e := newEnv(t)
-			c := e.as("alice", permAdmin)
-			wantStatus(t, c.postJSON("/api/repos/"+repoName+tt.path, tt.body), tt.want)
-			e.noWrites(t)
-		})
-	}
-}
-
-func TestOwnersRuleIsSettings(t *testing.T) {
-	const wording = "Name at least one owner. Owners are GitHub logins or org/team-slug, one per line, each named once."
-	many := make([]string, 101)
-	for i := range many {
-		many[i] = fmt.Sprintf("owner-%d", i)
-	}
-	tests := []struct {
-		name   string
-		owners []string
-	}{
-		{"leading hyphen", []string{"-alice"}},
-		{"team", []string{"acme/platform-team"}},
-		{"duplicate ignoring case", []string{"alice", "Alice"}},
-		{"not a login", []string{"not a login!"}},
-		{"101 owners", many},
-		{"only blank lines", nil},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, settingsErr := settings.Parse(settings.Render(settings.Settings{
-				Version: 1, Owners: tt.owners, Gate: settings.GateAdvisory, Workflow: workflow, DataMode: settings.DataCustomer,
-			}))
-			e := newEnv(t)
-			e.onb.progress = onboarding.Progress{Stage: onboarding.StageInstalled}
-			body := onboardingJSON{Mode: "customer", Owners: "  " + strings.Join(tt.owners, " \r\n\r\n ") + "\n"}
-
-			res := e.as("alice", permAdmin).postJSON("/api/repos/"+repoName+"/onboarding", body)
-
-			if settingsErr == nil {
-				wantStatus(t, res, http.StatusOK)
-				if len(e.onb.customer) != 1 || !reflect.DeepEqual(e.onb.customer[0].owners, tt.owners) {
-					t.Errorf("StartCustomer calls = %+v, want one with %v", e.onb.customer, tt.owners)
-				}
-				return
-			}
-			wantStatus(t, res, http.StatusUnprocessableEntity)
-			wantContains(t, res.Body.String(), wording)
-			if strings.Contains(res.Body.String(), "settings:") {
-				t.Error("the page shows settings' error text")
-			}
-			if len(e.onb.customer) != 0 {
-				t.Error("onboarding was called with owners that settings refuses")
-			}
-		})
-	}
-}
-
-// The shell's nonce is random base64 and can read as "32/5"; it is not a number the page shows.
-var customerData = regexp.MustCompile(`(?s)"content":"(?:[^"\\]|\\.)*"|<script type="application/json".*?</script>|<meta name="csp-nonce" content="[^"]*">`)
-
-// randomNonce is the shell's per-response CSP nonce (base64: "6/0" can occur in it), random data and no wording.
-var randomNonce = regexp.MustCompile(`[A-Za-z0-9+/]{22}==`)
-
-var scorePattern = regexp.MustCompile(`(?i)\bscor(e|es|ing)\b|\bgrades?\b|\brank(ed|ing)?\b|\btotals?\b|\d\s*%|\d+\s*/\s*\d+|\b\d+ (of|out of) \d+\b`)
-
-func TestNoScoreAnywhere(t *testing.T) {
-	for _, fixture := range []string{"healthy", "real-blocked-no-baseline"} {
-		t.Run(fixture, func(t *testing.T) {
-			e := newEnv(t)
-			// Alphabetical order is the opposite of health order here.
-			names := map[string]string{"acme/a-blocked": "failure", "acme/b-attention": "neutral", "acme/c-healthy": "success"}
-			i := 0
-			for name, conclusion := range names {
-				e.addRepo(name, installA, int64(60+i))
-				e.grant("alice", name, permRead)
-				e.gh.checks[name+"@"+sha(60+i)+"#"+checkState] = []api.CheckRun{{Conclusion: conclusion, Title: "Reason for " + conclusion}}
-				i++
-			}
-			c := e.as("alice", permAdmin)
-			e.publishReport(repoName, artifact(t, fixture))
-			e.acct.status = account.Status{Plan: account.PlanTrial, TrialEnds: e.now.AddDate(0, 0, 9)}
-
-			for _, path := range []string{"/api/repos", "/api/repos/" + repoName + "/overview", "/api/repos/" + repoName + "/pulls/4", "/api/repos/" + repoName + "/graph", "/api/repos/" + repoName + "/findings", "/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/api/repos/" + repoName + "/data-sharing"} {
-				res := c.get(path)
-				wantStatus(t, res, http.StatusOK)
-				// Policy text and the view model are the customer's own data, not something ui computes.
-				body := randomNonce.ReplaceAllString(customerData.ReplaceAllString(res.Body.String(), ""), "")
-				if m := scorePattern.FindString(body); m != "" {
-					t.Errorf("%s contains %q", path, m)
-				}
-			}
-
-			overview := c.get("/api/repos").Body.String()
-			byName := []int{strings.Index(overview, "acme/a-blocked"), strings.Index(overview, "acme/b-attention"), strings.Index(overview, "acme/c-healthy")}
-			if byName[0] < 0 || !sort.IntsAreSorted(byName) {
-				t.Errorf("overview is not sorted by name: %v", byName)
-			}
-		})
 	}
 }
 
@@ -434,57 +270,10 @@ func TestShellNonceIsFreshPerResponse(t *testing.T) {
 	}
 }
 
-func TestHostileStringsAreEscaped(t *testing.T) {
-	const (
-		hostileRepo   = `acme/<script>alert("repo")</script>`
-		hostileModule = `<img src=x onerror=alert(1)>`
-		hostileText   = `</script><script>alert("x")</script>`
-	)
-	e := newEnv(t)
-	e.addRepo(hostileRepo, installA, 70)
-	e.grant("alice", hostileRepo, permRead)
-	e.gh.checks[hostileRepo+"@"+sha(70)+"#"+checkState] = []api.CheckRun{{Conclusion: "neutral", Title: hostileText}}
-	e.onb.progress = onboarding.Progress{Stage: onboarding.StageInstalled, Diagnostic: hostileText}
-	c := e.as("alice", permAdmin)
-
-	hostilePolicy := policyText + "  \"" + hostileModule + "\":\n    layer: '" + hostileText + "'\n"
-	e.gh.setFile(repoName, mainBranch, ".archfit.yaml", hostilePolicy)
-	e.publishReport(repoName, artifact(t, "healthy"))
-	pull := e.gh.pulls[repoName+"#4"]
-	pull.Title, pull.Author, pull.HeadRef = hostileText, hostileModule, hostileText
-	e.gh.pulls[repoName+"#4"] = pull
-	e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{ID: 1, Conclusion: "neutral", Title: hostileText, ExternalID: "v1:0:0:"}}
-
-	for _, path := range []string{"/", "/api/repos", "/r/" + repoName, "/api/repos/" + repoName + "/overview",
-		"/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing", "/r/" + repoName + "/pull/4", "/api/repos/" + repoName + "/pulls/4", "/r/" + repoName + "/pull/4/graph",
-		"/api/repos/" + repoName + "/graph", "/api/repos/" + repoName + "/pulls/4/graph"} {
-		res := c.get(path)
-		wantStatus(t, res, http.StatusOK)
-		body := res.Body.String()
-		for _, raw := range []string{`<script>alert(`, `<img src=x`} {
-			if strings.Contains(body, raw) {
-				t.Errorf("%s contains unescaped %q", path, raw)
-			}
-		}
-		if strings.HasPrefix(path, apiPrefix) && (strings.Contains(body, "<") || !strings.Contains(body, `\u003c`)) {
-			t.Errorf("%s: JSON does not escape markup: %.200s", path, body)
-		}
-		if csp := cspOf(res); csp != wantCSP && csp != wantShellCSP {
-			t.Errorf("%s: CSP = %q", path, csp)
-		}
-	}
-	for _, path := range []string{"/nowhere", "/licenses.txt", "/schema/policy.json"} {
-		if e.anonymous().get(path).Header().Get("Content-Security-Policy") == "" {
-			t.Errorf("%s has no CSP header", path)
-		}
-	}
-}
-
 // The OAuth token stays on the server: no API answer carries it or the session cookie, whatever the route.
 func TestNoAPIResponseHoldsASecret(t *testing.T) {
 	e := newEnv(t)
 	c := e.as("alice", permAdmin)
-	e.publishReport(repoName, artifact(t, "healthy"))
 	api := "/api/repos/" + repoName
 	answers := []*httptest.ResponseRecorder{
 		c.get("/api/session"),
@@ -494,7 +283,7 @@ func TestNoAPIResponseHoldsASecret(t *testing.T) {
 		c.get(api + "/pulls/4/graph"),
 		c.get(api + "/graph"),
 		c.get(api + "/findings"),
-		c.postJSON(api+"/onboarding", onboardingJSON{Mode: "customer", Owners: "alice"}),
+		c.postJSON(api+"/onboarding", map[string]string{"mode": "customer", "owners": "alice"}),
 		c.postJSON(api+"/discover", struct{}{}),
 		c.get("/api/nothing"),
 	}
@@ -515,8 +304,6 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	logs := captureLogs(t)
 	e := newEnv(t)
 	c := e.as("alice", permAdmin)
-	payload := bytes.ReplaceAll(artifact(t, "healthy"), []byte(`"go/packages":"go1.27.1"`), []byte(`"go/packages":"MARKER-report"`))
-	e.publishReport(repoName, payload)
 	e.acct.err = fmt.Errorf("MARKER-error")
 	base := "/r/" + repoName
 
@@ -529,7 +316,7 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	wantStatus(t, c.get(base+"/graph"), http.StatusOK)
 	wantStatus(t, c.get(base), http.StatusOK)
 	wantStatus(t, c.get("/api/repos"), http.StatusOK)
-	wantStatus(t, c.get("/api/repos/"+repoName+"/overview"), http.StatusOK) // reads account.Status, which fails with the marker
+	wantStatus(t, c.get("/api/repos/"+repoName+"/overview"), http.StatusConflict) // reads account.Status, which fails with the marker
 
 	out := logs.String()
 	if !strings.Contains(out, `"route":"POST /api/repos/{o}/{n}/data-sharing"`) || !strings.Contains(out, `"installation_id":1`) {

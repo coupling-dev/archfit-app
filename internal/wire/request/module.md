@@ -52,7 +52,7 @@ with an engine release that vendors its goldens.
   starts with **Reason**) is never read as one. The record is the first closed `text` block after the line,
   verbatim. Before a pull request exists the CLI opens an issue only from a `can` answer (design 10.3; the manager's
   review of task 2 narrowed M2 plan D2 to this), so the answer is read from that record by the engine's grammar: the head `from -> to: rule: what`, then
-  indented `why`, `instead`, `balance`, `next` lines. Anything else gives no answer. The numbers stay "as reported"
+  indented `why`, `instead`, `balance`, `next` lines, optionally followed by the exact line `policy: not protected`. Anything else gives no answer. The numbers stay "as reported"
   until a pull request confirms them.
 - The key, its parts joined by one space (M2 plan D3, as reviewed):
 

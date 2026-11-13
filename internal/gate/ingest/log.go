@@ -5,28 +5,21 @@ import (
 	"errors"
 	"log/slog"
 	"time"
-
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
 )
 
 // facts are the only values of an upload that reach the log: IDs, digests and the runner
 // environment. Names, refs, paths, tokens, envelope JSON, payload and error text stay out.
 type facts struct {
-	repositoryID       int64
-	installationID     int64
-	runID              int64
-	runAttempt         int
-	runnerEnvironment  string
-	digest             string
-	policyChangeUnread bool // the envelope carried a policy_change that report.DecodePolicyChange refused
-	v2                 bool // an envelope 2 upload
+	repositoryID      int64
+	installationID    int64
+	runID             int64
+	runAttempt        int
+	runnerEnvironment string
+	digest            string
 }
 
-func (f *facts) log(ctx context.Context, kind envelope.Kind, problems []Problem, err error, elapsed time.Duration) {
-	level, attrs := slog.LevelInfo, []slog.Attr{slog.String("kind", string(kind))}
-	if f.v2 {
-		attrs = append(attrs, slog.Int("envelope", 2))
-	}
+func (f *facts) log(ctx context.Context, kind string, problems []Problem, err error, elapsed time.Duration) {
+	level, attrs := slog.LevelInfo, []slog.Attr{slog.String("kind", kind), slog.Int("envelope", 2)}
 	var rej *Rejection
 	switch {
 	case errors.As(err, &rej):
@@ -50,9 +43,6 @@ func (f *facts) log(ctx context.Context, kind envelope.Kind, problems []Problem,
 	}
 	if f.digest != "" {
 		attrs = append(attrs, slog.String("digest", f.digest))
-	}
-	if f.policyChangeUnread {
-		attrs = append(attrs, slog.Bool("policy_change_unread", true))
 	}
 	attrs = append(attrs, slog.Int64("duration_ms", elapsed.Milliseconds()))
 	slog.Default().LogAttrs(ctx, level, "ingest upload", attrs...)

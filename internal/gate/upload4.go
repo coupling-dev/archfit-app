@@ -113,17 +113,9 @@ type answer4 struct {
 	Reason string        `json:"reason,omitempty"`
 }
 
-// serveReports dispatches POST /v1/reports by the envelope's schema version: envelope 2 to the Archfit 4 path,
-// anything else to the envelope 1 path, which refuses what it cannot read.
+// serveReports accepts only envelope 2.
 func (g *Gate) serveReports(w http.ResponseWriter, req *http.Request) {
-	var head struct {
-		SchemaVersion string `json:"schema_version"`
-	}
-	if json.Unmarshal([]byte(req.Header.Get("X-Archfit-Envelope")), &head) == nil && head.SchemaVersion == envelope.SchemaV2 {
-		g.serveUpload4(w, req)
-		return
-	}
-	g.serveUpload(w, req)
+	g.serveUpload4(w, req)
 }
 
 func (g *Gate) serveUpload4(w http.ResponseWriter, req *http.Request) {

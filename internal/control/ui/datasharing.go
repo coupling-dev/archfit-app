@@ -29,7 +29,7 @@ type sharedFeature struct {
 	leaves string // what leaves the customer's environment, and when
 	note   string // shown under the feature; "" for none
 	// offered: the page offers Allow. A feature the App does not start shows only Revoke of a consent given earlier.
-	// The POST still records it: a build with a sandbox driver grants managed discovery through it (onboarding).
+	// The POST retains consent history; the Archfit 3 managed-discovery executor has been removed.
 	offered bool
 }
 

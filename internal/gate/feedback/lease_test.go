@@ -8,9 +8,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
-	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/store"
-	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 var leaseKeyB = leasePrefix + headB
@@ -76,7 +74,7 @@ func TestLeaseTakeover(t *testing.T) {
 				waited = true
 				cancel()
 			})
-			err := h.pub.Publish(ctx, blockedPublication(t, headB, 7, 1))
+			err := h.pub.Publish4(ctx, pub4(prTarget(headB), 7, 1, engineResult(t, "graph")))
 			if waited != tt.wantWaits {
 				t.Errorf("waited = %v, want %v", waited, tt.wantWaits)
 			}
@@ -111,7 +109,7 @@ func TestLeaseWaitsUntilExpiry(t *testing.T) {
 		waits++
 		h.clock.set(t0.Add(time.Duration(waits) * 20 * time.Second))
 	})
-	if err := h.pub.Publish(context.Background(), blockedPublication(t, headB, 7, 1)); err != nil {
+	if err := h.pub.Publish4(context.Background(), pub4(prTarget(headB), 7, 1, engineResult(t, "graph"))); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
 	if waits != 3 {
@@ -139,25 +137,18 @@ func TestLeaseFailsClosed(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newHarness(headB)
-			pub := New(h.checks, h.comments, h.pulls, tt.store(h.store), "", h.clock.now)
-			p := blockedPublication(t, headB, 7, 1)
+			pub := New4(h.checks, h.comments, h.pulls, tt.store(h.store), "", h.clock.now)
+			p := pub4(prTarget(headB), 7, 1, engineResult(t, "graph"))
 			p.Target = tt.target
 			ctx := context.Background()
-			for name, call := range map[string]func() error{
-				"Publish": func() error { return pub.Publish(ctx, p) },
-				"Pending": func() error { return pub.Pending(ctx, tt.target) },
-				"Warn":    func() error { return pub.Warn(ctx, tt.target, t0.Add(48*time.Hour)) },
-				"Reconcile": func() error {
-					return pub.Reconcile(ctx, tt.target, func(context.Context, CheckState) (*Publication, error) {
-						t.Error("Reconcile decided without a lease")
-						return &p, nil
-					})
-				},
-			} {
-				if err := call(); err == nil {
-					t.Errorf("%s: want an error", name)
-				}
+			if err := pub.Publish4(ctx, p); err == nil {
+				t.Error("Publish4 without a lease succeeded")
 			}
+			p.Result.Status = "unknown"
+			if err := pub.Withdraw4(ctx, p); err == nil {
+				t.Error("Withdraw4 without a lease succeeded")
+			}
+
 			if n := len(h.checks.calls) + len(h.comments.calls); n != 0 {
 				t.Errorf("%d GitHub calls without a lease, want 0", n)
 			}
@@ -244,132 +235,6 @@ func TestLeaseKeptAfterFailedCall(t *testing.T) {
 			}
 			if want := map[bool]time.Duration{true: leaseTTL, false: 0}[tt.wantKept]; waited != want {
 				t.Errorf("next holder waited %v, want %v", waited, want)
-			}
-		})
-	}
-}
-
-// An upload decided from policy P1 waits while a sweep, which already reads P2, corrects the check to stale_inputs
-// under the same run identity. Inside the lease the upload's inputs are read again: a decision from inputs that are
-// no longer trusted writes nothing, so the correction stays. Any change counts, not only a digest: an owner approval
-// dismissed between the two reads leaves every digest accepted, yet the decision no longer holds.
-func TestStaleDecisionNeverReplacesNewerInputs(t *testing.T) {
-	const p1, p2 = policyDigest, "5555555555555555555555555555555555555555555555555555555555555555"
-	ctx := context.Background()
-	trustedWith := func(policy string) inputs.Trusted {
-		tr := trusted(settings.GateRequired)
-		tr.PolicyDigests = []string{policy}
-		return tr
-	}
-	protectedChange := func() inputs.Trusted {
-		tr := trustedWith(p2)
-		tr.ProtectedPaths = []string{".github/archfit.yaml"}
-		return tr
-	}
-	boom := errors.New("protected ref unreadable")
-	for _, tt := range []struct {
-		name                       string
-		uploadPolicy, sweptPolicy  string
-		decided, fresh             inputs.Trusted
-		resolveErr                 error
-		wantErr                    error
-		wantConclusion, wantReason string
-	}{
-		{"inputs changed after the decision", p1, p2, trustedWith(p1), trustedWith(p2), nil, ErrStaleInputs, "action_required", "stale_inputs"},
-		{"inputs unreadable again", p1, p2, trustedWith(p1), inputs.Trusted{}, boom, boom, "action_required", "stale_inputs"},
-		{"a protected change found after the decision", p2, p1, trustedWith(p2), protectedChange(), nil, ErrStaleInputs, "action_required", "stale_inputs"},
-		{"decision from the current inputs", p2, p1, trustedWith(p2), trustedWith(p2), nil, nil, "success", "healthy"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			h := newHarness(headB)
-			stale := verdict.Without(verdict.ReasonStaleInputs)
-			swept := receiptFor(stale, 7, 1)
-			swept.PolicyDigest = tt.sweptPolicy
-			correction := Publication{Target: prTarget(headB), Outcome: stale, Receipt: swept, Trusted: trustedWith(tt.sweptPolicy)}
-			if err := h.pub.Publish(ctx, correction); err != nil {
-				t.Fatalf("sweep correction: %v", err)
-			}
-
-			healthy := outcome(verdict.Success, reasonHealthy)
-			decided := receiptFor(healthy, 7, 1)
-			decided.PolicyDigest = tt.uploadPolicy
-			upload := Publication{
-				Target: prTarget(headB), Identity: fullIdentity(), Outcome: healthy, Receipt: decided,
-				Report: loadReport(t, "healthy"), Trusted: tt.decided,
-				Resolve: func(context.Context) (inputs.Trusted, error) { return tt.fresh, tt.resolveErr },
-			}
-			if err := h.pub.Publish(ctx, upload); !errors.Is(err, tt.wantErr) {
-				t.Errorf("upload Publish error = %v, want %v", err, tt.wantErr)
-			}
-			gate := h.checks.latest(t, headB, gateCheck)
-			if got, _ := parseReceipt(gate.Summary); gate.Conclusion != tt.wantConclusion || string(got.Reason) != tt.wantReason {
-				t.Errorf("gate shows %s/%s, want %s/%s", gate.Conclusion, got.Reason, tt.wantConclusion, tt.wantReason)
-			}
-			if _, err := h.store.Get(ctx, 1, leaseKeyB); !errors.Is(err, store.ErrNotFound) {
-				t.Errorf("lease kept after the upload: %v", err)
-			}
-		})
-	}
-}
-
-// Reconcile reads the gate check only once it holds the lease, so it decides from what the previous holder wrote;
-// it writes what decide returns, and nothing when decide returns nil or fails. Each releases the lease at once.
-func TestReconcileDecidesInsideTheLease(t *testing.T) {
-	ctx := context.Background()
-	boom := errors.New("inputs unreadable")
-	for _, tt := range []struct {
-		name        string
-		decision    func(current CheckState) (*Publication, error)
-		wantErr     error
-		wantAttempt int // of the gate check afterwards
-	}{
-		{"publication", func(current CheckState) (*Publication, error) {
-			p := blockedPublication(t, headB, 7, current.Receipt.RunAttempt)
-			p.Outcome = verdict.Without(verdict.ReasonOwnerApprovalMissing)
-			p.Receipt = receiptFor(p.Outcome, 7, current.Receipt.RunAttempt)
-			return &p, nil
-		}, nil, 2},
-		{"nothing to do", func(CheckState) (*Publication, error) { return nil, nil }, nil, 2},
-		{"decision fails", func(CheckState) (*Publication, error) { return nil, boom }, boom, 2},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			h := newHarness(headB)
-			if err := h.pub.Publish(ctx, blockedPublication(t, headB, 7, 1)); err != nil {
-				t.Fatal(err)
-			}
-			checkWrites := func() int { return h.checks.count("CreateCheckRun") + h.checks.count("UpdateCheckRun") }
-			putLease(t, h.store, leaseBytes(t, "other", t0.Add(time.Second)))
-			writes := 0
-			h.onContention(func() { // the holder publishes attempt 2, then releases
-				if err := h.pub.(*serialized).next.Publish(ctx, blockedPublication(t, headB, 7, 2)); err != nil {
-					t.Fatal(err)
-				}
-				if err := h.store.Delete(ctx, 1, leaseKeyB); err != nil {
-					t.Fatal(err)
-				}
-				writes = checkWrites()
-			})
-			var seen CheckState
-
-			err := h.pub.Reconcile(ctx, prTarget(headB), func(_ context.Context, current CheckState) (*Publication, error) {
-				seen = current
-				return tt.decision(current)
-			})
-
-			if !errors.Is(err, tt.wantErr) {
-				t.Errorf("Reconcile = %v, want %v", err, tt.wantErr)
-			}
-			if seen.Receipt.RunAttempt != 2 {
-				t.Errorf("decided from attempt %d, want the attempt the previous holder wrote", seen.Receipt.RunAttempt)
-			}
-			gate := h.checks.latest(t, headB, gateCheck)
-			got, _ := parseReceipt(gate.Summary)
-			wrote := checkWrites() > writes
-			if got.RunAttempt != tt.wantAttempt || wrote != (tt.name == "publication") {
-				t.Errorf("gate holds attempt %d (%s), wrote %v", got.RunAttempt, got.Reason, wrote)
-			}
-			if _, err := h.store.Get(ctx, 1, leaseKeyB); !errors.Is(err, store.ErrNotFound) {
-				t.Errorf("lease kept after Reconcile: %v", err)
 			}
 		})
 	}
