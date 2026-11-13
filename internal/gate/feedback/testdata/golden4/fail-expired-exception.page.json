@@ -1,0 +1,20 @@
+{
+  "status": "fail",
+  "status_line": "Archfit: fail, 1 error (not from this change)",
+  "records": [
+    {
+      "path": ".archfit.yaml",
+      "rule": "exception",
+      "what": "duplication pkg_tc -\u003e pkg_util expired on 2026-11-19",
+      "why": "an exception with a date fails every change after that date",
+      "next": {
+        "kind": "wait",
+        "text": "wait for an owner: #431"
+      },
+      "show_next": false,
+      "request": 431
+    }
+  ],
+  "author": "nothing to do. This check runs again when #431 is answered.",
+  "owner": "answer #431."
+}

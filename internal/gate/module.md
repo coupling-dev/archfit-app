@@ -22,6 +22,16 @@ It never imports control, app or an LLM. Provenance authenticates the sender; re
   The facade's owner/setup ports serve the control plane without exposing gate children.
 - `Sweep` runs only sweep4.go, over admitted installations and schema 3/recorded repositories.
 
+## Pull-request page form
+
+`pullview.go` republishes `PullView`, `PullRecord`, `PullNext` and `PullBalance`.
+`BuildPullView(result.Result) PullView` renders the feedback model as the status line,
+ordered records, author and owner lines. Each waiting error names its request number;
+`ShowNext` controls the next step already covered by the author line.
+Callers establish the result's authority before rendering; the builder performs no
+artifact retrieval or evidence verification. Control imports this facade, not feedback.
+`pullview_test.go` compares the facade's JSON with the shared feedback goldens.
+
 ## Reconciliation and safety
 
 The hourly pass repairs proven policy transitions and consumed-proposal handoffs, warns/enforces approved
