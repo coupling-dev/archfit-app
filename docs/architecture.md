@@ -16,7 +16,7 @@ For owner procedures, see the [user guide](user-guide.md). For deployment, see [
 
 ### Report upload
 
-`POST /v1/reports` accepts envelope 2 (`archfit.upload-envelope.v2`) with result JSON v1 (`archfit.result.v1`), up to 5 MiB. The receiver strictly decodes the envelope and checks the payload digest. It verifies the GitHub Actions OIDC token, resolves the installation, repository, workflow run and attempt through GitHub, and binds the event to a pull request, default-branch push or merge group. The accepted workflow path is `.github/workflows/archfit.yaml`.
+`POST /v1/reports` accepts envelope 2 (`archfit.upload-envelope.v2`) with result JSON v1 (`archfit.result.v1`), up to 5 MiB (`ingest.maxPayloadBytes`, `5 << 20` bytes). The receiver strictly decodes the envelope and checks the payload digest. It verifies the GitHub Actions OIDC token, resolves the installation, repository, workflow run and attempt through GitHub, and binds the event to a pull request, default-branch push or merge group. The accepted workflow path is `.github/workflows/archfit.yaml`.
 
 The envelope fields and result are self-reported. The App compares them with GitHub authority, the locked manifest and protected inputs; it does not prove that the engine's analysis is correct. Invalid payloads, mismatches, unsupported events and forks become unknown, not a neutral or skipped verdict. Stale attempts and moved heads are rejected. The App reads schema 3 `.archfit.yaml` from the target/default-branch authority and checks its exact-byte digest, the approved policy state and workflow identity. It does not trust policy supplied by the pull-request head.
 
@@ -58,7 +58,7 @@ The App can warn about ruleset configuration, but an administrator can change or
 
 ## HTTP routes
 
-The public role serves `/health`, `/ready`, GitHub webhooks, the upload, OAuth and UI routes. The worker handles queued events and internal sweep and grant routes. The local `all` role also serves internal routes with an operator bearer token. Legacy onboarding, overview, findings, graph and pull APIs return unavailable; the setup, Home, policy, request, answer and passkey APIs are separate. A page route alone does not guarantee its backing API is available.
+The public role serves `/health`, `/ready`, GitHub webhooks, the upload, OAuth and UI routes. The worker handles queued events and internal sweep and grant routes. The local `all` role also serves internal routes with an operator bearer token. The seven legacy onboarding, discovery, overview, findings, graph and pull APIs return HTTP 409 with JSON `{"error":"Archfit 3 reports and discovery are no longer available. Use Archfit 4 setup and requests."}` after authorization and any pull lookup. The setup, Home, policy, request, answer and passkey APIs are separate. A page route alone does not guarantee its backing API is available.
 
 ## Deployment
 
