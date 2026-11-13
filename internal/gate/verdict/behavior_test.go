@@ -102,23 +102,12 @@ func TestHeadEditsCannotWeakenTheGate(t *testing.T) {
 	})
 }
 
-func TestAtomicPolicyPullRequestWaitsForOwner(t *testing.T) {
+// A code pull request that also changes the policy never passes (M2 task 26): nothing approves it, so it asks for action
+// whatever its report says.
+func TestCodeAndPolicyPullRequestNeverPasses(t *testing.T) {
 	wantCodes(t, decide(t, with(policyMismatch, approvalMissing)),
 		ActionRequired, ReasonOwnerApprovalMissing, ReasonPolicyMismatch)
-
-	wantCodes(t, decide(t, with(policyMismatch, func(f *Facts) {
-		f.Trusted.Approval = inputs.ApprovalGranted
-		f.Trusted.PolicyDigests = []string{basePolicy, headPolicy}
-	})), Success, ReasonHealthy)
-}
-
-func TestIntegrityFailureIsNotClearedByApproval(t *testing.T) {
-	f := with(func(f *Facts) {
-		f.Trusted.Approval = inputs.ApprovalGranted
-		f.Trusted.PolicyDigests = []string{basePolicy, headPolicy}
-		f.Report.Comparison.ConfigHash = strings.Repeat("9", 64)
-	})
-	wantCodes(t, decide(t, f), ActionRequired, ReasonPolicyMismatch)
+	wantCodes(t, decide(t, with(approvalMissing)), ActionRequired, ReasonOwnerApprovalMissing)
 }
 
 func TestMissingEvidenceNeverPasses(t *testing.T) {
@@ -202,13 +191,21 @@ func TestSuspensionIsItsOwnCategory(t *testing.T) {
 	wantCodes(t, decide(t, with(engine(verdictBlocked, gatesFail))), Failure, ReasonBlockingFindings)
 }
 
-// The App's pull request page has no owner action since M2 task 24: a missing approval is cleared by a GitHub review.
-func TestOwnerApprovalMissingNamesAGitHubReview(t *testing.T) {
+// No push, review or App button approves a pull request that changes the policy (M2 task 26): the author reverts it
+// and asks, and an owner answers the request in the App.
+func TestOwnerApprovalMissingSendsTheAuthorToARequest(t *testing.T) {
 	e, ok := lookup(ReasonOwnerApprovalMissing)
 	if !ok {
 		t.Fatal("owner_approval_missing is not in the catalog")
 	}
-	if !strings.Contains(e.next, "GitHub review") || strings.Contains(e.next, "Archfit App") {
-		t.Errorf("owner_approval_missing next = %q, want a GitHub review and no App action", e.next)
+	for _, want := range []string{"archfit request -m", "/archfit request", "an owner answers in the App"} {
+		if !strings.Contains(e.next, want) {
+			t.Errorf("owner_approval_missing next = %q, want %q", e.next, want)
+		}
+	}
+	for _, gone := range []string{"GitHub review", "approve this exact commit", "Approve"} {
+		if strings.Contains(e.next, gone) {
+			t.Errorf("owner_approval_missing next = %q still names %q", e.next, gone)
+		}
 	}
 }

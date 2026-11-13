@@ -57,9 +57,9 @@ func TestPolicyChangeCard(t *testing.T) {
 			t.Error("a card without a classification")
 		}
 	})
-	t.Run("a loosening says who approves and names lost coverage", func(t *testing.T) {
+	t.Run("a loosening says how the policy changes and names lost coverage", func(t *testing.T) {
 		card := policyCard(enginePolicyChange(t, "exclude"), settings.Settings{})
-		for _, want := range []string{"loosens the policy (1 change)", "Coverage lost: `pkg/a/**` is now excluded from the analysis", "needs an architecture owner's approval of this exact commit", "never approved by an agent"} {
+		for _, want := range []string{"loosens the policy (1 change)", "Coverage lost: `pkg/a/**` is now excluded from the analysis", "Only the App's policy pull request changes the policy", "ask with a request"} {
 			if !strings.Contains(card, want) {
 				t.Errorf("card lacks %q:\n%s", want, card)
 			}
@@ -93,7 +93,7 @@ func TestPolicyChangeCard(t *testing.T) {
 		if len(card) > policyCardBytes+2000 {
 			t.Errorf("card is %d bytes, want it bounded near %d", len(card), policyCardBytes)
 		}
-		if !strings.Contains(card, " more") || !strings.Contains(card, "needs an architecture owner's approval") {
+		if !strings.Contains(card, " more") || !strings.Contains(card, "Only the App's policy pull request") {
 			t.Errorf("card lost its tail or its count:\n%s", card)
 		}
 		for _, line := range strings.Split(card, "\n") {

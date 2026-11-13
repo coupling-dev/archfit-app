@@ -7,7 +7,7 @@
 ## Purpose
 
 `store` is the only persistence seam of the App: a tenant-prefixed key-value interface and an
-in-memory implementation. Entitlements, consent records and the managed-LLM budget counter live behind
+in-memory implementation. Entitlements, consent records and the gate records live behind
 it. Without it, `gate` and `control` would each bind to a KV product, and tenant isolation would be a
 habit of every caller instead of a property of one interface.
 
@@ -18,7 +18,7 @@ habit of every caller instead of a property of one interface.
 - List the tenants that own keys (`Tenants`), so the sweep can forget an installation whose uninstall webhook was missed.
 - Provide `NewMemory`, the in-process implementation used by tests, local runs, and as `ARCHFIT_STORE=memory`.
   The persistent driver is the child `store/firestore` (`ARCHFIT_STORE=firestore`).
-- Provide an atomic integer `Add` so the budget counter needs no transaction.
+- Provide an atomic integer `Add`, a counter that needs no transaction.
 - Provide `CompareAndSwap` on one key, so a caller can hold a lease that every instance sees (the publication
   lease of `gate/feedback`).
 - Provide `CompareAndSwapAll` on several keys of one tenant, so a caller can write a record and a value derived
@@ -81,7 +81,7 @@ The Archfit 3 and Archfit 4 sets never read or write each other's keys, so the p
 // Every key is stored under its tenant prefix; no operation crosses tenants.
 type Tenant int64
 
-// SystemTenant holds App-wide keys (the managed-LLM budget counter). It is never a GitHub installation ID.
+// SystemTenant holds App-wide keys (the readiness probe). It is never a GitHub installation ID.
 const SystemTenant Tenant = 0
 ```
 
@@ -177,7 +177,7 @@ with `errors.Is`. `NewMemory` is the only constructor in this package.
   nothing. `change` gets copies of the bytes read, so editing them never changes what the swap compares against.
   `change` sees keys read one by one, not a snapshot; it decides again on every attempt.
 - `DeleteTenant`: removes every key of `t` and nothing of any other tenant. A second call → `nil`.
-  `DeleteTenant(SystemTenant)` → error **[default]**: no uninstall can remove the App-wide budget counter.
+  `DeleteTenant(SystemTenant)` → error **[default]**: no uninstall can remove an App-wide key.
 
 Validation errors are plain errors with the prefix `store:`. They carry the tenant and the key length, never the value.
 
@@ -306,7 +306,7 @@ a platform TTL on `feedback/lease/` keys is allowed as a driver detail and never
   or an authorized session; never from a client-supplied ID. `store` cannot check that.
 - `Tenants` is the only enumeration. It serves the sweep alone (compare with GitHub's installation list, then
   `DeleteTenant` the leftovers). No request path may call it, and it never exposes a key or a value.
-- The App persists nothing except keys under an installation prefix and the system budget counter. No report,
+- The App persists nothing except keys under an installation prefix and the App-wide keys. No report,
   source, queue, or job table. `store` must not grow features that invite them.
 - Values are opaque. `store` never logs a value or a key; logs carry tenant ID, operation, outcome, timing only.
 - Safe for concurrent use. `Add` and `CompareAndSwap` are linearizable per key; `CompareAndSwapAll` is linearizable

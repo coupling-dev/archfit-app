@@ -2,56 +2,51 @@
 
 **Path**: internal/control/
 **Parent**: internal/ (Archfit App root)
-**Submodules**: account, proposal, onboarding, assist, passkey, answers, ui
+**Submodules**: account, proposal, onboarding, passkey, answers, ui
 
 ## Purpose
 
 `control` is the control plane: everything a person or an operator does with Archfit that is not the
-gate decision. It wires entitlements and consent, proposals as draft PRs, both onboarding modes, AI
-assistance and the UI into one façade that `internal/app` mounts. It exists as one branch so that the
+gate decision. It wires entitlements and consent, proposals as draft PRs, both onboarding modes
+and the UI into one façade that `internal/app` mounts. It exists as one branch so that the
 volatile product surface can change, fail, or be switched off without touching the gate path. Without it
-the gate would still verify reports, but nobody could onboard, edit a policy, start a trial, or be suspended.
+the gate would still verify reports, but nobody could onboard, answer a request, start a trial, or be suspended.
 
 ## Functional Responsibilities
 
-- Construct the five children from one `Deps` value and hand each only what it needs.
+- Construct the six children from one `Deps` value and hand each only what it needs.
 - Serve the UI handler (`/`) and the discovery upload handler (`POST /v1/discoveries`).
 - React to installation webhooks: start or keep the trial (`Observe`), delete the tenant on uninstall (`Forget`).
 - Refresh every installation's `Entitlement` record on the periodic sweep, and forget Store tenants whose installation no longer exists.
 - Leave an installation whose account no operator approved alone: it gets no entitlement record, so its trial starts at the approval.
 - Apply the operator's manual beta grant.
 - Pass the admission seam (`Admissions`) and the operator IDs to `ui`, which lets an operator approve an installation.
-- Pass the gate's owner approval seam (`Approvals`) to `ui`, whose pull request page shows an owner approval and
-  records one with its Approve button, and the decision seam (`Decisions`), through which its pull request page lists
-  the decision requests of unattended agents and lets an owner decline or approve one.
-- Pass the gate's decision queue seam (`DecisionQueue`) to `ui`, whose overview lists the decision
-  requests that wait for an owner. It reads only.
 - Pass the gate's request page seam (`RequestViews`) to `ui`: a request and the preview of each answer. It reads only.
 - Build `answers` from the gate's answer seam (`Answers`) and `passkey`, and pass it to `ui`: an owner's answer to a
   request, with the passkey step-up of an answer that loosens the policy (M2 task 19).
 - Build `passkey` with its two GitHub ports (the owners of the target policy, the registration issue) and pass it to
   `ui`. The worker role does not build it.
-- Re-publish the two platform seams, `Sandbox` and `Provider`, so `app` and platform packages cite one place.
+- Re-publish the platform seam `Sandbox`, so `app` and platform packages cite one place.
 
 ## Subdomain Classification
 
 Core-adjacent product surface with one supporting part (`account`) and one low-volatility part (`proposal`).
-Volatility **high** as a whole: onboarding, UI and assistance change with every pilot. The façade itself
+Volatility **high** as a whole: onboarding and UI change with every pilot. The façade itself
 (`Control`, `Deps`) is small and changes only when a child or a platform seam is added.
 
 ## Encapsulated Knowledge
 
 - Which children exist and how they are wired; nobody outside imports `control/*`, except `app` calling the
-  constructor of a platform implementation (`control/assist/anthropic`, later `control/onboarding/<sandbox>`).
+  constructor of a platform implementation (later `control/onboarding/<sandbox>`).
 - The webhook-to-account mapping and that `hasPrivate` is read from GitHub, not from the event.
 - The control sweep algorithm and its failure policy (log, skip, continue).
-- That a nil `Sandbox` or `Provider` means "managed feature not available", not an error at startup.
+- That a nil `Sandbox` means "managed discovery not available", not an error at startup.
 - The 10-second budget for `HandleEvent`. **[default]**
 
 ## Public Contract
 
 ```go
-// Deps are wired by internal/app. Sandbox and Provider may be nil: managed features then report "not available".
+// Deps are wired by internal/app. Sandbox may be nil: managed discovery then reports "not available".
 type Deps struct {
     GitHub    *Client
     Tokens    TokenSource
@@ -60,12 +55,6 @@ type Deps struct {
     Receiver  Receiver
     // Admissions says which installations the App serves; Operators (GitHub user IDs) approve the others on /admin.
     Admissions *Admissions
-    // Approvals reads and records owner approvals of pull request heads for the pull request page: the gate façade.
-    Approvals Approvals
-    // Decisions lists, declines and approves the decision requests of unattended agents for the pull request page.
-    Decisions Decisions
-    // DecisionQueue lists the decision requests that wait for an owner, for the overview: the gate façade.
-    DecisionQueue DecisionQueue
     // RequestViews reads a request and the preview of each answer for the request page: the gate façade. It reads only.
     RequestViews RequestViews
     // Answers records an owner's answer and carries it to the default branch: the gate façade. control/answers adds
@@ -73,14 +62,13 @@ type Deps struct {
     Answers Answers
     Operators []int64
     Sandbox    Sandbox
-    Provider   Provider
     CookieKey  []byte
     BaseURL    string
     Now        func() time.Time
 }
 
 // WorkerDeps are the dependencies of the worker façade: it handles events, the sweep and grants, and serves no UI.
-// So it takes no OAuth, no cookie key, no Receiver, no Sandbox and no Provider.
+// So it takes no OAuth, no cookie key, no Receiver and no Sandbox.
 type WorkerDeps struct {
     GitHub     *Client
     Store      Store
@@ -137,36 +125,15 @@ type DiscoveryResult struct {
 var ErrNoSandbox = errors.New("onboarding: managed discovery is not available")
 ```
 
-<!-- contract: Provider, Prompt, Completion — restated from internal/control/assist/module.md -->
-```go
-// Provider is the LLM seam. Implementations own endpoint, model choice, and pricing.
-type Provider interface {
-    // MaxCostMicroUSD is the worst-case cost of one Complete call for p; used to reserve budget.
-    MaxCostMicroUSD(p Prompt) int64
-    Complete(ctx context.Context, p Prompt) (Completion, error)
-}
-
-type Prompt struct {
-    System    string
-    User      string
-    MaxTokens int
-}
-
-type Completion struct {
-    Text         string
-    CostMicroUSD int64
-}
-```
-
 `ErrNoSandbox` is the sentinel a default or missing `Sandbox` yields; the UI shows "not available".
 
 ### Operation rules
 
-- `New` returns an error, and no `Control`, on a wiring bug: nil `GitHub`, `OAuth`, `Store`, `Receiver`, `Admissions`, `Approvals`, `Decisions` or `DecisionQueue`, `CookieKey` not
+- `New` returns an error, and no `Control`, on a wiring bug: nil `GitHub`, `OAuth`, `Store`, `Receiver`, `Admissions`, `RequestViews` or `Answers`, `CookieKey` not
   32 bytes, empty `BaseURL`, a non-nil `Sandbox` with nil `Tokens`, or an error from `ui.New`. Nil `Now` means `time.Now`.
-  Nil `Sandbox` and nil `Provider` are valid. It never panics. **[default]**
+  A nil `Sandbox` is valid. It never panics. **[default]**
 - `NewWorker` returns an error, and no `Control`, on a nil `GitHub`, `Store` or `Admissions`. It builds only `account`: no `ui`,
-  `onboarding`, `assist` or `proposal`. So the worker process holds no OAuth secret, cookie key or Anthropic key.
+  `onboarding` or `proposal`. So the worker process holds no OAuth secret or cookie key.
   `HandleEvent`, `Sweep` and `Grant` behave as on a `Control` from `New`; `UIHandler`, `DiscoveryHandler` and
   `BaselineHandler` return nil.
 - `UIHandler` returns the `ui` handler wrapped in a panic recovery that answers `500` and logs the route pattern only.
@@ -202,7 +169,6 @@ type Completion struct {
 | `internal/control/account/`    | `control` constructs, calls  | Functional | control / 1 / 1       | High       | Yes       |
 | `internal/control/proposal/`   | `control` constructs         | Functional | control / 1 / 1       | High       | Yes       |
 | `internal/control/onboarding/` | `control` constructs, mounts | Functional | control / 1 / 1       | High       | Yes       |
-| `internal/control/assist/`     | `control` constructs         | Functional | control / 1 / 1       | High       | Yes       |
 | `internal/control/passkey/`    | `control` constructs         | Functional | control / 1 / 1       | Low        | Yes       |
 | `internal/control/answers/`    | `control` constructs         | Functional | control / 1 / 1       | High       | Yes       |
 | `internal/control/ui/`         | `control` constructs, mounts | Functional | control / 1 / 1       | High       | Yes       |
@@ -250,7 +216,7 @@ type Account interface {
 
 <!-- contract: New — restated from internal/control/account/module.md -->
 ```go
-func New(s Store) (Account, Consents, Budget)
+func New(s Store) (Account, Consents)
 ```
 
 <!-- contract: ErrStale, New — restated from internal/control/proposal/module.md -->
@@ -310,23 +276,6 @@ type Deps struct {
 func New(d Deps) Onboarding
 ```
 
-<!-- contract: New, Deps, AssistWorkflowPath — restated from internal/control/assist/module.md -->
-```go
-// AssistWorkflowPath is the customer-mode workflow dispatched with inputs {branch, head_sha, instruction}.
-const AssistWorkflowPath = ".github/workflows/archfit-assist.yaml"
-
-type Deps struct {
-    GitHub    *Client
-    Provider  Provider // nil disables managed mode
-    Consents  Consents
-    Budget    Budget
-    Proposals Proposals
-    Now       func() time.Time
-}
-
-func New(d Deps) Assist
-```
-
 <!-- contract: New, Deps — restated from internal/control/ui/module.md -->
 ```go
 type Deps struct {
@@ -337,12 +286,10 @@ type Deps struct {
     Account    Account
     Consents   Consents
     Onboarding Onboarding
-    Assist     Assist
-    Proposals  Proposals
     Admissions *Admissions // which installations the App serves; the others see the Waiting page
-    Approvals  Approvals   // owner approvals of pull request heads: read, and recorded by the Approve button
-    Decisions  Decisions   // decision requests of unattended agents: listed, declined, approved by an owner
-    DecisionQueue DecisionQueue // decision requests that wait for an owner: read only
+    Passkeys   Passkeys    // the signed-in user's passkeys and the step-up of an answer
+    RequestViews RequestViews // the request page: a request and the preview of each answer, read only
+    Answers    Answers     // the request page: an owner's answer, with the passkey
     Operators  []int64     // GitHub user IDs that approve installations on /admin
     Now        func() time.Time
 }
@@ -351,12 +298,12 @@ type Deps struct {
 func New(d Deps) (http.Handler, error)
 ```
 
-Pass-through types, never inspected by the façade: `Consents` is the consent interface and `Budget` is the LLM budget
-interface, both returned by `account.New`. `Proposals` is the draft-PR interface returned by `proposal.New`; `Changes` and
-`Pulls` are `github/api` role interfaces that `*Client` implements. `Assist` is the interface returned by `assist.New`.
+Pass-through types, never inspected by the façade: `Consents` is the consent interface returned by `account.New`.
+`Proposals` is the draft-PR interface returned by `proposal.New`; `Changes` and
+`Pulls` are `github/api` role interfaces that `*Client` implements.
 `Draft` is an opaque part of `Progress` for this module. `ErrStale` is the sentinel of `proposal`; the façade does not handle it.
-`ui` builds its own `session` child; the façade never imports `control/ui/session`. `StageInstalled` … `StageRequired`, the `Plan`
-constants and `AssistWorkflowPath` are unused by the façade; they are part of the restated fences only.
+`ui` builds its own `session` child; the façade never imports `control/ui/session`. `StageInstalled` … `StageRequired` and the `Plan`
+constants are unused by the façade; they are part of the restated fences only.
 
 ### internal/gate
 
@@ -371,9 +318,9 @@ constants and `AssistWorkflowPath` are unused by the façade; they are part of t
   `Admission` record. `Deps.Admissions` is built by `app` (the same value the gate and the receiver use); the façade
   hands it, with `Deps.Operators`, to `ui` and never calls it. `control` never admits or revokes: `ui` does, for an
   operator. `InstallationRemoved` and the orphan cleanup call `Forget`, which deletes the admission with the tenant.
-  `Deps.Approvals` and `Deps.DecisionQueue` are the `*Gate` that `app` builds; the façade hands it to `ui` untouched and never calls it, and
-  hands it to no other child, so the discovery, baseline and re-anchor uploads (OIDC) cannot reach an approval.
-  `Deps.Decisions` is the same `*Gate`, handed to `ui` the same way and reaching nothing else.
+  `Deps.RequestViews` and `Deps.Answers` are the `*Gate` that `app` builds; the façade hands `RequestViews` to `ui` untouched
+  and `Answers` to `answers.New`, never calls them, and hands them to no other child, so the discovery, baseline and re-anchor
+  uploads (OIDC) cannot reach an answer.
 
 ### internal/store
 
@@ -391,7 +338,7 @@ constants and `AssistWorkflowPath` are unused by the façade; they are part of t
 // Every key is stored under its tenant prefix; no operation crosses tenants.
 type Tenant int64
 
-// SystemTenant holds App-wide keys (the managed-LLM budget counter). It is never a GitHub installation ID.
+// SystemTenant holds App-wide keys (the readiness probe). It is never a GitHub installation ID.
 const SystemTenant Tenant = 0
 ```
 
@@ -449,7 +396,6 @@ const (
     PullOpened         EventKind = "pull_opened"         // opened, reopened, ready_for_review
     PullSynchronized   EventKind = "pull_synchronized"   // new head SHA
     PullClosed         EventKind = "pull_closed"
-    ReviewChanged      EventKind = "review_changed"      // submitted, edited, dismissed
     DefaultBranchPush  EventKind = "default_branch_push"
     InstallationAdded  EventKind = "installation_added"  // created, or repositories added
     InstallationRemoved EventKind = "installation_removed" // deleted
@@ -564,29 +510,27 @@ func New(ts TokenSource, hc *http.Client) *Client
 
 `New` wires, in this order:
 
-1. `account.New(d.Store)` → `Account`, `Consents`, `Budget`.
+1. `account.New(d.Store)` → `Account`, `Consents`.
 2. `proposal.New(d.GitHub, d.GitHub)` → `Proposals`.
 3. `onboarding.New(Deps{GitHub, Tokens, Receiver, Proposals, Consents, Sandbox, BaseURL, Now})` → `Onboarding`.
-4. `assist.New(Deps{GitHub, Provider, Consents, Budget, Proposals, Now})` → `Assist`.
-5. `passkey.New(Config{BaseURL}, d.Store, passkey.NewOwners(d.GitHub), passkey.NewIssues(d.GitHub, d.GitHub), d.Now)` →
+4. `passkey.New(Config{BaseURL}, d.Store, passkey.NewOwners(d.GitHub), passkey.NewIssues(d.GitHub, d.GitHub), d.Now)` →
    `Passkeys`, or an error that `New` returns.
-6. `ui.New(Deps{OAuth, CookieKey, BaseURL, GitHub, Account, Consents, Onboarding, Assist, Proposals, Admissions, Approvals, Decisions, DecisionQueue, Passkeys, Operators, Now})` → the UI handler, or an error that `New` returns.
+5. `ui.New(Deps{OAuth, CookieKey, BaseURL, GitHub, Account, Consents, Onboarding, Admissions, RequestViews, Answers (answers.New over the gate's Answers and Passkeys), Passkeys, Operators, Now})` → the UI handler, or an error that `New` returns.
 
 | Child        | Contributes                                                        | Depends on siblings                          |
 | ------------ | ------------------------------------------------------------------ | -------------------------------------------- |
-| `account`    | all KV state: entitlement writer, consent, LLM budget              | none                                         |
+| `account`    | all KV state: entitlement writer, consent                          | none                                         |
 | `proposal`   | a change as branch + draft PR, idempotent, stale-safe              | none                                         |
 | `onboarding` | stages, PR 1, discovery upload → PR 2, managed job, `Sandbox` seam | `proposal`, `account` (`Consents`)           |
-| `assist`     | explicit AI proposals, `Provider` seam, budget use                 | `proposal`, `account` (`Consents`, `Budget`) |
 | `passkey`    | WebAuthn passkeys of owners, the one-use step-up token of an answer | none                                        |
-| `ui`         | pages, editor, graph, consent screens; owns `session` and `graph`  | all five                                     |
+| `ui`         | pages, graph, consent screens; owns `session` and `graph`          | `onboarding`, `passkey`, `answers`           |
 
-`Control` also keeps four unexported fields that the façade itself never calls: `consents`, `budget`, `onboarding` and
-`assist`, the values built in steps 1, 3 and 4. They exist only so that the package's own composition tests can reach
-the wired children (record a consent, exhaust the budget, start onboarding, ask assist) without a second wiring in the
+`Control` also keeps two unexported fields that the façade itself never calls: `consents` and `onboarding`, the values
+built in steps 1 and 3. They exist only so that the package's own composition tests can reach
+the wired children (record a consent, start onboarding) without a second wiring in the
 test harness. They are not part of the Public Contract and no code outside the tests reads them.
 
-Sibling dependencies form a DAG: `account`, `proposal` ← `onboarding`, `assist` ← `ui`; `passkey` ← `ui`. All sibling links are contract
+Sibling dependencies form a DAG: `account`, `proposal` ← `onboarding` ← `ui`; `passkey` ← `answers` ← `ui`. All sibling links are contract
 strength through interfaces, so each child is tested with fakes of the others.
 
 Key flows through the façade:
@@ -622,7 +566,7 @@ Key flows through the façade:
 - Handlers are idempotent: duplicate or replayed deliveries of any installation event converge to the same keys.
 - The sweep backfills missed installation events (see Operation rules): at most one sweep interval of trial time is lost to the customer's benefit.
 - The sweep never writes suspension on failure: `Observe` and `Refresh` write nothing when the Store read fails.
-- Budget exhaustion, a nil `Provider`, a nil `Sandbox`, an LLM outage or a UI panic affect only their own feature.
+- A nil `Sandbox` or a UI panic affects only its own feature.
 - No persistence besides `account`'s keys. No queues, jobs or stored reports. The managed discovery job is a goroutine in `onboarding`.
 - Logs: installation ID, event kind, delivery ID, counts, outcomes, timings. No paths, bodies, logins in bulk, or tokens.
 - Standard library only in the façade.
@@ -630,12 +574,12 @@ Key flows through the façade:
 ## Test Specification
 
 Tests build a real `Control` over a memory `Store`, a fake GitHub HTTP server behind a real `*Client`, a fake `Receiver`,
-fake `Sandbox` and `Provider`, and a fixed clock.
+a fake `Sandbox`, and a fixed clock.
 
 ### Unit Tests
 
 - **Test name**: `TestNewValidatesWiring`
-  **Scenario**: table: nil `GitHub`; nil `OAuth`; nil `Store`; nil `Receiver`; nil `Admissions`; nil `Approvals`; nil `Decisions`; nil `DecisionQueue`; 16-byte `CookieKey`; empty `BaseURL`; `Sandbox` set with nil `Tokens`; nil `Now`; nil `Sandbox`, `Provider` and `Tokens`.
+  **Scenario**: table: nil `GitHub`; nil `OAuth`; nil `Store`; nil `Receiver`; nil `Admissions`; nil `RequestViews`; nil `Answers`; 16-byte `CookieKey`; empty `BaseURL`; `Sandbox` set with nil `Tokens`; nil `Now`; nil `Sandbox` and `Tokens`.
   **Expected behavior**: error and nil `Control` for the first ten, no panic; the last two construct a working `Control`.
 - **Test name**: `TestNewWorkerNeedsNoUISecrets`
   **Scenario**: `NewWorker` with nil `GitHub`, with nil `Store`, with nil `Admissions`, then with `GitHub`, `Store`, `Admissions` and `Now`;
@@ -661,8 +605,8 @@ fake `Sandbox` and `Provider`, and a fixed clock.
   **Scenario**: no webhook was delivered; GitHub lists installation 7 with one private repository; the Store is empty; run `Sweep` once, then again an hour later.
   **Expected behavior**: after the first sweep the `entitlement` record exists for tenant 7, `Status` is `trial` with `TrialEnds` = first sweep time + 30 d; the second sweep does not move it. With only public repositories the record exists with zero `SuspendAfter`.
 - **Test name**: `TestSweepForgetsOrphanTenants`
-  **Scenario**: Store holds tenants 1, 2, 3 and budget activity under `SystemTenant`; GitHub lists installations 1 and 3.
-  **Expected behavior**: tenant 2 has no keys afterwards; 1, 3 and the budget counter are unchanged; "forgotten: 1" logged by ID (T07 cleanup after a missed webhook).
+  **Scenario**: Store holds tenants 1, 2 and 3; GitHub lists installations 1 and 3.
+  **Expected behavior**: tenant 2 has no keys afterwards; 1 and 3 are unchanged; "forgotten: 1" logged by ID (T07 cleanup after a missed webhook).
 - **Test name**: `TestSweepStopsWhenInstallationsUnavailable`
   **Scenario**: `ListInstallations` returns `ErrRateLimited`.
   **Expected behavior**: that error is returned; no record is written.
@@ -673,20 +617,20 @@ fake `Sandbox` and `Provider`, and a fixed clock.
   **Scenario**: request `/` without a session; `POST` to the discovery handler with a `Receiver` that rejects with 401.
   **Expected behavior**: redirect to login (or 401) from the UI; `401` with the rejection code from discovery.
 - **Test name**: `TestSeamsDefaultToNotAvailable`
-  **Scenario**: nil `Sandbox`, nil `Provider`; start managed onboarding with consent; request managed assist.
-  **Expected behavior**: `ErrNoSandbox` and the assist "not available" error; no PR, no budget reservation.
+  **Scenario**: nil `Sandbox`; start managed onboarding with consent.
+  **Expected behavior**: `ErrNoSandbox`; no PR.
 
 ### Boundary Tests
 
 - **Test name**: `TestUninstallLeavesNoTenantKeys`
-  **Scenario**: install, observe, record both consents, reserve budget, then `InstallationRemoved` twice.
-  **Expected behavior**: no key remains for the tenant; another tenant and the `SystemTenant` budget counter are unchanged; the second delivery is a no-op (T07, T08 tenant scoping).
+  **Scenario**: install, observe, record the consent, then `InstallationRemoved` twice.
+  **Expected behavior**: no key remains for the tenant; another tenant is unchanged; the second delivery is a no-op (T07, T08 tenant scoping).
 - **Test name**: `TestOrphanCleanupFailsSafe`
   **Scenario**: table: `ListInstallations` errors (`ErrRateLimited`, generic); returns an empty list with nil error; `Tenants` errors; `Forget` errors for one of two orphans.
   **Expected behavior**: no key deleted in the first three rows; refresh still ran when the list was available; in the last row the other orphan is forgotten and `Sweep` returns nil.
 - **Test name**: `TestRevokedAccessSchedulesNothing`
   **Scenario**: after uninstall, GitHub answers 404 for the installation; call `Sweep`, the UI overview API for its repository, and a discovery upload.
-  **Expected behavior**: sweep does not list it; UI authorization fails; upload is rejected by the `Receiver`; no sandbox job, no LLM call, no key written (T07).
+  **Expected behavior**: sweep does not list it; UI authorization fails; upload is rejected by the `Receiver`; no sandbox job, no key written (T07).
 - **Test name**: `TestReplayedAndForgedInstallationIDs`
   **Scenario**: replay `InstallationAdded` ten times; send a UI form and a discovery envelope carrying another tenant's installation ID.
   **Expected behavior**: one `first_private_at`, unchanged by replays; the foreign ID is ignored everywhere.
@@ -706,12 +650,9 @@ fake `Sandbox` and `Provider`, and a fixed clock.
 - **Test name**: `TestStoreOutageIsNotNonPayment`
   **Scenario**: Store reads fail during three sweeps across the suspension date.
   **Expected behavior**: no record is written; the last good record stands; `Sweep` returns nil (T21).
-- **Test name**: `TestBudgetExhaustionStopsOnlyAssist`
-  **Scenario**: exhaust the LLM budget; then run install, sweep, onboarding start and a policy save.
-  **Expected behavior**: managed assist reports the budget state; everything else succeeds (T21).
 - **Test name**: `TestBothOnboardingModesThroughTheFacade`
   **Scenario**: customer mode: start, merge PR 1, discovery upload, merge PR 2. Managed mode: without consent, with consent and a fake sandbox, with a nil sandbox.
   **Expected behavior**: exactly two PRs in customer mode after retries; managed: no consent → no job; success → policy on the onboarding PR; nil → "not available" (T18, T19).
 - **Test name**: `TestControlFailureNeverReachesTheGate`
-  **Scenario**: every `control` entry point fails (Store down, GitHub down, provider down).
+  **Scenario**: every `control` entry point fails (Store down, GitHub down).
   **Expected behavior**: errors return to `app` only; no check run, comment or `entitlement` value changes.

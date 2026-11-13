@@ -7,16 +7,16 @@
 ## Purpose
 
 `proposal` turns "a set of file edits" into the only form in which the App ever changes a customer
-repository: a branch under `archfit/` plus one draft pull request. Onboarding, the editor and AI
-assistance all write through it, so none of them can publish unreviewed architecture, open duplicate
-PRs on retry, or overwrite an edit somebody else made in the meantime.
+repository: a branch under `archfit/` plus one draft pull request. Onboarding writes through it, so it
+cannot publish unreviewed architecture, open duplicate PRs on retry, or overwrite an edit somebody else
+made in the meantime.
 
 ## Functional Responsibilities
 
 - Create or update a deterministic branch and its draft PR; a retry reuses both.
 - Refuse a write when the branch moved since the caller read it (`ErrStale`).
 - Report the draft's state from the newest pull request of the branch: none, draft, awaiting review, published, closed.
-- Update the PR body and mark the PR ready for review on request.
+- Update the PR body on request.
 - Never merge, never force-push, never write to the base branch.
 
 ## Subdomain Classification
@@ -29,8 +29,8 @@ draft states are decisions.md §6 ("Draft, awaiting review, published is the PR 
 - The order of GitHub writes that makes `Propose` idempotent: ensure branch → stale check → commit → ensure PR.
 - The branch name as the idempotency key; no state of its own.
 - How a `Pull` maps to a `DraftState`.
-- The branch namespace rule: every branch starts with `archfit/`. The full name rule and the head-SHA shape are
-  published as `ValidBranch` and `ValidHeadSHA`, so that no consumer writes them again.
+- The branch namespace rule: every branch starts with `archfit/`. The full name rule is
+  published as `ValidBranch`, so that no consumer writes it again.
 
 ## Public Contract
 
@@ -69,7 +69,6 @@ type Proposals interface {
     Propose(ctx context.Context, c Change, expectHeadSHA string) (Draft, error)
     Get(ctx context.Context, r RepoRef, branch string) (Draft, error)
     SetBody(ctx context.Context, r RepoRef, number int, body string) error
-    Ready(ctx context.Context, r RepoRef, number int) error
 }
 ```
 
@@ -85,15 +84,11 @@ func New(gh Changes, pulls Pulls) Proposals
 // ^archfit/[A-Za-z0-9._/-]+$, has no empty, "." or ".." path segment (so no "//" and no trailing "/").
 func ValidBranch(branch string) bool
 
-// ValidHeadSHA reports whether sha is a full commit SHA: exactly 40 lowercase hex characters.
-// "" is not valid; a caller whose own contract allows "no draft yet" checks for "" itself.
-func ValidHeadSHA(sha string) bool
 ```
 
 `ErrStale` is the sentinel for an optimistic-concurrency refusal; test it with `errors.Is`.
 
-`ValidBranch` and `ValidHeadSHA` are the only statement of the branch-name and head-SHA rules in the control plane.
-`ui` and `assist` call them on user input before they call `Propose` or `Get`; `Propose` applies `ValidBranch` itself.
+`ValidBranch` is the only statement of the branch-name rule in the control plane. `Propose` applies it itself.
 `expectHeadSHA` is not shape-checked here: a malformed value never equals a branch head, so it ends in `ErrStale`.
 
 ### Propose
@@ -139,9 +134,9 @@ After a merge or close, the next `Propose` on the same branch opens a new PR (`E
 without `..` or a leading `/`; no duplicate paths; no path under `.github/workflows/`: the App has no `workflows`
 permission, so GitHub would refuse the push, and the error names the cause first. `Repo.InstallationID > 0` and `FullName` is `owner/name`.
 
-### SetBody and Ready
+### SetBody
 
-`SetBody` → `Changes.UpdatePullBody`. `Ready` → `Changes.MarkReady`. Both take the PR number from a
+`SetBody` → `Changes.UpdatePullBody`. It takes the PR number from a
 `Draft` this module returned. Errors pass through wrapped.
 
 ## Integrations
@@ -255,8 +250,6 @@ non-force commit on top of the branch head.
 | ------------------------------ | -------------------------------------------------------------------- | --------------------- | ---------- |
 | `internal/control/`            | `New`                                                                | control / 1 / 1       | High       |
 | `internal/control/onboarding/` | `Propose`, `Get`, `SetBody`                                          | control / 1 / 1       | High       |
-| `internal/control/assist/`     | `Propose` with `expectHeadSHA`, `Get`, `ValidBranch`, `ValidHeadSHA` | control / 1 / 1       | High       |
-| `internal/control/ui/`         | `Propose`, `Get`, `Ready`, `ValidBranch`, `ValidHeadSHA`             | control / 1 / 1       | High       |
 
 ## Change Vectors
 
@@ -291,11 +284,10 @@ Fakes implement `Changes` and `Pulls` in memory (branches, commits, pulls) and r
 - **Test name**: `TestValidateChange`
   **Scenario**: table: branch `main`, `feature/x`, `archfit/../x`, `archfit/./x`, branch equal to base, empty base, empty title, empty message, no files, path `/etc/x`, path `a/../../b`, duplicate path, a path under `.github/workflows/` (`.github/CODEOWNERS` stays valid), `InstallationID` 0, `FullName` without slash; one valid change.
   **Expected behavior**: every invalid row errors with zero GitHub calls; the valid row passes.
-- **Test name**: `TestValidBranchAndHeadSHA`
+- **Test name**: `TestValidBranch`
   **Scenario**: table for `ValidBranch`: `archfit/onboarding`, `archfit/edit-alice`, `archfit/a/b.c_d`; `main`, `archfit/`,
   `archfit`, `archfit/../x`, `archfit/./x`, `archfit/a//b`, `archfit/a/`, `archfit/a b`, `archfit/a\tb`, `archfit/ä`, `Archfit/x`, empty.
-  Table for `ValidHeadSHA`: 40 lowercase hex; 39 and 41 characters; upper case; a 7-character prefix; `HEAD~1`; empty.
-  **Expected behavior**: the first three branches and the first SHA are valid; every other row is not.
+  **Expected behavior**: the first three branches are valid; every other row is not.
 - **Test name**: `TestDraftCarriesPullURL`
   **Scenario**: `Pull{URL: "https://ghe.example/acme/shop/pull/12"}` from `EnsurePull` and from `PullByHead`.
   **Expected behavior**: `Draft.URL` equals `Pull.URL` verbatim; no URL is composed here.
@@ -314,9 +306,9 @@ Fakes implement `Changes` and `Pulls` in memory (branches, commits, pulls) and r
 - **Test name**: `TestGetFindsOnlyOwnBranch`
   **Scenario**: table: `PullByHead` returns the App's open pull; a merged pull; `ErrNotFound`; `ErrRateLimited`.
   **Expected behavior**: the draft with `Pull.HeadSHA` and `Pull.URL`; `DraftMerged`; `DraftNone` with nil error; the error.
-- **Test name**: `TestSetBodyAndReady`
-  **Scenario**: `SetBody` then `Ready` on the draft; `Get` afterwards.
-  **Expected behavior**: `UpdatePullBody` and `MarkReady` called once each with the number; state `DraftInReview`.
+- **Test name**: `TestSetBody`
+  **Scenario**: `SetBody` on the draft; then again with `UpdatePullBody` failing with `ErrNotFound`.
+  **Expected behavior**: `UpdatePullBody` called once with the number and the body; the second call returns `ErrNotFound`.
 
 ### Boundary Tests
 
@@ -345,5 +337,5 @@ Fakes implement `Changes` and `Pulls` in memory (branches, commits, pulls) and r
   **Scenario**: ten concurrent `Propose` calls for `archfit/onboarding` on a fresh repository.
   **Expected behavior**: exactly one open PR; every call returns its number or an error; none opens a second PR.
 - **Test name**: `TestDraftLifecycle`
-  **Scenario**: propose → `Ready` → the fake merges the PR → `Get` → propose again on the same branch.
+  **Scenario**: propose → the customer marks the PR ready → the fake merges the PR → `Get` → propose again on the same branch.
   **Expected behavior**: `DraftOpen`, `DraftInReview`, `DraftMerged` after merge, then a new draft PR with a new number that `Get` now returns.

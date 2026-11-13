@@ -50,7 +50,7 @@
       </div>
       <div>
         <span class="k">Owners</span><strong>Only owners loosen the rules</strong>
-        <span>A change to the policy needs an architecture owner's approval on that exact commit.</span>
+        <span>Workers ask with a request. An owner answers in Archfit with a passkey.</span>
       </div>
       <div>
         <span class="k">Baseline</span><strong>Old debt does not block</strong>

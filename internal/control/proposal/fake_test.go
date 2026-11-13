@@ -209,20 +209,6 @@ func (f *fakeGit) ChangedFiles(context.Context, api.RepoRef, int) ([]string, boo
 	return nil, false, errUnexpectedCall
 }
 
-func (f *fakeGit) Reviews(context.Context, api.RepoRef, int) ([]api.Review, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, "Reviews")
-	return nil, errUnexpectedCall
-}
-
-func (f *fakeGit) TeamMember(context.Context, api.RepoRef, string, string) (bool, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, "TeamMember")
-	return false, errUnexpectedCall
-}
-
 // merge plays the customer merging the pull request.
 func (f *fakeGit) merge(number int) {
 	f.mu.Lock()

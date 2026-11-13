@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
@@ -25,70 +24,31 @@ func TestHeadEditsCannotWeakenInputs(t *testing.T) {
 	if got.Settings.Workflow != workflowPath {
 		t.Errorf("Workflow = %q, want the base path %q", got.Settings.Workflow, workflowPath)
 	}
-	wantApproval(t, got, ApprovalMissing, "")
 	wantStrings(t, "ProtectedPaths", got.ProtectedPaths, allProtected)
 	if !got.EarliestWaiverExpiry.IsZero() {
 		t.Errorf("EarliestWaiverExpiry = %v, want zero: head waivers are not trusted", got.EarliestWaiverExpiry)
 	}
 }
 
-func TestOrdinaryReviewConfersNothing(t *testing.T) {
+func TestHeadOwnersConferNothing(t *testing.T) {
 	f := newFixture() // the head settings and CODEOWNERS already name mallory
 	f.pulls.changed = []string{settings.Path, "CODEOWNERS", policy.PolicyPath, policy.BaselinePath}
-	f.pulls.reviews = []api.Review{approved("mallory", headSHA)}
 	got := f.mustResolve(t, pullTarget())
 
-	wantApproval(t, got, ApprovalMissing, "")
 	wantBaseDigests(t, got)
 	wantStrings(t, "head reads", f.repos.headReads(), nil)
-}
-
-func TestNewCommitInvalidatesApproval(t *testing.T) {
-	f := newFixture()
-	f.pulls.changed = []string{policy.PolicyPath}
-	f.pulls.reviews = []api.Review{approved("alice", oldSHA)}
-
-	got := f.mustResolve(t, pullTarget())
-	wantApproval(t, got, ApprovalMissing, "")
-	wantStrings(t, "PolicyDigests", got.PolicyDigests, digests(basePolicy))
-
-	f.pulls.reviews = append(f.pulls.reviews, approved("alice", headSHA))
-	got = f.mustResolve(t, pullTarget())
-	wantApproval(t, got, ApprovalGranted, "alice")
-	wantStrings(t, "PolicyDigests", got.PolicyDigests, digests(basePolicy, headPolicy))
-}
-
-func TestOwnerApprovedBaselinePullRequest(t *testing.T) {
-	f := newFixture()
-	f.pulls.changed = []string{policy.BaselinePath}
-
-	got := f.mustResolve(t, pullTarget())
-	wantApproval(t, got, ApprovalMissing, "")
-	wantStrings(t, "BaselineDigests", got.BaselineDigests, digests(baseBaseline))
-
-	f.pulls.reviews = []api.Review{approved("alice", headSHA)}
-	got = f.mustResolve(t, pullTarget())
-	wantApproval(t, got, ApprovalGranted, "alice")
-	wantStrings(t, "BaselineDigests", got.BaselineDigests, digests(baseBaseline, headBaseline))
-	wantStrings(t, "PolicyDigests", got.PolicyDigests, digests(basePolicy))
-	wantStrings(t, "LabelsDigests", got.LabelsDigests, digests(baseLabels))
 }
 
 func TestForkNeverGetsHeadInputs(t *testing.T) {
 	f := newFixture()
 	f.pulls.changed = []string{policy.PolicyPath}
-	f.pulls.reviews = []api.Review{approved("alice", headSHA)}
 	target := pullTarget()
 	target.Fork = true
 	got := f.mustResolve(t, target)
 
-	wantApproval(t, got, ApprovalMissing, "")
 	wantStrings(t, "ProtectedPaths", got.ProtectedPaths, []string{policy.PolicyPath})
 	wantBaseDigests(t, got)
 	wantStrings(t, "head reads", f.repos.headReads(), nil)
-	if f.pulls.reviewsCalls != 0 {
-		t.Errorf("Reviews called %d times for a fork", f.pulls.reviewsCalls)
-	}
 }
 
 func TestSuspensionFacts(t *testing.T) {

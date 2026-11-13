@@ -321,38 +321,6 @@ func TestPullsContract(t *testing.T) {
 		}
 	})
 
-	t.Run("Reviews", func(t *testing.T) {
-		reviews, err := env.c.Reviews(ctx, repoA, 5)
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := []Review{
-			{ID: 101, Reviewer: "alice", State: "APPROVED", CommitSHA: "c1", Body: "Looks safe", SubmittedAt: time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)},
-			{ID: 103, Reviewer: "alice", State: "CHANGES_REQUESTED", CommitSHA: "c2", Body: "Please fix"},
-		}
-		if !reflect.DeepEqual(reviews, want) {
-			t.Errorf("Reviews = %+v, want %+v", reviews, want)
-		}
-	})
-
-	t.Run("TeamMember", func(t *testing.T) {
-		for login, want := range map[string]bool{"alice": true, "bob": false, "carol": false} {
-			got, err := env.c.TeamMember(ctx, repoA, "acme/core", login)
-			if err != nil || got != want {
-				t.Errorf("TeamMember(%s) = %v, %v; want %v", login, got, err, want)
-			}
-		}
-		env.gh.reset()
-		for _, team := range []string{"core", "acme/core/extra", "/core", "acme/", "../core"} {
-			if _, err := env.c.TeamMember(ctx, repoA, team, "alice"); err == nil {
-				t.Errorf("team %q: want error", team)
-			}
-		}
-		if n := len(env.gh.requests()); n != 0 {
-			t.Errorf("bad team strings sent %d requests", n)
-		}
-	})
-
 	for _, r := range env.gh.requests() {
 		if r.Auth != inst1 {
 			t.Errorf("%s: Authorization = %q", r, r.Auth)

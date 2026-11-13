@@ -261,9 +261,9 @@ func TestStaleDecisionNeverReplacesNewerInputs(t *testing.T) {
 		tr.PolicyDigests = []string{policy}
 		return tr
 	}
-	approved := func(approval inputs.Approval, by string) inputs.Trusted {
+	protectedChange := func() inputs.Trusted {
 		tr := trustedWith(p2)
-		tr.ProtectedPaths, tr.Approval, tr.ApprovedBy = []string{".github/archfit.yaml"}, approval, by
+		tr.ProtectedPaths = []string{".github/archfit.yaml"}
 		return tr
 	}
 	boom := errors.New("protected ref unreadable")
@@ -277,9 +277,8 @@ func TestStaleDecisionNeverReplacesNewerInputs(t *testing.T) {
 	}{
 		{"inputs changed after the decision", p1, p2, trustedWith(p1), trustedWith(p2), nil, ErrStaleInputs, "action_required", "stale_inputs"},
 		{"inputs unreadable again", p1, p2, trustedWith(p1), inputs.Trusted{}, boom, boom, "action_required", "stale_inputs"},
-		{"owner approval dismissed after the decision", p2, p1, approved(inputs.ApprovalGranted, "alice"), approved(inputs.ApprovalMissing, ""), nil, ErrStaleInputs, "action_required", "stale_inputs"},
+		{"a protected change found after the decision", p2, p1, trustedWith(p2), protectedChange(), nil, ErrStaleInputs, "action_required", "stale_inputs"},
 		{"decision from the current inputs", p2, p1, trustedWith(p2), trustedWith(p2), nil, nil, "success", "healthy"},
-		{"approval unchanged since the decision", p2, p1, approved(inputs.ApprovalGranted, "alice"), approved(inputs.ApprovalGranted, "alice"), nil, nil, "success", "healthy"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newHarness(headB)

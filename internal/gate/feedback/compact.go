@@ -81,9 +81,9 @@ func displayReasons(p Publication) []verdict.Reason {
 
 func recoveryRole(code verdict.ReasonCode) string {
 	switch code {
-	case verdict.ReasonBaselineNotComparable, verdict.ReasonOwnerApprovalMissing, verdict.ReasonPolicyDefect, verdict.ReasonWaiverExpired:
+	case verdict.ReasonBaselineNotComparable, verdict.ReasonPolicyDefect, verdict.ReasonWaiverExpired:
 		return "Architecture owner: "
-	case verdict.ReasonTargetMoved, verdict.ReasonSharedHead:
+	case verdict.ReasonTargetMoved, verdict.ReasonSharedHead, verdict.ReasonOwnerApprovalMissing:
 		return "Pull request author: "
 	case verdict.ReasonHealthy, verdict.ReasonAttentionOnly, verdict.ReasonBlockingFindings:
 		return ""

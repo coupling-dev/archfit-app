@@ -1,5 +1,7 @@
 # Merge queue: design and Action contract
 
+Updated for M2 task 26: no approval exists; a queued member that changes a protected path blocks its group.
+
 Status: contract revision 1, frozen for archfit-action v3.1.1. A change to this contract is a new revision that
 both repositories adopt together.
 
@@ -15,7 +17,7 @@ the required checks pass on that commit. A success on a pull request head is not
 requests that pass alone can fail together.
 
 When the branch rule's "Only merge non-failing pull requests" is off, a pull request whose own group failed can merge
-inside a later group that passes. So each group must justify every protected change it carries, not only the change
+inside a later group that passes. So each group is checked for every protected change it carries, not only the change
 of its last entry.
 
 ## Wire contract (for the Action)
@@ -47,9 +49,9 @@ The Action must:
    `refs/heads/<default branch>`.
 2. Analyse exactly the group commit `merge_group.head_sha`.
 3. When an endpoint is set, write `.archfit.yaml`, `.archfit-baseline.json` and `.archfit-labels.yaml` from the git
-   blobs **at the group commit**, and report their digests. The App accepts a blob that differs from the default
-   branch only when it can attribute it to an owner-approved queued pull request (below). Without an endpoint no one
-   checks an approval, so the files come from `merge_group.base_sha`, a default-branch commit.
+   blobs **at the group commit**, and report their digests. A blob that differs from the default branch ends the
+   group (below). Without an endpoint no one checks it, so the files come from `merge_group.base_sha`, a
+   default-branch commit.
 4. Not create a check named `archfit/gate` or `archfit/state`. The App writes them, on the group commit.
 5. Upload to `POST <endpoint>/v1/reports` as for every report.
 
@@ -89,16 +91,14 @@ gate mode and the workflow path come from `S`.
 For each protected path:
 
 - Same blob at `S` and `X`: unchanged.
-- Different blob: exactly one member must change the path in its own pull request, that member must have a current
-  owner authorization of its own head (the [pull request decision rules](../user-guide.md#architecture-decisions)), and
-  the blob at that member's head must equal the blob at `X`. No member, two members, or a different blob ends
-  `merge_group_conflict`.
+- Different blob: no member changes the path in its own pull request. That ends `merge_group_conflict`.
 
-Separately, every member whose pull request changes a protected path needs its own current owner approval, also when
-the group's combined file equals the default branch's. An active owner objection without an exact-candidate override ends `owner_approval_missing`. An Archfit override may authorize the group member for Archfit, but native GitHub reviews and branch protections remain independent.
+Separately, every member whose pull request changes a protected path ends the group `owner_approval_missing`, naming
+the member and the path, also when the group's combined file equals the default branch's. Nothing approves such a
+member: not a review, a push or an App answer.
 
-The accepted digest of each file is its blob at `X`, once the change is justified. The group commit itself is never
-approved: GitHub created it, and queue membership, a push or an `approved_by` text approve nothing.
+The accepted digest of each file is its blob at `S`. The group commit itself is never approved: GitHub created it, and
+queue membership, a push or an `approved_by` text approve nothing.
 
 ## Feedback and lifecycle
 
@@ -112,16 +112,15 @@ approved: GitHub created it, and queue membership, a push or an `approved_by` te
 - The webhook with `destroyed`, for a reason other than `merged`, turns a pending or successful group check into
   `action_required` `merge_group_unverified`. A later upload for the group gets `409 stale_group`.
 - Inside the publication lease the upload reads the queue and the inputs again. A group destroyed, a member
-  approval withdrawn, or a protected file changed since the decision writes nothing and answers `503`.
-- Native review changes and App approve/request-changes/withdraw/override decisions re-evaluate every queued group that holds the pull request, including a group check that was already successful.
+  that changes a protected path, or a protected file changed since the decision writes nothing and answers `503`.
 
 ## Recovery
 
 | Reason                   | What to do                                                                                                                                                                                                                                               |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `merge_group_conflict`   | Two queued pull requests change the same protected file, or the queued file is not the one an owner approved. Remove all but one from the queue and queue the others again after it merges. Or update the branch and have an owner approve the new head. |
+| `merge_group_conflict`   | A protected file of the group differs from the default branch, and no queued pull request changes it. Queue the pull requests again.                                                                                                                     |
 | `merge_group_unverified` | The App could not confirm the group from GitHub: it was destroyed or rebuilt, or a member changed. Queue the pull request again. (A missing Merge queues permission is not this reason: the upload answers `503`, see Limits.)                           |
-| `owner_approval_missing` | Resolve or explicitly override the active objection on the named pull request's exact candidate. Native GitHub reviews may still require resolution on GitHub; rebuild/requeue the group to obtain a fresh group report.                                 |
+| `owner_approval_missing` | A queued pull request changes a protected path. Remove it from the queue and revert the change; ask for a policy change with a request (see the user guide, "Change the policy"). Queue the pull requests again.                                         |
 
 ## Limits
 

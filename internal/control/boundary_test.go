@@ -58,10 +58,7 @@ func TestUninstallLeavesNoTenantKeys(t *testing.T) {
 	for _, id := range []int64{7, 8} {
 		h.gh.install(id, ghr(id*10, "org/app", true))
 		h.event(webhook.InstallationAdded, id)
-		h.consent(id, account.ConsentSourceProcessing, account.ConsentManagedLLM)
-	}
-	if err := h.c.budget.Reserve(ctx, 5000, h.clock.Now()); err != nil {
-		t.Fatalf("Reserve: %v", err)
+		h.consent(id, account.ConsentSourceProcessing)
 	}
 	other, _ := h.entitlement(8)
 
@@ -72,14 +69,11 @@ func TestUninstallLeavesNoTenantKeys(t *testing.T) {
 	if got := h.tenants(); got[7] || !got[8] {
 		t.Errorf("tenants = %v, want only 8", got)
 	}
-	if h.c.consents.Has(ctx, 7, account.ConsentManagedLLM) {
+	if h.c.consents.Has(ctx, 7, account.ConsentSourceProcessing) {
 		t.Error("consent of the removed tenant survived")
 	}
 	if after, _ := h.entitlement(8); after != other || !h.c.consents.Has(ctx, 8, account.ConsentSourceProcessing) {
 		t.Error("the other tenant changed")
-	}
-	if !h.budgetBooked(5000) {
-		t.Error("the SystemTenant budget counter changed")
 	}
 	if h.gh.requestCount() != requests || h.store.writes != writes {
 		t.Error("the second delivery called GitHub or wrote a key")
@@ -109,7 +103,7 @@ func TestOrphanCleanupFailsSafe(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			st := &flakyStore{Store: store.NewMemory()}
-			acct, _, _ := account.New(st)
+			acct, _ := account.New(st)
 			for _, id := range []int64{1, 2, 3} {
 				if err := acct.Observe(ctx, id, true, t0); err != nil {
 					t.Fatalf("Observe: %v", err)
@@ -148,7 +142,7 @@ func TestRevokedAccessSchedulesNothing(t *testing.T) {
 	h.gh.allow("alice", "org7/app", "admin")
 	h.event(webhook.InstallationAdded, 7)
 	h.event(webhook.InstallationAdded, 8)
-	h.consent(7, account.ConsentSourceProcessing, account.ConsentManagedLLM)
+	h.consent(7, account.ConsentSourceProcessing)
 	b := newBrowser(t, h.c.UIHandler())
 	b.signIn("alice")
 	page := b.get("/r/org7/app")
@@ -183,8 +177,8 @@ func TestRevokedAccessSchedulesNothing(t *testing.T) {
 		t.Errorf("discovery upload = %d, want 401", rec.Code)
 	}
 
-	if h.sandbox.count() != 0 || h.provider.count() != 0 {
-		t.Errorf("sandbox jobs = %d, LLM calls = %d; want none", h.sandbox.count(), h.provider.count())
+	if h.sandbox.count() != 0 {
+		t.Errorf("sandbox jobs = %d, want none", h.sandbox.count())
 	}
 	if h.tenants()[7] {
 		t.Error("a key was written for the removed tenant")

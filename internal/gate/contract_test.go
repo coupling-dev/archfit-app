@@ -95,17 +95,6 @@ func TestUploadProblemsArePublished(t *testing.T) {
 }
 
 func TestHandleEventReactions(t *testing.T) {
-	// ownerMissing leaves an owner_approval_missing receipt on a PR that edits the policy.
-	ownerMissing := func(w *world) *pull {
-		p := w.openPull(w.shop, 7)
-		w.changes(p, policy.PolicyPath)
-		w.setFile(w.shop, p.head, policy.PolicyPath, []byte(basePolicy+"# edited\n"))
-		w.handle(w.event(webhook.PullOpened, p))
-		a := w.upload(p, fixtureHealthy, configHash(w.digestOf(w.shop, p.head, policy.PolicyPath)))
-		w.wantAnswer(a, 200, "action_required", "owner_approval_missing")
-		return p
-	}
-
 	t.Run("PullOpened in required mode", func(t *testing.T) {
 		w := newWorld(t)
 		p := w.openPull(w.shop, 7)
@@ -157,38 +146,6 @@ func TestHandleEventReactions(t *testing.T) {
 			t.Errorf("the old head's check changed: %+v", c)
 		}
 	})
-	t.Run("ReviewChanged with the receipt and a granting review", func(t *testing.T) {
-		w := newWorld(t)
-		p := ownerMissing(w)
-		w.review(p, ownerLogin, "APPROVED", p.head)
-		w.handle(w.event(webhook.ReviewChanged, p))
-		if len(w.gh.reruns) != 1 || w.gh.reruns[0] != p.runID {
-			t.Errorf("reruns = %v, want [%d]", w.gh.reruns, p.runID)
-		}
-		w.wantGate(p, runCompleted, "action_required")
-	})
-	t.Run("ReviewChanged with the receipt and a review that grants nothing", func(t *testing.T) {
-		w := newWorld(t)
-		p := ownerMissing(w)
-		w.review(p, "bob", "APPROVED", p.head)
-		w.review(p, ownerLogin, "COMMENTED", p.head)
-		w.handle(w.event(webhook.ReviewChanged, p))
-		if len(w.gh.reruns) != 0 {
-			t.Errorf("reruns = %v, want none", w.gh.reruns)
-		}
-	})
-	t.Run("ReviewChanged without an owner_approval_missing receipt", func(t *testing.T) {
-		w := newWorld(t)
-		p := w.openPull(w.shop, 7)
-		w.wantAnswer(w.upload(p, fixtureBlocked), 200, "failure", "blocking_findings")
-		w.review(p, ownerLogin, "APPROVED", p.head)
-		before := w.gh.writes()
-		w.handle(w.event(webhook.ReviewChanged, p))
-		if len(w.gh.reruns) != 0 || w.gh.writes() != before {
-			t.Errorf("reruns = %v, writes %d → %d", w.gh.reruns, before, w.gh.writes())
-		}
-	})
-
 	nothing := map[string]func(*world, *pull) webhook.Event{
 		"PullClosed": func(w *world, p *pull) webhook.Event { return w.event(webhook.PullClosed, p) },
 		"InstallationAdded": func(*world, *pull) webhook.Event {

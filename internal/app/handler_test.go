@@ -117,7 +117,7 @@ func TestRouteTable(t *testing.T) {
 }
 
 func TestRouteDeadlines(t *testing.T) {
-	const short, long = 55 * time.Second, 300 * time.Second
+	const short = 55 * time.Second
 	body := []byte(pullOpenedBody)
 	post := func(target string) *http.Request { return httptest.NewRequest(http.MethodPost, target, nil) }
 	tests := []struct {
@@ -129,12 +129,8 @@ func TestRouteDeadlines(t *testing.T) {
 		{"discovery upload", post("/v1/discoveries"), []time.Duration{short}},
 		{"baseline upload", post("/v1/baselines"), []time.Duration{short}},
 		{"UI page", httptest.NewRequest(http.MethodGet, "/", nil), []time.Duration{short}},
-		{"UI save", post("/api/repos/octo/repo/policy"), []time.Duration{short}},
-		{"GET on the assist path", httptest.NewRequest(http.MethodGet, "/api/repos/octo/repo/assist", nil), []time.Duration{short}},
-		{"below the assist path", post("/api/repos/octo/repo/assist/x"), []time.Duration{short}},
-		{"another path that ends in assist", post("/api/repos/octo/assist"), []time.Duration{short}},
-		{"managed assist", post("/api/repos/octo/repo/assist"), []time.Duration{long}},
-		{"the old form route of assist", post("/r/octo/repo/assist"), []time.Duration{short}},
+		{"UI answer", post("/api/repos/octo/repo/requests/431/answer"), []time.Duration{short}},
+		{"the removed assist route has no long deadline", post("/api/repos/octo/repo/assist"), []time.Duration{short}},
 		{"webhook halves", webhookRequest("/webhooks/github", "pull_request", "d-1", body, sign(testWebhookSecret, body)), []time.Duration{short, short}},
 		{"sweep", operatorRequest("/internal/sweep", testOperatorToken, ""), []time.Duration{0, 0}},
 		{"grant", operatorRequest("/internal/grants", testOperatorToken, `{"installation_id": 42}`), []time.Duration{0}},

@@ -14,7 +14,7 @@ GitHub, and "never a false green on rate-limit exhaustion" would depend on each 
 ## Functional Responsibilities
 
 - Authenticate each call with the right credential: App JWT, installation token, or a user's OAuth token.
-- Read installations, repositories, files at a ref, pull requests, changed files, review IDs/states/bodies, requested reviewers and team membership; narrowly add missing configured reviewer requests.
+- Read installations, repositories, files at a ref, pull requests and changed files.
 - Read a branch's merge queue: the entries and their merge group commits (`MergeQueue`, GraphQL).
 - Create and update check runs, only `in_progress` or `completed` with `success`, `failure`, `neutral` or
   `action_required`; list, create and update the App's own PR comments.
@@ -113,7 +113,7 @@ needs one. It is a wide leaf on purpose: role interfaces keep each consumer's kn
 
 `per_page=100`, follow `Link: rel="next"`. Cap: 1 000 items per call **[default]**. Beyond the cap the call
 returns an error, never a silent partial list. This holds for `ListInstallations`, `ListRepos`, `UserRepos`,
-`OpenPulls`, `Reviews`, `AppComments`, `AppIssues`, `CheckRuns` and `HeadRuns`. The exceptions are `ChangedFiles`, whose contract has
+`OpenPulls`, `AppComments`, `AppIssues`, `CheckRuns` and `HeadRuns`. The exceptions are `ChangedFiles`, whose contract has
 a `truncated` result: it returns the paths read so far with `truncated` true; and `Compare`, whose files GitHub lists
 on one answer, at most 300: 300 files set `Truncated`.
 
@@ -143,10 +143,6 @@ on one answer, at most 300: 300 files set `Truncated`.
   deduplicated: renaming a protected file away is a change to it. `truncated` is true when the pagination cap
   was hit, or when the pull's `changed_files` count (one extra `GET /repos/{r}/pulls/{n}`) exceeds the number of
   file entries read: GitHub silently stops this list at 3 000 files. An error still returns no paths.
-- `Reviews`: `GET /repos/{r}/pulls/{n}/reviews`, ascending by submission as GitHub returns them; `PENDING` reviews are dropped; `ID`, `Body`, `State`, `CommitSHA` (`commit_id`) and `SubmittedAt` are mapped from GitHub.
-- `ReviewerRequests` is the narrow notification capability: `RequestedReviewers` reads current requested users/teams, including CODEOWNERS requests; `RequestReviewers` POSTs only missing principals supplied by its caller. It never removes reviewer requests. Team principals are represented as `org/slug`; request writes validate the repository organization and send the team slug.
-- `TeamMember`: `GET /orgs/{org}/teams/{slug}/memberships/{login}`; `state: active` → true; `pending` or `404` →
-  false with `nil` error; a team string without exactly one `/` → error.
 - `CheckRuns`: `GET /repos/{r}/commits/{sha}/check-runs?check_name=&app_id=<own>&filter=latest`: only this
   App's check runs, so another app's check of the same name is never seen (a run whose `app.id` is not the
   App's is dropped as well); latest per name is GitHub's `filter=latest`; annotations are not read back, only
@@ -331,15 +327,6 @@ type Pull struct {
     UpdatedAt    time.Time
 }
 
-type Review struct {
-    ID          int64     // GitHub review ID; version identity for a native decision
-    Reviewer    string    // GitHub login
-    State       string    // "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED"
-    CommitSHA   string    // head SHA submitted on
-    Body        string    // GitHub review body; untrusted display data
-    SubmittedAt time.Time // original submission time; dismissal time is not inferred from it
-}
-
 type Pulls interface {
     Pull(ctx context.Context, r RepoRef, number int) (Pull, error)
     OpenPulls(ctx context.Context, r RepoRef) ([]Pull, error)
@@ -348,15 +335,6 @@ type Pulls interface {
     // ChangedFiles lists changed paths; a rename lists both the old and the new path.
     // truncated is true when GitHub's file list was cut off: callers must assume any path changed.
     ChangedFiles(ctx context.Context, r RepoRef, number int) (paths []string, truncated bool, err error)
-    Reviews(ctx context.Context, r RepoRef, number int) ([]Review, error)
-    // TeamMember reports whether login belongs to "org/team-slug".
-    TeamMember(ctx context.Context, r RepoRef, team, login string) (bool, error)
-}
-
-// ReviewerRequests is a narrow notification capability. It never changes decision authority or removes requests.
-type ReviewerRequests interface {
-    RequestedReviewers(ctx context.Context, r RepoRef, number int) (users, teams []string, err error)
-    RequestReviewers(ctx context.Context, r RepoRef, number int, users, teams []string) error
 }
 ```
 
@@ -669,7 +647,7 @@ type TokenSource interface {
   `feedback`: `Checks`, `Comments`, `Pulls`, `Issues`, `Repos` (`BranchHead`). `sweep`: `Repos`, `Pulls`, `Actions`.
   They rely on: `ErrRateLimited`
   is returned after bounded backoff, so the caller can stop before it writes and leave checks pending for the sweep;
-  lists are complete or an error; `Reviews` order; `ChangedFiles` includes rename sources and `truncated` means
+  lists are complete or an error; `ChangedFiles` includes rename sources and `truncated` means
   "assume any path changed"; `CheckRuns` holds this App's runs only, with `AnnotationCount`; GitHub appends annotations.
 
 ### gate and control façades, app
@@ -681,7 +659,7 @@ type TokenSource interface {
 - **Volatility**: High (`gate`), Moderate (`control`), Low (`app`)
 - **Balanced?**: Yes
 - **Shared knowledge**: `Client`, `New`. Façades hand the client to children as role interfaces. Used directly:
-  `gate`: `Actions` (`Rerun` on a review change); `control`: `Repos` (`ListInstallations`, `ListRepos`); `app`: `New`,
+  `control`: `Repos` (`ListInstallations`, `ListRepos`); `app`: `New`,
   and `Permanent` for the error class of queued webhook work.
 
 ### control children
@@ -710,8 +688,7 @@ type TokenSource interface {
 - **Volatility**: Low
 - **Balanced?**: Yes: contract strength tolerates the distance
 - **Shared knowledge**: the Endpoints list; rate-limit and ETag semantics above. App permissions needed:
-  `checks: write`, `pull_requests: write`, `contents: write`, `actions: write`, `metadata: read`,
-  `members: read` (`TeamMember`). No `workflows` permission **[decided]** (`internal/module.md`): no method writes
+  `checks: write`, `pull_requests: write`, `contents: write`, `actions: write`, `metadata: read`. No `workflows` permission **[decided]** (`internal/module.md`): no method writes
   `.github/workflows/`, and GitHub refuses an App's commit that does. `issues: write` (the `Issues` role, for the repair issue, and
   `IssueTriage`) is added with the release that brings that issue; until the owner grants it, every `Issues` and
   `IssueTriage` call is GitHub's `403`.
@@ -813,12 +790,11 @@ One test per role interface; each asserts method, route, credential, request bod
   **Expected behavior**: all entries in position order, the branch sent in the query; no entries and no error; `ErrQueueForbidden`; an error; `ErrRateLimited`; `ErrNotFound`; an error; `ErrQueueTooLong`.
 - **Test name**: `TestPullsContract`
   **Scenario**: `Pull` (same-repo, fork, merged); `OpenPulls` with a draft; `PullByHead` with an open, a merged-only,
-  a fork-only and no pull for the branch; `ChangedFiles` with a rename; `Reviews` with a `PENDING` one and two by
-  one reviewer; `TeamMember` active, pending, `404`, bad team string; `PullSummary` of the same pull and of a
+  a fork-only and no pull for the branch; `ChangedFiles` with a rename; `PullSummary` of the same pull and of a
   missing one.
   **Expected behavior**: `MergeBaseSHA` from compare, `Body` and `URL` mapped, `Merged` true with `State` `closed`;
   `HeadRepo` differs for the fork; draft listed; newest pull, the merged pull, `ErrNotFound`, `ErrNotFound`; both
-  rename names present and `truncated` false; `PENDING` dropped, order kept; true, false, false, error;
+  rename names present and `truncated` false;
   `PullSummary` equals `Pull` without `MergeBaseSHA` after one request, then `ErrNotFound`.
 - **Test name**: `TestChecksContract`
   **Scenario**: create `in_progress`; update to `completed` with 50 annotations (one with `Line` 0); list by name.

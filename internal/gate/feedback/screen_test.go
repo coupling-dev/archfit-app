@@ -190,7 +190,8 @@ func TestFirstScreenIsPlainText(t *testing.T) {
 func TestRecoveryStepNamesTheRole(t *testing.T) {
 	tests := []struct{ code, next, want string }{
 		{"target_moved", "The target branch moved, and with it this pull request closes a module cycle: a, b. Update the branch.", "Pull request author: The target branch moved, and with it this pull request closes a module cycle: a, b. Update the branch."},
-		{"owner_approval_missing", "An architecture owner must approve.", "Architecture owner: An architecture owner must approve."},
+		{"owner_approval_missing", "Revert the change and ask.", "Pull request author: Revert the change and ask."},
+		{"policy_defect", "Fix the selectors.", "Architecture owner: Fix the selectors."},
 		{"missing_upload", "Re-run <it>.", "CI maintainer: Re-run <it>."},
 	}
 	for _, tt := range tests {

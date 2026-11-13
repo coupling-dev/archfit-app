@@ -21,13 +21,10 @@ func TestNewValidatesWiring(t *testing.T) {
 		return Deps{
 			GitHub: gh.client(), Tokens: fakeTokens{}, OAuth: fakeOAuth{}, Store: store.NewMemory(),
 			Receiver: &fakeReceiver{}, Admissions: admissions,
-			Decisions:     g,
-			Approvals:     gate.New(gate.Deps{GitHub: gh.client(), Store: store.NewMemory(), Admissions: admissions, Audience: testBaseURL}),
-			DecisionQueue: gate.New(gate.Deps{GitHub: gh.client(), Store: store.NewMemory(), Admissions: admissions, Audience: testBaseURL}),
-			RequestViews:  g,
-			Answers:       g,
-			Sandbox:       &fakeSandbox{}, Provider: &fakeProvider{},
-			CookieKey: testCookieKey, BaseURL: testBaseURL, Now: newClock().Now,
+			RequestViews: g,
+			Answers:      g,
+			Sandbox:      &fakeSandbox{},
+			CookieKey:    testCookieKey, BaseURL: testBaseURL, Now: newClock().Now,
 		}
 	}
 	tests := []struct {
@@ -40,16 +37,13 @@ func TestNewValidatesWiring(t *testing.T) {
 		{"nil Store", func(d *Deps) { d.Store = nil }, true},
 		{"nil Receiver", func(d *Deps) { d.Receiver = nil }, true},
 		{"nil Admissions", func(d *Deps) { d.Admissions = nil }, true},
-		{"nil Approvals", func(d *Deps) { d.Approvals = nil }, true},
-		{"nil Decisions", func(d *Deps) { d.Decisions = nil }, true},
-		{"nil DecisionQueue", func(d *Deps) { d.DecisionQueue = nil }, true},
 		{"nil RequestViews", func(d *Deps) { d.RequestViews = nil }, true},
 		{"nil Answers", func(d *Deps) { d.Answers = nil }, true},
 		{"16-byte CookieKey", func(d *Deps) { d.CookieKey = testCookieKey[:16] }, true},
 		{"empty BaseURL", func(d *Deps) { d.BaseURL = "" }, true},
 		{"Sandbox without Tokens", func(d *Deps) { d.Tokens = nil }, true},
 		{"nil Now", func(d *Deps) { d.Now = nil }, false},
-		{"nil Sandbox, Provider and Tokens", func(d *Deps) { d.Sandbox, d.Provider, d.Tokens = nil, nil, nil }, false},
+		{"nil Sandbox and Tokens", func(d *Deps) { d.Sandbox, d.Tokens = nil, nil }, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -120,7 +114,7 @@ func TestNewWorkerNeedsNoUISecrets(t *testing.T) {
 
 func TestHandleEventRouting(t *testing.T) {
 	kinds := []webhook.EventKind{
-		webhook.PullOpened, webhook.PullSynchronized, webhook.PullClosed, webhook.ReviewChanged,
+		webhook.PullOpened, webhook.PullSynchronized, webhook.PullClosed,
 		webhook.DefaultBranchPush, webhook.InstallationAdded, webhook.InstallationRemoved,
 		webhook.ReposRemoved, webhook.Ignored,
 	}
@@ -234,7 +228,7 @@ func TestHasPrivateComesFromGitHub(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			st := store.NewMemory()
-			acct, _, _ := account.New(st)
+			acct, _ := account.New(st)
 			repos := &fakeRepos{repos: map[int64][]api.Repo{7: {repo(7, "org7/app", tt.githubPrivate), repo(7, "org7/docs", false)}}}
 			c := newControl(acct, repos, st, admitAll{}, okHandler, okHandler, newClock().Now)
 

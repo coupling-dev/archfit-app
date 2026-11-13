@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control"
-	"github.com/alexei-led/archfit-app/internal/control/assist/anthropic"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/gcptoken"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -24,8 +23,8 @@ import (
 
 const (
 	readTimeout = 15 * time.Second
-	// writeTimeout stays above the longest route deadline (assistTimeout), so a route's own
-	// deadline answers before the server cuts the connection.
+	// writeTimeout stays above every route deadline (55 s) and above the operator routes, which have none: a sweep
+	// pass over every installation answers within it.
 	writeTimeout  = 310 * time.Second
 	idleTimeout   = 60 * time.Second
 	shutdownGrace = 10 * time.Second
@@ -71,7 +70,7 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 	}
 	gh := api.New(tokens, hc)
 	verifier := oidc.New(hc)
-	st, sandbox, provider, err := platform(c, sec.anthropicKey, hc)
+	st, sandbox, err := platform(c, hc)
 	if err != nil {
 		return err
 	}
@@ -95,23 +94,19 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 		ctl, err = control.NewWorker(control.WorkerDeps{GitHub: gh, Store: st, Admissions: admissions, Now: time.Now})
 	} else {
 		ctl, err = control.New(control.Deps{
-			GitHub:        gh,
-			Tokens:        tokens,
-			OAuth:         oauth,
-			Store:         st,
-			Receiver:      gate.NewReceiver(gh, verifier, c.BaseURL, admissions),
-			Admissions:    admissions,
-			Approvals:     g,
-			Decisions:     g,
-			DecisionQueue: g,
-			RequestViews:  g,
-			Answers:       g,
-			Operators:     c.Operators,
-			Sandbox:       sandbox,
-			Provider:      provider,
-			CookieKey:     sec.cookieKey,
-			BaseURL:       c.BaseURL,
-			Now:           time.Now,
+			GitHub:       gh,
+			Tokens:       tokens,
+			OAuth:        oauth,
+			Store:        st,
+			Receiver:     gate.NewReceiver(gh, verifier, c.BaseURL, admissions),
+			Admissions:   admissions,
+			RequestViews: g,
+			Answers:      g,
+			Operators:    c.Operators,
+			Sandbox:      sandbox,
+			CookieKey:    sec.cookieKey,
+			BaseURL:      c.BaseURL,
+			Now:          time.Now,
 		})
 	}
 	if err != nil {
@@ -182,25 +177,17 @@ func newFirestore(c Config, hc *http.Client) (store.Store, error) {
 }
 
 // platform selects the implementation behind each platform seam.
-// A nil Sandbox or Provider is valid: the managed feature then reports "not available".
-func platform(c Config, anthropicKey []byte, hc *http.Client) (store.Store, control.Sandbox, control.Provider, error) {
+// A nil Sandbox is valid: managed discovery then reports "not available".
+func platform(c Config, hc *http.Client) (store.Store, control.Sandbox, error) {
 	newStore, newSandbox := storeDrivers[c.StoreDriver], sandboxDrivers[c.SandboxDriver]
 	if newStore == nil || newSandbox == nil {
-		return nil, nil, nil, c.validate()
-	}
-	var provider control.Provider
-	if len(anthropicKey) > 0 {
-		p, err := anthropic.New(anthropic.Config{APIKey: string(anthropicKey)}, hc)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("app: Anthropic provider: %w", err)
-		}
-		provider = p
+		return nil, nil, c.validate()
 	}
 	st, err := newStore(c, hc)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	return st, newSandbox(), provider, nil
+	return st, newSandbox(), nil
 }
 
 // serve runs one http.Server until ctx is cancelled, then lets in-flight requests finish within shutdownGrace.

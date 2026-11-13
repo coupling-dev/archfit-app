@@ -253,34 +253,23 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	logs := captureLogs(t)
 	w := newWorld(t)
 	p := w.openPull(w.shop, 7)
-	w.changes(p, policy.PolicyPath, markerPath)
-	w.setFile(w.shop, p.head, policy.PolicyPath, []byte(basePolicy+"# edited\n"))
+	w.changes(p, markerPath)
 
-	// Webhook, upload with markers in messages and paths, review, protected push, sweep.
+	// Webhook, upload with markers in messages and paths, protected push, sweep.
 	w.handle(w.event(webhook.PullOpened, p))
 	s := w.spec(p, w.report(w.shop, fixtureBlocked, func(doc map[string]any) {
-		doc["comparison"].(map[string]any)["config_hash"] = w.digestOf(w.shop, p.head, policy.PolicyPath)
+		doc["comparison"].(map[string]any)["config_hash"] = w.digestOf(w.shop, testBranch, policy.PolicyPath)
 		finding := doc["findings"].([]any)[0].(map[string]any)
 		finding["why"] = markerWhy
 		finding["locations"].([]any)[0].(map[string]any)["file"] = markerPath
 		doc["agent_tasks"].([]any)[0].(map[string]any)["goal"] = markerGoal
 	}))
 	tokens := []string{s.token}
-	w.wantAnswer(w.send(s), 200, "action_required", "owner_approval_missing")
-	for _, marker := range []string{markerWhy, markerPath, markerGoal} {
-		if strings.Contains(w.feedbackText(p), marker) {
-			t.Fatalf("unapproved report leaked %q into recovery-only feedback", marker)
-		}
-	}
-	w.review(p, ownerLogin, "APPROVED", p.head)
-	w.handle(w.event(webhook.ReviewChanged, p))
-	s = w.spec(p, s.body)
-	tokens = append(tokens, s.token)
 	if a := w.send(s); a.status != 200 {
-		t.Fatalf("approved upload = %d %s", a.status, a.raw)
+		t.Fatalf("upload = %d %s", a.status, a.raw)
 	}
 	if !strings.Contains(w.feedbackText(p), markerWhy) {
-		t.Fatal("approved malicious-content report never reached feedback: log privacy control proves nothing")
+		t.Fatal("malicious-content report never reached feedback: log privacy control proves nothing")
 	}
 	w.handle(w.pushEvent(w.shop, policy.PolicyPath, markerPath))
 	w.now = w.now.Add(2 * time.Hour)
@@ -339,16 +328,13 @@ func TestStoreWritesOnlyLeasesAndInputsRecords(t *testing.T) {
 	p := w.openPull(vault, 7)
 	w.handle(w.event(webhook.PullOpened, p))
 	w.wantAnswer(w.upload(p, fixtureHealthy), 200, "success", "healthy")
-	w.handle(w.event(webhook.ReviewChanged, p))
 	w.handle(w.pushEvent(vault))
-	w.handle(w.branchPush(p, ownerLogin))
 	if _, err := w.gate.Sweep(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	q := w.openPull(vault, 8)
 	w.editsBaseline(q)
 	w.handle(w.event(webhook.PullOpened, q))
-	w.approve(q, ownerLogin)
 	if len(w.store.tenants) == 0 {
 		t.Fatal("the Store was never read")
 	}
@@ -359,8 +345,8 @@ func TestStoreWritesOnlyLeasesAndInputsRecords(t *testing.T) {
 		}
 		written[strings.SplitN(w.store.recordKeys[i], "/", 2)[0]+"/"] = true
 	}
-	if !written[pusherKeyPrefix] || !written[approvalKeyPrefix] {
-		t.Fatalf("records touched: %v, want a pusher and an approval record", written)
+	if written[pusherKeyPrefix] {
+		t.Fatalf("records touched: %v; a push records nothing", written)
 	}
 	for i, key := range w.store.keys {
 		// A default-branch push reads the Archfit 4 records of its repository (gate/approvals); they are read, not written.

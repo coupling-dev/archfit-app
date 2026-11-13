@@ -61,7 +61,7 @@ func (pc planCase) apply(t *testing.T, a Account) {
 func TestPlanStateMachine(t *testing.T) {
 	for _, pc := range planCases {
 		t.Run(pc.name, func(t *testing.T) {
-			a, _, _, _ := newTest(store.NewMemory())
+			a, _, _ := newTest(store.NewMemory())
 			pc.apply(t, a)
 			st, err := a.Status(context.Background(), instA, day(pc.now))
 			mustNil(t, err)
@@ -83,7 +83,7 @@ func TestEntitlementFields(t *testing.T) {
 	for _, pc := range planCases {
 		t.Run(pc.name, func(t *testing.T) {
 			s := store.NewMemory()
-			a, _, _, _ := newTest(s)
+			a, _, _ := newTest(s)
 			pc.apply(t, a)
 			mustNil(t, a.Refresh(context.Background(), instA, day(pc.now)))
 			e := readEntitlement(t, s, instA)
@@ -128,39 +128,11 @@ func TestNoticeTexts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := store.NewMemory()
-			a, _, _, _ := newTest(s)
+			a, _, _ := newTest(s)
 			planCase{private: true, grants: tt.grants}.apply(t, a)
 			mustNil(t, a.Refresh(context.Background(), instA, tt.now))
 			if got := readEntitlement(t, s, instA).Notice; got != tt.want {
 				t.Errorf("Notice = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestBudgetMonthKey(t *testing.T) {
-	tests := []struct {
-		name string
-		now  time.Time
-		want string
-	}{
-		{"last second of September", time.Date(2026, 9, 30, 23, 59, 59, 0, time.UTC), "llm-budget/2026-09"},
-		{"first second of October", time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), "llm-budget/2026-10"},
-		{"non-UTC now", time.Date(2026, 9, 30, 23, 0, 0, 0, time.FixedZone("EST", -5*3600)), "llm-budget/2026-10"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := newSpy()
-			_, _, b, _ := newTest(s)
-			mustNil(t, b.Reserve(context.Background(), 1_000_000, tt.now))
-			mustNil(t, b.Settle(context.Background(), 1_000_000, 500_000, tt.now))
-			if len(s.calls) != 2 {
-				t.Fatalf("calls = %d, want 2", len(s.calls))
-			}
-			for _, c := range s.calls {
-				if c.op != "Add" || c.tenant != store.SystemTenant || c.key != tt.want {
-					t.Errorf("call = %s %d %q, want Add 0 %q", c.op, c.tenant, c.key, tt.want)
-				}
 			}
 		})
 	}

@@ -144,7 +144,7 @@ func (s *publisher) writeComment4(ctx context.Context, p Publication4, v view) (
 	if pull.HeadSHA != t.HeadSHA {
 		return actionSkippedOldHead, nil
 	}
-	_, existing, found, err := s.findComment(ctx, t)
+	existing, found, err := s.findComment(ctx, t)
 	if err != nil {
 		return actionNone, err
 	}

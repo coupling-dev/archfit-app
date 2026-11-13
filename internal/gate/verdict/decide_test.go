@@ -418,14 +418,11 @@ func TestComparabilityRule(t *testing.T) {
 }
 
 func TestPolicyDigestSet(t *testing.T) {
-	approved := func(f *Facts) {
-		f.Trusted.Approval = inputs.ApprovalGranted
-		f.Trusted.PolicyDigests = []string{basePolicy, headPolicy}
-	}
+	twoAccepted := func(f *Facts) { f.Trusted.PolicyDigests = []string{basePolicy, headPolicy} }
 	noPolicy := func(f *Facts) { f.Trusted.PolicyDigests = nil }
 
 	wantCodes(t, decide(t, with()), Success, ReasonHealthy)
-	wantCodes(t, decide(t, with(approved, policyMismatch)), Success, ReasonHealthy)
+	wantCodes(t, decide(t, with(twoAccepted, policyMismatch)), Success, ReasonHealthy)
 
 	o := decide(t, with(func(f *Facts) { f.Report.Comparison.ConfigHash = strings.Repeat("9", 64) }))
 	wantCodes(t, o, ActionRequired, ReasonPolicyMismatch)
@@ -456,10 +453,6 @@ func TestPolicyMissingWindow(t *testing.T) {
 	wantCodes(t, decide(t, with(window, approvalMissing, policyMismatch)),
 		ActionRequired, ReasonOwnerApprovalMissing, ReasonPolicyMissing)
 
-	wantCodes(t, decide(t, with(policyMismatch, func(f *Facts) {
-		f.Trusted.Approval = inputs.ApprovalGranted
-		f.Trusted.PolicyDigests = []string{headPolicy}
-	})), Success, ReasonHealthy)
 }
 
 func TestIdentityReasons(t *testing.T) {
@@ -677,8 +670,8 @@ func TestDecideSharedHeadNeverSucceeds(t *testing.T) {
 }
 
 func TestApprovalMissing(t *testing.T) {
-	for _, paths := range [][]string{{".archfit-app.yaml"}, {".archfit.yaml", ".github/workflows/archfit.yaml"}, nil} {
-		tr := inputs.Trusted{SettingsFound: true, Approval: inputs.ApprovalMissing, ProtectedPaths: paths}
+	for _, paths := range [][]string{{".archfit-app.yaml"}, {".archfit.yaml", ".github/workflows/archfit.yaml"}} {
+		tr := inputs.Trusted{SettingsFound: true, ProtectedPaths: paths}
 		o := ApprovalMissing(tr)
 		checkInvariants(t, o)
 		wantCodes(t, o, ActionRequired, ReasonOwnerApprovalMissing)
@@ -690,20 +683,14 @@ func TestApprovalMissing(t *testing.T) {
 }
 
 func TestUnapproved(t *testing.T) {
-	for approval, want := range map[inputs.Approval]bool{
-		inputs.ApprovalNotRequired: false,
-		inputs.ApprovalGranted:     false,
-		inputs.ApprovalMissing:     true,
-		"":                         true,
-		"skipped":                  true,
-	} {
-		tr := inputs.Trusted{Approval: approval}
-		if got := Unapproved(tr); got != want {
-			t.Errorf("Unapproved(%q) = %v, want %v", approval, got, want)
+	for _, paths := range [][]string{nil, {}, {".archfit.yaml"}, {".archfit-app.yaml", ".archfit-baseline.json"}} {
+		want := len(paths) > 0
+		if got := Unapproved(inputs.Trusted{ProtectedPaths: paths}); got != want {
+			t.Errorf("Unapproved(%q) = %v, want %v", paths, got, want)
 		}
-		decided := decide(t, with(func(f *Facts) { f.Trusted.Approval = approval }))
+		decided := decide(t, with(func(f *Facts) { f.Trusted.ProtectedPaths = paths }))
 		if got := slices.ContainsFunc(decided.Reasons, func(r Reason) bool { return r.Code == ReasonOwnerApprovalMissing }); got != want {
-			t.Errorf("Decide with approval %q names owner_approval_missing: %v, want %v", approval, got, want)
+			t.Errorf("Decide with protected paths %q names owner_approval_missing: %v, want %v", paths, got, want)
 		}
 	}
 }

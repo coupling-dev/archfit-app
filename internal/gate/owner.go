@@ -182,7 +182,7 @@ func (g *Gate) recheckPull(ctx context.Context, r api.Repo, pull int, head strin
 	}
 	in := sweep.RerunInput{Receipt: feedback.Receipt{RunID: rec.RunID, RunAttempt: rec.RunAttempt}, Head: head,
 		EventBase: pl.BaseSHA, Tip: tip, ReadsTip: true}
-	res, unmet, err := sweep.Rerun(ctx, g.actions, r.RepoRef, in, g.now())
+	res, unmet, err := sweep.Rerun(ctx, g.recheckGH, r.RepoRef, in, g.now())
 	switch {
 	case err != nil:
 		return g.cannotRecheck(ctx, r, pull, rec, bound, "", err)

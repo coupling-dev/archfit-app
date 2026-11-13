@@ -7,10 +7,9 @@
 ## Purpose
 
 `account` owns every byte the App persists: the entitlement state of an installation (public, trial,
-grace, manual grant, suspended), administrator consent records, and the App-wide managed-LLM budget
-counter. It is the only writer of the cached `Entitlement` record the gate reads. Without it private
-repositories would never leave the trial, managed features would run without consent, and the LLM
-spend would have no cap.
+grace, manual grant, suspended) and administrator consent records. It is the only writer of the
+cached `Entitlement` record the gate reads. Without it private repositories would never leave the
+trial and managed discovery would run without consent.
 
 ## Functional Responsibilities
 
@@ -20,7 +19,6 @@ spend would have no cap.
   warning instant, notice text, suspension reason with the recovery action.
 - Apply and clear operator grants; log each grant by installation ID.
 - Record, revoke and answer consent per installation and kind, with who recorded it and when. No consent, no call.
-- Reserve and settle the managed-LLM budget atomically against a hard monthly cap.
 - Write and delete the gate's `Admission` record when an operator approves or revokes an installation; log each change
   by installation ID and operator ID.
 - Delete every key of an installation on uninstall, its admission included.
@@ -28,7 +26,7 @@ spend would have no cap.
 ## Subdomain Classification
 
 Supporting. Needed, not differentiating. Volatility **moderate**: trial length, grace, warning schedule
-and the cap are **[default]** values (decisions.md §9, §7) expected to change before launch; a billing
+are **[default]** values (decisions.md §9, §7) expected to change before launch; a billing
 provider may replace manual grants. The `Entitlement` record shape is stable: it is the gate's contract.
 
 ## Encapsulated Knowledge
@@ -38,15 +36,14 @@ provider may replace manual grants. The `Entitlement` record shape is stable: it
 - The plan state machine and the mapping from plan to `Entitlement` fields and texts.
 - Consent key layout `consent/<kind>`, value JSON `{"kind","by","by_id","at"}`. `by` is the login as it was when the consent
   was recorded; `by_id` is the GitHub user ID, absent from a record written before it was stored. Such a record stays valid.
-- Budget key layout `llm-budget/<YYYY-MM>` (UTC month of `now`) under `SystemTenant`; cap `20_000_000` micro-USD (USD 20). **[default]**
-- Reserve-then-compensate as the way to enforce a cap with only `Store.Add`.
 - The update cycle of the record and the entitlement: read both keys, compute, write both with one
   `Store.CompareAndSwapAll` from the bytes read; on `false`, start again, at most 5 attempts **[default]**.
 
 - The admission key `admission`, the gate's `Admission` record. `account` writes and deletes it and never decides
   anything from it; the gate and `control/ui` read it through `gate.Admissions`.
 
-Nobody else reads the `account`, `consent/*` or `llm-budget/*` keys. The gate reads only `EntitlementKey` and `AdmissionKey`.
+Nobody else reads the `account` or `consent/*` keys. The gate reads only `EntitlementKey` and `AdmissionKey`.
+Records of earlier versions (`consent/managed_llm`, `llm-budget/*`) may remain in the Store; nothing reads or writes them.
 
 ## Public Contract
 
@@ -93,7 +90,6 @@ type ConsentKind string
 
 const (
     ConsentSourceProcessing ConsentKind = "source_processing" // managed discovery
-    ConsentManagedLLM       ConsentKind = "managed_llm"
 )
 
 type Consent struct {
@@ -122,25 +118,11 @@ type Consents interface {
 ```
 
 ```go
-var ErrBudgetExhausted = errors.New("account: managed LLM budget exhausted")
-
-// Budget is the App-wide managed-LLM hard cap: USD 20 per calendar month (UTC), in micro-USD.
-type Budget interface {
-    // Reserve atomically books maxCost; ErrBudgetExhausted if the cap would be exceeded.
-    Reserve(ctx context.Context, maxCostMicroUSD int64, now time.Time) error
-    // Settle returns the unused part of a reservation.
-    Settle(ctx context.Context, reservedMicroUSD, actualMicroUSD int64, now time.Time) error
-}
+func New(s Store) (Account, Consents)
 ```
 
-```go
-func New(s Store) (Account, Consents, Budget)
-```
-
-`ErrNoConsent` is the sentinel that callers (`onboarding`, `assist`) return from their own guard when `Has` is false; no method of
+`ErrNoConsent` is the sentinel that callers (`onboarding`) return from their own guard when `Has` is false; no method of
 this module returns it.
-
-`ErrBudgetExhausted` is the sentinel `Reserve` returns when the monthly cap would be exceeded; test it with `errors.Is`.
 
 ### Plan rules
 
@@ -204,13 +186,6 @@ The gate decides suspension itself from `SuspendAfter`, repository privacy and i
   not an error.
 - `Get`: a missing key is `(zero, false, nil)`; a Store error, a corrupt value or an invalid installation ID is an error, never
   `false, nil`. `Has` is `Get` with every error read as false.
-- `Reserve`: `maxCostMicroUSD <= 0` is an error. `Add(+max)`; if the result exceeds the cap, `Add(−max)` and return `ErrBudgetExhausted`.
-  A Store error is returned as is (not `ErrBudgetExhausted`); the caller makes no LLM call either way.
-- `Settle`: `reserved <= 0` or `actual < 0` is an error and nothing is booked; `actual == 0` is valid (the vendor rejected the call).
-  Else `Add(actual − reserved)`. The caller passes the `now` it used for `Reserve`, so both hit the same month key.
-  The caller settles every reservation, also after a failed `Complete`, with the cost the `Provider` reported for that outcome
-  (it may be 0, usage-based, or the full reservation when the outcome is unknown). `account` only does the arithmetic and never
-  guesses a cost. `actual > reserved` is booked as is **[default]**.
 
 ## Integrations
 
@@ -277,7 +252,7 @@ type Admission struct {
 // Every key is stored under its tenant prefix; no operation crosses tenants.
 type Tenant int64
 
-// SystemTenant holds App-wide keys (the managed-LLM budget counter). It is never a GitHub installation ID.
+// SystemTenant holds App-wide keys (the readiness probe). It is never a GitHub installation ID.
 const SystemTenant Tenant = 0
 ```
 
@@ -326,14 +301,12 @@ cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Ge
 | ------------------------------ | --------------------------------------- | --------------------- | ---------- |
 | `internal/control/`            | `New`, `Account` (events, sweep, grant, forget) | control / 1 / 1       | High       |
 | `internal/control/onboarding/` | `Consents.Has`                          | control / 1 / 1       | High       |
-| `internal/control/assist/`     | `Consents.Has`, `Budget`                | control / 1 / 1       | High       |
 | `internal/control/ui/`         | `Account.Status`, `Account.Admit`, `Account.Unadmit`, `Consents` | control / 1 / 1       | High       |
 
 ## Change Vectors
 
-- Trial, grace, warning durations, notice texts, the cap: constants here.
+- Trial, grace, warning durations, notice texts: constants here.
 - A billing provider: a new writer of `grant_until` (or a `paid_until` field) inside this module; `Entitlement` stays.
-- Per-installation LLM allowance: a second counter key under the installation tenant.
 - Consent kinds: a new constant and nothing else.
 - Approval with more than presence (an expiry, a note): a field of `gate.Admission`, owned by `gate/inputs`.
 
@@ -350,10 +323,8 @@ cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Ge
   with different `now` still write in the order they reach the Store; the next `Refresh` corrects the notice text.
 - The trial never restarts within one installation ID: `Observe(false)`, repository removal, and re-adding change nothing. Uninstall deletes the tenant; a new installation ID starts a new trial. **[default, stated limit]**
 - Tenant = `Tenant(installationID)`, which callers take from a verified webhook, the installation list, or an authorized session. Never from a client-supplied ID.
-- Budget exhaustion and budget Store errors affect only managed-LLM calls. Deterministic checks never consult `Budget`.
-- The counter may over-reserve if the compensating `Add` fails. That fails closed (less spend), and resets next month.
 - No clock inside: every operation takes `now`. Standard library only (`encoding/json`, `time`, `errors`, `fmt`).
-- Logs: installation ID, plan, outcome, timings. Never the consent login in budget logs, never tokens.
+- Logs: installation ID, plan, outcome, timings. Never tokens.
 
 ## Test Specification
 
@@ -368,9 +339,6 @@ cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Ge
 - **Test name**: `TestNoticeTexts`
   **Scenario**: trial at T−8 d, T−7 d, T−23 h; grace; granted at G−23 h; suspended.
   **Expected behavior**: exact strings of the Notice table, including "1 day left".
-- **Test name**: `TestBudgetMonthKey`
-  **Scenario**: `Reserve` at `2026-09-30T23:59:59Z` and `2026-10-01T00:00:00Z`, and with a non-UTC `now`.
-  **Expected behavior**: keys `llm-budget/2026-09` and `llm-budget/2026-10`; month taken after conversion to UTC.
 
 ### Integration Contract Tests
 
@@ -391,12 +359,9 @@ cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Ge
   **Scenario**: `Has` and `Get` before `Record`; after `Record`; after `Revoke`; `Revoke` again; the other kind.
   **Expected behavior**: false, true, false, nil error, false; `Get` after `Record` returns the login, user ID and UTC time recorded;
   a second `Record` is `ErrConsentExists` and keeps the first who and when.
-- **Test name**: `TestBudgetReserveSettle`
-  **Scenario**: reserve 5 000 000 four times, a fifth time, settle one with actual 1 000 000, reserve 4 000 000; then settle table for a 5 000 000 reservation: actual 0, actual 2 000 000, actual 5 000 000 (failed call, outcome unknown), actual 6 000 000.
-  **Expected behavior**: four succeed (counter exactly at the cap is allowed); fifth `ErrBudgetExhausted` and the counter is back at 20 000 000; after settle 16 000 000; the last reserve succeeds; the settle rows change the counter by −5 000 000, −3 000 000, 0 and +1 000 000: pure arithmetic, no cost is assumed for a failure.
 - **Test name**: `TestForgetDeletesTenantOnly`
-  **Scenario**: tenants A and B with records and consents, budget activity; `Forget(A)` twice.
-  **Expected behavior**: A has no keys; B and the `SystemTenant` counter are unchanged; second call returns nil (T07 cleanup, T08 tenant scoping).
+  **Scenario**: tenants A and B with records and consents; `Forget(A)` twice.
+  **Expected behavior**: A has no keys; B is unchanged; second call returns nil (T07 cleanup, T08 tenant scoping).
 
 - **Test name**: `TestAdmitUnadmitRoundTrip`
   **Scenario**: `Admit` installation A; read it back with `gate.NewAdmissions(...).Record` and `Admitted`; `Unadmit` it twice.
@@ -411,22 +376,16 @@ cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Ge
   **Scenario**: the `account` key holds invalid JSON.
   **Expected behavior**: `Observe`, `Refresh`, `Status` return an error and write nothing; they do not reset the trial.
 - **Test name**: `TestInvalidInstallationID`
-  **Scenario**: `installationID` 0 and −1 on every operation of the three interfaces.
+  **Scenario**: `installationID` 0 and −1 on every operation of the two interfaces.
   **Expected behavior**: error (or `false` for `Has`, `false` and an error for `Get`); no `SystemTenant` key is read or written.
 - **Test name**: `TestConsentRejectsInvalid`
   **Scenario**: unknown kind, empty `By`, zero `At`, no user ID; `Has` and `Get` with a failing Store and with a corrupt value; a
   record written before the user ID.
   **Expected behavior**: `Record` errors and writes nothing; `Has` is false and `Get` returns an error; the old record is a
   consent with `ByID` 0.
-- **Test name**: `TestBudgetRejectsAndFailsClosed`
-  **Scenario**: `Reserve(0)`, `Reserve(-1)`; `Add` fails on reserve; the compensating `Add` fails.
-  **Expected behavior**: errors; a Store error is not `ErrBudgetExhausted`; after a failed compensation the counter is higher, never lower.
-- **Test name**: `TestConcurrentReserveNeverExceedsCap`
-  **Scenario**: 100 goroutines reserve 1 000 000 each against a memory Store.
-  **Expected behavior**: exactly 20 succeed; final counter 20 000 000.
 - **Test name**: `TestOnlyDocumentedKeys`
   **Scenario**: run every operation against a recording Store.
-  **Expected behavior**: keys touched are `account`, `entitlement`, `admission`, `consent/source_processing`, `consent/managed_llm` under the installation, and `llm-budget/<YYYY-MM>` under `SystemTenant`. Nothing else.
+  **Expected behavior**: keys touched are `account`, `entitlement`, `admission` and `consent/source_processing`, all under the installation. Nothing else.
 
 ### Behavior Tests
 
@@ -436,9 +395,6 @@ cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Ge
 - **Test name**: `TestRestoredEntitlementOnlyMovesTheDate`
   **Scenario**: suspended installation receives a grant.
   **Expected behavior**: the record's `SuspendAfter` moves to the grant end; `account` touches no check and no report. Turning the PR green needs a fresh report (gate sweep re-run), never this module.
-- **Test name**: `TestBudgetExhaustionTouchesNothingElse`
-  **Scenario**: exhaust the budget, then `Observe`, `Refresh`, `Status`, `Has`.
-  **Expected behavior**: all succeed; the `Entitlement` record is unaffected (T21: LLM quota exhaustion does not stop deterministic checks).
 - **Test name**: `TestCrashBetweenWritesChangesNothing`
   **Scenario**: a trial installation (entitlement written on day 20); on day 40 `Observe`, `Refresh` and `Grant` run
   while the Store fails every write that includes `entitlement`, like a crash before that write.

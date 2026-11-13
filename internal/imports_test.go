@@ -113,9 +113,8 @@ func TestGatePathImportsNothingForbidden(t *testing.T) {
 // seamImplementations are the packages allowed to import the parent that declares their interface: the
 // implementations of a seam, and its conformance suite.
 var seamImplementations = map[string]string{
-	internal + "control/assist/anthropic": internal + "control/assist",
-	internal + "queue/cloudtasks":         internal + "queue",
-	internal + "queue/queuetest":          internal + "queue",
+	internal + "queue/cloudtasks": internal + "queue",
+	internal + "queue/queuetest":  internal + "queue",
 }
 
 // importGroup is one row of the allowed-import table: allowed answers for non-standard imports only.
@@ -248,7 +247,7 @@ func TestOnlyPlatformSeamsTouchPlatformSDKs(t *testing.T) {
 			}
 			// Any other SDK belongs to a Store, Sandbox or Provider implementation package.
 			parent := pkg[:strings.LastIndex(pkg, "/")]
-			if parent != internal+"store" && parent != internal+"control/onboarding" && parent != internal+"control/assist" {
+			if parent != internal+"store" && parent != internal+"control/onboarding" {
 				t.Errorf("%s imports the SDK %s outside a platform seam implementation", pkg, imp)
 			}
 		}

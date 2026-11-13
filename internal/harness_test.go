@@ -421,7 +421,6 @@ func (c *checkRun) receipt(t *testing.T) receipt {
 type options struct {
 	store    store.Store
 	sandbox  control.Sandbox
-	provider control.Provider
 	approved []string // accounts approved by configuration; nil approves every account the tests seed
 }
 
@@ -468,7 +467,7 @@ func newSystem(t *testing.T, w *world, o options) *system {
 	})
 	s.ctl, err = control.New(control.Deps{
 		GitHub: gh, Tokens: tokens, OAuth: oauth, Store: o.store, Receiver: gate.NewReceiver(gh, verifier, baseURL, admissions),
-		Admissions: admissions, Approvals: s.gate, Decisions: s.gate, DecisionQueue: s.gate, RequestViews: s.gate, Answers: s.gate, Operators: []int64{operatorID}, Sandbox: o.sandbox, Provider: o.provider, CookieKey: []byte(cookieKey), BaseURL: baseURL, Now: s.clock.Now,
+		Admissions: admissions, RequestViews: s.gate, Answers: s.gate, Operators: []int64{operatorID}, Sandbox: o.sandbox, CookieKey: []byte(cookieKey), BaseURL: baseURL, Now: s.clock.Now,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -828,31 +827,6 @@ func (f *fakeSandbox) count() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.jobs)
-}
-
-type fakeProvider struct {
-	mu    sync.Mutex
-	calls int
-	err   error
-	text  string
-}
-
-func (f *fakeProvider) MaxCostMicroUSD(control.Prompt) int64 { return 1000 }
-
-func (f *fakeProvider) Complete(context.Context, control.Prompt) (control.Completion, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls++
-	if f.err != nil {
-		return control.Completion{}, f.err
-	}
-	return control.Completion{Text: f.text, CostMicroUSD: 500}, nil
-}
-
-func (f *fakeProvider) count() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.calls
 }
 
 var errDown = errors.New("test: platform down")

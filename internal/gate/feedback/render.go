@@ -153,7 +153,7 @@ func suspended(o verdict.Outcome) bool {
 
 func renderGate(p Publication) string {
 	p = presentation(p)
-	l := layout{head: join(headBlock(p, false), p.ownerBanner), findings: blockersBlock(p), inputs: inputsBlock(p), receipt: receiptMarker(p.Receipt)}
+	l := layout{head: headBlock(p, false), findings: blockersBlock(p), inputs: inputsBlock(p), receipt: receiptMarker(p.Receipt)}
 	return l.assemble(maxBody)
 }
 
@@ -229,7 +229,7 @@ func shortID(id string) string {
 
 func renderState(p Publication) string {
 	p = presentation(p)
-	l := layout{head: join(headBlock(p, false), p.ownerBanner, policyCard(p.PolicyChange, p.Trusted.Settings)), decision: decisionBlock(p), inputs: inputsBlock(p), receipt: receiptMarker(p.Receipt)}
+	l := layout{head: join(headBlock(p, false), policyCard(p.PolicyChange, p.Trusted.Settings)), decision: decisionBlock(p), inputs: inputsBlock(p), receipt: receiptMarker(p.Receipt)}
 	l.attention = attentionBlock(p, false)
 	if !suspended(p.Outcome) {
 		l.findings, l.dims, l.gaps = findingsBlock(p.Report, false), dimensionsBlock(p.Report), gapsBlock(p)
@@ -246,7 +246,7 @@ func renderState(p Publication) string {
 func renderComment(p Publication, now time.Time, waiver, link string) string {
 	p = presentation(p)
 	s := screenOf(p, commentHeading(p), policyCard(p.PolicyChange, p.Trusted.Settings), now, link)
-	l := layout{head: join(s.head, p.ownerBanner), findings: s.findings, tail: s.tail, inputs: fixedTrustSentence}
+	l := layout{head: s.head, findings: s.findings, tail: s.tail, inputs: fixedTrustSentence}
 	if !suspended(p.Outcome) {
 		l.gaps = headGaps + "\n\n- No usable report"
 		if p.Report != nil {
@@ -659,9 +659,6 @@ func inputsBlock(p Publication) string {
 		profile = "version " + code(mp.Version) + ", settings hash " + code(mp.SettingsHash)
 	}
 	lines = append(lines, "- Measurement profile: "+profile, identityLine(p.Identity))
-	if p.Trusted.Approval == inputs.ApprovalGranted {
-		lines = append(lines, "- Protected path change: owner approval by "+code(p.Trusted.ApprovedBy))
-	}
 	return headInputs + "\n\n" + strings.Join(lines, "\n") + "\n\n" + fixedTrustSentence
 }
 

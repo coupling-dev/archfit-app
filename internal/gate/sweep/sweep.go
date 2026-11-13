@@ -22,7 +22,6 @@ type sweeper struct {
 	resolver  inputs.Resolver
 	publisher feedback.Publisher
 	admit     Admitter
-	decisions Decisions
 	cfg       Config
 	graphs    *edgeCache // module graphs of verified reports, shared by the passes of this instance
 }
@@ -190,8 +189,7 @@ func (p *pass) pull(ctx context.Context, t inputs.Target, shared []verdict.Share
 	if p.recheck {
 		return p.recheckPull(ctx, t, tr)
 	}
-	// Rule 8 is independent of the check rules: a failure of one never skips the other.
-	return errors.Join(p.evaluate(ctx, t, tr, shared), p.decisions.Revalidate(ctx, t, tr, p.now))
+	return p.evaluate(ctx, t, tr, shared)
 }
 
 // skip counts and logs a failed unit. It returns an error only when the failure stops the pass.

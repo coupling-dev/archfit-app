@@ -10,7 +10,6 @@
     type Overview,
     type RepoFindings,
     type Session,
-    type ShareState,
   } from '../lib/api';
   import Skeleton from '../components/Skeleton.svelte';
   import { ageWord } from '../lib/age';
@@ -91,7 +90,6 @@
     load();
   }
 
-  const shareWords: Record<ShareState, string> = { allowed: 'allowed', not_allowed: 'not allowed', unknown: 'cannot tell' };
   // A pull request whose archfit/state has no report yet is waiting, not unhealthy: the server's words for "no check
   // yet" and "running". Every other state but healthy needs a look.
   const waitingStates = ['no state yet', 'in progress'];
@@ -101,7 +99,7 @@
   );
   const actions = $derived(body !== null && body.admin && (body.can_start || body.can_discover));
   const needsYou = $derived(
-    body !== null && (body.next !== '' || body.diagnostic !== '' || actions || body.decisions.length > 0),
+    body !== null && (body.next !== '' || body.diagnostic !== '' || actions),
   );
 </script>
 
@@ -162,7 +160,7 @@
   {/if}
 
   {#if body.main_state}
-    <div class="stats" role="group" aria-label="Pull requests and decision requests" id="watch">
+    <div class="stats" role="group" aria-label="Pull requests" id="watch">
       <div>
         <span class="n">{body.pulls_error ? '–' : body.pulls_unread ? `${body.pulls_to_update}+` : body.pulls_to_update}</span>
         <span class="t">{!body.pulls_error && !body.pulls_unread && body.pulls_to_update === 1 ? 'Pull request' : 'Pull requests'} to update</span>
@@ -174,13 +172,6 @@
               : 'the target branch moved under them: update the branch'}</span
         >
       </div>
-      <div>
-        <span class="n">{body.decisions_error ? '–' : body.decisions_pending}</span>
-        <span class="t">Decision {!body.decisions_error && body.decisions_pending === 1 ? 'request' : 'requests'} pending</span>
-        <span class="s"
-          >{body.decisions_error ? 'could not be read' : 'wait for an owner'}</span
-        >
-      </div>
     </div>
   {/if}
 
@@ -188,32 +179,6 @@
     <section class="box" aria-labelledby="needs-you">
       <div class="box-head"><h2 id="needs-you">Needs you</h2></div>
       <div class="box-body stack">
-        {#if body.decisions.length}
-          <div class="stack-sm" id="needs-decisions">
-            <p>
-              <strong
-                >{body.decisions_pending} decision {body.decisions_pending === 1 ? 'request waits' : 'requests wait'} for an
-                owner.</strong
-              >
-              An agent cannot approve its own request.
-            </p>
-            <ul class="plain" aria-label="Decision requests that wait for an owner">
-              {#each body.decisions as d (d.href + d.finding + d.created)}
-                <li>
-                  <a class="inline" href={safeHref(d.href)}>#{d.pull}{d.title ? ' ' + d.title : ''}</a>
-                  <span class="muted small"
-                    ><code>{d.rule}</code> {d.edge} · requested by @{d.requester} · {ageWord(d.created)}</span
-                  >
-                </li>
-              {/each}
-            </ul>
-            {#if body.decisions_pending > body.decisions.length}
-              <p class="muted small">
-                {body.decisions_pending - body.decisions.length} more.
-              </p>
-            {/if}
-          </div>
-        {/if}
         {#if body.next}
           <p><strong>Next:</strong> {body.next}</p>
           {#if body.next_how}
@@ -369,12 +334,11 @@
     </section>
   {/if}
 
-  {#if body.admin && body.managed_ai}
+  {#if body.admin}
     <section class="box" aria-labelledby="admin">
       <div class="box-head"><h2 id="admin">Administration</h2></div>
       <div class="box-row row">
         <a href={repoPage(route.fullName, '/data-sharing')}>Data sharing</a>
-        <span class="muted small">Managed AI: {shareWords[body.managed_ai]}</span>
       </div>
     </section>
   {/if}

@@ -62,7 +62,7 @@ owner of what they restate. The parent package exports no identifier.
 ### Rules that hold for every child
 
 - No domain decision lives here. The branch reports what GitHub says and authenticates what GitHub signs. What
-  that means for a gate, an approval, a trial or a fork is decided by the consumers.
+  that means for a gate, a trial or a fork is decided by the consumers.
 - Identity passed in is trusted by the caller's construction: a `RepoRef` or installation ID must come from a
   verified webhook, verified OIDC claims resolved through the API, or an authorized session. The branch does
   not re-derive tenancy; GitHub's own access control answers `404` to a wrong pairing.
@@ -130,8 +130,8 @@ deeper module.
 - **Volatility**: Low
 - **Balanced?**: Yes: contract strength tolerates the distance
 - **Shared knowledge**: held by the children. App registration the branch assumes: permissions `checks: write`,
-  `pull_requests: write`, `contents: write`, `actions: write`, `metadata: read`, `members: read`, `merge_queues: read` (Merge queues: Read), and no `workflows`
-  (no child writes `.github/workflows/`); events `pull_request`, `pull_request_review`, `push`, `merge_group`, `installation`,
+  `pull_requests: write`, `contents: write`, `actions: write`, `metadata: read`, `merge_queues: read` (Merge queues: Read), and no `workflows`
+  (no child writes `.github/workflows/`); events `pull_request`, `push`, `merge_group`, `installation`,
   `installation_repositories`; user authorization (OAuth) enabled. Requests as issues (M2 task 16) also need `issues: write`
   and the events `issue_comment` and `issues`; the owner adds them to the App registration before the release.
 

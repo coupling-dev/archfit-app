@@ -192,11 +192,6 @@ func (w *world) changes(p *pull, paths ...string) {
 	w.gh.changed[pullKey(p.repo.FullName, p.number)] = paths
 }
 
-func (w *world) review(p *pull, login, state, sha string) {
-	key := pullKey(p.repo.FullName, p.number)
-	w.gh.reviews[key] = append(w.gh.reviews[key], api.Review{Reviewer: login, State: state, CommitSHA: sha})
-}
-
 // uploadSpec is one POST /v1/reports. spec returns a fully consistent one; tests break single parts of it.
 type uploadSpec struct {
 	body        []byte
