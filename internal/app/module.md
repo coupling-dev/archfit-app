@@ -138,7 +138,7 @@ Supporting. Wiring has no business rules and changes only when a module or platf
 - The error classes of webhook processing.
 - The operator token scheme for `/internal/*`, and the invoker identity check of the worker.
 - Enqueue deadline: 4 s per task **[default]**, so both tasks fit inside GitHub's 10-second delivery timeout.
-- Server settings: read timeout 15 s, write timeout 65 s, idle 60 s, shutdown grace 10 s **[default]**. The write timeout
+- Server settings: read timeout 15 s, write timeout 310 s, idle 60 s, shutdown grace 10 s **[default]**. The write timeout
   is above the longest route deadline (55 s), so a route's own deadline always answers before the server cuts the connection.
 
 ## Public Contract

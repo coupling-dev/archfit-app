@@ -23,9 +23,9 @@ import (
 
 const (
 	readTimeout = 15 * time.Second
-	// writeTimeout stays above the longest route deadline (55 s), so a route's own
-	// deadline answers before the server cuts the connection.
-	writeTimeout  = 65 * time.Second
+	// writeTimeout stays above every route deadline (55 s) and above the operator routes, which have none: a sweep
+	// pass over every installation answers within it.
+	writeTimeout  = 310 * time.Second
 	idleTimeout   = 60 * time.Second
 	shutdownGrace = 10 * time.Second
 	clientTimeout = 30 * time.Second
