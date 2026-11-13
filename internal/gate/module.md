@@ -2,7 +2,7 @@
 
 **Path**: internal/gate/
 **Parent**: internal/ (Archfit App root)
-**Submodules**: ingest, inputs, verdict, feedback, sweep, decisions, records, requests
+**Submodules**: ingest, inputs, verdict, feedback, sweep, decisions, records, requests, proposals, approvals
 
 ## Purpose
 
@@ -48,6 +48,12 @@ separate, testable steps. Without this module a report is a self-reported file a
   `archfit/policy` (`gate/proposals`): the approval recorded, the branch written with the other open answers,
   `archfit/gate` set on that pull request when M2 D13 holds, and the merge unless the owner chose to merge later.
   `AnswerDigest` is the change digest the owner's passkey step-up is bound to.
+- Judge each default-branch push that changes the policy (M2 task 20, `gate/approvals`, façade file `approvals.go`): the
+  merge of a proposal with the policy its approvals wrote consumes them, once; in a repository with an approved policy,
+  any other change puts it "outside the flow" (design 7.1): one issue opens to the owners, and every envelope 2 upload
+  is `unknown` with a record that names it until an owner confirms or reverts (task 23). A repository without an
+  approved policy is not under change control yet: the push is recorded, and its uploads say `first_approval`. The requests and pull requests of a consumed
+  proposal are handed to the re-check (task 21; logged as `gate recheck handed` until it lands).
 - For the App's pull request page only (`FirstScreen`, `RecoveryStep`): word a published result with the code that
   words the comment, so the page's first screen is the comment's. Pure functions of what the check recorded.
 - For the App's pull request page only (`Decisions`): list the decision requests of a pull request, and let an
@@ -503,12 +509,19 @@ Steps, in order:
 | an ingest `Problem` | `envelope_mismatch`, `unsupported_event`, `fork`, `result_invalid` | run the check again; open the pull request against the default branch; push the branch to this repository; pin archfit-action to a commit the App lists |
 | the engine identity (version, image digest, platform) is a manifest 4 row (`manifest.EngineApproved`) | `unknown_engine` | pin archfit-action to a commit the App lists |
 | `T` has a schema 3 policy (`.archfit.yaml` that `policy3.Decode` reads) | `first_policy` | an administrator approves the first policy in the App (task 23) |
+| the repository is not outside the flow (`records.Repo.OutsideFlow`, set by a policy push no approval made, M2 task 20) | `outside_flow` | an owner confirms or reverts it in the App: `#<issue>` |
+| the repository has an approved policy (`records.Repo.ApprovedDigest`, set by a consume or, in task 23, the first approval) | `first_approval` | an administrator approves the policy in the App |
+| the policy at `T` is the approved one (`policy3.Digest` of `T`'s policy equals `ApprovedDigest`; not checked outside the flow or without an approved policy): a policy push no judgement has reached yet gives no verdict | `policy_unapproved` | the check runs again |
 | `target_sha` is `T` or behind it (`Compare(target_sha, T)` is `identical` or `ahead`; a commit GitHub does not know is not) | `target_not_on_branch` | run the check again |
 | `policy_digest` is the digest of `.archfit.yaml` at `target_sha` (a policy from the head fails here) | `policy_not_target` | restore the policy from the default branch |
 | the digest at `target_sha` is the digest at `T` | `policy_changed` | the check runs again |
 | `.github/workflows/archfit.yaml` at the run's commit (`Binding4.RunSHA`, the test merge commit of a pull request) is `T`'s (same blob), or differs only in the ref and the version comment (` # v4.0.1`) of whole `uses: alexei-led/archfit-action@<ref>` lines (LF line ends, optional matching quotes), each new ref a commit manifest 4 lists (`manifest.ActionApproved`); any other text, a reference inside a script, a CR, NEL or U+2028 stays compared | `workflow_changed` | update the branch; if the pull request changes the workflow, an owner approves it in the App (task 23) |
 
-The policy rules are skipped on a first policy, and the `target_sha` digest rules after `target_not_on_branch`. The
+The policy rules are skipped on a first policy, and the `target_sha` digest rules after `target_not_on_branch`. The two
+state rules come first among the policy rules; `outside_flow` is checked before `first_approval`, and
+`policy_unapproved` after the `target_sha` rules. Without an approved policy no upload passes: change control starts
+with the first approval (manager, 2026-11-12). A lost push event leaves `policy_unapproved` until the sweep (task 22)
+judges the tip. The
 workflow rule always runs: a pull request runs its own workflow file, so a changed one could upload a forged `pass`
 (design 9.2). A tag ref is never a pin bump here. A pull request whose test merge commit is older than a non-ref
 change of the workflow on `T` reads `unknown` until its branch is updated.
@@ -1022,6 +1035,18 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
   `api.Changes` and `api.Merges`) and Store; `IsProposalPull` for the envelope 2 upload's publish step; the answer
   types and errors re-exported for `Answers` (façade file `answers.go`).
 
+### gate/approvals (child)
+
+- **Counterpart**: internal/gate/approvals
+- **Direction**: gate depends on approvals
+- **Strength**: functional (composition)
+- **LCA / Rank / Distance**: gate / 1 / 1
+- **Volatility**: high
+- **Balanced?**: yes
+- **Shared knowledge**: `Service` (`Pushed`), built with the gate's GitHub client and Store; `Push`, `Outcome` and the
+  judgements. The façade file `approvals.go` calls it on `DefaultBranchPush` and logs the outcome with identifiers
+  only (`gate policy push`, `gate recheck handed`). `upload4.go` reads the state it records (`records.Repo`).
+
 ### wire/manifest
 
 - **Counterpart**: internal/wire/manifest
@@ -1312,6 +1337,7 @@ type Event struct {
     Pusher         string   // push kinds only: the login that moved the branch; never a git author or committer
     PusherType     string   // push kinds only: the payload's pusher_type ("user", or a deploy key); "" when absent
     ChangedPaths   []string // default_branch_push only
+    Before         string   // default_branch_push only: the commit before the push; "" when the push created the branch
     GroupReason    string   // merge_group_destroyed only: "merged", "dequeued", "invalidated" or what GitHub sends
 }
 ```
@@ -1622,7 +1648,7 @@ Special targets, all through the same flow:
 | `IssueOpened`                    | `gate/requests`' `Filed`: an issue the CLI opened with a request line becomes a request, is closed with a note, or gets one reply. |
 | `ReviewChanged`                  | `Reconcile(target, …)`: inside the lease, a withdrawn approval → `sweep.Withdrawal` (below); reason `owner_approval_missing` and `!verdict.Unapproved(trusted)` **[default: no re-run while an approval is missing]** → `sweep.Rerun`. Then (not for a pull request into another base) `MergeQueues.MergeQueue(default branch)`: the entries from this pull request's own entry to the end of the queue are the groups that hold it; each gets the `MergeGroupDestroyed` reconciliation (`group_checked`). Not queued → nothing more. `ErrQueueForbidden` → nothing more (no group result can exist without the permission). Any other queue or group error is returned and the queue retries the delivery; one group's error does not stop the others.                           |
 | `BranchPush`                     | `resolver.RecordPusher(target, Pusher)` first, for attribution (the record approves nothing); a failed write is returned and the queue retries. Then the newest pull request of this repository whose head is `Branch` (`Pulls.PullByHead`): when it is open and its head is `HeadSHA`, run the `ReviewChanged` reaction on it. A push whose `PusherType` is present and not `"user"` (a deploy key) records nothing and logs `gate pusher not recorded` with the delivery id, never the key; the re-evaluation and the sweep still run. No such pull request, a closed one or another head → nothing more. A pull request from a fork is never found. |
-| `DefaultBranchPush`              | `RecordPusher` and the pull request lookup as for `BranchPush`; then `ChangedPaths` empty (= unknown), or `inputs.MayBeProtected(path)` for any changed path → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise `sweeper.Recheck(ctx, repo, HeadSHA, now)` in the request: sweep rule 5c alone, which the full pass of `RunRepo` includes.                                                                                                   |
+| `DefaultBranchPush`              | `RecordPusher` and the pull request lookup as for `BranchPush`; then the policy judgement (`approvals.Pushed` with `Before`, `HeadSHA` and `ChangedPaths`, M2 task 20): a consume, outside the flow, or nothing; its error is returned and the queue retries, and a retry finishes the same judgement. Then `ChangedPaths` empty (= unknown), or `inputs.MayBeProtected(path)` for any changed path → `sweeper.RunRepo(ctx, repo, now)` in the request. Otherwise `sweeper.Recheck(ctx, repo, HeadSHA, now)` in the request: sweep rule 5c alone, which the full pass of `RunRepo` includes.                                                                                                   |
 | `PullClosed`                     | `decisions.Closed`: every pending decision request of the pull becomes `stale (pull request closed)`, unless the pull request is open now (a delayed delivery after a reopen). Then `asks.PullClosed` drops the pull request from the Archfit 4 pull index (its pull record stays).                                                                                                                                                            |
 | installation kinds, `Ignored`    | nothing; `control` handles installations.                                                                                                                                                                                                                        |
 
@@ -1861,7 +1887,7 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 
 - **Test name**: `TestStoreWritesOnlyLeasesAndInputsRecords`
   **Scenario**: a Store wrapper that panics on `Put`, `Delete`, `Add`, `DeleteTenant`, `Tenants` and on a `CompareAndSwap` outside feedback leases, pusher, legacy approval, owner-decision and reviewer-request state; exercise event, upload, sweep and browser decision flows.
-  **Expected behavior**: no panic; every record/lease uses the installation tenant; decision writes occur only through the browser façade; reviewer-request records never grant authority; the publication lease is released after success.
+  **Expected behavior**: no panic; every record/lease uses the installation tenant; decision writes occur only through the browser façade; reviewer-request records never grant authority; the publication lease is released after success. Reads are of the entitlement and of the repository's `v4/` records, which a default-branch push reads to judge its policy (M2 task 20).
 - **Test name**: `TestUnadmittedInstallationGetsNothing`
   **Scenario**: the installation is refused by the admission fake; a `PullOpened` event, then an upload; then the refusal is lifted and a `PullSynchronized` event and an upload follow.
   **Expected behavior**: no pending check and no state check while refused; the upload answers 403 `installation_not_approved`; after the lift the upload answers 200 `success`/`healthy`.
@@ -2017,3 +2043,15 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestAnAnswerIsTakenForAnAdmittedInstallationOnly`, `TestAnAnswerThroughTheGate`
   **Scenario**: `AnswerDigest` and `Answer` for an installation no operator approved; a real request line, then its digest, an answer by the worker, and an owner's reject whose branch write GitHub refuses.
   **Expected behavior**: `errNotAdmitted` and no GitHub call; a `sha256:` digest; `ErrNotPolicyOwner`; the write's error with the request still open and its issue open. `gate/proposals` tests the whole flow.
+- **Test name**: `TestACodePullRequestThatEditsThePolicyIsUnknown`, `TestAPolicyNoOwnerApprovedGivesNoVerdict`
+  **Scenario**: the engine's `policy_differs` result of a pull request that edits the policy; a `pass` on a repository whose schema 3 policy has no recorded approval.
+  **Expected behavior**: `unknown`, `action_required`, the engine's record shown as it is; `unknown` `first_approval`, the record says an administrator approves the policy in the App.
+- **Test name**: `TestADirectPushPutsEveryUploadOutsideTheFlow`
+  **Scenario**: a default-branch push that changes the policy with no recorded approval, delivered twice; then an upload of a `pass`.
+  **Expected behavior**: one open issue, assigned to the owners, naming the commit; the upload `unknown` `outside_flow`, its record naming the issue. `gate/approvals` tests the judgement.
+- **Test name**: `TestAnUploadBeforeItsPushIsJudgedGivesNoVerdict`
+  **Scenario**: the default branch's policy changed and no push event was handled yet; then the push arrives.
+  **Expected behavior**: `unknown` `policy_unapproved`; after the push, `unknown` `outside_flow`.
+- **Test name**: `TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed`
+  **Scenario**: a request answered with "merge later"; a second pull request fails on the same key and asks again; the policy pull request merges and its push arrives; a third pull request fails on the key.
+  **Expected behavior**: the second waits on the answered request, no second issue opens, both pull requests are in its `Waiting`; the push consumes the proposal; the third is `fail`: the key is free.

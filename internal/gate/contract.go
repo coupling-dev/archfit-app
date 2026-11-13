@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate/approvals"
 	"github.com/alexei-led/archfit-app/internal/gate/decisions"
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
@@ -51,6 +52,7 @@ type Gate struct {
 	v4         *upload4           // the envelope 2 upload path
 	asks       *asks.Service      // request lines: issues and the status waiting (M2 task 16)
 	proposals  *proposals.Service // owners' answers and the policy pull request (M2 task 19)
+	approvals  *approvals.Service // the judgement of a default-branch push that changes the policy (M2 task 20)
 }
 
 // admitter is the one method of Admissions every gate path asks before it does anything for an installation.
@@ -95,6 +97,7 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 	g.v4 = newUpload4(ingest.NewV2(gh, gh, gh, gh, gh, v, audience, adm), gh, gh, s, publisher4)
 	g.asks = asks.New(gh, s, publisher4)
 	g.proposals = proposals.New(gh, s, now)
+	g.approvals = approvals.New(gh, s)
 	return g
 }
 

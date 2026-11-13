@@ -27,7 +27,8 @@ func RequestKey(fullName string, issue int) string {
 	return "v4/request/" + repo(fullName) + "/" + strconv.Itoa(issue)
 }
 
-// RequestIndexKey holds the open requests of a repository by request key.
+// RequestIndexKey holds the requests of a repository that cover their key, by request key: the open ones, and the
+// answered ones whose proposal is not consumed yet.
 func RequestIndexKey(fullName string) string { return "v4/request-index/" + repo(fullName) }
 
 // ApprovalKey holds one approval (Approval).
@@ -42,6 +43,22 @@ func ProposalIndexKey(fullName string) string { return "v4/proposal-index/" + re
 // ProposalLeaseKey is held while an answer writes the repository's proposal: its branch, its pull request and its
 // records change together, and two answers must not interleave (gate/proposals).
 func ProposalLeaseKey(fullName string) string { return "v4/proposal-lease/" + repo(fullName) }
+
+// Push is one push of the default branch: the commit it replaced and the commit it pushed. A push is judged once, under
+// both: a push that moves the branch back to a commit judged before is another push, and is judged again.
+type Push struct{ Before, After string }
+
+// noCommit stands for the commit before a push that created the branch, as GitHub writes it.
+const noCommit = "0000000000000000000000000000000000000000"
+
+// PolicyPushKey holds how the App judged a default-branch push that changed the policy (PolicyPush).
+func PolicyPushKey(fullName string, p Push) string {
+	before := p.Before
+	if before == "" {
+		before = noCommit
+	}
+	return "v4/policy-push/" + repo(fullName) + "/" + before + ".." + p.After
+}
 
 // PullKey holds the pull record of a pull request (Pull).
 func PullKey(fullName string, pr int) string {

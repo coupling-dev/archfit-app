@@ -53,8 +53,10 @@ func TestAnswerRecordsTheApprovalTheRequestAndANewProposalInOneSwap(t *testing.T
 		p.State != records.StateOpen {
 		t.Errorf("proposal = %+v", p)
 	}
-	if x := loadIndex(t, s, records.RequestIndexKey(repoName), records.SchemaRequestIndex); len(x.Entries) != 0 {
-		t.Errorf("the answered request is still in the request index: %v", x.Entries)
+	// Until its proposal is consumed the answered request covers its key: a failing pull request waits on it.
+	if x := loadIndex(t, s, records.RequestIndexKey(repoName), records.SchemaRequestIndex); !slices.Equal(x.Entries,
+		[]records.Entry{{Key: requestKey, ID: "431"}}) {
+		t.Errorf("request index = %v, want the answered request kept", x.Entries)
 	}
 	if id, ok := (&records.Index{Entries: loadIndex(t, s, records.ProposalIndexKey(repoName), records.SchemaProposalIndex).Entries}).Lookup("12"); !ok || id != "p1" {
 		t.Errorf("proposal index entry of #12 = %q, %v", id, ok)
@@ -87,6 +89,9 @@ func TestAnswerWithoutAProposal(t *testing.T) {
 	}
 	if req := load[records.Request](t, s, records.RequestKey(repoName, 431)); req.State != records.StateAnswered {
 		t.Errorf("request state = %q", req.State)
+	}
+	if x := loadIndex(t, s, records.RequestIndexKey(repoName), records.SchemaRequestIndex); len(x.Entries) != 0 {
+		t.Errorf("an answer that joins no proposal left its request in the index: %v", x.Entries)
 	}
 }
 
@@ -244,4 +249,28 @@ func TestARequestIsAnsweredOnce(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestAProposalWithAnApprovalLeftIsNotVoided: an answer that joined after the caller voided the approvals it read is
+// voided too before the proposal, so no approval stays joined to a void proposal with its request covering its key.
+func TestAProposalWithAnApprovalLeftIsNotVoided(t *testing.T) {
+	ctx := context.Background()
+	s := store.NewMemory()
+	seedRequest(t, s)
+	pin := &records.Pin{Proposal: "p1", PullRequest: 12, HeadSHA: "h", Digest: "d"}
+	if err := records.Answer(ctx, s, tenant, repoName, "a1", *approval(""), pin); err != nil {
+		t.Fatal(err)
+	}
+	if err := records.VoidProposal(ctx, s, tenant, repoName, "p1"); !errors.Is(err, records.ErrApprovalsLeft) {
+		t.Fatalf("VoidProposal = %v, want ErrApprovalsLeft", err)
+	}
+	if p := load[records.Proposal](t, s, records.ProposalKey(repoName, "p1")); p.State != records.StateOpen {
+		t.Errorf("proposal %q, want still open", p.State)
+	}
+	if _, _, err := records.Void(ctx, s, tenant, repoName, "a1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := records.VoidProposal(ctx, s, tenant, repoName, "p1"); err != nil {
+		t.Errorf("VoidProposal after the void = %v", err)
+	}
 }

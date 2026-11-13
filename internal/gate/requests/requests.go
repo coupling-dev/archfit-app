@@ -48,7 +48,7 @@ const (
 	ReactionIgnored  = "request_ignored"  // a pull request the App does not judge: closed, or into another base
 	ReactionRefused  = "request_refused"  // one reply says why
 	ReactionAsked    = "request_asked"    // requests opened or joined
-	ReactionAnswered = "request_answered" // a deny rule already answers it, or the same request is open
+	ReactionAnswered = "request_answered" // a deny rule already answers it, or the same request was asked
 	ReactionFiled    = "request_filed"    // a CLI issue became a request
 )
 

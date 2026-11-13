@@ -681,6 +681,7 @@ const (
 	requestKeyPrefix         = "v4/request/" // the requests of M2 task 16
 	requestIndexKeyPrefix    = "v4/request-index/"
 	answerKeyPrefixes        = "v4/approval/ v4/proposal/ v4/proposal-index/ v4/proposal-lease/" // M2 task 19
+	pushKeyPrefixes          = "v4/repo/ v4/policy-push/"                                        // M2 task 20
 )
 
 // isRecord reports whether key is a pusher or an approval record of gate/inputs, a request record of gate/decisions,
@@ -693,8 +694,9 @@ func isRecord(key string) bool {
 
 // isV4Record is a pull record or a request of Archfit 4, or their index.
 func isV4Record(key string) bool {
-	for _, prefix := range append([]string{pullRecordKeyPrefix, pullIndexKeyPrefix, requestKeyPrefix, requestIndexKeyPrefix},
-		strings.Fields(answerKeyPrefixes)...) {
+	prefixes := []string{pullRecordKeyPrefix, pullIndexKeyPrefix, requestKeyPrefix, requestIndexKeyPrefix}
+	prefixes = append(prefixes, strings.Fields(answerKeyPrefixes)...)
+	for _, prefix := range append(prefixes, strings.Fields(pushKeyPrefixes)...) {
 		if strings.HasPrefix(key, prefix) {
 			return true
 		}
@@ -768,8 +770,8 @@ func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key str
 	return s.inner.CompareAndSwap(ctx, t, key, old, value)
 }
 
-// CompareAndSwapAll is allowed for decision request records and Archfit 4 pull, request, approval and proposal records
-// and the proposal lease only, every key of the call.
+// CompareAndSwapAll is allowed for decision request records and Archfit 4 pull, request, approval and proposal records,
+// the proposal lease, the repository record and the judgement of a policy push only, every key of the call.
 func (s *guardStore) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
 	s.mu.Lock()
 	for _, sw := range swaps {

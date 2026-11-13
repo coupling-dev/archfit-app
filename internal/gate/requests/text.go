@@ -74,7 +74,7 @@ func (o outcome) reply(waits bool) string {
 		b.WriteString("- #" + strconv.Itoa(n) + ": a new request; its owners are assigned.\n")
 	}
 	for _, n := range o.joined {
-		b.WriteString("- #" + strconv.Itoa(n) + ": the same request is open; this pull request joins it.\n")
+		b.WriteString("- #" + strconv.Itoa(n) + ": the same request was asked; this pull request joins it.\n")
 	}
 	for _, a := range o.answered {
 		b.WriteString("- " + codeSpan(a.what) + ": the rule " + codeSpan(a.rule) + " already answers it. Instead:\n\n")
@@ -97,7 +97,7 @@ func answeredReply(a answered) string {
 
 // duplicateReply is the comment on a request issue whose request is already open, before the App closes it.
 func duplicateReply(open int) string {
-	return "archfit: the same request is open: #" + strconv.Itoa(open) + ". This issue is closed; follow #" +
+	return "archfit: the same request was asked in #" + strconv.Itoa(open) + ". This issue is closed; follow #" +
 		strconv.Itoa(open) + ".\n"
 }
 

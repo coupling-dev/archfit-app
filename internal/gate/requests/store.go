@@ -12,13 +12,14 @@ import (
 	"github.com/alexei-led/archfit-app/internal/store"
 )
 
-// errNotOpen is a request the index names but whose record is not open: the index and the record disagree, so
-// nothing joins it.
+// errNotOpen is a request that no longer covers its key: closed, or answered and out of the request index (its
+// proposal was consumed, or its answer joined none). Nothing joins it.
 var errNotOpen = errors.New("requests: the request is not open")
 
 func tenant(r api.Repo) store.Tenant { return store.Tenant(r.InstallationID) }
 
-// OpenIndex reads the open requests of a repository by request key; a missing index is empty.
+// OpenIndex reads the requests of a repository that cover their key (open, or answered and waiting for their
+// proposal to merge), by request key; a missing index is empty.
 func OpenIndex(ctx context.Context, s store.Store, r api.Repo) (*records.Index, error) {
 	x := &records.Index{Schema: records.SchemaRequestIndex}
 	err := records.Load(ctx, s, tenant(r), records.RequestIndexKey(r.FullName), x)
@@ -49,11 +50,13 @@ type confirmation struct {
 	balance *records.Balance
 }
 
-// join adds pull to the waiting pull requests of the open request id, and confirms its numbers when they are as
-// reported and c is set. joined is true when pull was not waiting yet; changed when the record moved at all.
+// join adds pull to the waiting pull requests of request id, and confirms its numbers when they are as reported and
+// c is set. The request is open, or answered and still in the request index: until its proposal is consumed it covers
+// its key (gate/records Answer), so a pull request failing on that key waits on it, and the re-check after the consume
+// finds it in Waiting. joined is true when pull was not waiting yet; changed when the record moved at all.
 func join(ctx context.Context, s store.Store, r api.Repo, id, pull int, c *confirmation) (req records.Request, joined, changed bool, err error) {
 	err = records.Indexed(ctx, s, tenant(r), records.RequestKey(r.FullName, id), records.RequestIndexKey(r.FullName),
-		records.SchemaRequestIndex, func(cur []byte, _ *records.Index) ([]byte, error) {
+		records.SchemaRequestIndex, func(cur []byte, x *records.Index) ([]byte, error) {
 			req, joined, changed = records.Request{}, false, false
 			if cur == nil {
 				return nil, errNotOpen
@@ -61,7 +64,7 @@ func join(ctx context.Context, s store.Store, r api.Repo, id, pull int, c *confi
 			if err := records.Decode(cur, &req); err != nil {
 				return nil, err
 			}
-			if req.State != records.StateOpen {
+			if !covers(req, x, id) {
 				return nil, errNotOpen
 			}
 			if !slices.Contains(req.Waiting, pull) {
@@ -79,6 +82,18 @@ func join(ctx context.Context, s store.Store, r api.Repo, id, pull int, c *confi
 		err = fmt.Errorf("requests: join request %d: %w", id, err)
 	}
 	return req, joined, changed, err
+}
+
+// covers reports whether request id still covers its key: open, or answered and still in the request index.
+func covers(req records.Request, x *records.Index, id int) bool {
+	switch req.State {
+	case records.StateOpen:
+		return true
+	case records.StateAnswered:
+		at, ok := x.Lookup(req.Key)
+		return ok && at == strconv.Itoa(id)
+	}
+	return false
 }
 
 // listed records that the issue body of request id lists pulls.
