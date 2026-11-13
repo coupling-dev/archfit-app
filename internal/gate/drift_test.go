@@ -53,7 +53,7 @@ func TestAPushRunWithDriftOpensTheDriftIssue(t *testing.T) {
 	if err := records.Load(context.Background(), w.mem, store.Tenant(shopInstallation), records.RepoKey(shopName), &rec); err != nil {
 		t.Fatal(err)
 	}
-	if rec.DriftIssue != issues[0].Number || rec.DriftHead != w.tip || rec.ApprovedDigest == "" {
+	if rec.DriftIssue != issues[0].Number || !strings.HasPrefix(rec.DriftDigest, "sha256:") || rec.ApprovedDigest == "" {
 		t.Errorf("repository record = %+v", rec)
 	}
 	// The same upload again (the Action's retry) changes nothing.

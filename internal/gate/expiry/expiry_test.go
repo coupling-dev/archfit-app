@@ -70,6 +70,8 @@ type issue struct {
 
 type fakeGitHub struct {
 	policy   map[string]string // by ref
+	head     string
+	failErr  error
 	issues   map[int]*issue
 	next     int
 	failOn   string
@@ -89,8 +91,21 @@ func (f *fakeGitHub) File(_ context.Context, _ api.RepoRef, ref, path string) ([
 	return []byte(p), "blob", nil
 }
 
+func (f *fakeGitHub) BranchHead(_ context.Context, _ api.RepoRef, _ string) (string, error) {
+	if f.failOn == "BranchHead" {
+		return "", errFake
+	}
+	if f.head != "" {
+		return f.head, nil
+	}
+	return tip, nil
+}
+
 func (f *fakeGitHub) CreateIssue(_ context.Context, _ api.RepoRef, i api.NewIssue) (api.Issue, error) {
 	if f.failOn == "CreateIssue" {
+		if f.failErr != nil {
+			return api.Issue{}, f.failErr
+		}
 		return api.Issue{}, errFake
 	}
 	n := f.next
@@ -104,6 +119,9 @@ func (f *fakeGitHub) CreateIssue(_ context.Context, _ api.RepoRef, i api.NewIssu
 
 func (f *fakeGitHub) CloseIssue(_ context.Context, _ api.RepoRef, n int) error {
 	if f.failOn == "CloseIssue" {
+		if f.failErr != nil {
+			return f.failErr
+		}
 		return errFake
 	}
 	f.issues[n].open = false
@@ -166,9 +184,14 @@ func (w *world) newPolicy(policy string) {
 
 func (w *world) check(now time.Time) *Approved {
 	w.t.Helper()
-	a, err := w.svc.Check(context.Background(), repo, tip, now)
+	a, err := w.svc.Approved(context.Background(), repo, tip)
 	if err != nil {
-		w.t.Fatalf("Check: %v", err)
+		w.t.Fatalf("Approved: %v", err)
+	}
+	if a != nil {
+		if err := w.svc.Warn(context.Background(), repo, a, now); err != nil {
+			w.t.Fatalf("Warn: %v", err)
+		}
 	}
 	return a
 }
@@ -189,7 +212,7 @@ func TestTheIssueOpensSevenDaysBeforeTheDate(t *testing.T) {
 	if is.title != "Archfit: exception duplication pkg_tc -> pkg_util expires on 2026-11-19" || !is.open {
 		t.Errorf("issue = %+v", is)
 	}
-	for _, want := range []string{"holds until 2026-11-19 (7 days).", "Its reason: Request #431 is open.",
+	for _, want := range []string{"holds until 2026-11-19 (7 days).", "Its reason: `Request #431 is open.`",
 		"every pull request into `main` fails"} {
 		if !strings.Contains(is.body, want) {
 			t.Errorf("body has no %q:\n%s", want, is.body)
@@ -398,7 +421,11 @@ func TestAFailedIssueWriteIsReturned(t *testing.T) {
 		t.Run(method, func(t *testing.T) {
 			w := newWorld(t, policyWith("2026-11-19"))
 			w.gh.failOn = method
-			if _, err := w.svc.Check(context.Background(), repo, tip, days(-1)); !errors.Is(err, errFake) {
+			a, err := w.svc.Approved(context.Background(), repo, tip)
+			if err == nil {
+				err = w.svc.Warn(context.Background(), repo, a, days(-1))
+			}
+			if !errors.Is(err, errFake) {
 				t.Errorf("error = %v", err)
 			}
 			if r := w.repoRecord(); r.ExpiryIssues != nil {
@@ -411,7 +438,11 @@ func TestAFailedIssueWriteIsReturned(t *testing.T) {
 		w.check(days(-1))
 		w.newPolicy(noDated)
 		w.gh.failOn = "CloseIssue"
-		if _, err := w.svc.Check(context.Background(), repo, tip, days(0)); !errors.Is(err, errFake) {
+		a, err := w.svc.Approved(context.Background(), repo, tip)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := w.svc.Warn(context.Background(), repo, a, days(0)); !errors.Is(err, errFake) {
 			t.Fatalf("error = %v", err)
 		}
 		w.gh.failOn = ""
@@ -453,7 +484,7 @@ func TestFailPublishesOverThePullRecordsRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &fakePublisher{}
-	f := Failure{Repo: repo, Pull: 7, Record: rec, Expired: Due(xs, rec, days(1))}
+	f := Failure{Repo: repo, Pull: 7, Tip: tip, Record: rec, Expired: Due(xs, rec, days(1))}
 	if err := w.svc.Fail(ctx, p, f); err != nil {
 		t.Fatal(err)
 	}

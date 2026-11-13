@@ -30,7 +30,7 @@ func TestDriftIssue(t *testing.T) {
 			t.Fatal(err)
 		}
 		r := load[records.Repo](t, s, records.RepoKey(repoName))
-		if r.DriftIssue != 11 || r.DriftHead != "h2" || r.ApprovedDigest != "d1" || r.ApprovedCommit != "c1" {
+		if r.DriftIssue != 11 || r.DriftDigest != "h2" || r.ApprovedDigest != "d1" || r.ApprovedCommit != "c1" {
 			t.Errorf("repo = %+v", r)
 		}
 
@@ -44,7 +44,7 @@ func TestDriftIssue(t *testing.T) {
 			t.Fatal(err)
 		}
 		r = load[records.Repo](t, s, records.RepoKey(repoName))
-		if r.DriftIssue != 0 || r.DriftHead != "" || r.ApprovedDigest != "d1" {
+		if r.DriftIssue != 0 || r.DriftDigest != "" || r.ApprovedDigest != "d1" {
 			t.Errorf("repo after close = %+v", r)
 		}
 		if _, err := records.DriftOpened(ctx, s, tenant, repoName, 0, "h1"); err == nil {
@@ -99,7 +99,7 @@ func TestExpiryIssues(t *testing.T) {
 // TestAnUnchangedRepositoryRecordIsKept: a delivery of the same drift head again leaves the bytes as they are.
 func TestAnUnchangedRepositoryRecordIsKept(t *testing.T) {
 	ctx, s := context.Background(), store.NewMemory()
-	put(t, s, records.RepoKey(repoName), &records.Repo{DriftIssue: 11, DriftHead: "h1"})
+	put(t, s, records.RepoKey(repoName), &records.Repo{DriftIssue: 11, DriftDigest: "h1"})
 	before, err := s.Get(ctx, tenant, records.RepoKey(repoName))
 	if err != nil {
 		t.Fatal(err)

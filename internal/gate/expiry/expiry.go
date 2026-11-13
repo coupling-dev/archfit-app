@@ -1,7 +1,8 @@
 // Package expiry gives an exception's date its teeth (design 6.4, M2 D19, task 22): an issue to the owners from 7 days
 // before the date, and, from the day after it, the expired-exception record on every open pull request whose result
 // did not judge it. The sweep runs it; the re-run under the guard of design 10.5 comes first, and Fail only where the
-// guard refuses.
+// guard refuses. Reading the approved policy (Approved) and the issues (Warn) are apart, so a failed notification
+// never stops the date from reaching the pull requests.
 package expiry
 
 import (
@@ -58,7 +59,6 @@ var acceptedStatuses = []string{string(result.StatusPass), string(result.StatusF
 type Exception struct {
 	Rule, From, To, Why string
 	Expires             string // the last day the exception holds, YYYY-MM-DD
-	last                time.Time
 }
 
 // Key is the key of the engine's error for the exception past its date: "exception <rule> <from> [<to>]".
@@ -79,13 +79,21 @@ func cutDate(issueKey string) (key, date string) {
 	return issueKey[:i], issueKey[i+1:]
 }
 
-// daysLeft is how many UTC days are left from today to the last day: 0 on that day, negative after it.
-func (x Exception) daysLeft(today time.Time) int {
-	return int(x.last.Sub(day(today)).Hours() / 24)
+// daysLeft is how many UTC days are left from today to the last day: 0 on that day, negative after it. A date that does
+// not parse has no last day (ok false): it never expires, as an exception without a date.
+func (x Exception) daysLeft(today time.Time) (left int, ok bool) {
+	last, err := time.Parse(time.DateOnly, x.Expires)
+	if err != nil {
+		return 0, false
+	}
+	return int(last.Sub(day(today)).Hours() / 24), true
 }
 
 // Expired reports whether today is past the exception's last day, in UTC calendar days, as the engine judges it.
-func (x Exception) Expired(today time.Time) bool { return x.daysLeft(today) < 0 }
+func (x Exception) Expired(today time.Time) bool {
+	left, ok := x.daysLeft(today)
+	return ok && left < 0
+}
 
 // day is 00:00 UTC of the calendar day t falls on in UTC.
 func day(t time.Time) time.Time {
@@ -98,11 +106,10 @@ func day(t time.Time) time.Time {
 func Dated(pol policy3.File) []Exception {
 	var out []Exception
 	for _, e := range pol.Exceptions {
-		last, err := time.Parse(time.DateOnly, e.Expires)
-		if e.Expires == "" || err != nil {
-			continue
+		x := Exception{Rule: e.Rule, From: e.From, To: e.To, Why: e.Why, Expires: e.Expires}
+		if _, ok := x.daysLeft(time.Time{}); ok {
+			out = append(out, x)
 		}
-		out = append(out, Exception{Rule: e.Rule, From: e.From, To: e.To, Why: e.Why, Expires: e.Expires, last: last})
 	}
 	return out
 }
@@ -159,6 +166,7 @@ func next(x Exception) result.Next {
 // GitHub is what the expiry issues need.
 type GitHub interface {
 	File(ctx context.Context, r api.RepoRef, ref, path string) ([]byte, string, error)
+	BranchHead(ctx context.Context, r api.RepoRef, branch string) (string, error)
 	CreateIssue(ctx context.Context, r api.RepoRef, i api.NewIssue) (api.Issue, error)
 	CloseIssue(ctx context.Context, r api.RepoRef, number int) error
 	CreateComment(ctx context.Context, r api.RepoRef, number int, body string) (api.Comment, error)
@@ -176,16 +184,18 @@ func New(gh GitHub, s store.Store) *Service { return &Service{gh: gh, store: s} 
 
 // Approved is the approved policy at the default branch's tip, as far as expiry reads it.
 type Approved struct {
+	Tip        string      // the commit read: the date's record is published only while it is the tip
 	Exceptions []Exception // the dated exceptions, in policy order
 	Advisory   bool        // the policy has no gate: required, so a fail shows as neutral
+	owners     []string
+	issues     map[string]int // the recorded expiry issues when read
 }
 
-// Check reads the policy at tip and, only when it is the approved policy (Repo.ApprovedDigest, not outside the flow),
-// opens one issue for each dated exception from WarnDays before its date, assigned to the owners, and closes each
-// recorded issue whose exception or date the policy no longer holds (extended or removed). It returns nil otherwise:
-// a repository without an approved policy, or outside the flow, is unknown, and nothing of it may pass or run again. An
-// error is a failed read or write; the caller tries again on its next pass.
-func (s *Service) Check(ctx context.Context, r api.Repo, tip string, now time.Time) (*Approved, error) {
+// Approved reads the policy at tip and returns it only when it is the approved policy (Repo.ApprovedDigest, not
+// outside the flow). It returns nil otherwise: a repository without an approved policy, or outside the flow, is
+// unknown, and nothing of it may pass or run again. It writes nothing, so a failed notification never stops the date
+// from reaching the pull requests. An error is a failed read; the caller tries again on its next pass.
+func (s *Service) Approved(ctx context.Context, r api.Repo, tip string) (*Approved, error) {
 	var rec records.Repo
 	err := records.Load(ctx, s.store, store.Tenant(r.InstallationID), records.RepoKey(r.FullName), &rec)
 	switch {
@@ -210,35 +220,53 @@ func (s *Service) Check(ctx context.Context, r api.Repo, tip string, now time.Ti
 	if err != nil {
 		return nil, nil
 	}
-	a := &Approved{Exceptions: Dated(pol), Advisory: pol.Gate != gateRequired}
-	held := map[string]Exception{}
+	return &Approved{Tip: tip, Exceptions: Dated(pol), Advisory: pol.Gate != gateRequired, owners: pol.Owners,
+		issues: rec.ExpiryIssues}, nil
+}
+
+// Warn keeps the expiry issues of a: one issue for each dated exception from WarnDays before its date, assigned to the
+// owners, and each recorded issue whose exception or date a no longer holds (extended or removed) closed with a note.
+// A GitHub refusal that will not change (issues turned off, an issue deleted or transferred) is logged, and a recorded
+// issue that is gone is forgotten. Any other failed write is returned and the rest wait for the next pass; enforcement
+// never depends on it.
+func (s *Service) Warn(ctx context.Context, r api.Repo, a *Approved, now time.Time) error {
+	held := map[string]bool{}
 	for _, x := range a.Exceptions {
-		held[x.issueKey()] = x
-		if x.daysLeft(now) > WarnDays || rec.ExpiryIssues[x.issueKey()] != 0 {
+		held[x.issueKey()] = true
+		if left, _ := x.daysLeft(now); left > WarnDays || a.issues[x.issueKey()] != 0 {
 			continue
 		}
-		if err := s.open(ctx, r, x, pol.Owners, now); err != nil {
-			return nil, err
+		if err := s.open(ctx, r, x, a.owners, now); err != nil {
+			return err
 		}
 	}
-	for _, key := range slices.Sorted(maps.Keys(rec.ExpiryIssues)) {
-		if _, ok := held[key]; !ok {
-			if err := s.close(ctx, r, key, rec.ExpiryIssues[key], a.Exceptions); err != nil {
-				return nil, err
+	for _, key := range slices.Sorted(maps.Keys(a.issues)) {
+		if !held[key] {
+			if err := s.close(ctx, r, key, a.issues[key], a.Exceptions); err != nil {
+				return err
 			}
 		}
 	}
-	return a, nil
+	return nil
 }
 
 // open opens the issue of x on GitHub, then records it; a second issue of a concurrent pass is closed with a note.
+// GitHub's refusal for good (issues turned off) is logged: a notification never stops the pass.
 func (s *Service) open(ctx context.Context, r api.Repo, x Exception, owners []string, now time.Time) error {
 	created, err := s.gh.CreateIssue(ctx, r.RepoRef, api.NewIssue{Title: title(x), Body: body(x, r.DefaultBranch, now)})
-	if err != nil {
+	switch {
+	case api.Permanent(err):
+		logFailure(ctx, r, "open the issue", err)
+		return nil
+	case err != nil:
 		return fmt.Errorf("expiry: open the issue: %w", err)
 	}
 	recorded, err := records.ExpiryOpened(ctx, s.store, store.Tenant(r.InstallationID), r.FullName, x.issueKey(), created.Number)
 	if err != nil {
+		// The next pass opens the issue again, so this one, which nothing records, closes.
+		if cerr := s.gh.CloseIssue(ctx, r.RepoRef, created.Number); cerr != nil {
+			logFailure(ctx, r, "close an issue not recorded", cerr)
+		}
 		return fmt.Errorf("expiry: record the issue: %w", err)
 	}
 	if recorded != created.Number {
@@ -253,12 +281,18 @@ func (s *Service) open(ctx context.Context, r api.Repo, x Exception, owners []st
 }
 
 // close closes the recorded issue of key, whose exception the policy no longer holds with that date, then forgets it.
+// An issue GitHub no longer has is only forgotten.
 func (s *Service) close(ctx context.Context, r api.Repo, key string, issue int, held []Exception) error {
-	if err := s.gh.CloseIssue(ctx, r.RepoRef, issue); err != nil {
+	err := s.gh.CloseIssue(ctx, r.RepoRef, issue)
+	if err != nil && !api.Permanent(err) {
 		return fmt.Errorf("expiry: close the issue: %w", err)
 	}
 	if err := records.ExpiryClosed(ctx, s.store, store.Tenant(r.InstallationID), r.FullName, key, issue); err != nil {
 		return fmt.Errorf("expiry: record the closed issue: %w", err)
+	}
+	if err != nil {
+		logFailure(ctx, r, "close the issue", err) // GitHub no longer has it: forgotten
+		return nil
 	}
 	note := removedNote(r.DefaultBranch)
 	exception, _ := cutDate(key)
@@ -300,14 +334,16 @@ func (s *Service) note(ctx context.Context, r api.Repo, issue int, text string) 
 type Failure struct {
 	Repo     api.Repo
 	Pull     int
+	Tip      string       // Approved.Tip: the policy the dates were read from
 	Record   records.Pull // the pull record read; the publication keeps its run identity
 	Expired  []Exception  // Due for Record
 	Advisory bool
 }
 
 // Fail publishes Result(f.Expired) on the pull request's head over the run of its pull record, so the next upload of a
-// newer run replaces it. Inside the head's lease the pull record is read again: when another upload changed it, nothing
-// is written (feedback.ErrStaleInputs) and the next pass decides from the new record.
+// newer run replaces it. Inside the head's lease the default branch's head and the pull record are read again: when a
+// push moved the tip (an extension may have merged) or another upload changed the record, nothing is written
+// (feedback.ErrStaleInputs) and the next pass decides from what is current.
 func (s *Service) Fail(ctx context.Context, p feedback.Publisher4, f Failure) error {
 	r, rec := f.Repo, f.Record
 	return p.Publish4(ctx, feedback.Publication4{
@@ -318,8 +354,12 @@ func (s *Service) Fail(ctx context.Context, p feedback.Publisher4, f Failure) er
 		Advisory:   f.Advisory,
 		Result:     Result(f.Expired),
 		Current: func(ctx context.Context) (bool, error) {
+			tip, err := s.gh.BranchHead(ctx, r.RepoRef, r.DefaultBranch)
+			if err != nil || tip != f.Tip {
+				return false, err
+			}
 			var now records.Pull
-			err := records.Load(ctx, s.store, store.Tenant(r.InstallationID), records.PullKey(r.FullName, f.Pull), &now)
+			err = records.Load(ctx, s.store, store.Tenant(r.InstallationID), records.PullKey(r.FullName, f.Pull), &now)
 			if err != nil {
 				return false, err
 			}

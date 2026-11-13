@@ -561,8 +561,9 @@ change of the workflow on `T` reads `unknown` until its branch is updated.
    Two pull requests into the default branch on one commit share the check: it shows the newest run, and each keeps
    its own comment. No `archfit/state` check is written.
 6. The drift issue (M2 task 22, `gate/drift`, façade file `drift.go`): a `push` run of the default branch (the event
-   GitHub states) with no App record, at the tip the decision read, hands its `repository` block to `drift.Pushed`. No
-   block is no state: nothing changes. A failed write answers 503, and the Action's retry finishes it.
+   GitHub states) with no App record, at the tip the decision read, hands its `repository` block to `drift.Pushed`
+   after re-reading the tip. No block is no state: nothing changes. A transient write failure answers 503 for the
+   Action to retry; permanent GitHub refusals are logged without failing the upload.
 7. The answer.
 
 | Situation | Status | Body |
@@ -2087,7 +2088,7 @@ are driven only as far as they go without GitHub. Child internals are tested in 
   **Expected behavior**: one open issue, assigned to the owners, naming the commit; the upload `unknown` `outside_flow`, its record naming the issue. `gate/approvals` tests the judgement.
 - **Test name**: `TestAPushRunWithDriftOpensTheDriftIssue`, `TestOnlyAnAcceptedPushRunAtTheTipCountsForDrift`, `TestAFailedDriftIssueFailsTheUpload`
   **Scenario**: a push run of the tip with the engine's `repository_drift` result, then the same upload again; a late older push, a result with an App record, a pull request and a merge group, each with a drift block; a push run whose issue GitHub fails to open, then its retry.
-  **Expected behavior**: one drift issue with the drift record, recorded with the head, and no write on the retry; nothing for the others; 503, then the retry opens it. `gate/drift` tests the issue's rows.
+  **Expected behavior**: one drift issue with the drift record, recorded with its body digest, and no write on the retry; nothing for the others; 503, then the retry opens it. `gate/drift` tests the issue's rows.
 - **Test name**: `TestAnUploadBeforeItsPushIsJudgedGivesNoVerdict`
   **Scenario**: the default branch's policy changed and no push event was handled yet; then the push arrives.
   **Expected behavior**: `unknown` `policy_unapproved`; after the push, `unknown` `outside_flow`.

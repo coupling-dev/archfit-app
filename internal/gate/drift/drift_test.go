@@ -37,7 +37,8 @@ type issue struct {
 type fakeGitHub struct {
 	issues    map[int]*issue
 	next      int
-	failOn    string           // a method that fails
+	failOn    string // a method that fails
+	failErr   error
 	onCreate  func(number int) // runs after an issue is created, before the caller sees it
 	assignErr func(logins []string) error
 }
@@ -48,6 +49,9 @@ var errFake = errors.New("fake GitHub failure")
 
 func (f *fakeGitHub) fail(method string) error {
 	if f.failOn == method {
+		if f.failErr != nil {
+			return f.failErr
+		}
 		return errFake
 	}
 	return nil
@@ -90,6 +94,9 @@ func (f *fakeGitHub) CloseIssue(_ context.Context, _ api.RepoRef, n int) error {
 }
 
 func (f *fakeGitHub) ReopenIssue(_ context.Context, _ api.RepoRef, n int) error {
+	if err := f.fail("ReopenIssue"); err != nil {
+		return err
+	}
 	f.issues[n].open = true
 	return nil
 }
@@ -186,7 +193,7 @@ func TestDriftOpensOneIssueForTheOwners(t *testing.T) {
 	if !slices.Equal(is.assignees, []string{"alice", "bob"}) || !slices.Equal(is.labels, []string{Label}) {
 		t.Errorf("assignees %v, labels %v", is.assignees, is.labels)
 	}
-	if r := w.repoRecord(); r.DriftIssue != 11 || r.DriftHead != "h1" {
+	if r := w.repoRecord(); r.DriftIssue != 11 || r.DriftDigest != digestOf(w.gh.issues[11].body) {
 		t.Errorf("record = %+v", r)
 	}
 }
@@ -210,7 +217,7 @@ func TestDriftIsEditedInPlace(t *testing.T) {
 	if !is.open || !strings.Contains(is.body, "At commit h2, 2 errors:") || !strings.Contains(is.body, "pkg/tc/qdisc.go:4: graph") {
 		t.Errorf("issue = %+v", is)
 	}
-	if r := w.repoRecord(); r.DriftIssue != 11 || r.DriftHead != "h2" {
+	if r := w.repoRecord(); r.DriftIssue != 11 || r.DriftDigest != digestOf(w.gh.issues[11].body) {
 		t.Errorf("record = %+v", r)
 	}
 }
@@ -236,7 +243,7 @@ func TestDriftClosesWhenNoErrorIsLeftAndEveryPlaceWasRead(t *testing.T) {
 			if is.open || len(is.comments) != 1 || !strings.Contains(is.comments[0], "At commit h2, `main` has no error outside the exceptions") {
 				t.Errorf("issue = %+v", is)
 			}
-			if r := w.repoRecord(); r.DriftIssue != 0 || r.DriftHead != "" {
+			if r := w.repoRecord(); r.DriftIssue != 0 || r.DriftDigest != "" {
 				t.Errorf("record = %+v", r)
 			}
 			// The next drift opens a new issue.
@@ -259,12 +266,12 @@ func TestACleanStateWithUnreadPlacesKeepsTheIssueOpen(t *testing.T) {
 		t.Error("the issue was closed")
 	}
 	for _, want := range []string{"has no error outside the exceptions in what the check read",
-		"- `web/app.ts:3`: import ./x does not resolve. To read it: add web/x.ts"} {
+		"web/app.ts:3: import ./x does not resolve (to read it: add web/x.ts)"} {
 		if !strings.Contains(is.body, want) {
 			t.Errorf("body has no %q:\n%s", want, is.body)
 		}
 	}
-	if strings.Contains(is.body, "```text") {
+	if strings.Contains(is.body, "  next: ") {
 		t.Errorf("the body still lists drift:\n%s", is.body)
 	}
 }
@@ -383,7 +390,7 @@ func TestTheBodyStaysWithinItsBounds(t *testing.T) {
 	if !strings.Contains(text, "\nand "+strconv.Itoa(1000-shown)+" more\n```") || shown == 0 || shown == 1000 {
 		t.Errorf("%d records shown, and no line for the other %d", shown, 1000-shown)
 	}
-	for _, want := range []string{"- and 30 more places\n", "- the whole tree: go is not installed. To read it: install go\n"} {
+	for _, want := range []string{"and 30 more places\n", "the whole tree: go is not installed (to read it: install go)\n"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("body has no %q", want)
 		}

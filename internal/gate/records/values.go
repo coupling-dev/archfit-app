@@ -68,10 +68,10 @@ type Repo struct {
 	GuardedSince string `json:"guarded_since,omitempty"`
 	// OutsideFlow is set while the default branch has a policy that no approval made.
 	OutsideFlow *OutsideFlow `json:"outside_flow,omitempty"`
-	// DriftIssue is the one issue that lists the drift of the default branch (M2 task 22); DriftHead is the commit its
-	// body describes.
-	DriftIssue int    `json:"drift_issue,omitempty"`
-	DriftHead  string `json:"drift_head,omitempty"`
+	// DriftIssue is the one issue that lists the drift of the default branch (M2 task 22); DriftDigest names the body
+	// it shows, so the same body is not written twice.
+	DriftIssue  int    `json:"drift_issue,omitempty"`
+	DriftDigest string `json:"drift_digest,omitempty"`
 	// ExpiryIssues maps an exception and its date ("<exception key> <YYYY-MM-DD>") to the issue that warns of the date.
 	ExpiryIssues map[string]int `json:"expiry_issues,omitempty"`
 }

@@ -36,7 +36,7 @@ its index could drift apart.
   (`OutsideIssue`). Record a policy push to a repository without an approved policy (`Unguarded`).
 - Record in a pull record how the re-check after an answer got its pull request a fresh result (`Rechecked`, M2 task
   21); uploads keep it.
-- Record the repository's owner issues (M2 task 22): the one drift issue and the head its body describes
+- Record the repository's owner issues (M2 task 22): the one drift issue and the digest of its body
   (`DriftOpened`, `DriftUpdated`, `DriftClosed`), and one expiry issue per exception and date (`ExpiryOpened`,
   `ExpiryClosed`).
 
@@ -91,7 +91,7 @@ writes the repository's proposal.
 
 | Key | Value | `schema` | Holds |
 | --- | --- | --- | --- |
-| `v4/repo/<repo>` | `Repo` | `archfit-app.repo.v1` | approved digest and the merge commit that brought it; the commit of the first approval (change control starts there); outside the flow (digest, issue); drift issue and the head its body describes; expiry issues (`<exception key> <YYYY-MM-DD>` → issue) |
+| `v4/repo/<repo>` | `Repo` | `archfit-app.repo.v1` | approved digest and the merge commit that brought it; the commit of the first approval (change control starts there); outside the flow (digest, issue); drift issue and its body digest; expiry issues (`<exception key> <YYYY-MM-DD>` → issue) |
 | `v4/request/<repo>/<issue>` | `Request` | `archfit-app.request.v1` | key, reason, numbers (verified, balance), waiting pull requests, state `open`, `answered` or `closed`; rule, path, modules, expiry date and record, so the issue body can be rendered again; the pull requests the body lists |
 | `v4/approval/<repo>/<id>` | `Approval` | `archfit-app.approval.v1` | kind, request, change (raw JSON, owned by the policy writer), owner (user id and login), credential, time, proposal (set once), state `open` or `void` |
 | `v4/proposal/<repo>/<id>` | `Proposal` | `archfit-app.proposal.v1` | ordered approval ids (at most `MaxApprovals` = 9), pull request, head SHA, expected digest, state `open`, `merged` or `void`, consuming commit |
@@ -157,9 +157,9 @@ Functions, all under one installation tenant:
   The markers belong to the pull request: `gate`'s upload keeps them when it writes a newer run's record, so a delivery
   of a consuming push again finds its proposal, after the re-run's own upload and after later proposals.
 
-- `DriftOpened(ctx, s, t, repo, issue, head) (int, error)`: records `issue` as the drift issue, describing `head`, when
-  none is recorded, and returns the recorded one (another delivery's, when it was first). `DriftUpdated(..., issue,
-  head)` records the head the body now describes while `issue` is the recorded one; `DriftClosed(..., issue)` forgets
+- `DriftOpened(ctx, s, t, repo, issue, digest) (int, error)`: records `issue` as the drift issue with its body digest,
+  when none is recorded, and returns the recorded one (another delivery's, when it was first). `DriftUpdated(..., issue,
+  digest)` records the new body digest while `issue` is the recorded one; `DriftClosed(..., issue)` forgets
   it while it is. `ExpiryOpened(ctx, s, t, repo, key, issue) (int, error)` and `ExpiryClosed(..., key, issue)` do the same
   for the expiry issue of `key`. `gate/drift` and `gate/expiry` open each issue on GitHub first and record it after; a
   missing repository record is created, and an unchanged one is only checked.

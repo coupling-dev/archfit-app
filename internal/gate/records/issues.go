@@ -11,9 +11,9 @@ import (
 // is opened on GitHub first and recorded after, so a delivery that lost the race finds the recorded one and closes its
 // own. A missing repository record is created: the issue belongs to the repository whatever its approval state.
 
-// DriftOpened records issue as the repository's drift issue, describing head, when none is recorded, and returns the
-// recorded issue: another delivery's when it was first.
-func DriftOpened(ctx context.Context, s store.Store, t store.Tenant, fullName string, issue int, head string) (int, error) {
+// DriftOpened records issue as the repository's drift issue, showing the body digest names, when none is recorded, and
+// returns the recorded issue: another delivery's when it was first.
+func DriftOpened(ctx context.Context, s store.Store, t store.Tenant, fullName string, issue int, digest string) (int, error) {
 	if issue <= 0 {
 		return 0, errors.New("records: drift issue: no issue")
 	}
@@ -23,19 +23,19 @@ func DriftOpened(ctx context.Context, s store.Store, t store.Tenant, fullName st
 			recorded = r.DriftIssue
 			return false
 		}
-		r.DriftIssue, r.DriftHead, recorded = issue, head, issue
+		r.DriftIssue, r.DriftDigest, recorded = issue, digest, issue
 		return true
 	})
 	return recorded, err
 }
 
-// DriftUpdated records head as the commit the drift issue describes, while issue is the recorded one.
-func DriftUpdated(ctx context.Context, s store.Store, t store.Tenant, fullName string, issue int, head string) error {
+// DriftUpdated records digest as the body the drift issue shows, while issue is the recorded one.
+func DriftUpdated(ctx context.Context, s store.Store, t store.Tenant, fullName string, issue int, digest string) error {
 	return editRepo(ctx, s, t, fullName, func(r *Repo) bool {
-		if r.DriftIssue != issue || r.DriftHead == head {
+		if r.DriftIssue != issue || r.DriftDigest == digest {
 			return false
 		}
-		r.DriftHead = head
+		r.DriftDigest = digest
 		return true
 	})
 }
@@ -46,7 +46,7 @@ func DriftClosed(ctx context.Context, s store.Store, t store.Tenant, fullName st
 		if r.DriftIssue != issue {
 			return false
 		}
-		r.DriftIssue, r.DriftHead = 0, ""
+		r.DriftIssue, r.DriftDigest = 0, ""
 		return true
 	})
 }

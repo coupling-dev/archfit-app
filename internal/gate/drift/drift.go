@@ -5,6 +5,8 @@ package drift
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -29,9 +31,9 @@ const maxAssignees = 10
 
 // What Pushed did with a push run's block.
 const (
-	None    = "none"    // no block, nothing to say, or the issue already describes this head
+	None    = "none"    // no block, nothing to say, the issue already shows this body, or GitHub refused for good
 	Opened  = "opened"  // the issue was opened
-	Updated = "updated" // the issue was edited, and reopened if someone closed it
+	Updated = "updated" // the issue was edited, and reopened while drift is left
 	Closed  = "closed"  // no error is left in a tree the check read whole
 )
 
@@ -64,12 +66,15 @@ type Run struct {
 
 // Pushed applies the repository block of run to the drift issue:
 //   - no block: nothing changes, and the issue is never closed;
-//   - drift: the issue is opened, or edited in place (and reopened);
-//   - no drift, but places the check could not read: an open issue is edited to say what was not read, never closed;
+//   - drift: the issue is opened, or edited in place and reopened;
+//   - no drift, but places the check could not read: an open issue is edited to say what was not read, never closed
+//     and never reopened;
 //   - no drift and every place read: the issue is closed with a note.
 //
-// The issue is written on GitHub first and recorded after, so a failed record is redone by the retried upload. An
-// error is a failed read or write; the caller retries.
+// A body the issue already shows is not written again (the Action's retry, a second delivery). The issue is written on
+// GitHub first and recorded after. A GitHub refusal that will not change (issues turned off, an issue deleted or
+// transferred) is logged, and a recorded issue that is gone is forgotten, so the next drift opens a new one: a
+// notification never fails every later upload. Any other failed read or write is returned; the caller retries.
 func (s *Service) Pushed(ctx context.Context, run Run) (string, error) {
 	if run.State == nil {
 		return None, nil
@@ -79,31 +84,45 @@ func (s *Service) Pushed(ctx context.Context, run Run) (string, error) {
 	if err := records.Load(ctx, s.store, t, records.RepoKey(name), &rec); err != nil && !errors.Is(err, records.ErrNoRecord) {
 		return None, fmt.Errorf("drift: read the repository record: %w", err)
 	}
-	drift, unread := run.State.Drift, run.State.Unread
+	drift, unread := len(run.State.Drift) > 0, len(run.State.Unread) > 0
 	switch {
-	case len(drift) > 0 && rec.DriftIssue == 0:
-		return s.open(ctx, run)
-	case rec.DriftIssue == 0, rec.DriftHead == run.Head:
-		return None, nil
-	case len(drift) > 0 || len(unread) > 0:
-		return s.update(ctx, run, rec.DriftIssue)
+	case rec.DriftIssue == 0 && !drift:
+		return None, nil // unread places alone open no issue
+	case rec.DriftIssue != 0 && !drift && !unread:
+		return s.close(ctx, run, rec.DriftIssue)
 	}
-	return s.close(ctx, run, rec.DriftIssue)
+	text := body(run)
+	digest := digestOf(text)
+	switch {
+	case rec.DriftIssue == 0:
+		return s.open(ctx, run, text, digest)
+	case rec.DriftDigest == digest:
+		return None, nil
+	}
+	return s.update(ctx, run, rec.DriftIssue, text, digest, drift)
 }
 
-func (s *Service) open(ctx context.Context, run Run) (string, error) {
+func (s *Service) open(ctx context.Context, run Run, text, digest string) (string, error) {
 	ref := run.Repo.RepoRef
 	owners, err := s.owners(ctx, ref, run.Head)
 	if err != nil {
 		return None, err
 	}
-	created, err := s.gh.CreateIssue(ctx, ref, api.NewIssue{Title: title(run.Repo.DefaultBranch), Body: body(run)})
-	if err != nil {
+	created, err := s.gh.CreateIssue(ctx, ref, api.NewIssue{Title: title(run.Repo.DefaultBranch), Body: text})
+	switch {
+	case api.Permanent(err):
+		logFailure(ctx, run.Repo, "open the issue", err)
+		return None, nil
+	case err != nil:
 		return None, fmt.Errorf("drift: open the issue: %w", err)
 	}
 	recorded, err := records.DriftOpened(ctx, s.store, store.Tenant(run.Repo.InstallationID), run.Repo.FullName,
-		created.Number, run.Head)
+		created.Number, digest)
 	if err != nil {
+		// The retry opens the issue again, so this one, which nothing records, closes.
+		if cerr := s.gh.CloseIssue(ctx, ref, created.Number); cerr != nil {
+			logFailure(ctx, run.Repo, "close an issue not recorded", cerr)
+		}
 		return None, fmt.Errorf("drift: record the issue: %w", err)
 	}
 	if recorded != created.Number {
@@ -118,38 +137,61 @@ func (s *Service) open(ctx context.Context, run Run) (string, error) {
 	return Opened, nil
 }
 
-func (s *Service) update(ctx context.Context, run Run, issue int) (string, error) {
-	ref := run.Repo.RepoRef
-	if err := s.gh.UpdateIssueBody(ctx, ref, issue, body(run)); err != nil {
+// update edits the recorded issue; with drift left it also reopens it, because drift is never accepted by silence
+// (design 7.2). An issue GitHub no longer has is forgotten, and a new one opens.
+func (s *Service) update(ctx context.Context, run Run, issue int, text, digest string, reopen bool) (string, error) {
+	ref, t, name := run.Repo.RepoRef, store.Tenant(run.Repo.InstallationID), run.Repo.FullName
+	err := s.gh.UpdateIssueBody(ctx, ref, issue, text)
+	if err == nil && reopen {
+		err = s.gh.ReopenIssue(ctx, ref, issue)
+	}
+	switch {
+	case api.Permanent(err):
+		logFailure(ctx, run.Repo, "edit the issue", err)
+		if err := records.DriftClosed(ctx, s.store, t, name, issue); err != nil {
+			return None, fmt.Errorf("drift: forget the issue: %w", err)
+		}
+		if !reopen {
+			return None, nil // unread places alone open no issue
+		}
+		return s.open(ctx, run, text, digest)
+	case err != nil:
 		return None, fmt.Errorf("drift: edit the issue: %w", err)
 	}
-	// Drift is never accepted by silence (design 7.2): an issue someone closed opens again while drift is left.
-	if err := s.gh.ReopenIssue(ctx, ref, issue); err != nil {
-		return None, fmt.Errorf("drift: reopen the issue: %w", err)
-	}
-	if err := records.DriftUpdated(ctx, s.store, store.Tenant(run.Repo.InstallationID), run.Repo.FullName, issue, run.Head); err != nil {
+	if err := records.DriftUpdated(ctx, s.store, t, name, issue, digest); err != nil {
 		return None, fmt.Errorf("drift: record the issue: %w", err)
 	}
 	return Updated, nil
 }
 
+// close closes the recorded issue with a note and forgets it; an issue GitHub no longer has is only forgotten.
 func (s *Service) close(ctx context.Context, run Run, issue int) (string, error) {
-	ref := run.Repo.RepoRef
-	if err := s.gh.CloseIssue(ctx, ref, issue); err != nil {
+	err := s.gh.CloseIssue(ctx, run.Repo.RepoRef, issue)
+	if err != nil && !api.Permanent(err) {
 		return None, fmt.Errorf("drift: close the issue: %w", err)
 	}
 	if err := records.DriftClosed(ctx, s.store, store.Tenant(run.Repo.InstallationID), run.Repo.FullName, issue); err != nil {
 		return None, fmt.Errorf("drift: record the closed issue: %w", err)
 	}
+	if err != nil {
+		logFailure(ctx, run.Repo, "close the issue", err)
+		return None, nil
+	}
 	s.note(ctx, run.Repo, issue, closedNote(run.Repo.DefaultBranch, run.Head))
 	return Closed, nil
+}
+
+// digestOf names a body: the same body is not written twice.
+func digestOf(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 // owners are the owners of the policy at head. A policy that cannot be read assigns nobody: the issue still opens.
 func (s *Service) owners(ctx context.Context, ref api.RepoRef, head string) ([]string, error) {
 	raw, _, err := s.gh.File(ctx, ref, head, policyPath)
 	switch {
-	case errors.Is(err, api.ErrNotFound):
+	case api.Permanent(err):
 		return nil, nil
 	case err != nil:
 		return nil, fmt.Errorf("drift: read the policy: %w", err)
