@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"errors"
 	"net/http"
 	"slices"
@@ -90,8 +91,13 @@ func (s *server) apiPolicy(r *http.Request, sc scope) (any, error) {
 		return nil, conflict("The policy on the default branch could not be read. Fix .archfit.yaml first.")
 	}
 	body := policyPageJSON{Owners: f.Owners, Gate: f.Gate, Layers: f.Layers, YAML: string(raw), Digest: policy3.Digest(raw), Modules: []policyModuleJSON{}, Rules: []policyRuleJSON{}, Exceptions: []policyExceptionJSON{}}
+	body.Gate = cmp.Or(f.Gate, "advisory")
 	b := f.Builtin
-	body.Builtin = policyBuiltinJSON{b.Graph, b.Coupling, b.Duplication, b.Cycle, b.Layers, b.Unowned, b.MinBalance}
+	minBalance := 7
+	if b.MinBalance != nil {
+		minBalance = *b.MinBalance
+	}
+	body.Builtin = policyBuiltinJSON{cmp.Or(b.Graph, "ask"), cmp.Or(b.Coupling, "deny"), cmp.Or(b.Duplication, "ask"), cmp.Or(b.Cycle, "deny"), cmp.Or(b.Layers, "deny"), cmp.Or(b.Unowned, "deny"), &minBalance}
 	names := make([]string, 0, len(f.Modules))
 	for name := range f.Modules {
 		names = append(names, name)
@@ -99,7 +105,15 @@ func (s *server) apiPolicy(r *http.Request, sc scope) (any, error) {
 	slices.Sort(names)
 	for _, name := range names {
 		m := f.Modules[name]
-		body.Modules = append(body.Modules, policyModuleJSON{name, m.Paths, m.Public, m.Volatility, m.Subdomain, m.Layer, m.DependsOn})
+		volatility := m.Volatility
+		if volatility == "" {
+			if m.Subdomain == "supporting" || m.Subdomain == "generic" {
+				volatility = "low"
+			} else {
+				volatility = "high"
+			}
+		}
+		body.Modules = append(body.Modules, policyModuleJSON{name, m.Paths, m.Public, volatility, m.Subdomain, m.Layer, append([]string{}, m.DependsOn...)})
 	}
 	for _, rule := range f.Rules {
 		v := policyRuleJSON{ID: rule.ID, Note: rule.Note, NotChecked: rule.Note != "", Why: rule.Why, Instead: rule.Instead}

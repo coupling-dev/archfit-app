@@ -174,7 +174,7 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   branch. No link carries an origin.
 - `GET /api/repos/{o}/{n}/policy` [read] — the strict version 3 policy on the default branch as typed modules,
   built-in and custom rules, exceptions (with calendar days left and request links from first-line comments only),
-  exact YAML and its SHA-256 policy digest. Note rules are marked `not_checked`. `edit.available` requires an approved
+  exact YAML and its SHA-256 policy digest. Built-in modes, minimum balance, gate and volatility include their schema defaults; an absent public list remains null (the whole module is public). Note rules are marked `not_checked`. `edit.available` requires an approved
   digest and no outside-flow state. With `?edit=1`, the edit block includes the file and digest of the open same-repository
   `archfit/policy` proposal, if present, else the default-branch file. A version 2 or invalid policy returns `409`.
 - `GET /api/repos/{o}/{n}/findings` [read] — `{unavailable, branch, no_baseline, attention_reason, …}`: the latest

@@ -36,7 +36,7 @@
       "volatility": "high",
       "subdomain": "",
       "layer": "core",
-      "depends_on": null
+      "depends_on": []
     },
     {
       "name": "pkg_util",
@@ -47,17 +47,17 @@
       "volatility": "low",
       "subdomain": "",
       "layer": "core",
-      "depends_on": null
+      "depends_on": []
     }
   ],
   "builtin": {
-    "graph": "",
-    "coupling": "",
-    "duplication": "",
-    "cycle": "",
-    "layers": "",
-    "unowned": "",
-    "min_balance": null
+    "graph": "ask",
+    "coupling": "deny",
+    "duplication": "ask",
+    "cycle": "deny",
+    "layers": "deny",
+    "unowned": "deny",
+    "min_balance": 7
   },
   "rules": [
     {
