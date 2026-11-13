@@ -16,9 +16,9 @@ type RequestViews interface {
 
 // The request page's types, owned by gate/requests.
 type (
-	RequestView       = asks.View
 	RequestModule     = asks.Module
 	RequestEarlier    = asks.Earlier
+	RequestDependency = asks.Dependency
 	RequestPreview    = asks.Preview
 	RequestPullEffect = asks.PullEffect
 	RequestAnswer     = asks.Answer
@@ -42,14 +42,6 @@ var (
 	ErrNoPolicy      = asks.ErrNoPolicy
 	ErrByHand        = asks.ErrByHand
 )
-
-// RequestView reads request number of t's repository.
-func (g *Gate) RequestView(ctx context.Context, t Target, number int) (RequestView, error) {
-	if err := g.admitted(ctx, t); err != nil {
-		return RequestView{}, err
-	}
-	return g.asks.View(ctx, t.Repo, number)
-}
 
 // RequestPreview is what answer a to request number would write and change.
 func (g *Gate) RequestPreview(ctx context.Context, t Target, number int, a RequestAnswer) (RequestPreview, error) {

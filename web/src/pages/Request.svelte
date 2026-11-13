@@ -1,5 +1,6 @@
 <script lang="ts">
   import Skeleton from '../components/Skeleton.svelte';
+  import Map from '../components/map/Map.svelte';
   import {
     explain,
     explainLoad,
@@ -22,6 +23,7 @@
     earlierLine,
     loosens,
     moduleLine,
+    requestMap,
     previewPath,
     pullLine,
     statusOf,
@@ -136,7 +138,7 @@
       <p class="small">
         Rule <code>{body.rule}</code> · <code>{dependency(body)}</code>{body.expires ? ` · asked until ${body.expires}` : ''}
       </p>
-      <p class="small"><a href={`${github}/issues/${body.number}`}>Request #{body.number} on GitHub</a></p>
+      <p class="small"><a href={body.issue_href === `${github}/issues/${body.number}` ? body.issue_href : `${github}/issues/${body.number}`}>Request #{body.number} on GitHub</a></p>
     </div>
   </section>
 
@@ -150,18 +152,15 @@
 
   {#if body.modules.length}
     <section class="box" aria-labelledby="modules">
-      <div class="box-head"><h2 id="modules">Modules</h2></div>
-      <div class="box-body grid-2">
-        {#each body.modules as m (m.name)}
-          <div class="stack-sm">
-            <h3><code>{m.name}</code></h3>
-            <p class="small">{moduleLine(m)}</p>
-            <p class="small">
-              Allowed dependencies: {#if m.depends_on.length}{#each m.depends_on as d, i (d)}{i ? ', ' : ''}<code>{d}</code
-                  >{/each}{:else}none{/if}
-            </p>
-          </div>
-        {/each}
+      <div class="box-head"><h2 id="modules">The map</h2></div>
+      <div class="box-body"><Map model={requestMap(body)} /></div>
+    </section>
+    <section class="box" aria-labelledby="balance-why">
+      <div class="box-head"><h2 id="balance-why">Why the balance</h2></div>
+      <div class="box-body stack-sm">
+        {#if balance}<p>Balance: <strong>{balance}</strong></p>{:else}<p>The record has no balance.</p>{/if}
+        <p>The policy declares the volatility of each module:</p>
+        {#each body.modules as m (m.name)}<p><code>{m.name}</code>: {moduleLine(m)}</p>{/each}
       </div>
     </section>
   {/if}
@@ -247,6 +246,11 @@
       {:else if body.state === 'open'}
         <p>Add <code>.archfit.yaml</code> of version 3 to the default branch, then answer.</p>
       {:else}
+        {#if body.answer}
+          {#if body.answer.kind === 'approve'}<p>Approved.</p>
+          {:else if body.answer.kind === 'approve-until'}<p>Approved until {body.answer.until}.</p>
+          {:else}<p>Rejected. What to do instead: {body.answer.instead}</p>{/if}
+        {/if}
         <p>No answer is open. The request on GitHub names the owner who answered and the passkey used.</p>
       {/if}
       {#if busy}<p class="small" role="status">Answering…</p>{/if}

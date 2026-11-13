@@ -236,6 +236,11 @@ type Module struct {
 	DependsOn  []string // its allowed dependencies
 }
 
+// Dependency is a deny or exception with structured endpoints for the two-module map.
+type Dependency struct {
+	Kind, Rule, From, To, Expires string
+}
+
 // Earlier is what the policy already says about the request's two modules: a deny rule, an answer of an earlier
 // reject, or an exception, an answer of an earlier approve. Every answer in effect is a line of the policy.
 type Earlier struct {
@@ -269,10 +274,12 @@ type View struct {
 	Record  string
 	Numbers records.Numbers
 	// Policy is false when the default branch has no policy of version 3; Modules, Allowed and Earlier are then empty.
-	Policy  bool
-	Modules []Module // the request's modules the policy declares, From first
-	Allowed bool     // the policy already allows From to depend on To
-	Earlier []Earlier
+	Policy       bool
+	Layers       []string // the policy layers, outer-first
+	Modules      []Module // the request's modules the policy declares, From first
+	Allowed      bool     // the policy already allows From to depend on To
+	Earlier      []Earlier
+	Dependencies []Dependency
 }
 
 // PullEffect is what an answer does to one open pull request, by its stored errors (M2 D6). An answer clears an
@@ -311,6 +318,8 @@ func (s *Service) View(ctx context.Context, r api.Repo, number int) (View, error
 		return v, err
 	}
 	v.Policy = true
+	v.Layers = slices.Clone(pol.Layers)
+	slices.Reverse(v.Layers)
 	for _, name := range []string{req.From, req.To} {
 		if m, ok := pol.Modules[name]; ok && name != "" && !slices.ContainsFunc(v.Modules, func(x Module) bool { return x.Name == name }) {
 			v.Modules = append(v.Modules, Module{Name: name, Layer: m.Layer, Volatility: m.Volatility, Subdomain: m.Subdomain,
@@ -319,6 +328,7 @@ func (s *Service) View(ctx context.Context, r api.Repo, number int) (View, error
 	}
 	v.Allowed = req.From != "" && slices.Contains(pol.Modules[req.From].DependsOn, req.To)
 	v.Earlier = earlier(pol, req.From, req.To)
+	v.Dependencies = dependencies(pol, req.From, req.To)
 	return v, nil
 }
 
@@ -456,4 +466,28 @@ func load(ctx context.Context, s *Service, r api.Repo, number int) (records.Requ
 		return req, fmt.Errorf("requests: read request %d: %w", number, err)
 	}
 	return req, nil
+}
+
+func dependencies(pol policy3.File, from, to string) []Dependency {
+	if from == "" || to == "" {
+		return nil
+	}
+	pairs := [][2]string{{from, to}}
+	if from != to {
+		pairs = append(pairs, [2]string{to, from})
+	}
+	var out []Dependency
+	for _, pair := range pairs {
+		for _, rule := range pol.Rules {
+			if rule.Deny != nil && slices.Contains(rule.Deny.From, pair[0]) && slices.Contains(rule.Deny.To, pair[1]) {
+				out = append(out, Dependency{Kind: EarlierDeny, Rule: rule.ID, From: pair[0], To: pair[1]})
+			}
+		}
+		for _, x := range pol.Exceptions {
+			if x.From == pair[0] && x.To == pair[1] {
+				out = append(out, Dependency{Kind: EarlierException, Rule: x.Rule, From: x.From, To: x.To, Expires: x.Expires})
+			}
+		}
+	}
+	return out
 }

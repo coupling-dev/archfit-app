@@ -65,7 +65,7 @@ func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approv
 				return nil, ErrOutsideFlow
 			}
 		}
-		req.State = StateAnswered
+		req.State, req.Approval = StateAnswered, approvalID
 		requests, err := readIndex(cur[2], SchemaRequestIndex)
 		if err != nil {
 			return nil, err
@@ -196,7 +196,7 @@ func voidApproval(cur [][]byte, approvalID string, request int, reopened *bool) 
 	if req.State != StateAnswered || x.Add(req.Key, strconv.Itoa(request)) != nil {
 		return next, nil
 	}
-	req.State = StateOpen
+	req.State, req.Approval = StateOpen, ""
 	if next[1], err = Encode(&req); err != nil {
 		return nil, err
 	}

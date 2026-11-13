@@ -287,6 +287,7 @@ export interface RequestEarlier {
 }
 
 export interface RequestView {
+  issue_href?: string;
   number: number;
   state: 'open' | 'answered' | 'closed';
   reason: string;
@@ -299,7 +300,10 @@ export interface RequestView {
   verified: boolean; // false: the numbers are as reported by the CLI
   balance?: { value: number; max: number; min: number };
   policy: boolean; // false: the default branch has no policy of version 3
+  layers: string[];
   modules: RequestModule[];
+  answer?: { kind: AnswerKind; until?: string; instead?: string };
+  dependencies: { kind: 'deny' | 'exception'; from: string; to: string; rule: string; expires?: string }[];
   allowed: boolean; // the policy already allows from -> to
   earlier: RequestEarlier[];
 }
