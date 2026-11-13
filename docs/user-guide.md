@@ -2,7 +2,7 @@
 
 This guide is for repository administrators and policy owners using Archfit 4. The App checks changes against `.archfit.yaml` on the protected default branch. It records owner answers and carries policy changes in a pull request. See [architecture](architecture.md) for the trust boundary and failure handling.
 
-> **Current release limitation:** The checked-in manifest has no approved engines. Until a release populates it, the App cannot admit an engine identity. The setup and owner-action APIs exist, but this revision's repository overview still uses an unavailable legacy API. Do not assume the overview provides a working first-approval flow.
+> **Current release limitation:** The checked-in manifest has no approved engines. Until a release populates it, the App cannot admit an engine identity. The setup and owner-action APIs exist, but a first-approval screen is not established by this revision.
 
 ## Install and set up
 
@@ -12,7 +12,25 @@ This guide is for repository administrators and policy owners using Archfit 4. T
 4. A repository administrator must approve the first policy with a passkey. The owner action supports a same-repository open pull request when the default branch has no schema 3 policy, or the current default-branch policy otherwise. The owner-action API is present; a first-approval screen is not established by this revision.
 5. Configure the branch ruleset below and verify the workflow and engine are approved in the App's release manifest.
 
-The App's setup API reads the policy and workflow at one default-branch commit and reports admission, first approval and ruleset findings. It does not change GitHub rulesets. The repository overview in this revision does not expose that setup API as a working setup page.
+The App's setup API reads the policy and workflow at one default-branch commit and reports admission, first approval and ruleset findings. It does not change GitHub rulesets. Home shows this setup information before the first approval.
+
+## Home and the map
+
+Open `/r/<owner>/<repo>` for **Home**. The status line comes first. **Needs you** lists open requests,
+exceptions near their date, drift and owner actions. Each item opens its page. A request's record folds away.
+Before the first policy is approved, Home shows the setup steps, what is missing and the ruleset findings
+instead of the map. Owner-action pages are not yet established by this revision.
+
+**The map** shows modules by layer, outer first, with each module's volatility. Its legend identifies an allowed
+dependency, a requested one with its request number, one a rule denies, an exception with its date, and drift.
+When several kinds apply to a pair, only one is drawn, in this order: drift, a rule denies it, requested, exception,
+allowed. A dependency that is not drawn needs a request. **Show the map as a list** opens the same modules and
+dependencies as text. At phone width, scroll inside the map box. Focus it and use the arrow keys to scroll by keyboard.
+If the layout worker fails, Home says so and the list is still available.
+
+The repository tabs are **Home** and **Policy**. Policy lists modules, rules, notes and exceptions from the default
+branch, with links to recorded requests. **Show raw YAML** opens the file. **Edit** appears only when change control
+is available, but the editor is not yet available: the link currently returns to the read view.
 
 ## Configure the ruleset
 
