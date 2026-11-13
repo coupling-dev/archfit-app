@@ -387,8 +387,8 @@ func (s *Service) current(ctx context.Context, r api.Repo) (*proposal, error) {
 	return open, nil
 }
 
-// loadApprovals reads the open approvals of p. A revert applies only while repo is outside the flow with the digest it
-// replaces; otherwise it is stale.
+// loadApprovals reads the open approvals of p. A revert applies only while the state it was made in holds
+// (records.Revert.Holds); otherwise it is stale.
 func (s *Service) loadApprovals(ctx context.Context, r api.Repo, repo records.Repo, p *proposal) error {
 	for _, id := range p.rec.Approvals {
 		a := approved{id: id}
@@ -403,7 +403,7 @@ func (s *Service) loadApprovals(ctx context.Context, r api.Repo, repo records.Re
 			if err := json.Unmarshal(a.rec.Change, a.revert); err != nil {
 				return fmt.Errorf("proposals: approval %s holds an unreadable revert: %w", id, err)
 			}
-			if repo.OutsideFlow == nil || repo.OutsideFlow.Digest != a.revert.Outside {
+			if !a.revert.Holds(repo) {
 				p.stale = append(p.stale, a)
 				continue
 			}

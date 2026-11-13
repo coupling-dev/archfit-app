@@ -125,11 +125,10 @@ const consumeReads = 3
 var errApprovalsMoved = errors.New("records: the proposal's approvals moved")
 
 // joined is what a consume needs of an approval of the proposal: its request (0 when none), and, for a revert, the
-// digest of the policy changed outside the flow it replaces.
+// revert.
 type joined struct {
 	request int
-	revert  bool
-	outside string
+	revert  *Revert
 }
 
 // approvalsOf reads each approval of the proposal.
@@ -144,13 +143,12 @@ func approvalsOf(ctx context.Context, s store.Store, t store.Tenant, fullName, p
 		if err := Load(ctx, s, t, ApprovalKey(fullName, id), &a); err != nil {
 			return nil, err
 		}
-		j := joined{request: a.Request, revert: a.Kind == KindRevert}
-		if j.revert {
-			var rev Revert
-			if err := json.Unmarshal(a.Change, &rev); err != nil {
+		j := joined{request: a.Request}
+		if a.Kind == KindRevert {
+			j.revert = &Revert{}
+			if err := json.Unmarshal(a.Change, j.revert); err != nil {
 				return nil, fmt.Errorf("records: approval %s holds an unreadable revert", id)
 			}
-			j.outside = rev.Outside
 		}
 		out[id] = j
 	}
@@ -186,18 +184,19 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 				return nil, ErrMoved
 			}
 		}
-		answered, reverts := map[string]bool{}, false
-		var outside []string
+		answered := map[string]bool{}
+		var revs []Revert
 		for _, id := range p.Approvals {
 			a, ok := approvals[id]
 			if !ok {
 				return nil, errApprovalsMoved
 			}
 			answered[strconv.Itoa(a.request)] = true
-			if a.revert {
-				reverts, outside = true, append(outside, a.outside)
+			if a.revert != nil {
+				revs = append(revs, *a.revert)
 			}
 		}
+		reverts := len(revs) > 0
 		p.State, p.Commit = StateMerged, m.Commit
 
 		proposals, err := readIndex(cur[1], SchemaProposalIndex)
@@ -230,7 +229,7 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 				return nil, err
 			}
 		}
-		if !applies(p, r, outside) {
+		if !applies(p, r, revs) {
 			// Judged on the proposal and the repository together, so confirmed by a swap of the unchanged bytes, as
 			// below.
 			stale = true
@@ -266,14 +265,14 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 }
 
 // applies reports whether proposal p still applies to the repository r: a first approval only while r has no approved
-// policy and is not outside the flow, and a revert only while r is outside the flow with the digest it replaces
-// (outside, one per revert). A proposal approved in a state that ended admits nothing (M2 task 23).
-func applies(p Proposal, r Repo, outside []string) bool {
+// policy and is not outside the flow, and each of its reverts only while it holds (Revert.Holds). A proposal approved
+// in a state that ended admits nothing (M2 task 23).
+func applies(p Proposal, r Repo, revs []Revert) bool {
 	if p.Kind == ProposalFirst && (r.ApprovedDigest != "" || r.OutsideFlow != nil) {
 		return false
 	}
-	for _, digest := range outside {
-		if r.OutsideFlow == nil || r.OutsideFlow.Digest != digest {
+	for _, rev := range revs {
+		if !rev.Holds(r) {
 			return false
 		}
 	}

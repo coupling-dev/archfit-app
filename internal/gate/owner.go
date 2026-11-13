@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/approvals"
@@ -170,6 +171,8 @@ func (g *Gate) recheckPull(ctx context.Context, r api.Repo, pull int, head strin
 		return g.cannotRecheck(ctx, r, pull, rec, bound, "", err)
 	case pl.State != "open" || pl.HeadSHA != head:
 		return CheckPending // closed, or a newer head whose run decides
+	case !strings.EqualFold(pl.HeadRepo, r.FullName):
+		return CheckBlocked // a run from a fork gets no verdict, and its check says so already
 	}
 	tip, err := g.repos.BranchHead(ctx, r.RepoRef, r.DefaultBranch)
 	if err != nil {
@@ -190,13 +193,16 @@ func (g *Gate) recheckPull(ctx context.Context, r api.Repo, pull int, head strin
 }
 
 // cannotRecheck says on the check of rec's head that the App could not re-run it after an owner action: the condition of
-// design 10.5 that is not met, or the failure, and what to do. bound says the action approved this head, so a new
-// head needs a new approval.
+// design 10.5 that is not met, or the failure, and what to do. Only on a head the action approved (bound): another
+// pull request's unknown may have a reason of its own (a fork, an engine, its workflow), which its check keeps.
 func (g *Gate) cannotRecheck(ctx context.Context, r api.Repo, pull int, rec records.Pull, bound bool, unmet sweep.Unmet, cause error) string {
 	if cause != nil {
 		logOwner(ctx, r, "re-run after an owner action", cause)
 	}
-	what, next := recheckWords(unmet, bound)
+	if !bound {
+		return CheckBlocked
+	}
+	what, next := recheckWords(unmet)
 	err := g.v4.publisher.Publish4(ctx, feedback.Publication4{
 		Target:     inputs.Target{Repo: r, PullRequest: pull, HeadSHA: rec.HeadSHA, BaseRef: r.DefaultBranch},
 		RunID:      rec.RunID,
@@ -213,13 +219,10 @@ func (g *Gate) cannotRecheck(ctx context.Context, r api.Repo, pull int, rec reco
 	return CheckBlocked
 }
 
-// recheckWords is the record of a re-run that did not start: what happened, with the unmet condition's code, and what
-// to do. bound says a new head needs a new approval.
-func recheckWords(unmet sweep.Unmet, bound bool) (what, next string) {
-	approved, newHead := "the policy is approved", "push a commit to run the check again"
-	if bound {
-		approved, newHead = "this head is approved", "push a commit; an owner then approves the new head"
-	}
+// recheckWords is the record of a re-run of an approved head that did not start: what happened, with the unmet
+// condition's code, and what to do. A new head needs a new approval.
+func recheckWords(unmet sweep.Unmet) (what, next string) {
+	const approved, newHead = "this head is approved", "push a commit; an owner then approves the new head"
 	rerun := "re-run the Archfit workflow of this head"
 	switch unmet {
 	case sweep.UnmetNoRun:
@@ -229,11 +232,8 @@ func recheckWords(unmet sweep.Unmet, bound bool) (what, next string) {
 	case sweep.UnmetTooOld:
 		return approved + ", and its run is too old to run again (" + string(unmet) + ")", newHead
 	case sweep.UnmetBaseChanged:
-		update := "update the branch"
-		if bound {
-			update += "; an owner then approves the new head"
-		}
-		return approved + ", and the default branch changed in more than the policy since its run (" + string(unmet) + ")", update
+		return approved + ", and the default branch changed in more than the policy since its run (" + string(unmet) + ")",
+			"update the branch; an owner then approves the new head"
 	case sweep.UnmetPolicyNotFromTip:
 		return approved + ", and its run did not read the policy from the default branch (" + string(unmet) + ")", newHead
 	}

@@ -34,6 +34,14 @@ type Revert struct {
 	Issue   int    `json:"issue,omitempty"`
 }
 
+// Holds reports whether the state the revert was made in still holds in r: the policy changed outside the flow is still
+// the one it replaces, and the approved policy still the one it restores. A confirm, or a later change, ends it; a
+// revert of a state that ended admits nothing, even when the same change is pushed again.
+func (rev Revert) Holds(r Repo) bool {
+	return r.OutsideFlow != nil && r.OutsideFlow.Digest == rev.Outside && r.ApprovedDigest == rev.Digest &&
+		r.ApprovedCommit == rev.Commit
+}
+
 // Bound is the pull request an owner approves as it is: its head and the digests there.
 type Bound struct {
 	Proposal       string // the open proposal of the pull request, or a new id
@@ -215,8 +223,8 @@ func Confirm(ctx context.Context, s store.Store, t store.Tenant, fullName, appro
 
 // RevertTo records an owner's revert of the policy changed outside the flow: the approval, whose change is revert,
 // joins the App's policy proposal as Answer's does with pin, which the caller wrote with the approved policy restored.
-// The repository record is in the swap unchanged: one no longer outside the flow, or outside it with another digest
-// than revert.Outside ("" for a deleted policy), is ErrMoved. An approval id in use is ErrExists, a proposal that is
+// The repository record is in the swap unchanged: one where the revert no longer holds (Revert.Holds; revert.Outside
+// is "" for a deleted policy) is ErrMoved. An approval id in use is ErrExists, a proposal that is
 // not open or has a kind ErrMoved, a full one ErrFull.
 func RevertTo(ctx context.Context, s store.Store, t store.Tenant, fullName, approvalID string, a Approval, revert Revert, pin Pin) error {
 	if approvalID == "" || pin.Proposal == "" || pin.HeadSHA == "" || pin.Digest == "" || revert.Commit == "" || revert.Digest == "" {
@@ -239,7 +247,7 @@ func RevertTo(ctx context.Context, s store.Store, t store.Tenant, fullName, appr
 				return nil, err
 			}
 		}
-		if r.OutsideFlow == nil || r.OutsideFlow.Digest != revert.Outside {
+		if !revert.Holds(r) {
 			return nil, ErrMoved
 		}
 		x, err := readIndex(cur[2], SchemaProposalIndex)

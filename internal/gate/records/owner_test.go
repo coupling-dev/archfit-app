@@ -261,6 +261,8 @@ func TestAProposalApprovedInAStateThatEndedIsNotConsumed(t *testing.T) {
 		{"a revert after a confirm", true, revert("sha256:x"), records.Repo{ApprovedDigest: "sha256:x", ApprovedCommit: "c9"}},
 		{"a revert after the policy changed again", true, revert("sha256:x"),
 			records.Repo{ApprovedDigest: "sha256:p", ApprovedCommit: "c0", OutsideFlow: &records.OutsideFlow{Digest: "sha256:y"}}},
+		{"a revert after a confirm and the same change pushed again", true, revert("sha256:x"),
+			records.Repo{ApprovedDigest: "sha256:x", ApprovedCommit: "c9", OutsideFlow: &records.OutsideFlow{Digest: "sha256:x"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

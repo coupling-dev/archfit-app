@@ -99,8 +99,7 @@ func (s *Service) closeReverted(ctx context.Context, r api.Repo, p *proposal) {
 
 // stillApplies reports whether the merged proposal p still applies to the repository record r (M2 task 23): a first
 // approval only while change control has not started (another onboarding pull request's first approval started it), a
-// revert only while the repository is outside the flow with the digest it replaces (a confirm, or a later change,
-// ended that state). Such a proposal is voided, and the push is judged as any other.
+// revert only while the state it was made in holds (records.Revert.Holds: a confirm, or a later change, ended it). Such a proposal is voided, and the push is judged as any other.
 func (s *Service) stillApplies(ctx context.Context, r api.Repo, repo records.Repo, p *proposal) (bool, error) {
 	if p.rec.Kind == records.ProposalFirst {
 		return repo.ApprovedDigest == "" && repo.OutsideFlow == nil, nil
@@ -117,7 +116,7 @@ func (s *Service) stillApplies(ctx context.Context, r api.Repo, repo records.Rep
 		if err := json.Unmarshal(a.Change, &rev); err != nil {
 			return false, fmt.Errorf("approvals: approval %s holds an unreadable revert: %w", id, err)
 		}
-		if repo.OutsideFlow == nil || repo.OutsideFlow.Digest != rev.Outside {
+		if !rev.Holds(repo) {
 			return false, nil
 		}
 	}

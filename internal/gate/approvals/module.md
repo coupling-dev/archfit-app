@@ -59,7 +59,8 @@ direct push to the policy is the new rule with no owner's word.
 - A proposal approved in a state that ended is voided as such a merge is, and the push judged as any other
   (`stillApplies`, and `records.Consume` refuses it too): a `first` proposal once the repository has an approved
   policy or is outside the flow (another onboarding pull request started change control), and one holding a revert
-  of another change than the one outside the flow now, or after a confirm ended the state.
+  that no longer holds (`records.Revert.Holds`: the changed policy and the approved one it was made against), as after
+  a confirm, or a later change, even when the same change is pushed again.
 - After a consume whose proposal holds a revert (M2 task 23, `gate/proposals`) ended the state, the issue of the state
   gets a note and is closed (a notification: a failure is logged, a delivery again does not repeat it).
 - `WorkflowPushed` judges a default-branch push for the workflow approval it uses (M2 task 23): the open `workflow`

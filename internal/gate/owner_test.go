@@ -321,3 +321,21 @@ func TestAFirstApprovalWhoseRunCannotRunAgainNamesTheCondition(t *testing.T) {
 		t.Errorf("archfit/gate = %+v, want unknown naming base_changed and the way out", run)
 	}
 }
+
+// TestAConfirmLeavesTheCheckOfAPullRequestItCannotRerun: after a first approval of the default branch's policy, an open
+// pull request whose run cannot run again keeps its own check: its unknown may have a reason of its own.
+func TestAConfirmLeavesTheCheckOfAPullRequestItCannotRerun(t *testing.T) {
+	w := newWorld4(t)
+	w.unrecorded()
+	p := w.openPull(w.shop, 7)
+	w.wantStatus(w.send4(w.spec4(p, "pass")), "unknown", reasonFirstApproval)
+	before, _ := w.latestGate(p.head)
+	delete(w.gh.runs, p.runID)
+
+	if _, err := w.act(oliviaAdmin, OwnerAction{Kind: OwnerFirst}); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := w.latestGate(p.head); after.ID != before.ID || after.Summary != before.Summary {
+		t.Errorf("the check was rewritten:\n%s\nwant it kept:\n%s", after.Summary, before.Summary)
+	}
+}

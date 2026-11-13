@@ -131,8 +131,8 @@ Functions, all under one installation tenant:
   same commit with the same digest again is `nil`. A proposal that is void, merged by another
   commit, without a pull request, or expecting another digest (also once merged), or a push recorded with another
   judgement, is `ErrMoved`; a missing one is `ErrNoRecord`. So is a proposal approved in a state that ended: a `first`
-  proposal of a repository with an approved policy or outside the flow, and one holding a revert of another digest
-  than the one outside the flow now (or none); being judged across two keys, it is confirmed by a swap of the
+  proposal of a repository with an approved policy or outside the flow, and one holding a revert that no longer
+  holds (`Revert.Holds`); being judged across two keys, it is confirmed by a swap of the
   unchanged bytes first. The rule is decided again after every lost swap, so of
   concurrent callers with different commits exactly one wins, and callers with the same commit all succeed.
 - `Outside(ctx, s, t, repo, push Push, digest) (Repo, marked bool, error)`: in one swap, `Repo.OutsideFlow.Digest` set
@@ -180,8 +180,9 @@ Functions, all under one installation tenant:
     state. A repository not outside the flow, or outside it with another digest, is `ErrMoved`.
   - `RevertTo(ctx, s, t, repo, approvalID, a, rev Revert, pin Pin) error`, `Revert{Commit, Digest, Outside, Issue}`:
     the approval, of kind `revert` with `rev` as its change, joins the App's policy proposal as `Answer`'s does with
-    `pin`, while the repository is outside the flow with digest `rev.Outside` (`""` for a deleted policy; else
-    `ErrMoved`).
+    `pin`, while the state it was made in holds (`Revert.Holds`: outside the flow with digest `rev.Outside`, `""` for
+    a deleted policy, and the approved policy still `rev.Digest` at `rev.Commit`; else `ErrMoved`). A confirm, or a
+    later change, ends that state for good: the same change pushed again does not revive the revert.
   - `FileDigest(file) string`: `sha256:` and the hex SHA-256 of a file's bytes, the digest a workflow approval binds.
 
 - `Rechecked(ctx, s, t, repo, pr, rc Recheck) (bool, error)`: appends `rc` to `Pull.Rechecks` in the pull record,

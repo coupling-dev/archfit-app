@@ -65,8 +65,9 @@ separate, testable steps. Without this module a report is a self-reported file a
   re-runs the head's stored run (pull record of M2 D6) when its four conditions hold, and the run's upload passes the
   approval (manager, 2026-11-13). Otherwise the check stays `unknown` with the App's record naming the condition not
   met (`no_run`, `not_latest`, `too_old`, `base_changed`) and the way out; a failed re-run says so too. A first
-  approval of the default branch's policy and a confirm do the same for every open pull request whose stored status
-  is `unknown`. A `first` approval counts only while the repository has no approved policy and is not outside the
+  approval of the default branch's policy and a confirm re-run, through the same guard, every open pull request of
+  this repository (no fork) whose stored status is `unknown`; one that cannot run again keeps its check, whose unknown
+  may have a reason of its own. A `first` approval counts only while the repository has no approved policy and is not outside the
   flow: once change control started, another onboarding pull request's approval admits nothing, and a default branch
   that lost its policy is `outside_flow` or `policy_unapproved`, never `first_policy`.
 - For the App's pull request page only (`FirstScreen`, `RecoveryStep`): word a published result with the code that
