@@ -54,6 +54,12 @@ var (
 	// change would be written on a policy no owner approved, by owners that policy names. An owner confirms or reverts
 	// it first (M2 task 23).
 	ErrOutsideFlow = errors.New("proposals: the policy changed outside the flow; an owner confirms or reverts it first")
+	// ErrFirstApproval refuses an answer to a repository whose policy no owner approved yet: a repository administrator
+	// approves it first (design 9.2, M2 task 23). Only that approval starts change control; an answer never does.
+	ErrFirstApproval = errors.New("proposals: the policy has no recorded approval; an administrator approves it first")
+	// ErrPolicyUnapproved refuses an answer while the default branch's policy is not the approved one and no judgement
+	// says why yet: a push being judged. The same answer passes once it is judged inside the flow.
+	ErrPolicyUnapproved = errors.New("proposals: the policy on the default branch is not the approved one yet")
 	// errRefused is a D13 condition that does not hold, so archfit/gate is not set.
 	errRefused = errors.New("proposals: the pull request is not the App's proposal as recorded")
 )
@@ -119,7 +125,7 @@ type Outcome struct {
 
 // Digest is the change digest of answer a to request number: what the owner's passkey step-up is bound to.
 func (s *Service) Digest(ctx context.Context, r api.Repo, number int, a requests.Answer) (string, error) {
-	if err := s.insideFlow(ctx, r); err != nil {
+	if err := s.controlled(ctx, r, nil); err != nil {
 		return "", err
 	}
 	req, err := s.openRequest(ctx, r, number)
@@ -171,7 +177,7 @@ type proposal struct {
 
 func (s *Service) answer(ctx context.Context, r api.Repo, in Input) (Outcome, error) {
 	ref, t := r.RepoRef, tenant(r)
-	if err := s.insideFlow(ctx, r); err != nil {
+	if err := s.controlled(ctx, r, nil); err != nil {
 		return Outcome{}, err
 	}
 	tip, err := s.gh.BranchHead(ctx, ref, r.DefaultBranch)
@@ -180,6 +186,9 @@ func (s *Service) answer(ctx context.Context, r api.Repo, in Input) (Outcome, er
 	}
 	tipFile, pol, err := s.policyAt(ctx, ref, tip)
 	if err != nil {
+		return Outcome{}, err
+	}
+	if err := s.controlled(ctx, r, tipFile); err != nil {
 		return Outcome{}, err
 	}
 	if !slices.ContainsFunc(pol.Owners, func(o string) bool { return in.Owner.Login != "" && strings.EqualFold(o, in.Owner.Login) }) {
@@ -287,17 +296,33 @@ func (s *Service) policyAt(ctx context.Context, ref api.RepoRef, at string) ([]b
 	return file, pol, nil
 }
 
-// insideFlow refuses with ErrOutsideFlow while the repository's policy changed outside the flow.
-func (s *Service) insideFlow(ctx context.Context, r api.Repo) error {
-	var repo records.Repo
-	err := records.Load(ctx, s.store, tenant(r), records.RepoKey(r.FullName), &repo)
+// controlled refuses an answer unless the repository is under change control: it has an approved policy
+// (ErrFirstApproval), is not outside the flow (ErrOutsideFlow) and, when tipFile is given, the default branch holds the
+// approved policy (ErrPolicyUnapproved). The owners an answer is checked against are then the approved policy's.
+func (s *Service) controlled(ctx context.Context, r api.Repo, tipFile []byte) error {
+	repo, err := s.repo(ctx, r)
+	if err != nil {
+		return err
+	}
 	switch {
-	case err != nil && !errors.Is(err, records.ErrNoRecord):
-		return fmt.Errorf("proposals: read the repository: %w", err)
 	case repo.OutsideFlow != nil:
 		return ErrOutsideFlow
+	case repo.ApprovedDigest == "":
+		return ErrFirstApproval
+	case tipFile != nil && policy3.Digest(tipFile) != repo.ApprovedDigest:
+		return ErrPolicyUnapproved
 	}
 	return nil
+}
+
+// repo reads the repository record; none is the zero record.
+func (s *Service) repo(ctx context.Context, r api.Repo) (records.Repo, error) {
+	var repo records.Repo
+	if err := records.Load(ctx, s.store, tenant(r), records.RepoKey(r.FullName), &repo); err != nil &&
+		!errors.Is(err, records.ErrNoRecord) {
+		return records.Repo{}, fmt.Errorf("proposals: read the repository: %w", err)
+	}
+	return repo, nil
 }
 
 // openRequest reads request number, which must be open.

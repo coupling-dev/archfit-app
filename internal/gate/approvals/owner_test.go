@@ -31,6 +31,16 @@ func (h *hub) bare(commit string) {
 	h.history = append(h.history, commit)
 }
 
+// firstApproved records an administrator's first approval of pull request pr, pinned at digest, as Act does.
+func (w *world) firstApproved(proposal string, pr int, digest string) {
+	w.t.Helper()
+	a := records.Approval{Kind: records.KindFirst, Change: json.RawMessage(`{}`), Owner: 1, Login: "olivia", Credential: passkeyID}
+	b := records.Bound{Proposal: proposal, PullRequest: pr, HeadSHA: "head-" + digest, Digest: digest}
+	if err := records.First(context.Background(), w.mem, w.tenant(), testRepo.FullName, "first-"+proposal, a, b); err != nil {
+		w.t.Fatal(err)
+	}
+}
+
 // approvedAt records digest at commit as the repository's approved policy.
 func (w *world) approvedAt(digest, commit string) {
 	w.t.Helper()

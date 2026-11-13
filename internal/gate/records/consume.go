@@ -235,7 +235,9 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 			stale = true
 			return cur, nil
 		}
-		if m.AtTip && (r.OutsideFlow == nil || reverts) {
+		// Only a first approval starts change control (design 9.2; M2 review H1): an ordinary proposal merged into a
+		// repository with no approved policy uses its approvals and approves nothing.
+		if m.AtTip && (r.OutsideFlow == nil || reverts) && (r.ApprovedDigest != "" || p.Kind == ProposalFirst) {
 			if r.ApprovedCommit != m.Over {
 				// This judges the proposal and the repository together, and Update reads them one by one: a consume
 				// that landed between the two reads shows the proposal open and the repository already moved. Only a

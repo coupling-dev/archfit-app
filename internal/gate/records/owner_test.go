@@ -287,3 +287,20 @@ func TestAProposalApprovedInAStateThatEndedIsNotConsumed(t *testing.T) {
 		})
 	}
 }
+
+// TestAnOrdinaryProposalNeverStartsChangeControl: only a first approval does (design 9.2; M2 review H1). An ordinary
+// proposal merged into a repository with no approved policy uses its approvals and approves nothing.
+func TestAnOrdinaryProposalNeverStartsChangeControl(t *testing.T) {
+	ctx := context.Background()
+	s := store.NewMemory()
+	openProposal(t, s, "p1", 50, "d1")
+	if err := records.Consume(ctx, s, tenant, repoName, merge("p1", "c1", "d1")); err != nil {
+		t.Fatal(err)
+	}
+	if p := load[records.Proposal](t, s, records.ProposalKey(repoName, "p1")); p.State != records.StateMerged {
+		t.Errorf("proposal %q, want merged", p.State)
+	}
+	if r := load[records.Repo](t, s, records.RepoKey(repoName)); r.ApprovedDigest != "" || r.GuardedSince != "" {
+		t.Errorf("repository %+v, want nothing approved", r)
+	}
+}

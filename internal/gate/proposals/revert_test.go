@@ -180,11 +180,15 @@ func TestARevertRefuses(t *testing.T) {
 // answer, and its pull request gets its verdict from its uploads.
 func TestAProposalOfAPullRequestSomeoneElseWroteIsNotThePolicyPullRequest(t *testing.T) {
 	w := newWorld(t)
+	if err := w.store.Delete(context.Background(), tenant(testRepo), records.RepoKey(testRepo.FullName)); err != nil {
+		t.Fatal(err)
+	}
 	a := records.Approval{Kind: records.KindFirst, Owner: 1, Login: "admin", Credential: "cred-1", At: testNow}
 	b := records.Bound{Proposal: "pf", PullRequest: 12, HeadSHA: "h1", Digest: "sha256:p", WorkflowDigest: "sha256:w"}
 	if err := records.First(context.Background(), w.store, tenant(testRepo), testRepo.FullName, "af", a, b); err != nil {
 		t.Fatal(err)
 	}
+	w.approveTip() // change control started another way: the onboarding pull request's proposal is stale
 	w.request(431, "graph", "pkg_tc", "pkg_util")
 	out := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
 
@@ -257,5 +261,48 @@ func TestAConfirmEndsAnOpenRevert(t *testing.T) {
 	}
 	if p := w.proposalOf(out); slices.Contains(p.Approvals, reverted.Approval) {
 		t.Errorf("proposal %+v still lists the revert", p)
+	}
+}
+
+// TestAnAnswerNeverStartsChangeControl: a repository whose schema 3 policy no administrator approved yet takes no
+// answer, from an owner its policy names or anyone (M2 review H1); nothing is written and no step-up is used.
+func TestAnAnswerNeverStartsChangeControl(t *testing.T) {
+	w := newWorld(t)
+	if err := w.store.Delete(context.Background(), tenant(testRepo), records.RepoKey(testRepo.FullName)); err != nil {
+		t.Fatal(err)
+	}
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	before := w.snapshot()
+	approve := requests.Answer{Kind: policy3.Approve}
+	if _, err := w.svc.Digest(context.Background(), testRepo, 431, approve); !errors.Is(err, ErrFirstApproval) {
+		t.Errorf("Digest = %v, want ErrFirstApproval", err)
+	}
+	for _, a := range []requests.Answer{approve, {Kind: policy3.Reject, Instead: "Go through pkg_net."}} {
+		in := Input{Request: 431, Answer: a, Owner: olivia, Redeem: w.redeem("none")}
+		if _, err := w.svc.Answer(context.Background(), testRepo, in); !errors.Is(err, ErrFirstApproval) {
+			t.Errorf("%s = %v, want ErrFirstApproval", a.Kind, err)
+		}
+	}
+	if !maps.Equal(before, w.snapshot()) || len(w.redeemed) != 0 || len(w.hub.writes()) != 0 {
+		t.Errorf("a refused answer wrote: redeemed %v, GitHub %v", w.redeemed, w.hub.writes())
+	}
+}
+
+// TestThePolicyPullRequestPassesOnlyUnderChangeControl: when the repository is not under change control by the time
+// the check is set, archfit/gate gets no success and the App does not merge.
+func TestThePolicyPullRequestPassesOnlyUnderChangeControl(t *testing.T) {
+	w := newWorld(t)
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	w.hub.hooks["UpdatePullBody"] = func() {
+		_ = w.store.Delete(context.Background(), tenant(testRepo), records.RepoKey(testRepo.FullName))
+	}
+	out := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, false)
+	if out.State != requests.PullRefused || len(w.hub.merges) != 0 {
+		t.Errorf("outcome %+v, merges %v; want no merge", out, w.hub.merges)
+	}
+	for _, c := range w.hub.checks {
+		if c.Conclusion == conclusionSuccess {
+			t.Errorf("archfit/gate success on %s", c.HeadSHA)
+		}
 	}
 }

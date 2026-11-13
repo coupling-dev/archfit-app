@@ -482,10 +482,11 @@ func TestARepositoryWithoutAnApprovedPolicyIsNotJudged(t *testing.T) {
 	if out := w.push("c0", "c1"); out.Judged != JudgedUnguarded || len(w.gh.openIssues()) != 0 || w.repo().OutsideFlow != nil {
 		t.Errorf("outcome %+v, issues %v, repository %+v", out, w.gh.openIssues(), w.repo())
 	}
+	// Only a first approval starts change control (M2 review H1): an ordinary proposal's merge approves nothing.
 	w.answered(431, "graph a b", "p1", 21, digestV(2))
 	w.merge(21, "c2", 2)
-	if out := w.push("c1", "c2"); out.Judged != JudgedConsumed || w.repo().ApprovedDigest != digestV(2) {
-		t.Errorf("outcome %+v, repository %+v; want the first consume to approve", out, w.repo())
+	if out := w.push("c1", "c2"); out.Judged != JudgedConsumed || w.repo().ApprovedDigest != "" {
+		t.Errorf("outcome %+v, repository %+v; want the proposal consumed and nothing approved", out, w.repo())
 	}
 }
 
@@ -682,7 +683,7 @@ func TestALatePushFromBeforeTheFirstApprovalIsNotOutsideTheFlow(t *testing.T) {
 	w := newWorld(t)
 	w.gh.commit("c0", policyV(0))
 	w.gh.commit("c1", policyV(1)) // a direct push, its event delayed
-	w.answered(431, "graph a b", "p1", 21, digestV(2))
+	w.firstApproved("p1", 21, digestV(2))
 	w.merge(21, "c2", 2)
 
 	if out := w.push("c1", "c2"); out.Judged != JudgedConsumed || w.repo().ApprovedDigest != digestV(2) {
@@ -744,6 +745,7 @@ func TestAConsumeThatLosesARaceKeepsTheNewerApproval(t *testing.T) {
 func TestARewrittenHistoryDoesNotStopLaterApprovals(t *testing.T) {
 	w := newWorld(t)
 	w.gh.commit("c0", policyV(0))
+	w.approved(digestV(0))
 	w.answered(431, "graph a b", "p1", 21, digestV(1))
 	w.merge(21, "c1", 1)
 	w.push("c0", "c1")

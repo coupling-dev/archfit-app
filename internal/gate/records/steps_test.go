@@ -604,6 +604,7 @@ func TestArchfit3KeysAreNeitherReadNorWritten(t *testing.T) {
 			&records.Pin{Proposal: "p2", PullRequest: 51, HeadSHA: "h3", Digest: "d3"}),
 		func() error { _, _, err := records.Void(ctx, s, tenant, repoName, "a2"); return err }(),
 		records.VoidProposal(ctx, s, tenant, repoName, "p2"),
+		records.ApproveCurrent(ctx, s, tenant, repoName, "a5", ownerApproval(records.KindFirst), "c1", "d2"),
 		func() error {
 			_, _, err := records.Outside(ctx, s, tenant, repoName, records.Push{After: "c9"}, "d9")
 			return err
@@ -727,7 +728,10 @@ func TestAPushBackToAJudgedCommitIsAnotherPush(t *testing.T) {
 func TestAConsumeApprovesOverTheApprovedCommitItRead(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
-	openProposal(t, s, "p1", 50, "d1")
+	b := records.Bound{Proposal: "p1", PullRequest: 50, HeadSHA: "h1", Digest: "d1"}
+	if err := records.First(ctx, s, tenant, repoName, "f1", ownerApproval(records.KindFirst), b); err != nil {
+		t.Fatal(err)
+	}
 	first := merge("p1", "c1", "d1")
 	if err := records.Consume(ctx, s, tenant, repoName, first); err != nil {
 		t.Fatal(err)
