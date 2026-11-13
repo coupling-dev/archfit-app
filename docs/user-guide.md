@@ -2,14 +2,14 @@
 
 This guide is for repository administrators and policy owners using Archfit 4. The App checks changes against `.archfit.yaml` on the protected default branch. It records owner answers and carries policy changes in a pull request. See [architecture](architecture.md) for the trust boundary and failure handling.
 
-> **Current release limitation:** The checked-in manifest has no approved engines. Until a release populates it, the App cannot admit an engine identity. The setup and owner-action APIs exist, but a first-approval screen is not established by this revision.
+> **Current release limitation:** The checked-in manifest has no approved engines. Until a release populates it, the App cannot admit an engine identity.
 
 ## Install and set up
 
 1. Install the GitHub App for the repository. An account not on the operator's approved list waits for operator admission.
 2. Put a schema 3 `.archfit.yaml` and `.github/workflows/archfit.yaml` in the repository. Review them before the first approval. The App does not generate these files.
 3. Sign in to the App and register a passkey as a repository administrator. See [Register a passkey](#register-a-passkey).
-4. A repository administrator must approve the first policy with a passkey. The owner action supports a same-repository open pull request when the default branch has no schema 3 policy, or the current default-branch policy otherwise. The owner-action API is present; a first-approval screen is not established by this revision.
+4. A repository administrator must approve the first policy with a passkey. The owner action supports a same-repository open pull request when the default branch has no schema 3 policy, or the current default-branch policy otherwise. Open `/r/<owner>/<repo>/owner/first`, or add `?pull=<number>` for the onboarding pull request.
 5. Configure the branch ruleset below and verify the workflow and engine are approved in the App's release manifest.
 
 The App's setup API reads the policy and workflow at one default-branch commit and reports admission, first approval and ruleset findings. It does not change GitHub rulesets. Home shows this setup information before the first approval.
@@ -19,7 +19,7 @@ The App's setup API reads the policy and workflow at one default-branch commit a
 Open `/r/<owner>/<repo>` for **Home**. The status line comes first. **Needs you** lists open requests,
 exceptions near their date, drift and owner actions. Each item opens its page. A request's record folds away.
 Before the first policy is approved, Home shows the setup steps, what is missing and the ruleset findings
-instead of the map. Owner-action pages are not yet established by this revision.
+instead of the map. Owner actions open the pages below.
 
 **The map** shows modules by layer, outer first, with each module's volatility. Its legend identifies an allowed
 dependency, a requested one with its request number, one a rule denies, an exception with its date, and drift.
@@ -41,6 +41,37 @@ For an organization-owned private or internal repository, a supported push rules
 ## Merge queue
 
 The App accepts a `merge_group` upload and binds it to GitHub queue authority. Require `archfit/gate` on the default branch ruleset for the queue as well. The workflow must run for merge-group events.
+
+## Owner actions
+
+Each page starts with the status, shows the App's diff of the actual files, and has one main action.
+That action asks for your passkey before it submits. **Show the files and their SHA-256s** opens
+all input files and their immutable commit refs. GitHub issue links and direct loads use the same pages.
+
+| Action | Path after `/r/<owner>/<repo>` |
+| --- | --- |
+| Approve the first policy on the default branch | `/owner/first` |
+| Approve the first policy in an onboarding pull request | `/owner/first?pull=<number>` |
+| Approve a workflow change | `/owner/workflow?pull=<number>` |
+| Confirm a policy changed outside the flow | `/owner/confirm` |
+| Revert a policy changed outside the flow | `/owner/revert` |
+
+The first approval has no approved baseline: every policy line is shown as an addition.
+Only a repository administrator named in that policy can make it. Other actions require an owner
+of the previously approved policy, not an owner added by an outside-flow change.
+A revert shows the exact policy it will write, including earlier approved answers kept from the open
+policy pull request. It also shows those answers relative to the approved policy and names that pull request.
+An approval does not mean the check passed. For first-policy and workflow pull-request approvals, the outcome
+says whether a new run was requested, is pending, or could not be started. First approval on the default
+branch and confirm do not report each re-run outcome.
+
+**Known limits:** Submit re-reads the displayed files, refs and open proposal answers before the passkey is
+consumed. A difference refuses the action and asks you to reload. GitHub and the Store do not provide one
+atomic snapshot: a ref can still move after the last read. Proposal consumption re-checks its files and
+digest, and outside-flow reconciliation surfaces a later default-branch policy change. The passkey binds
+the displayed view; it does not remove this residual window or prove that the owner read the files. A file
+that is not valid UTF-8 cannot be displayed or acted on from these pages; use the existing M2 owner-action
+API flow referenced by the GitHub issue instead.
 
 ## Register a passkey
 

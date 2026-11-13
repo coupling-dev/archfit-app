@@ -227,3 +227,8 @@ an `archfit/gate` success on the head (design appendix D.2), and the memory Stor
   approved record: refused, nothing written), `TestThePolicyPullRequestPassesOnlyUnderChangeControl` (no success, no
   merge); `TestAMergedProposalWaitsForItsPushAndANewOneOpens` asserts `ErrPolicyUnapproved` until the merge's push is
   judged; the resync test asserts the old head retired before the new head's check.
+
+`RevertPreview` is read-only, including when it finds a closed proposal. It shares
+`revertPolicy` with the action, restoring the approved file and re-applying open answers
+in record order. Its snapshot includes the proposal and every approval input digest.
+A repository has at most one open App policy proposal, with up to nine approvals.

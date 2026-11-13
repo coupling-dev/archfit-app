@@ -68,6 +68,14 @@ and `control/onboarding`; Home does not implement onboarding again.
 
 A missing or invalid target policy with recorded outside-flow state is returned without a map, so the owner can revert it. Proposed policy files are read at pull head only for workflow-action eligibility.
 
+## Owner action views
+
+`OwnerActions.OwnerView` reads the M2 action binding and the policy/workflow blobs at immutable refs.
+Its view digest covers repository identity, refs, exact file bytes and SHA-256s, and rendered text.
+First approval uses an empty approved baseline; the entire policy is shown as additions.
+A revert includes the exact result with open answers re-applied, and binds the App proposal and
+every ordered approval input. `ActionDigest` remains the unchanged M2 binding.
+
 ## Request page view
 
 `RequestView` reads the request and exposes declared volatility, layers outer-first and structured deny/exception dependencies from one target-policy snapshot. When an answered request has an approval pointer, the facade reads the recorded answer; older records without it provide no answer detail. The view includes the request issue link, which remains the source for the owner and passkey.

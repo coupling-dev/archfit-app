@@ -65,6 +65,8 @@ var sentinels = []struct {
 		"The repository no longer needs this action. Reload the page."},
 	{gate.ErrOwnerNotPossible, http.StatusConflict, "owner_not_possible",
 		"This pull request cannot be approved. Check its policy, workflow, head and target branch."},
+	{gate.ErrOwnerFileUnreadable, http.StatusConflict, "owner_file_unreadable",
+		"This file cannot be displayed, so it cannot be approved here. Use the existing owner flow on the GitHub issue."},
 	{gate.ErrOwnerMoved, http.StatusConflict, "owner_moved",
 		"The change moved since you looked. Reload it and confirm again with your passkey."},
 	{gate.ErrNotOutsideFlow, http.StatusConflict, "not_outside_flow",
