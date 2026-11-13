@@ -37,6 +37,9 @@ its index could drift apart.
   (`OutsideIssue`). Record a policy push to a repository without an approved policy (`Unguarded`).
 - Record in a pull record how the re-check after an answer got its pull request a fresh result (`Rechecked`, M2 task
   21); uploads keep it.
+- Record the repository's owner issues (M2 task 22): the one drift issue and the digest of its body
+  (`DriftOpened`, `DriftUpdated`, `DriftClosed`), and one expiry issue per exception and date (`ExpiryOpened`,
+  `ExpiryClosed`).
 - Record the owner actions outside requests (M2 task 23), each in one swap: a first approval of an onboarding pull
   request (`First`) and a workflow approval (`Workflow`), proposals of that pull request bound to its head, policy
   digest and workflow digest; a first approval of the policy already on the default branch (`ApproveCurrent`) and a
@@ -95,12 +98,12 @@ writes the repository's proposal.
 
 | Key | Value | `schema` | Holds |
 | --- | --- | --- | --- |
-| `v4/repo/<repo>` | `Repo` | `archfit-app.repo.v1` | approved digest and the merge commit that brought it; the commit of the first approval (change control starts there); outside the flow (digest, issue); drift issue; expiry issues (exception key → issue) |
+| `v4/repo/<repo>` | `Repo` | `archfit-app.repo.v1` | approved digest and the merge commit that brought it; the commit of the first approval (change control starts there); outside the flow (digest, issue); drift issue and its body digest; expiry issues (`<exception key> <YYYY-MM-DD>` → issue) |
 | `v4/request/<repo>/<issue>` | `Request` | `archfit-app.request.v1` | key, reason, numbers (verified, balance), waiting pull requests, state `open`, `answered` or `closed`; rule, path, modules, expiry date and record, so the issue body can be rendered again; the pull requests the body lists |
 | `v4/approval/<repo>/<id>` | `Approval` | `archfit-app.approval.v1` | kind, request, change (raw JSON, owned by the policy writer), owner (user id and login), credential, time, proposal (set once), state `open` or `void` |
 | `v4/proposal/<repo>/<id>` | `Proposal` | `archfit-app.proposal.v1` | kind (none for the App's policy pull request, `first` or `workflow` for a pull request someone else wrote), ordered approval ids (at most `MaxApprovals` = 9), pull request, head SHA, expected digest, the workflow digest its merge must land (`first`, `workflow`), state `open`, `merged` or `void`, consuming commit |
 | `v4/policy-push/<repo>/<before>..<after>` | `PolicyPush` | `archfit-app.policy-push.v1` | the policy digest of a default-branch push that changed the policy, and the proposal it consumed, or `unguarded` (no approved policy yet); neither: outside the flow. `<before>` is 40 zeros for a push that created the branch |
-| `v4/pull/<repo>/<pr>` | `Pull` | `archfit-app.pull.v1` | head SHA, run id, run attempt, payload digest, status, error keys and the request key of each error ("" when it has none), for the preview (M2 D6; no result bytes); `rechecks` (optional): the proposal, path, unmet condition and head of each re-check after an answer, the latest last, at most `MaxRechecks` (16) (M2 task 21) |
+| `v4/pull/<repo>/<pr>` | `Pull` | `archfit-app.pull.v1` | head SHA, run id, run attempt, payload digest, status, the date the result judged exceptions on (an accepted result only), error keys and the request key of each error ("" when it has none), for the preview (M2 D6; no result bytes); `rechecks` (optional): the proposal, path, unmet condition and head of each re-check after an answer, the latest last, at most `MaxRechecks` (16) (M2 task 21) |
 
 Functions, all under one installation tenant:
 
@@ -192,6 +195,13 @@ Functions, all under one installation tenant:
   The markers belong to the pull request: `gate`'s upload keeps them when it writes a newer run's record, so a delivery
   of a consuming push again finds its proposal, after the re-run's own upload and after later proposals.
 
+- `DriftOpened(ctx, s, t, repo, issue, digest) (int, error)`: records `issue` as the drift issue with its body digest,
+  when none is recorded, and returns the recorded one (another delivery's, when it was first). `DriftUpdated(..., issue,
+  digest)` records the new body digest while `issue` is the recorded one; `DriftClosed(..., issue)` forgets
+  it while it is. `ExpiryOpened(ctx, s, t, repo, key, issue) (int, error)` and `ExpiryClosed(..., key, issue)` do the same
+  for the expiry issue of `key`. `gate/drift` and `gate/expiry` open each issue on GitHub first and record it after; a
+  missing repository record is created, and an unchanged one is only checked.
+
 Every write goes through `store.Update`; after 5 lost swaps it returns `store.ErrConflict`, and the caller may read
 again and retry.
 
@@ -267,6 +277,9 @@ sweep) read and write through this module;
   merged or full proposal, a new proposal without a pull request, a pull request another proposal holds, an empty
   digest), `TestVoidReopensTheRequest`, `TestVoidLeavesTheRequestAnsweredWhenAnotherHoldsItsKey`, `TestVoidProposal`;
   on both backends, `TestARequestIsAnsweredOnce` (two answers race; one wins, the other is `ErrAnswered`).
+- `TestDriftIssue`, `TestExpiryIssues` (memory store and emulator): recorded once, a second delivery gets the first
+  issue, another issue neither updates nor forgets the recorded one, the rest of the record is kept;
+  `TestADriftIssueCreatesAMissingRepositoryRecord`, `TestAnUnchangedRepositoryRecordIsKept`.
 - `TestFirstOpensTheProposalOfItsPullRequestAndListsTheRepository` (again after a push: the same proposal pinned to the
   new head), `TestAFirstProposalIsConsumedAsTheFirstApproval`, `TestOwnerApprovalsRefuseAndWriteNothing` (each wrong
   state, kind and digest of `First`, `Workflow`, `ApproveCurrent`, `Confirm` and `RevertTo`),

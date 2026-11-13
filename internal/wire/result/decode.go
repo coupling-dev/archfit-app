@@ -27,6 +27,9 @@ var rules = map[string]rule{
 	"status": {enum: []string{string(StatusPass), string(StatusFail), string(StatusWaiting), string(StatusUnknown)}},
 	"kind":   {enum: []string{"fix", "command", "wait", "restore"}},
 	"cause":  {enum: []string{"policy", "base", "tool", "import"}},
+	"repository": {enum: []string{
+		string(RepositoryClean), string(RepositoryDrift), string(RepositoryExpired),
+	}},
 	"digest": {pattern: regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)},
 	"commit": {pattern: regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)},
 	"date":   {pattern: regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)},
