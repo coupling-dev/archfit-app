@@ -33,6 +33,16 @@ func repoRoutes(fullName string) []route {
 	base, api := "/r/"+fullName, "/api/repos/"+fullName
 	return []route{
 		{http.MethodGet, base, signedInOnly, nil, nil},
+		{http.MethodGet, base + "/owner/first", signedInOnly, nil, nil},
+		{http.MethodGet, api + "/owner/first/view", permRead, nil, nil},
+		{http.MethodGet, base + "/owner/first?pull=7", signedInOnly, nil, nil},
+		{http.MethodGet, api + "/owner/first/view?pull=7", permRead, nil, nil},
+		{http.MethodGet, base + "/owner/workflow?pull=7", signedInOnly, nil, nil},
+		{http.MethodGet, api + "/owner/workflow/view?pull=7", permRead, nil, nil},
+		{http.MethodGet, base + "/owner/confirm", signedInOnly, nil, nil},
+		{http.MethodGet, api + "/owner/confirm/view", permRead, nil, nil},
+		{http.MethodGet, base + "/owner/revert", signedInOnly, nil, nil},
+		{http.MethodGet, api + "/owner/revert/view", permRead, nil, nil},
 		{http.MethodGet, api + "/overview", permRead, nil, nil},
 		{http.MethodGet, api + "/setup", permRead, nil, nil},
 		{http.MethodGet, api + "/policy", permRead, nil, nil},

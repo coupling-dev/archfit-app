@@ -11,6 +11,7 @@ import (
 type ownerJSON struct {
 	Pull       int    `json:"pull_request,omitempty"`
 	Digest     string `json:"digest,omitempty"`
+	ViewDigest string `json:"view_digest,omitempty"`
 	MergeLater bool   `json:"merge_later,omitempty"`
 	Token      string `json:"token,omitempty"`
 }
@@ -38,7 +39,7 @@ func ownerInput(r *http.Request) (answers.OwnerAction, error) {
 	if in.Pull < 0 || kind == gate.OwnerWorkflow && in.Pull == 0 || (kind == gate.OwnerConfirm || kind == gate.OwnerRevert) && in.Pull != 0 {
 		return answers.OwnerAction{}, invalid("The action has an invalid pull request.")
 	}
-	return answers.OwnerAction{Kind: kind, Pull: in.Pull, Digest: in.Digest, Later: in.MergeLater, Token: in.Token}, nil
+	return answers.OwnerAction{Kind: kind, Pull: in.Pull, Digest: in.Digest, ViewDigest: in.ViewDigest, Later: in.MergeLater, Token: in.Token}, nil
 }
 
 func (s *server) apiOwnerDigest(r *http.Request, sc scope) (any, error) {

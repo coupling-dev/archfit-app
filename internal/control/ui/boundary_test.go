@@ -31,6 +31,10 @@ func TestTenantIdentityOnlyFromSession(t *testing.T) {
 	// Installation B's IDs, supplied everywhere a client can put them.
 	foreign := url.Values{"installation_id": {"2"}, "installation": {"2"}, "repository_id": {"20"}, "repo_id": {"20"}, "repo": {otherRepo}}
 	send := func(c *client, rt route) int {
+		separator := "?"
+		if strings.Contains(rt.path, "?") {
+			separator = "&"
+		}
 		form := url.Values{}
 		for k, v := range rt.form {
 			form[k] = v
@@ -41,15 +45,15 @@ func TestTenantIdentityOnlyFromSession(t *testing.T) {
 		var req *http.Request
 		switch {
 		case rt.method == http.MethodGet:
-			req = httptest.NewRequest(rt.method, baseURL+rt.path+"?"+foreign.Encode(), nil)
+			req = httptest.NewRequest(rt.method, baseURL+rt.path+separator+foreign.Encode(), nil)
 		case rt.api(): // the body is the endpoint's own type: a foreign field in it is refused (TestOversizedAndInvalidInput)
 			raw, _ := json.Marshal(rt.body)
-			req = httptest.NewRequest(rt.method, baseURL+rt.path+"?"+foreign.Encode(), bytes.NewReader(raw))
+			req = httptest.NewRequest(rt.method, baseURL+rt.path+separator+foreign.Encode(), bytes.NewReader(raw))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set(csrfHeader, c.csrf())
 		default:
 			form.Set("csrf", c.csrf())
-			req = httptest.NewRequest(rt.method, baseURL+rt.path+"?"+foreign.Encode(), strings.NewReader(form.Encode()))
+			req = httptest.NewRequest(rt.method, baseURL+rt.path+separator+foreign.Encode(), strings.NewReader(form.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
 		req.Header.Set("X-Installation-Id", "2")

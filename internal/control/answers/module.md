@@ -26,7 +26,7 @@ pages. YAML edits are owned by the gate's policy proposal path.
 
 ## Owner actions outside requests
 
-`NewOwners(gate.OwnerActions, passkey.Passkeys) Owners` exposes `OwnerDigest` and `OwnerAct`.
+`NewOwners(gate.OwnerActions, passkey.Passkeys) Owners` exposes read-only `OwnerView`, `OwnerDigest` and `OwnerAct`.
 `OwnerAction` holds the kind (`first`, `workflow`, `confirm`, `revert`), optional PR, seen digest,
 merge-later choice and step-up token. `OwnerAct` takes an authenticated `gate.OwnerUser`; its `Admin`
 authority must come from the caller's repository authorization, never the request body.
@@ -89,3 +89,9 @@ Over a fake `gate.Answers` that calls `Redeem` for a loosening answer, as `gate/
 
 - `TestAnAnswerRedeemsTheTokenForItsRequestKindAndDigest`: the Purpose, the user id, the token, and what the gate gets.
 - `TestARejectRedeemsNothing`, `TestARefusedTokenRefusesTheAnswer`, `TestDigestAsksTheGate`.
+
+Owner page submissions carry both the unchanged M2 `Digest` and `ViewDigest`. Before entering the
+action, and again in its existing `Redeem` callback, `OwnerView` is re-read and both bindings must
+match. The callback refuses a different underlying digest; it never substitutes a fresh one.
+Only then is the passkey token redeemed for `ViewDigest`. M2 change-bound API tokens remain
+change-bound; a page's view-bound token cannot be redeemed through that path.

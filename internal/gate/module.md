@@ -79,6 +79,15 @@ results are covered from the live request index. Advisory failures stay fail. Th
 
 A missing-upload receipt remains readable before the first pull record exists. References to outside-flow
 issues are plain text, not request links; only the shared model's explicit request numbers become links.
+
+## Owner action views
+
+`OwnerActions.OwnerView` reads the M2 action binding and the policy/workflow blobs at immutable refs.
+Its view digest covers repository identity, refs, exact file bytes and SHA-256s, and rendered text.
+First approval uses an empty approved baseline; the entire policy is shown as additions.
+A revert includes the exact result with open answers re-applied, and binds the App proposal and
+every ordered approval input. `ActionDigest` remains the unchanged M2 binding.
+
 ## Request page view
 
 `RequestView` reads the request and exposes declared volatility, layers outer-first and structured deny/exception dependencies from one target-policy snapshot. When an answered request has an approval pointer, the facade reads the recorded answer; older records without it provide no answer detail. The view includes the request issue link, which remains the source for the owner and passkey.

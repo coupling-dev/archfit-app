@@ -156,6 +156,13 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("GET /r/{o}/{n}/data-sharing", page)
 	mux.Handle("GET /r/{o}/{n}/passkeys", page)
 	mux.Handle("GET /r/{o}/{n}/requests/{number}", requestPage)
+	mux.Handle("GET /r/{o}/{n}/owner/{action}", s.signedIn(func(w http.ResponseWriter, r *http.Request, _ session.User) {
+		if _, err := ownerPageAction(r); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		index(w, r)
+	}))
 	mux.Handle("GET /r/{o}/{n}/consent", s.signedIn(consentMoved))
 	mux.Handle("GET /admin", s.signedIn(func(w http.ResponseWriter, r *http.Request, u session.User) {
 		if !s.isOperator(u) {
@@ -171,6 +178,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("POST /api/admin/installations/{id}/revoke", s.apiOperator(s.apiRevoke))
 	mux.Handle("GET /api/repos", s.apiSignedIn(s.apiRepos))
 	mux.Handle("GET /api/repos/{o}/{n}/setup", s.apiRepo(permRead, s.apiSetup))
+	mux.Handle("GET /api/repos/{o}/{n}/owner/{action}/view", s.apiRepo(permRead, s.apiOwnerView))
 	mux.Handle("POST /api/repos/{o}/{n}/owner/{action}/digest", s.apiRepo(permRead, s.apiOwnerDigest))
 	mux.Handle("POST /api/repos/{o}/{n}/owner/{action}", s.apiRepo(permRead, s.apiOwnerAct))
 	mux.Handle("GET /api/repos/{o}/{n}/home", s.apiRepo(permRead, s.apiHome))

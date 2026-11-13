@@ -28,6 +28,7 @@ type fakeOwners struct {
 	users   []gate.OwnerUser
 	actions []answers.OwnerAction
 	err     error
+	view    gate.OwnerView
 }
 
 func (f *fakeOwners) OwnerDigest(_ context.Context, r api.Repo, a answers.OwnerAction) (string, error) {
@@ -202,5 +203,24 @@ func TestOwnerAPIRejectsInvalidActionsBeforeCallingGate(t *testing.T) {
 				t.Fatalf("gate called with invalid action: %+v", e.owners.actions)
 			}
 		})
+	}
+}
+
+func (f *fakeOwners) OwnerView(_ context.Context, r api.Repo, a answers.OwnerAction) (gate.OwnerView, error) {
+	f.repos = append(f.repos, r)
+	f.actions = append(f.actions, a)
+	return f.view, f.err
+}
+
+func TestOwnerAPIPreservesBothDisplayedBindings(t *testing.T) {
+	e := newEnv(t)
+	res := e.as("alice", permRead).postJSON(ownerAPI+"revert", map[string]any{"digest": "sha256:original", "view_digest": "sha256:view", "token": "view-token"})
+	wantStatus(t, res, http.StatusOK)
+	if len(e.owners.actions) != 1 {
+		t.Fatal("action not forwarded")
+	}
+	a := e.owners.actions[0]
+	if a.Digest != "sha256:original" || a.ViewDigest != "sha256:view" || a.Token != "view-token" {
+		t.Fatalf("bindings = %+v", a)
 	}
 }

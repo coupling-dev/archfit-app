@@ -85,3 +85,18 @@ describe('serverError', () => {
     expect(serverError(content)).toBe(want);
   });
 });
+
+describe('owner action routes', () => {
+  it.each([
+    ['first', '', 'first', 0], ['first', '?pull=7', 'first', 7], ['workflow', '?pull=7', 'workflow', 7],
+    ['confirm', '', 'confirm', 0], ['revert', '', 'revert', 0],
+  ])('%s%s', (path, search, action, pull) => {
+    expect(parseRoute('/r/acme/app/owner/' + path, search)).toEqual({ kind: 'owner', action, pull, owner: 'acme', name: 'app', fullName: 'acme/app' });
+  });
+  it.each([
+    ['workflow', ''], ['first', '?pull=0'], ['first', '?pull=01'], ['first', '?pull=-1'], ['first', '?pull='],
+    ['first', '?pull=1&pull=2'], ['first', '?pull=x'], ['confirm', '?pull=7'], ['revert', '?pull=7'], ['nope', ''],
+  ])('refuses %s%s', (path, search) => {
+    expect(parseRoute('/r/acme/app/owner/' + path, search)).toEqual({ kind: 'unknown' });
+  });
+});

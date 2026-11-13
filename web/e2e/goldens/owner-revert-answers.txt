@@ -1,0 +1,33 @@
+unknown: the policy changed outside the flow.
+
+Revert the policy
+
+This restores the approved policy. It keeps the approved answers in #12.
+
+The policy to restore
+--- a/.archfit.yaml
++++ b/.archfit.yaml
+@@ -3,3 +3,3 @@
+ modules:
+   app:
+-    paths: [cmd/**]
++    paths: [cmd/**, pkg/**]
+
+Approved answers kept on the approved policy
+--- a/.archfit.yaml
++++ b/.archfit.yaml
+@@ -3,3 +3,5 @@
+ modules:
+   app:
+     paths: [cmd/**]
++    depends_on:
++      - util  # request #431
+
+Show the files and their SHA-256s
+Confirm with your passkey
+
+Your passkey confirms exactly the change shown above. Nothing is approved until this step finishes.
+
+No passkey yet? Register a passkey, then reload this page.
+
+Revert the policy

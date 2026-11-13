@@ -173,6 +173,7 @@ type proposal struct {
 	rec       records.Proposal
 	approvals []approved
 	base      []byte
+	inputs    []RevertApproval
 	stale     []approved
 }
 
@@ -369,6 +370,11 @@ func (s *Service) approval(ctx context.Context, in Input, c requests.Change) (re
 // for the push that consumes it (M2 task 20) and is passed over. One whose pull request was closed without a merge is
 // void, and the requests of its approvals open again.
 func (s *Service) current(ctx context.Context, r api.Repo) (*proposal, error) {
+	return s.readCurrent(ctx, r, true)
+}
+
+// readCurrent shares the snapshot reader; a page never performs the action path's cleanup writes.
+func (s *Service) readCurrent(ctx context.Context, r api.Repo, cleanup bool) (*proposal, error) {
 	t := tenant(r)
 	index := records.Index{Schema: records.SchemaProposalIndex}
 	if err := records.Load(ctx, s.store, t, records.ProposalIndexKey(r.FullName), &index); err != nil &&
@@ -400,6 +406,9 @@ func (s *Service) current(ctx context.Context, r api.Repo) (*proposal, error) {
 		case pull.Merged:
 			continue
 		case pull.State != "open":
+			if !cleanup {
+				continue
+			}
 			// The approvals first: while the proposal is in the index, a later answer repeats a cleanup that stopped.
 			if err := s.voidAndNote(ctx, r, p.rec.PullRequest, append(p.approvals, p.stale...), true); err != nil {
 				return nil, err
@@ -428,6 +437,7 @@ func (s *Service) loadApprovals(ctx context.Context, r api.Repo, repo records.Re
 		if err := records.Load(ctx, s.store, tenant(r), records.ApprovalKey(r.FullName, id), &a.rec); err != nil {
 			return fmt.Errorf("proposals: read approval %s: %w", id, err)
 		}
+		p.inputs = append(p.inputs, RevertApproval{ID: id, Request: a.rec.Request, Digest: snapshotDigest(a.rec)})
 		if a.rec.State != records.StateOpen {
 			continue
 		}
