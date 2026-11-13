@@ -90,7 +90,8 @@ var ErrApprovedMoved = errors.New("records: the approved commit moved")
 // Merge.AtTip), removes the requests of its approvals from the request index (an answered request covers its key
 // until its proposal is consumed), and records the push at PolicyPushKey. The approvals of the proposal count as
 // consumed from then on (each records the proposal it joined, once). While the repository is outside the flow the
-// approved digest stays as it is: the merged policy also carries the change no approval made.
+// approved digest stays as it is: the merged policy also carries the change no approval made. A proposal that holds a
+// revert approval restored the approved policy (M2 task 23): with AtTip it ends the state and approves its digest.
 //
 // The same commit with the same digest again is a no-op success: it only checks the keys. A proposal that is void,
 // merged by another commit, without a pull request, or expecting another digest (also after it was merged) is
@@ -103,11 +104,11 @@ func Consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 	// The approvals cannot be in the swap (up to 9 keys more), so their requests are read first. An approval that
 	// joined in between (it may keep the digest) is read on the next round.
 	for range consumeReads {
-		requests, err := approvalRequests(ctx, s, t, fullName, m.Proposal)
+		approvals, err := approvalsOf(ctx, s, t, fullName, m.Proposal)
 		if err != nil {
 			return err
 		}
-		err = consume(ctx, s, t, fullName, m, requests)
+		err = consume(ctx, s, t, fullName, m, approvals)
 		if !errors.Is(err, errApprovalsMoved) {
 			return err
 		}
@@ -121,24 +122,30 @@ const consumeReads = 3
 // errApprovalsMoved is a proposal holding an approval Consume did not read.
 var errApprovalsMoved = errors.New("records: the proposal's approvals moved")
 
-// approvalRequests maps each approval of the proposal to its request.
-func approvalRequests(ctx context.Context, s store.Store, t store.Tenant, fullName, proposalID string) (map[string]int, error) {
+// joined is what a consume needs of an approval of the proposal: its request (0 when none), and whether it reverts.
+type joined struct {
+	request int
+	revert  bool
+}
+
+// approvalsOf reads each approval of the proposal.
+func approvalsOf(ctx context.Context, s store.Store, t store.Tenant, fullName, proposalID string) (map[string]joined, error) {
 	var p Proposal
 	if err := Load(ctx, s, t, ProposalKey(fullName, proposalID), &p); err != nil {
 		return nil, err
 	}
-	out := make(map[string]int, len(p.Approvals))
+	out := make(map[string]joined, len(p.Approvals))
 	for _, id := range p.Approvals {
 		var a Approval
 		if err := Load(ctx, s, t, ApprovalKey(fullName, id), &a); err != nil {
 			return nil, err
 		}
-		out[id] = a.Request
+		out[id] = joined{request: a.Request, revert: a.Kind == KindRevert}
 	}
 	return out, nil
 }
 
-func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string, m Merge, requests map[string]int) error {
+func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string, m Merge, approvals map[string]joined) error {
 	keys := []string{ProposalKey(fullName, m.Proposal), ProposalIndexKey(fullName), RepoKey(fullName),
 		RequestIndexKey(fullName), PolicyPushKey(fullName, m.Push)}
 	approvedMoved := false
@@ -167,13 +174,14 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 				return nil, ErrMoved
 			}
 		}
-		answered := map[string]bool{}
+		answered, reverts := map[string]bool{}, false
 		for _, id := range p.Approvals {
-			request, ok := requests[id]
+			a, ok := approvals[id]
 			if !ok {
 				return nil, errApprovalsMoved
 			}
-			answered[strconv.Itoa(request)] = true
+			answered[strconv.Itoa(a.request)] = true
+			reverts = reverts || a.revert
 		}
 		p.State, p.Commit = StateMerged, m.Commit
 
@@ -207,7 +215,7 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 				return nil, err
 			}
 		}
-		if m.AtTip && r.OutsideFlow == nil {
+		if m.AtTip && (r.OutsideFlow == nil || reverts) {
 			if r.ApprovedCommit != m.Over {
 				// This judges the proposal and the repository together, and Update reads them one by one: a consume
 				// that landed between the two reads shows the proposal open and the repository already moved. Only a
@@ -218,7 +226,7 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 			if r.ApprovedDigest == "" {
 				r.GuardedSince = m.Commit // the first approval: change control starts here
 			}
-			r.ApprovedDigest, r.ApprovedCommit = m.Digest, m.Commit
+			r.ApprovedDigest, r.ApprovedCommit, r.OutsideFlow = m.Digest, m.Commit, nil
 		}
 
 		out, err := encodeAll(&p, &r, &push)

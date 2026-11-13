@@ -609,6 +609,17 @@ func TestArchfit3KeysAreNeitherReadNorWritten(t *testing.T) {
 			&records.Pin{Proposal: "p2", PullRequest: 51, HeadSHA: "h3", Digest: "d3"}),
 		func() error { _, _, err := records.Void(ctx, s, tenant, repoName, "a2"); return err }(),
 		records.VoidProposal(ctx, s, tenant, repoName, "p2"),
+		records.RevertTo(ctx, s, tenant, repoName, "a3", ownerApproval(records.KindRevert),
+			records.Revert{Commit: "c1", Digest: "d2", Outside: "d9", Issue: 9},
+			records.Pin{Proposal: "p3", PullRequest: 52, HeadSHA: "h4", Digest: "d2"}),
+		func() error {
+			_, err := records.Confirm(ctx, s, tenant, repoName, "a4", ownerApproval(records.KindConfirm), "c10", "d9")
+			return err
+		}(),
+		records.First(ctx, s, tenant, "Acme/Other", "f1", ownerApproval(records.KindFirst), bound("pf", "h1")),
+		records.ApproveCurrent(ctx, s, tenant, "Acme/Third", "f2", ownerApproval(records.KindFirst), "c1", "dp"),
+		records.Workflow(ctx, s, tenant, "Acme/Third", "w1", ownerApproval(records.KindWorkflow), bound("pw", "h1")),
+		records.ConsumeWorkflow(ctx, s, tenant, "Acme/Third", "pw", "m1"),
 	}
 	for i, err := range steps {
 		if err != nil && !errors.Is(err, records.ErrNoRecord) {

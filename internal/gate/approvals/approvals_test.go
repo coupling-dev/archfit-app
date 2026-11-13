@@ -32,6 +32,7 @@ type hub struct {
 	mu        sync.Mutex
 	history   []string          // the default branch's commits, oldest first; the last is its tip
 	files     map[string]string // commit → policy; a missing commit has no policy
+	workflows map[string]string // commit → the workflow file; a missing commit has none
 	pulls     map[int]api.Pull
 	issues    map[int]bool // number → open
 	comments  map[int][]string
@@ -46,8 +47,9 @@ func (h *hub) File(_ context.Context, _ api.RepoRef, ref, path string) ([]byte, 
 	if err := h.fail["File"]; err != nil {
 		return nil, "", err
 	}
-	text, ok := h.files[ref]
-	if !ok || path != PolicyPath {
+	files := map[string]map[string]string{PolicyPath: h.files, WorkflowPath: h.workflows}[path]
+	text, ok := files[ref]
+	if !ok {
 		return nil, "", api.ErrNotFound
 	}
 	return []byte(text), "blob-" + ref, nil
@@ -160,7 +162,7 @@ type world struct {
 }
 
 func newWorld(t *testing.T) *world {
-	gh := &hub{files: map[string]string{}, pulls: map[int]api.Pull{}, issues: map[int]bool{}, comments: map[int][]string{},
+	gh := &hub{files: map[string]string{}, workflows: map[string]string{}, pulls: map[int]api.Pull{}, issues: map[int]bool{}, comments: map[int][]string{},
 		assignees: map[int][]string{}, next: 1000, fail: map[string]error{}}
 	mem := store.NewMemory()
 	return &world{t: t, gh: gh, mem: mem, svc: New(gh, mem)}
@@ -528,7 +530,11 @@ func TestAFailedIssueIsOpenedOnTheRetry(t *testing.T) {
 func TestTextsUseNoNotUsedWord(t *testing.T) {
 	for name, text := range map[string]string{
 		"title": outsideTitle, "body": outsideBody("main", "c1"), "changed again": changedAgainNote("c2"),
-		"duplicate": duplicateNote(12), "merged other": mergedOtherNote(21),
+		"duplicate": duplicateNote(12), "merged other": mergedOtherNote(21), "reverted": revertedNote(40, "m3"),
+		"first title": firstTitle, "first body": firstBody("main", Change{Commit: "c0", Policy: "sha256:p"}, "olivia", "pk"),
+		"first pull":    approvedPullNote(Change{Kind: records.KindFirst, HeadSHA: "h1", Policy: "sha256:p"}, "olivia", "pk"),
+		"workflow pull": approvedPullNote(Change{Kind: records.KindWorkflow, HeadSHA: "h1"}, "olivia", "pk"),
+		"confirmed":     confirmedNote(Change{Commit: "c1", Policy: "sha256:x"}, "olivia", "pk"),
 	} {
 		if words := wording.NotUsedIn(text); len(words) > 0 {
 			t.Errorf("%s uses %v:\n%s", name, words, text)
