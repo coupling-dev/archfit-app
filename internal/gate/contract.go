@@ -42,7 +42,7 @@ type Gate struct {
 	publisher  feedback.Publisher
 	repairer   feedback.Repairer
 	sweeper    sweep.Sweeper
-	actions    api.Actions
+	actions    sweep.Runs
 	repos      api.Repos
 	pulls      api.Pulls
 	queues     api.MergeQueues
@@ -101,7 +101,7 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 	return g
 }
 
-func newGate(rc ingest.Receiver, rs inputs.Resolver, rq requests, p feedback.Publisher, rp feedback.Repairer, sw sweep.Sweeper, a api.Actions, repos api.Repos, pl api.Pulls, q api.MergeQueues, cm api.Comments, adm admitter, now func() time.Time) *Gate {
+func newGate(rc ingest.Receiver, rs inputs.Resolver, rq requests, p feedback.Publisher, rp feedback.Repairer, sw sweep.Sweeper, a sweep.Runs, repos api.Repos, pl api.Pulls, q api.MergeQueues, cm api.Comments, adm admitter, now func() time.Time) *Gate {
 	return &Gate{receiver: rc, resolver: rs, requests: rq, publisher: p, repairer: rp, sweeper: sw, actions: a, repos: repos, pulls: pl, queues: q, comments: cm, admissions: adm, now: now}
 }
 

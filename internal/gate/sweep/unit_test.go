@@ -228,7 +228,7 @@ func TestUnreadableReceiptIsBounded(t *testing.T) {
 }
 
 func TestExpiryRule(t *testing.T) {
-	e := t0.Add(30 * day)
+	e := t0.Add(10 * day) // the run (created a day before t0) is still younger than 30 days then
 	tests := []struct {
 		name          string
 		now           time.Time
@@ -298,16 +298,17 @@ func TestRerunGuard(t *testing.T) {
 	tests := []struct {
 		name      string
 		runID     int64
-		run       *api.WorkflowRun
+		status    string // "" removes the run
+		attempt   int
 		wantRun   bool
 		wantRerun bool
 	}{
-		{"run ID 0", 0, nil, false, false},
-		{"run not found", 9, nil, true, false},
-		{"run queued", 9, &api.WorkflowRun{ID: 9, Attempt: 1, Status: "queued"}, true, false},
-		{"run in progress", 9, &api.WorkflowRun{ID: 9, Attempt: 1, Status: "in_progress"}, true, false},
-		{"completed at the receipt's attempt", 9, &api.WorkflowRun{ID: 9, Attempt: 1, Status: "completed"}, true, true},
-		{"completed at a later attempt", 9, &api.WorkflowRun{ID: 9, Attempt: 2, Status: "completed"}, true, false},
+		{"run ID 0", 0, "", 0, false, false},
+		{"run not found", 9, "", 0, true, false},
+		{"run queued", 9, "queued", 1, true, false},
+		{"run in progress", 9, "in_progress", 1, true, false},
+		{"completed at the receipt's attempt", 9, "completed", 1, true, true},
+		{"completed at a later attempt", 9, "completed", 2, true, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -317,8 +318,9 @@ func TestRerunGuard(t *testing.T) {
 			// A fresh stale_inputs receipt reaches only rule 7c, which is the guard alone.
 			w.check(tg, receipt(tc.runID, verdict.ReasonStaleInputs), t0.Add(-time.Hour))
 			delete(w.actions.runs, 9)
-			if tc.run != nil {
-				w.actions.runs[9] = tc.run
+			if tc.status != "" {
+				w.run(9, tc.attempt, tc.status)
+				w.actions.runs[9].HeadSHA = tg.HeadSHA
 			}
 
 			sum := w.pass(t0)
@@ -337,38 +339,144 @@ func TestRerunGuard(t *testing.T) {
 			}
 		})
 	}
+}
 
-	failed := errors.New("boom")
-	direct := []struct {
-		name               string
-		runID              int64
-		run                *api.WorkflowRun
-		runErr, rerunErr   error
-		want               RerunResult
-		wantErr            error
-		wantRuns, wantReqs int
+// An Archfit 3 rule that would re-run a run GitHub can no longer re-run (30 days old) requests none: rule 7c leaves its
+// reason, rule 7b publishes missing_upload, which names the recovery.
+func TestArchfit3RulesDoNotRerunAnOldRun(t *testing.T) {
+	tests := []struct {
+		name   string
+		reason verdict.ReasonCode
+		want   []verdict.ReasonCode
 	}{
-		{name: "run ID 0", want: RerunImpossible},
-		{name: "run not found", runID: 9, want: RerunImpossible, wantRuns: 1},
-		{name: "run queued", runID: 9, run: &api.WorkflowRun{ID: 9, Attempt: 1, Status: "queued"}, want: RerunInFlight, wantRuns: 1},
-		{name: "run in progress", runID: 9, run: &api.WorkflowRun{ID: 9, Attempt: 1, Status: "in_progress"}, want: RerunInFlight, wantRuns: 1},
-		{name: "completed at the receipt's attempt", runID: 9, run: &api.WorkflowRun{ID: 9, Attempt: 1, Status: "completed"}, want: RerunRequested, wantRuns: 1, wantReqs: 1},
-		{name: "completed at a later attempt", runID: 9, run: &api.WorkflowRun{ID: 9, Attempt: 2, Status: "completed"}, want: RerunImpossible, wantRuns: 1},
-		{name: "Run fails", runID: 9, runErr: failed, wantErr: failed, wantRuns: 1},
-		{name: "Rerun fails", runID: 9, run: &api.WorkflowRun{ID: 9, Attempt: 1, Status: "completed"}, rerunErr: failed, wantErr: failed, wantRuns: 1, wantReqs: 1},
+		{"7c", verdict.ReasonStaleInputs, nil},
+		{"7b", verdict.ReasonOwnerApprovalMissing, []verdict.ReasonCode{verdict.ReasonMissingUpload}},
 	}
-	for _, tc := range direct {
-		t.Run("exported/"+tc.name, func(t *testing.T) {
-			actions := &fakeActions{runs: map[int64]*api.WorkflowRun{}, runErrs: map[int64]error{9: tc.runErr}, rerunErrs: map[int64]error{9: tc.rerunErr}}
-			if tc.run != nil {
-				actions.runs[9] = tc.run
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld(t)
+			r := w.repo(1, 11, "acme/shop")
+			tg := w.pull(r, 1, trusted())
+			w.check(tg, receipt(9, tc.reason), t0.Add(-time.Hour))
+			w.actions.runs[9].CreatedAt = t0.Add(-rerunMaxAge)
+
+			sum := w.pass(t0)
+
+			if len(w.actions.rerunCalls) != 0 || sum.Rerun != 0 || !slices.Equal(w.reasons()[1], tc.want) {
+				t.Errorf("re-runs %v, published %v; want none and %v", w.actions.rerunCalls, w.reasons()[1], tc.want)
 			}
-			got, err := Rerun(context.Background(), actions, api.RepoRef{InstallationID: 1, FullName: "acme/shop"}, receipt(tc.runID, verdict.ReasonOwnerApprovalMissing))
-			if !errors.Is(err, tc.wantErr) || (err == nil && got != tc.want) {
-				t.Errorf("Rerun = %v, %v; want %v, %v", got, err, tc.want, tc.wantErr)
+		})
+	}
+}
+
+// TestRerunConditions is the exported guard: the run checks it always made, then each condition of design 10.5 false
+// on its own.
+func TestRerunConditions(t *testing.T) {
+	const head, base, tip = "head1", "base1", "tip1"
+	failed := errors.New("boom")
+	now := t0
+	run := func(id int64, attempt int, status string, created time.Time) *api.WorkflowRun {
+		return &api.WorkflowRun{ID: id, Attempt: attempt, Status: status, Event: "pull_request", HeadSHA: head,
+			WorkflowPath: workflowPath, PullRequests: []int{1}, CreatedAt: created}
+	}
+	policyOnly := api.Comparison{Status: "ahead", Paths: []string{".archfit.yaml"}}
+	tests := []struct {
+		name     string
+		change   func(a *fakeActions, in *RerunInput)
+		want     RerunResult
+		unmet    Unmet
+		wantErr  error
+		wantReqs int
+	}{
+		{name: "all four hold", want: RerunRequested, wantReqs: 1},
+		{name: "run ID 0", change: func(_ *fakeActions, in *RerunInput) { in.Receipt.RunID = 0 }, want: RerunImpossible, unmet: UnmetNoRun},
+		{name: "run not found", change: func(a *fakeActions, _ *RerunInput) { delete(a.runs, 9) }, want: RerunImpossible, unmet: UnmetNoRun},
+		{name: "run queued", change: func(a *fakeActions, _ *RerunInput) { a.runs[9].Status = "queued" }, want: RerunInFlight},
+		{name: "run in progress", change: func(a *fakeActions, _ *RerunInput) { a.runs[9].Status = "in_progress" }, want: RerunInFlight},
+		{name: "completed at a later attempt", change: func(a *fakeActions, _ *RerunInput) { a.runs[9].Attempt = 2 }, want: RerunImpossible, unmet: UnmetNotLatest},
+		{name: "Run fails", change: func(a *fakeActions, _ *RerunInput) { a.runErrs[9] = failed }, want: RerunInFlight, wantErr: failed},
+		{name: "Rerun fails", change: func(a *fakeActions, _ *RerunInput) { a.rerunErrs[9] = failed }, want: RerunInFlight, wantErr: failed, wantReqs: 1},
+
+		{name: "the workflow does not read the policy from the tip", change: func(_ *fakeActions, in *RerunInput) { in.ReadsTip = false },
+			want: RerunImpossible, unmet: UnmetPolicyNotFromTip},
+
+		{name: "the run is of an older head", change: func(_ *fakeActions, in *RerunInput) { in.Head = "head2" }, want: RerunImpossible, unmet: UnmetNotLatest},
+		{name: "a newer run of the head completed", change: func(a *fakeActions, _ *RerunInput) {
+			a.runs[10] = run(10, 1, "completed", now.Add(-time.Hour))
+		}, want: RerunImpossible, unmet: UnmetNotLatest},
+		{name: "a newer run of the head is in progress", change: func(a *fakeActions, _ *RerunInput) {
+			a.runs[10] = run(10, 1, "in_progress", now.Add(-time.Hour))
+		}, want: RerunInFlight},
+		{name: "a run created at the same time with a higher id is newer", change: func(a *fakeActions, _ *RerunInput) {
+			a.runs[10] = run(10, 1, "completed", now.Add(-day))
+		}, want: RerunImpossible, unmet: UnmetNotLatest},
+		{name: "an older run of the head", change: func(a *fakeActions, _ *RerunInput) {
+			a.runs[8] = run(8, 1, "completed", now.Add(-2*day))
+		}, want: RerunRequested, wantReqs: 1},
+		{name: "a newer run of another pull request", change: func(a *fakeActions, _ *RerunInput) {
+			a.runs[10] = run(10, 1, "completed", now.Add(-time.Hour))
+			a.runs[10].PullRequests = []int{2}
+		}, want: RerunRequested, wantReqs: 1},
+		{name: "a newer run of another event", change: func(a *fakeActions, _ *RerunInput) {
+			a.runs[10] = run(10, 1, "completed", now.Add(-time.Hour))
+			a.runs[10].Event = "push"
+		}, want: RerunRequested, wantReqs: 1},
+		{name: "the head's runs cannot be read", change: func(a *fakeActions, _ *RerunInput) { a.headRunsErr = failed }, want: RerunInFlight, wantErr: failed},
+
+		{name: "a second short of 30 days", change: func(a *fakeActions, _ *RerunInput) {
+			a.runs[9].CreatedAt = now.Add(-rerunMaxAge + time.Second)
+		}, want: RerunRequested, wantReqs: 1},
+		{name: "exactly 30 days", change: func(a *fakeActions, _ *RerunInput) { a.runs[9].CreatedAt = now.Add(-rerunMaxAge) },
+			want: RerunImpossible, unmet: UnmetTooOld},
+		{name: "31 days", change: func(a *fakeActions, _ *RerunInput) { a.runs[9].CreatedAt = now.Add(-31 * day) },
+			want: RerunImpossible, unmet: UnmetTooOld},
+
+		{name: "the target moved in the policy only", change: func(a *fakeActions, in *RerunInput) {
+			in.Tip = tip
+			a.compares[base+".."+tip] = policyOnly
+		}, want: RerunRequested, wantReqs: 1},
+		{name: "the target moved in a code file too", change: func(a *fakeActions, in *RerunInput) {
+			in.Tip = tip
+			a.compares[base+".."+tip] = api.Comparison{Status: "ahead", Paths: []string{".archfit.yaml", "pkg/a.go"}}
+		}, want: RerunImpossible, unmet: UnmetBaseChanged},
+		{name: "the target moved in the workflow", change: func(a *fakeActions, in *RerunInput) {
+			in.Tip = tip
+			a.compares[base+".."+tip] = api.Comparison{Status: "ahead", Paths: []string{workflowPath}}
+		}, want: RerunImpossible, unmet: UnmetBaseChanged},
+		{name: "a cut file list", change: func(a *fakeActions, in *RerunInput) {
+			in.Tip = tip
+			a.compares[base+".."+tip] = api.Comparison{Status: "ahead", Paths: []string{".archfit.yaml"}, Truncated: true}
+		}, want: RerunImpossible, unmet: UnmetBaseChanged},
+		{name: "a base that is not behind the tip", change: func(a *fakeActions, in *RerunInput) {
+			in.Tip = tip
+			a.compares[base+".."+tip] = api.Comparison{Status: "diverged", Paths: []string{".archfit.yaml"}}
+		}, want: RerunImpossible, unmet: UnmetBaseChanged},
+		{name: "a base GitHub does not know", change: func(a *fakeActions, in *RerunInput) {
+			in.Tip = tip
+			a.compareErrs[base+".."+tip] = api.ErrNotFound
+		}, want: RerunImpossible, unmet: UnmetBaseChanged},
+		{name: "the compare fails", change: func(a *fakeActions, in *RerunInput) {
+			in.Tip = tip
+			a.compareErrs[base+".."+tip] = failed
+		}, want: RerunInFlight, wantErr: failed},
+		{name: "unknown event base", change: func(_ *fakeActions, in *RerunInput) { in.EventBase = "" }, want: RerunImpossible, unmet: UnmetBaseChanged},
+		{name: "unknown tip", change: func(_ *fakeActions, in *RerunInput) { in.Tip = "" }, want: RerunImpossible, unmet: UnmetBaseChanged},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &fakeActions{runs: map[int64]*api.WorkflowRun{9: run(9, 1, "completed", now.Add(-day))},
+				runErrs: map[int64]error{}, rerunErrs: map[int64]error{},
+				compares: map[string]api.Comparison{}, compareErrs: map[string]error{}}
+			in := RerunInput{Receipt: receipt(9, verdict.ReasonStaleInputs), Head: head, EventBase: base, Tip: base, ReadsTip: true}
+			if tc.change != nil {
+				tc.change(a, &in)
 			}
-			if len(actions.runCalls) != tc.wantRuns || len(actions.rerunCalls) != tc.wantReqs {
-				t.Errorf("Run calls %v, Rerun calls %v", actions.runCalls, actions.rerunCalls)
+			got, unmet, err := Rerun(context.Background(), a, api.RepoRef{InstallationID: 1, FullName: "acme/shop"}, in, now)
+			if !errors.Is(err, tc.wantErr) || (tc.wantErr == nil && err != nil) || got != tc.want || unmet != tc.unmet {
+				t.Errorf("Rerun = %v, %q, %v; want %v, %q, %v", got, unmet, err, tc.want, tc.unmet, tc.wantErr)
+			}
+			if len(a.rerunCalls) != tc.wantReqs {
+				t.Errorf("Rerun requests %v, want %d", a.rerunCalls, tc.wantReqs)
 			}
 		})
 	}

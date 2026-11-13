@@ -98,7 +98,9 @@ func TestARerunRuleReadsTheTipOncePerPass(t *testing.T) {
 
 func TestARerunRuleWithATipThatCannotBeRead(t *testing.T) {
 	for _, r := range retargetRules {
-		t.Run(r.rule+"/an error does what the rule did before", func(t *testing.T) {
+		// The compare from the event's base to the tip cannot be made (design 10.5): no re-run. Rules 7a and 7b then
+		// publish missing_upload, as for any re-run that is not possible.
+		t.Run(r.rule+"/an error publishes what the rule did before, without a re-run", func(t *testing.T) {
 			w := newWorld(t)
 			repo := w.repo(1, 11, "acme/shop")
 			tg := w.pull(repo, 1, r.trusted())
@@ -109,8 +111,12 @@ func TestARerunRuleWithATipThatCannotBeRead(t *testing.T) {
 
 			w.pass(t0)
 
-			if got := w.reasons()[1]; !equalReasons(got, r.wantPubs) || len(w.actions.rerunCalls) != 1 {
-				t.Errorf("published %v, reruns %v, want %v and one re-run", got, w.actions.rerunCalls, r.wantPubs)
+			want := r.wantPubs
+			if r.rule == "7a" || r.rule == "7b" {
+				want = []verdict.ReasonCode{verdict.ReasonMissingUpload}
+			}
+			if got := w.reasons()[1]; !equalReasons(got, want) || len(w.actions.rerunCalls) != 0 {
+				t.Errorf("published %v, reruns %v, want %v and no re-run", got, w.actions.rerunCalls, want)
 			}
 		})
 		t.Run(r.rule+"/a rate limit stops the pass", func(t *testing.T) {
