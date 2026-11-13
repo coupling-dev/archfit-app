@@ -2,6 +2,7 @@ package ui
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/alexei-led/archfit-app/internal/control/answers"
@@ -59,9 +60,13 @@ func ownerPageAction(r *http.Request) (answers.OwnerAction, error) {
 	default:
 		return a, api.ErrNotFound
 	}
-	q, err := r.URL.Query()["pull"], error(nil)
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return a, api.ErrNotFound
+	}
+	q := values["pull"]
 	if len(q) > 0 {
-		if len(q) != 1 || q[0] == "" {
+		if len(q) != 1 || q[0] == "" || len(q[0]) > 10 {
 			return a, api.ErrNotFound
 		}
 		a.Pull, err = strconv.Atoi(q[0])

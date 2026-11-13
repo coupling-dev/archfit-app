@@ -19,7 +19,7 @@ const firstDiff = "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -0,0 +1,5 @@\n+v
 const changedDiff = "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -3,3 +3,3 @@\n modules:\n   app:\n-    paths: [cmd/**]\n+    paths: [cmd/**, pkg/**]\n"
 
 func ownerFixture(kind string, pull int, open bool) gate.OwnerView {
-	v := gate.OwnerView{Kind: kind, Pull: pull, Digest: "sha256:" + sha(90), ActionDigest: "sha256:" + sha(91), Tip: sha(10),
+	v := gate.OwnerView{Kind: kind, Pull: pull, Digest: policy3.Digest([]byte("fixture-90")), ActionDigest: policy3.Digest([]byte("fixture-91")), Tip: sha(10),
 		Files: []gate.OwnerFile{{Role: "current", Ref: sha(10), Path: ".archfit.yaml", Digest: policy3.Digest([]byte(ownerPolicy)), Text: ownerPolicy}},
 		Diffs: []gate.OwnerDiff{{Title: "The policy change", Path: ".archfit.yaml", Text: changedDiff}}, Proposals: []gate.OwnerProposal{}}
 	switch kind {
@@ -45,8 +45,8 @@ func ownerFixture(kind string, pull int, open bool) gate.OwnerView {
 		v.Diffs[0].Title = "The policy to restore"
 		if open {
 			v.Note += " It keeps the approved answers in #12."
-			v.Proposals = append(v.Proposals, gate.OwnerProposal{ID: "p1", Pull: 12, Head: sha(13), Digest: "sha256:" + sha(92),
-				Approvals: []gate.OwnerApproval{{ID: "a1", Request: 431, Digest: "sha256:" + sha(93)}}})
+			v.Proposals = append(v.Proposals, gate.OwnerProposal{ID: "p1", Pull: 12, Head: sha(13), Digest: policy3.Digest([]byte("fixture-92")),
+				Approvals: []gate.OwnerApproval{{ID: "a1", Request: 431, Digest: policy3.Digest([]byte("fixture-93"))}}})
 			v.Diffs = append(v.Diffs, gate.OwnerDiff{Title: "Approved answers kept on the approved policy", Path: ".archfit.yaml",
 				Text: "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -3,3 +3,5 @@\n modules:\n   app:\n     paths: [cmd/**]\n+    depends_on:\n+      - util  # request #431\n"})
 		}

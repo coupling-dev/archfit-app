@@ -153,6 +153,13 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("GET /r/{o}/{n}/data-sharing", page)
 	mux.Handle("GET /r/{o}/{n}/passkeys", page)
 	mux.Handle("GET /r/{o}/{n}/requests/{number}", requestPage)
+	mux.Handle("GET /r/{o}/{n}/owner/{action}", s.signedIn(func(w http.ResponseWriter, r *http.Request, _ session.User) {
+		if _, err := ownerPageAction(r); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		index(w, r)
+	}))
 	mux.Handle("GET /r/{o}/{n}/consent", s.signedIn(consentMoved))
 	mux.Handle("GET /admin", s.signedIn(func(w http.ResponseWriter, r *http.Request, u session.User) {
 		if !s.isOperator(u) {

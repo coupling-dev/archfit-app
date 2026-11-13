@@ -4,8 +4,8 @@
   "status": "unknown: the policy changed outside the flow.",
   "note": "This restores the approved policy. It keeps the approved answers in #12.",
   "main_action": "Revert the policy",
-  "action_digest": "sha256:000000000000000000000000000000000000005b",
-  "digest": "sha256:000000000000000000000000000000000000005a",
+  "action_digest": "sha256:a49056135eb339d7bc6e720eb737f2d526eae8c89145c1f6edf791c165c79d32",
+  "digest": "sha256:b9359de3fb67e06c2f256556b99da5981014c30ab086e0949a37af6ef4f179ea",
   "head": "",
   "base": "",
   "tip": "000000000000000000000000000000000000000a",
@@ -37,12 +37,12 @@
       "id": "p1",
       "pull_request": 12,
       "head": "000000000000000000000000000000000000000d",
-      "digest": "sha256:000000000000000000000000000000000000005c",
+      "digest": "sha256:ece2b5546cec0b7a0db83844754fecd02b3f368172be71d55014b850781299c8",
       "approvals": [
         {
           "id": "a1",
           "request": 431,
-          "digest": "sha256:000000000000000000000000000000000000005d"
+          "digest": "sha256:fd05ed9f3a266bff927879d6c6ca8e194da6c264d626566eace3f34eccaf283f"
         }
       ]
     }

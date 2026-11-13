@@ -16,8 +16,9 @@
   import Repos from './pages/Repos.svelte';
   import Request from './pages/Request.svelte';
   import Waiting from './pages/Waiting.svelte';
+  import Owner from './pages/Owner.svelte';
 
-  const route = parseRoute(location.pathname);
+  const route = parseRoute(location.pathname, location.search);
   const here = location.pathname + location.search;
   // The server's error page is this shell with the error's sentence; it then shows instead of the route, as does a
   // repository API's 404 (lib/gate).
@@ -52,6 +53,8 @@
           ? 'Installations'
           : route.kind === 'pull' || route.kind === 'pull-graph'
         ? `${route.fullName} #${route.number}${route.kind === 'pull-graph' ? ' graph' : ''}`
+        : route.kind === 'owner'
+          ? `${route.fullName} owner action`
         : route.kind === 'request'
           ? `${route.fullName} request #${route.number}`
         : route.kind === 'repo' || route.kind === 'graph'
@@ -104,6 +107,8 @@
     <Home {route} {here} />
   {:else if route.kind === 'policy'}
     <Policy {route} {here} />
+  {:else if route.kind === 'owner'}
+    <Owner {route} {session} {here} />
   {:else if route.kind === 'request'}
     <Request {route} {session} {here} />
   {:else if route.kind === 'passkeys'}

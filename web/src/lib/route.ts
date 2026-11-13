@@ -1,3 +1,5 @@
+import type { OwnerKind } from './owner';
+
 // The pages of the web app. The server serves the same shell for each, whatever the repository; every API read of a
 // repository page is authorized on its own.
 
@@ -12,12 +14,25 @@ export type Route =
   | { kind: 'admin' }
   | ({ kind: 'repo' | 'graph' | 'policy' | 'data-sharing' | 'passkeys' } & Repo)
   | ({ kind: 'pull' | 'pull-graph' | 'request'; number: number } & Repo)
+  | ({ kind: 'owner'; action: OwnerKind; pull: number } & Repo)
   | { kind: 'unknown' };
 
 const repoPath =
   /^\/r\/([^/]+)\/([^/]+)(?:(?:\/pull\/([1-9][0-9]{0,9}))?(\/graph)?|\/(data-sharing|passkeys|policy)|\/requests\/([1-9][0-9]{0,9}))\/?$/;
 
-export function parseRoute(pathname: string): Route {
+export function parseRoute(pathname: string, search = ''): Route {
+  const owner = /^\/r\/([^/]+)\/([^/]+)\/owner\/(first|workflow|confirm|revert)\/?$/.exec(pathname);
+  if (owner) {
+    const repo = parseRoute(`/r/${owner[1]}/${owner[2]}`);
+    if (repo.kind !== 'repo') return { kind: 'unknown' };
+    const values = new URLSearchParams(search).getAll('pull');
+    if (values.length > 1 || (values.length && !/^[1-9][0-9]{0,9}$/.test(values[0]))) return { kind: 'unknown' };
+    const pull = values.length ? Number(values[0]) : 0;
+    const action = owner[3];
+    if (action !== 'first' && action !== 'workflow' && action !== 'confirm' && action !== 'revert') return { kind: 'unknown' };
+    if ((action === 'workflow' && !pull) || ((action === 'confirm' || action === 'revert') && pull)) return { kind: 'unknown' };
+    return { kind: 'owner', action, pull, owner: repo.owner, name: repo.name, fullName: repo.fullName };
+  }
   if (pathname === '/') return { kind: 'home' };
   if (pathname === '/admin') return { kind: 'admin' };
   const m = repoPath.exec(pathname);
