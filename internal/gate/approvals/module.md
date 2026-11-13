@@ -53,7 +53,7 @@ direct push to the policy is the new rule with no owner's word.
   judged, the upload compares the tip's policy with the approved digest (`policy_unapproved`), so a late judgement
   never lets a check pass.
 
-Not provided: the re-check of the waiting pull requests (task 21; the gate logs the hand-off), confirm and revert (task
+Not provided: the re-check of the waiting pull requests (`sweep.AfterAnswer`, called by the gate), confirm and revert (task
 23), the sweep's comparison of the tip with the approved digest when a push event is lost (task 22).
 
 ## Subdomain Classification
@@ -97,8 +97,8 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error)
 ## Integrations
 
 - **gate** (parent): builds the `Service` with the gate's GitHub client and Store; `events.go` calls it through the
-  façade file `approvals.go` on every `DefaultBranchPush`, before the repository sweep, and logs the hand-off of a
-  consume (`gate recheck handed`). `upload4.go` reads the state it sets (`Repo.OutsideFlow`, `ApprovedDigest`).
+  façade file `approvals.go` on every `DefaultBranchPush`, before the repository sweep, and hands a consume's
+  waiting pull requests to `sweep.AfterAnswer` (the re-check after an answer, M2 task 21). `upload4.go` reads the state it sets (`Repo.OutsideFlow`, `ApprovedDigest`).
 - **gate/records**: `Consume` (`Merge`), `Outside`, `Unguarded`, `OutsideIssue`, `Void`, `VoidProposal`, `Push`, the keys
   and values.
 - **wire/policy3**: `Digest`, `Decode` (owners). **github/api**: the roles of `GitHub`.
@@ -110,7 +110,6 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error)
   pull requests, consumed here unchanged. An approval recorded there without a consume (the first approval of an
   already-converted repository, a confirm) sets `Repo.ApprovedCommit`, and the first one `GuardedSince`, as `Consume`
   does.
-- Task 21 replaces the logged hand-off with the re-check.
 
 ## Constraints and Invariants
 
