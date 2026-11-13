@@ -44,3 +44,29 @@ fail fixture. `page_test.go` and `page_bounds_test.go` check request binding, ne
 text bounds and isolation from the source result. `publish4_test.go` and
 `withdraw4_test.go` cover status mapping, ordering, batching and authority races.
 `lease_test.go` exercises the retained lease failures, cancellation, takeover and release behavior through v4.
+
+## Publication receipts
+
+For a pull request, publication invalidates its old receipt with a pending marker inside the head lease.
+A confirmed receipt is written only after both GitHub writes succeed and neither was skipped. It contains
+only an App-generated result; successful engine results clear the marker and remain in the artifact. A
+receipt failure is logged, leaving the marker pending rather than retrying GitHub. Run/attempt ordering and
+a pending token prevent older or superseded writers from confirming another publication. Oversize result
+bodies are omitted, not truncated. Upload also stages a pending marker atomically with the pull record,
+so lease acquisition failure cannot expose a result that was not published.
+
+An upload deliberately excluded from publication (such as the App's policy proposal or an unsupported
+event) records an `unpublished` marker instead of a pending marker; its engine result never becomes a verdict.
+
+An upload's pending marker has a token made before the atomic pull-record swap. Its publisher must claim that
+exact token; a queued writer cannot replace another upload staged for the same run and attempt. An ordinary
+request publication cannot claim an upload-staged marker; an authoritative App-generated withdrawal can
+supersede it so an abandoned upload cannot preserve an old success. When the shared-head check or pull comment is intentionally
+skipped because a newer publication exists, feedback records a superseded marker, not a perpetual pending state.
+
+Pending request publications retain source `request` and their payload digest. A matching request retry may
+resume that pending write after its authority check; it cannot resume a withdrawal or an upload-staged marker.
+
+A withdrawal without a matching pull record adopts a newer pending marker's identity and exact token under
+the lease. This lets it withdraw an old success after a force-push back without claiming a concurrently
+replaced upload. Upload staging carries a fixed-clock timestamp for the sweep's bounded abandoned-write recovery.

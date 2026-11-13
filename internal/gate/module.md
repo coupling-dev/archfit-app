@@ -68,6 +68,18 @@ and `control/onboarding`; Home does not implement onboarding again.
 
 A missing or invalid target policy with recorded outside-flow state is returned without a map, so the owner can revert it. Proposed policy files are read at pull head only for workflow-action eligibility.
 
+## Pull read façade
+
+`NewPullViews` reads a pull record, live request index and check state for the authorized repository. A current
+App-generated publication receipt takes precedence over the artifact; pending, omitted or corrupt receipts
+never produce a verdict. Otherwise the run artifact is fetched with a bound and its exact bytes are checked
+against the stored digest before decoding. Missing artifacts, digest mismatches and publication pending
+states remain distinct. `BuildPullView` is the only result-to-page form; only coverable required-policy or already-waiting engine
+results are covered from the live request index. Advisory failures stay fail. The pull head must match the stored record.
+
+A missing-upload receipt remains readable before the first pull record exists. References to outside-flow
+issues are plain text, not request links; only the shared model's explicit request numbers become links.
+
 ## Owner action views
 
 `OwnerActions.OwnerView` reads the M2 action binding and the policy/workflow blobs at immutable refs.
@@ -79,3 +91,9 @@ every ordered approval input. `ActionDigest` remains the unchanged M2 binding.
 ## Request page view
 
 `RequestView` reads the request and exposes declared volatility, layers outer-first and structured deny/exception dependencies from one target-policy snapshot. When an answered request has an approval pointer, the facade reads the recorded answer; older records without it provide no answer detail. The view includes the request issue link, which remains the source for the owner and passkey.
+
+The pull reader validates the pull record and publication marker together with a no-change multi-key CAS
+before admitting an artifact; split reads cannot pair an unpublished result with a later cleared marker.
+The sweep recovers an upload-staged marker only after both its grace period and the completed workflow's
+grace period, publishing unknown while atomically claiming that marker's token. A force-push-back withdrawal
+reconciles a newer pending identity with the live check under the head lease instead of preserving an old pass.

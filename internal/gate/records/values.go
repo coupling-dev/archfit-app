@@ -194,6 +194,7 @@ type Pull struct {
 	SweepNote     string `json:"sweep_note,omitempty"`    // ambiguous approved-commit..tip range
 	Reason        string `json:"reason,omitempty"`        // App refusal code, for the guarded recheck
 	Status        string `json:"status"`
+	Coverable     bool   `json:"coverable,omitempty"` // the accepted fail may wait on requests (required policy)
 	// Date is the date the result judged exceptions on (YYYY-MM-DD), for a result the App accepted as it is: an
 	// exception that expired after it is one the result did not judge (M2 task 22).
 	Date   string   `json:"date,omitempty"`

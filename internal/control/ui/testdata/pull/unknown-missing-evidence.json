@@ -1,0 +1,22 @@
+{
+  "head_sha": "0000000000000000000000000000000000000004",
+  "check_status": "completed",
+  "check_conclusion": "action_required",
+  "waiting": [],
+  "view": {
+    "status": "unknown",
+    "status_line": "Archfit: unknown, no verdict",
+    "records": [
+      {
+        "rule": "tool",
+        "what": "the check finished without an uploaded result",
+        "next": {
+          "kind": "fix",
+          "text": "run the Archfit check again"
+        },
+        "show_next": true
+      }
+    ],
+    "author": "do the `next` step of each record."
+  }
+}

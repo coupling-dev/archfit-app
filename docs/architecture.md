@@ -58,7 +58,7 @@ The App can warn about ruleset configuration, but an administrator can change or
 
 ## HTTP routes
 
-The public role serves `/health`, `/ready`, GitHub webhooks, the upload, OAuth and UI routes. The worker handles queued events and internal sweep and grant routes. The local `all` role also serves internal routes with an operator bearer token. The seven legacy onboarding, discovery, overview, findings, graph and pull APIs return HTTP 409 with JSON `{"error":"Archfit 3 reports and discovery are no longer available. Use Archfit 4 setup and requests."}` after authorization and any pull lookup. The setup, Home, policy, request, answer and passkey APIs are separate. A page route alone does not guarantee its backing API is available.
+The public role serves `/health`, `/ready`, GitHub webhooks, the upload, OAuth and UI routes. The worker handles queued events and internal sweep and grant routes. The local `all` role also serves internal routes with an operator bearer token. The six legacy onboarding, discovery, overview, findings, graph and pull-graph APIs return HTTP 409 with JSON `{"error":"Archfit 3 reports and discovery are no longer available. Use Archfit 4 setup and requests."}` after authorization and any pull lookup. The setup, Home, policy, pull, request, answer and passkey APIs are separate. A page route alone does not guarantee its backing API is available.
 
 ## Deployment
 

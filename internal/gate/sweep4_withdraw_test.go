@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
 
@@ -54,4 +55,22 @@ func TestForcePushedBackHeadLosesItsOldSuccessWithoutAMatchingRecord(t *testing.
 			w.wantSweepGate(p, "completed", "action_required")
 		})
 	}
+}
+
+func TestWithdrawalSupersedesNewerAbandonedMarkerAfterForcePushBack(t *testing.T) {
+	w := newWorld4(t)
+	w.guarded4(policy4)
+	p := w.openPull(w.shop, 7)
+	w.wantStatus(w.send4(w.spec4(p, "pass")), "pass", "")
+	head, run := p.head, p.runID
+	w.put4(records.PublicationKey(shopName, p.number, head), &records.Publication{HeadSHA: head, RunID: run + 1, RunAttempt: 1, Pending: true, Staged: true, Source: "upload", Token: "abandoned"})
+	w.push(p)
+	w.wantStatus(w.send4(w.spec4(p, "pass")), "pass", "")
+	w.editPull(p, func(pl *api.Pull) { pl.HeadSHA = head })
+	p.head = head
+	repo := w.repo4()
+	repo.OutsideFlow = &records.OutsideFlow{Digest: "sha256:outside", Issue: 433}
+	w.put4(records.RepoKey(shopName), &repo)
+	w.sweep4()
+	w.wantSweepGate(p, "completed", "action_required")
 }

@@ -186,3 +186,10 @@ without a second note; a reply may be posted again.
   `Diff` cases. In `internal/gate`
   (`preview_test.go`): the view and the preview after a real request line and two uploads, and an installation not
   admitted.
+
+A waiting republication rechecks the pull record and publication marker inside the feedback lease. An upload-staged,
+superseded or App-generated publication for that run or a newer one prevents the old artifact from replacing
+it; a request may still be filed, but the existing withdrawal stays authoritative until a new upload.
+
+A pending request republication of the same head, run/attempt and payload is retryable. Its source is
+`request`; upload-staged or generated-withdrawal markers are not treated as request retries.

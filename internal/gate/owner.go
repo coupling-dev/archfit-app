@@ -208,7 +208,8 @@ func (g *Gate) cannotRecheck(ctx context.Context, r api.Repo, pull int, rec reco
 	}
 	what, next := recheckWords(unmet)
 	err := g.v4.publisher.Publish4(ctx, feedback.Publication4{
-		Target:     inputs.Target{Repo: r, PullRequest: pull, HeadSHA: rec.HeadSHA, BaseRef: r.DefaultBranch},
+		Target: inputs.Target{Repo: r, PullRequest: pull, HeadSHA: rec.HeadSHA, BaseRef: r.DefaultBranch},
+		Source: "owner", Generated: true,
 		RunID:      rec.RunID,
 		RunAttempt: rec.RunAttempt,
 		Digest:     rec.PayloadDigest,

@@ -15,6 +15,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
+	"github.com/alexei-led/archfit-app/internal/wire/result"
 )
 
 func (w *world4) wantSweepGate(p *pull, status, conclusion string) api.CheckRun {
@@ -182,6 +183,9 @@ func TestSweepMissingUploadUsesTheCompletedRunUpdateTime(t *testing.T) {
 			if found != tc.want {
 				t.Fatalf("check exists=%v, want %v: %+v", found, tc.want, check)
 			}
+			if tc.want {
+				w.wantPublication(p, "missing_upload", result.StatusUnknown)
+			}
 			if tc.want && check.Conclusion != "action_required" {
 				t.Errorf("missing upload check = %+v", check)
 			}
@@ -236,6 +240,7 @@ func TestSweepStalePolicyRerunsOnlyUnderTheGuard(t *testing.T) {
 				t.Fatalf("reruns = %v", w.gh.reruns)
 			}
 			w.wantSweepGate(p, "completed", "action_required")
+			w.wantPublication(p, "sweep", result.StatusUnknown)
 			if !strings.Contains(w.comment(p), "the policy changed since this run") {
 				t.Error(w.comment(p))
 			}
@@ -277,6 +282,11 @@ func TestSweepExpiryRerunsOrFailsAfterTheLastUTCDate(t *testing.T) {
 				conclusion = "action_required"
 			}
 			w.wantSweepGate(p, "completed", conclusion)
+			if tc.fail {
+				w.wantPublication(p, "sweep", result.StatusFail)
+			} else if tc.rerun {
+				w.wantPublication(p, "sweep", result.StatusUnknown)
+			}
 			if tc.fail && !strings.Contains(w.comment(p), "duplication app -> app expired on 2026-11-19") {
 				t.Error(w.comment(p))
 			}
@@ -509,5 +519,43 @@ func TestGateSweepRunsV4AndStopsOnARateLimit(t *testing.T) {
 	sum, err = w.gate.sweep4(t.Context(), Summary{})
 	if err != nil || !sum.RateLimited {
 		t.Fatalf("rate limited Sweep = %+v,%v", sum, err)
+	}
+}
+
+func TestSweepRecoversAbandonedWaitingUploadOnlyAfterGrace(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		stageAge, runAge time.Duration
+		running, recover bool
+	}{
+		{name: "active upload", stageAge: time.Minute, runAge: 2 * time.Hour},
+		{name: "abandoned completed upload", stageAge: 61 * time.Minute, runAge: 2 * time.Hour, recover: true},
+		{name: "workflow still running", stageAge: 61 * time.Minute, runAge: 2 * time.Hour, running: true},
+		{name: "workflow recently finished", stageAge: 61 * time.Minute, runAge: time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newAskWorld(t)
+			p := w.pullBy(7)
+			w.uploadAsk(p, "graph", "fail")
+			w.ask(p, workerLogin, "/archfit request tc needs it")
+			for i := range w.gh.checks[shopName] {
+				w.gh.checks[shopName][i].StartedAt = w.now.Add(-11 * 24 * time.Hour)
+			}
+			w.editRun(p, func(run *api.WorkflowRun) {
+				run.Status = "completed"
+				run.UpdatedAt = w.now.Add(-tc.runAge)
+				if tc.running {
+					run.Status = "in_progress"
+				}
+			})
+			w.put4(records.PublicationKey(shopName, p.number, p.head), &records.Publication{HeadSHA: p.head, RunID: p.runID, RunAttempt: 1, Pending: true, Staged: true, Token: "abandoned", Source: "upload", StagedAt: w.now.Add(-tc.stageAge)})
+			w.sweep4()
+			if tc.recover {
+				w.wantSweepGate(p, "completed", "action_required")
+				w.wantPublication(p, "missing_upload", result.StatusUnknown)
+			} else {
+				w.wantSweepGate(p, "in_progress", "")
+			}
+		})
 	}
 }

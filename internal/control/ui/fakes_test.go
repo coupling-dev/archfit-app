@@ -30,23 +30,24 @@ type ghCall struct {
 
 // fakeGH is GitHub as ui and session see it: the role-interface methods they call, over maps.
 type fakeGH struct {
-	mu     sync.Mutex
-	repos  map[string]api.Repo       // installed repositories by full name
-	perms  map[string]string         // token + " " + full name → permission
-	listed map[string][]string       // token → full names UserRepos returns
-	files  map[string][]byte         // full name + "@" + ref + ":" + path
-	heads  map[string]string         // full name + "@" + branch
-	checks map[string][]api.CheckRun // full name + "@" + sha + "#" + check name
-	pulls  map[string]api.Pull       // full name + "#" + number
-	fail   map[string]error          // method, method + " " + full name, or method + " " + the call's detail
-	calls  []ghCall
+	mu        sync.Mutex
+	repos     map[string]api.Repo       // installed repositories by full name
+	perms     map[string]string         // token + " " + full name → permission
+	listed    map[string][]string       // token → full names UserRepos returns
+	files     map[string][]byte         // full name + "@" + ref + ":" + path
+	heads     map[string]string         // full name + "@" + branch
+	checks    map[string][]api.CheckRun // full name + "@" + sha + "#" + check name
+	artifacts map[int64][]byte
+	pulls     map[string]api.Pull // full name + "#" + number
+	fail      map[string]error    // method, method + " " + full name, or method + " " + the call's detail
+	calls     []ghCall
 }
 
 func newFakeGH() *fakeGH {
 	return &fakeGH{
 		repos: map[string]api.Repo{}, perms: map[string]string{}, listed: map[string][]string{},
 		files: map[string][]byte{}, heads: map[string]string{}, checks: map[string][]api.CheckRun{},
-		pulls: map[string]api.Pull{}, fail: map[string]error{},
+		pulls: map[string]api.Pull{}, fail: map[string]error{}, artifacts: map[int64][]byte{},
 	}
 }
 
@@ -335,4 +336,16 @@ func (d *downable) Get(ctx context.Context, t store.Tenant, key string) ([]byte,
 		return nil, errors.New("fake: store down")
 	}
 	return d.Store.Get(ctx, t, key)
+}
+
+func (g *fakeGH) Artifact(_ context.Context, r api.RepoRef, run int64, _ string, _ int64) ([]byte, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := g.record("Artifact", r, ""); err != nil {
+		return nil, err
+	}
+	if raw, ok := g.artifacts[run]; ok {
+		return raw, nil
+	}
+	return nil, api.ErrNotFound
 }

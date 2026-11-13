@@ -24,13 +24,17 @@ var ErrStaleInputs = fmt.Errorf("feedback: trusted inputs changed after the deci
 // Publication4 is the feedback of one Archfit 4 (envelope 2) upload: archfit/gate on the head and, for a pull request,
 // its comment. The run, the attempt and the digest name it, as the receipt of the check.
 type Publication4 struct {
-	Target     inputs.Target // Repo, PullRequest (0 for a push or a merge group) and HeadSHA
-	RunID      int64
-	RunAttempt int
-	Digest     string        // the payload digest of the upload
-	Advisory   bool          // the policy's gate is advisory: a fail shows as neutral, with the same records
-	Fresh      bool          // create a fresh check instead of updating a reusable one
-	Result     result.Result // Status is the status the App gave; the status line and the records are shown as given
+	Target      inputs.Target // Repo, PullRequest (0 for a push or a merge group) and HeadSHA
+	RunID       int64
+	RunAttempt  int
+	Digest      string // the payload digest of the upload
+	Advisory    bool   // the policy's gate is advisory: a fail shows as neutral, with the same records
+	Fresh       bool   // create a fresh check instead of updating a reusable one
+	StagedToken string // upload's pending marker, bound before publication
+	Generated   bool   // result is made by the App, not the uploaded engine
+	Source      string // upload, request, sweep, missing_upload or owner
+	token       string
+	Result      result.Result // Status is the status the App gave; the status line and the records are shown as given
 	// Current, when set, is called inside the head's publication lease before anything is written. false means the
 	// status was decided from inputs that are no longer current: Publish4 writes nothing and returns ErrStaleInputs, so
 	// an upload decided earlier never replaces one of the same run and attempt decided later.

@@ -1,0 +1,36 @@
+{
+  "record": {
+    "schema": "archfit-app.pull.v1",
+    "head_sha": "0000000000000000000000000000000000000004",
+    "run_id": 42,
+    "run_attempt": 1,
+    "payload_digest": "sha256:fe3a27acb90a6aaf6e653fbf785c2fd8e344c0760b2c939b810b2e637699dc37",
+    "policy_digest": "accepted",
+    "status": "unknown"
+  },
+  "head_sha": "0000000000000000000000000000000000000004",
+  "run_id": 42,
+  "run_attempt": 1,
+  "status": "unknown",
+  "check_status": "completed",
+  "check_conclusion": "action_required",
+  "waiting": [],
+  "view": {
+    "status": "unknown",
+    "status_line": "Archfit: unknown, no verdict",
+    "records": [
+      {
+        "path": ".github/workflows/archfit.yaml",
+        "rule": "tool",
+        "what": "differs from main",
+        "why": "a pull request runs its own workflow file",
+        "next": {
+          "kind": "fix",
+          "text": "update the branch; if the pull request changes the workflow, an owner approves it in the App"
+        },
+        "show_next": true
+      }
+    ],
+    "author": "do the `next` step of each record."
+  }
+}

@@ -3,6 +3,7 @@ package gate
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -96,9 +97,11 @@ type decision4 struct {
 	Tip      string    // the default branch's head every rule read; the decision holds while it is the head
 	// Coverable is a fail of a pull request in required mode that the App accepted as it is: open requests decide
 	// whether it is waiting. Covered are those requests; Waiting is the result shown then.
-	Coverable bool
-	Covered   []int
-	Waiting   *result.Result
+	Coverable   bool
+	StagedToken string
+	StagedAt    time.Time
+	Covered     []int
+	Waiting     *result.Result
 }
 
 // reason4 is one record the App adds, with its stable code.
@@ -131,15 +134,20 @@ func (g *Gate) serveUpload4(w http.ResponseWriter, req *http.Request) {
 	if err == nil {
 		d, err = g.v4.cover(ctx, u, d)
 	}
-	if err == nil {
-		err = g.v4.storePull(ctx, u, d)
-	}
-	if err == nil && d.publishes() {
+	publish := d.publishes()
+	if err == nil && publish {
 		// The App's policy pull request gets archfit/gate from the App alone (M2 D13).
 		var own bool
-		if own, err = proposals.IsProposalPull(ctx, g.v4.store, u.Binding.Repo, u.Binding.PullRequest); err == nil && !own {
-			err = g.v4.publish(ctx, u, d)
-		}
+		own, err = proposals.IsProposalPull(ctx, g.v4.store, u.Binding.Repo, u.Binding.PullRequest)
+		publish = !own
+	}
+	if err == nil {
+		d.StagedToken = rand.Text()
+		d.StagedAt = g.now()
+		err = g.v4.storePull(ctx, u, d, publish)
+	}
+	if err == nil && publish {
+		err = g.v4.publish(ctx, u, d)
 	}
 	if err == nil {
 		err = g.driftPushed(ctx, u, d)
@@ -471,13 +479,13 @@ func problemRecord(p ingest.Problem, branch string) (string, result.Unknown) {
 // storePull keeps the pull record of a pull request upload (M2 D6) with its index entry, in one swap. A record of a
 // newer run or attempt stays: GitHub's run ids grow, so a late upload of an older head never replaces a newer one.
 // The error keys are kept only for a result the App accepted as it is.
-func (v *upload4) storePull(ctx context.Context, u ingest.Upload4, d decision4) error {
+func (v *upload4) storePull(ctx context.Context, u ingest.Upload4, d decision4, publish bool) error {
 	b := u.Binding
 	if b.PullRequest == 0 {
 		return nil
 	}
 	rec := records.Pull{HeadSHA: b.HeadSHA, RunID: b.RunID, RunAttempt: b.RunAttempt,
-		PayloadDigest: u.Envelope.PayloadDigest, Status: string(d.Status)}
+		PayloadDigest: u.Envelope.PayloadDigest, Status: string(d.Status), Coverable: d.Coverable}
 	if len(d.Reasons) == 1 && d.Reasons[0].Code == reasonPolicyChanged {
 		rec.Reason = reasonPolicyChanged
 	}
@@ -493,24 +501,52 @@ func (v *upload4) storePull(ctx context.Context, u ingest.Upload4, d decision4) 
 		}
 	}
 	name, entry := b.Repo.FullName, records.PullEntry(b.PullRequest)
-	return records.Indexed(ctx, v.store, store.Tenant(b.Repo.InstallationID), records.PullKey(name, b.PullRequest),
-		records.PullIndexKey(name), records.SchemaPullIndex, func(cur []byte, x *records.Index) ([]byte, error) {
-			if cur != nil {
-				var old records.Pull
-				if err := records.Decode(cur, &old); err != nil {
-					return nil, err
-				}
-				if old.RunID > rec.RunID || old.RunID == rec.RunID && old.RunAttempt > rec.RunAttempt {
-					return cur, nil
-				}
-				rec.Rechecks = old.Rechecks // the re-checks after an answer mark the pull request, not a run (M2 task 21)
-			}
-			x.Remove(entry)
-			if err := x.Add(entry, b.HeadSHA); err != nil {
+	keys := []string{records.PullKey(name, b.PullRequest), records.PullIndexKey(name), records.PublicationKey(name, b.PullRequest, b.HeadSHA)}
+	return store.Update(ctx, v.store, store.Tenant(b.Repo.InstallationID), keys, func(cur [][]byte) ([][]byte, error) {
+		if cur[0] != nil {
+			var old records.Pull
+			if err := records.Decode(cur[0], &old); err != nil {
 				return nil, err
 			}
-			return records.Encode(&rec)
-		})
+			if old.RunID > rec.RunID || old.RunID == rec.RunID && old.RunAttempt > rec.RunAttempt {
+				return cur, nil
+			}
+			rec.Rechecks = old.Rechecks
+		}
+		if cur[2] != nil {
+			var prior records.Publication
+			if err := records.Decode(cur[2], &prior); err != nil {
+				return nil, err
+			}
+			if prior.RunID > rec.RunID || prior.RunID == rec.RunID && prior.RunAttempt > rec.RunAttempt {
+				return cur, nil
+			}
+		}
+		index := records.Index{Schema: records.SchemaPullIndex}
+		if cur[1] != nil {
+			if err := records.Decode(cur[1], &index); err != nil {
+				return nil, err
+			}
+		}
+		index.Remove(entry)
+		if err := index.Add(entry, b.HeadSHA); err != nil {
+			return nil, err
+		}
+		pull, err := records.Encode(&rec)
+		if err != nil {
+			return nil, err
+		}
+		idx, err := records.Encode(&index)
+		if err != nil {
+			return nil, err
+		}
+		pending, err := records.Encode(&records.Publication{HeadSHA: b.HeadSHA, RunID: b.RunID, RunAttempt: b.RunAttempt, Pending: publish, Staged: publish, Unpublished: !publish, Source: "upload", Token: d.StagedToken, StagedAt: d.StagedAt, Digest: u.Envelope.PayloadDigest})
+		if err != nil {
+			return nil, err
+		}
+		return [][]byte{pull, idx, pending}, nil
+	})
+
 }
 
 // publishes reports whether the upload writes the head's check and comment. Only an upload bound to the default
@@ -554,7 +590,8 @@ func (d decision4) shown(r *result.Result) result.Result {
 func (v *upload4) publish(ctx context.Context, u ingest.Upload4, d decision4) error {
 	b := u.Binding
 	return v.publisher.Publish4(ctx, feedback.Publication4{
-		Target:     inputs.Target{Repo: b.Repo, PullRequest: b.PullRequest, HeadSHA: b.HeadSHA, BaseRef: b.Repo.DefaultBranch},
+		Target: inputs.Target{Repo: b.Repo, PullRequest: b.PullRequest, HeadSHA: b.HeadSHA, BaseRef: b.Repo.DefaultBranch},
+		Source: "upload", Generated: len(d.Reasons) > 0 || u.Result == nil, StagedToken: d.StagedToken,
 		RunID:      b.RunID,
 		RunAttempt: b.RunAttempt,
 		Digest:     u.Envelope.PayloadDigest,

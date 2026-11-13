@@ -229,6 +229,7 @@ func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip stri
 	}
 	current := g.currentSweep4(r, pl, tip, state, rec)
 	pub := feedback.Publication4{Target: inputs.Target{Repo: r, PullRequest: pl.Number, HeadSHA: pl.HeadSHA, BaseRef: r.DefaultBranch},
+		Source: "sweep", Generated: true,
 		RunID: rec.RunID, RunAttempt: rec.RunAttempt, Digest: rec.PayloadDigest, Advisory: advisory, Current: current}
 	var reasons []reason4
 	add := func(code string, u result.Unknown) { reasons = append(reasons, reason4{Code: code, Record: u}) }
@@ -328,7 +329,7 @@ func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip stri
 		}
 		return err
 	}
-	pub.Result, pub.Fresh = res, true
+	pub.Result, pub.Fresh, pub.Generated = res, true, false
 	pub.Current = func(ctx context.Context) (bool, error) {
 		ok, err := current(ctx)
 		if err != nil || !ok {
@@ -465,8 +466,22 @@ func (g *Gate) missingUpload4(ctx context.Context, r api.Repo, pl api.Pull, rec 
 			latest = run
 		}
 	}
-	if rec.RunID != 0 && (latest.ID < rec.RunID || latest.ID == rec.RunID && latest.Attempt <= rec.RunAttempt) {
+	if rec.RunID != 0 && (latest.ID < rec.RunID || latest.ID == rec.RunID && latest.Attempt < rec.RunAttempt) {
 		return false, nil
+	}
+	var abandoned records.Publication
+	if rec.RunID != 0 && latest.ID == rec.RunID && latest.Attempt == rec.RunAttempt {
+		err := records.Load(ctx, g.store, store.Tenant(r.InstallationID), records.PublicationKey(r.FullName, pl.Number, pl.HeadSHA), &abandoned)
+		if errors.Is(err, records.ErrNoRecord) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if !abandoned.Pending || !abandoned.Staged || abandoned.StagedAt.IsZero() || g.now().Sub(abandoned.StagedAt) <= missingUpload4After {
+			return false, nil
+		}
+		pub.StagedToken = abandoned.Token
 	}
 	since := pl.UpdatedAt
 	if latest.ID != 0 {
@@ -476,10 +491,18 @@ func (g *Gate) missingUpload4(ctx context.Context, r api.Repo, pl api.Pull, rec 
 		since = latest.UpdatedAt
 		pub.RunID, pub.RunAttempt = latest.ID, latest.Attempt
 	}
+	if !abandoned.StagedAt.IsZero() && since.Before(abandoned.StagedAt) {
+		since = abandoned.StagedAt
+	}
 	if since.IsZero() || g.now().Sub(since) <= missingUpload4After {
 		return false, nil
 	}
-	pub.Result = unknownSweep4("the check finished without an uploaded result", "run the Archfit check again")
+	pub.Source, pub.Generated = "missing_upload", true
+	what := "the check finished without an uploaded result"
+	if abandoned.Pending {
+		what = "the uploaded result was not published"
+	}
+	pub.Result = unknownSweep4(what, "run the Archfit check again")
 	if pub.RunID == 0 {
 		err = g.v4.publisher.Withdraw4(ctx, pub)
 	} else {

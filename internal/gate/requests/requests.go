@@ -424,6 +424,8 @@ func (s *Service) latest(ctx context.Context, r api.Repo, pull int) (records.Pul
 	return rec, res, nil
 }
 
+var errWithdrawn = errors.New("requests: publication withdrawn")
+
 // republish derives the status of the pull request's latest result again and, when open requests now cover it,
 // publishes it as waiting and records that status. A newer upload that lands meanwhile makes the publication stale;
 // the newest record is then read again.
@@ -449,12 +451,16 @@ func (s *Service) republish(ctx context.Context, r api.Repo, pull int) error {
 		}
 		err = s.publisher.Publish4(ctx, feedback.Publication4{
 			Target:     inputs.Target{Repo: r, PullRequest: pull, HeadSHA: rec.HeadSHA, BaseRef: r.DefaultBranch},
+			Source:     "request",
 			RunID:      rec.RunID,
 			RunAttempt: rec.RunAttempt,
 			Digest:     rec.PayloadDigest,
 			Result:     shown,
 			Current:    func(ctx context.Context) (bool, error) { return s.same(ctx, r, pull, rec) },
 		})
+		if errors.Is(err, errWithdrawn) {
+			return nil
+		}
 		if errors.Is(err, feedback.ErrStaleInputs) {
 			continue
 		}
@@ -474,7 +480,25 @@ func (s *Service) same(ctx context.Context, r api.Repo, pull int, rec records.Pu
 	if err := records.Load(ctx, s.store, tenant(r), records.PullKey(r.FullName, pull), &now); err != nil {
 		return false, err
 	}
-	return sameRecord(now, rec), nil
+	if !sameRecord(now, rec) {
+		return false, nil
+	}
+	var published records.Publication
+	err := records.Load(ctx, s.store, tenant(r), records.PublicationKey(r.FullName, pull, rec.HeadSHA), &published)
+	if errors.Is(err, records.ErrNoRecord) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if published.RunID == rec.RunID && published.RunAttempt == rec.RunAttempt && published.Pending && !published.Staged && published.Source == "request" && published.Digest == rec.PayloadDigest {
+		return true, nil
+	}
+	// A withdrawal or another publication for this or a newer run owns the view.
+	if published.RunID > rec.RunID || published.RunID == rec.RunID && published.RunAttempt >= rec.RunAttempt {
+		return false, errWithdrawn
+	}
+	return true, nil
 }
 
 func sameRecord(a, b records.Pull) bool {

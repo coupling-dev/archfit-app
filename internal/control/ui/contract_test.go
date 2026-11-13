@@ -353,7 +353,7 @@ func TestPullPageNumberMustBeAPull(t *testing.T) {
 }
 
 func (rt route) expectedStatus() int {
-	for _, suffix := range []string{"/overview", "/onboarding", "/discover", "/pulls/4", "/pulls/4/graph", "/graph", "/findings"} {
+	for _, suffix := range []string{"/overview", "/onboarding", "/discover", "/pulls/4/graph", "/graph", "/findings"} {
 		if rt.api() && strings.HasSuffix(rt.path, suffix) {
 			return http.StatusConflict
 		}

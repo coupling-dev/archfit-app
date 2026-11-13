@@ -2,12 +2,15 @@ package feedback
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 
+	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/result"
 )
 
@@ -19,8 +22,8 @@ const (
 	conclusionActionRequired = "action_required"
 )
 
-// receiptV2 starts the external_id of an Archfit 4 check run: "v2:<run_id>:<attempt>:<payload_digest>". The check is
-// its own receipt, as in v1; nothing else is stored.
+// receiptV2 starts the GitHub check's ordering receipt: "v2:<run_id>:<attempt>:<payload_digest>".
+// Pending markers and App-generated result receipts are kept separately in the Store.
 const receiptV2 = "v2"
 
 // checkState is the check run status and conclusion of a status (design 11.6, appendix D.2): pass is a success; fail
@@ -99,11 +102,45 @@ func (s *serialized) current4(ctx context.Context, p Publication4, withdraw bool
 			p.RunID, p.RunAttempt = run, attempt
 			p.Digest = strings.SplitN(existing.ExternalID, ":", 4)[3]
 		}
+		var marker records.Publication
+		err = records.Load(ctx, s.store, store.Tenant(p.Target.Repo.InstallationID), records.PublicationKey(p.Target.Repo.FullName, p.Target.PullRequest, p.Target.HeadSHA), &marker)
+		if err != nil && !errors.Is(err, records.ErrNoRecord) {
+			return err
+		}
+		if err == nil && marker.Pending && (marker.RunID > p.RunID || marker.RunID == p.RunID && marker.RunAttempt >= p.RunAttempt) {
+			p.RunID, p.RunAttempt, p.StagedToken = marker.RunID, marker.RunAttempt, marker.Token
+			if marker.Digest != "" {
+				p.Digest = marker.Digest
+			}
+		}
 	}
-	return s.next.publish4(ctx, p)
+	if p.Target.PullRequest != 0 {
+		p.token = rand.Text()
+		newer, err := s.newerPublication(ctx, p)
+		if err != nil {
+			return fmt.Errorf("feedback: read publication: %w: %w", errUnwritten, err)
+		}
+		if newer {
+			return nil
+		}
+		if err := s.markPending(ctx, p); err != nil {
+			if errors.Is(err, errPublicationChanged) {
+				return ErrStaleInputs
+			}
+			return fmt.Errorf("feedback: mark publication pending: %w: %w", errUnwritten, err)
+		}
+	}
+	written, superseded, err := s.next.publish4(ctx, p)
+	if err != nil || (!written && !superseded) || p.Target.PullRequest == 0 {
+		return err
+	}
+	if err := s.finishPublication(ctx, p, superseded); err != nil {
+		slog.Default().WarnContext(ctx, "feedback publication receipt not saved", "repo_id", p.Target.Repo.ID, "pull", p.Target.PullRequest, "failed", true)
+	}
+	return nil
 }
 
-func (s *publisher) publish4(ctx context.Context, p Publication4) (err error) {
+func (s *publisher) publish4(ctx context.Context, p Publication4) (written, superseded bool, err error) {
 	start := s.now()
 	gate, comment := actionNone, actionNone
 	status, conclusion := checkState(p.Result.Status, p.Advisory)
@@ -129,10 +166,11 @@ func (s *publisher) publish4(ctx context.Context, p Publication4) (err error) {
 		StartedAt:   start,
 	}
 	if gate, err = s.writeCheck4(ctx, p, run); err != nil || p.Target.PullRequest == 0 {
-		return err
+		return false, false, err
 	}
 	comment, err = s.writeComment4(ctx, p, v)
-	return err
+	superseded = gate == actionSkippedNewer || comment == actionSkippedNewer || comment == actionSkippedOldHead
+	return err == nil && !superseded, err == nil && superseded, err
 }
 
 // writeCheck4 updates the latest archfit/gate run in place when reusable4 allows it, else creates a run with the

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
@@ -540,5 +541,60 @@ func TestAClosedPullRequestLeavesThePullIndex(t *testing.T) {
 	}
 	if _, ok := x.Lookup(records.PullEntry(7)); ok {
 		t.Error("the closed pull request is still in the pull index")
+	}
+}
+
+func TestRequestCannotReplaceOutsideFlowWithdrawal(t *testing.T) {
+	w := newAskWorld(t)
+	p := w.pullBy(7)
+	w.uploadAsk(p, "graph", "fail")
+	repo := w.repo4()
+	repo.OutsideFlow = &records.OutsideFlow{Digest: "sha256:changed", Issue: 433}
+	w.put4(records.RepoKey(shopName), &repo)
+	w.sweep4()
+	check := w.wantSweepGate(p, "completed", "action_required")
+	if !strings.Contains(w.comment(p), "changed on main with no recorded approval") {
+		t.Fatalf("comment %s", w.comment(p))
+	}
+	w.ask(p, workerLogin, "/archfit request tc needs it")
+	after := w.wantSweepGate(p, "completed", "action_required")
+	if after.ID != check.ID || !strings.Contains(w.comment(p), "changed on main with no recorded approval") {
+		t.Fatalf("withdrawal changed: check %+v, comment %s", after, w.comment(p))
+	}
+	got, err := NewPullViews(pullSummaryGitHub{w.gh}, w.mem).PullPage(t.Context(), w.shop, p.number)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.View == nil || got.View.Status != "unknown" {
+		t.Fatalf("page %+v", got)
+	}
+}
+
+func TestRequestRetriesItsOwnFailedWaitingPublication(t *testing.T) {
+	w := newAskWorld(t)
+	p := w.pullBy(7)
+	w.uploadAsk(p, "graph", "fail")
+	e := w.event(webhook.PullCommented, p)
+	e.CommentID, e.Author, e.AuthorType, e.Body = 9007, workerLogin, "User", "/archfit request tc needs it"
+	w.gh.fail["CreateCheckRun"] = errors.New("temporary outage")
+	if err := w.gate.HandleEvent(t.Context(), e); err == nil {
+		t.Fatal("expected publication error")
+	}
+	delete(w.gh.fail, "CreateCheckRun")
+	w.now = w.now.Add(time.Minute)
+	if err := w.gate.HandleEvent(t.Context(), e); err != nil {
+		t.Fatal(err)
+	}
+	w.wantSweepGate(p, "in_progress", "")
+	rec, _ := w.pullRecord(p)
+	if rec.Status != "waiting" {
+		t.Fatalf("record %+v", rec)
+	}
+	got, err := NewPullViews(pullSummaryGitHub{w.gh}, w.mem).PullPage(t.Context(), w.shop, p.number)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.View == nil || got.View.Status != "waiting" {
+		t.Fatalf("page %+v", got)
 	}
 }
