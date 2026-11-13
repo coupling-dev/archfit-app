@@ -1,0 +1,20 @@
+{
+  "status": "fail",
+  "status_line": "Archfit: fail, 1 error",
+  "records": [
+    {
+      "path": "pkg/chaos/netem/netem.go",
+      "line": 8,
+      "rule": "no-chaos-to-runtime",
+      "what": "pkg_chaos must not depend on pkg_runtime",
+      "why": "A direct import ties a chaos action to one runtime.",
+      "instead": "Add a method to container.Client.",
+      "next": {
+        "kind": "fix",
+        "text": "fix the code"
+      },
+      "show_next": false
+    }
+  ],
+  "author": "fix the code and push."
+}

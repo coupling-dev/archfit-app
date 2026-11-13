@@ -1,0 +1,18 @@
+{
+  "status": "unknown",
+  "status_line": "Archfit: unknown, no verdict",
+  "records": [
+    {
+      "path": ".archfit.yaml",
+      "rule": "policy",
+      "what": "changed on main with no recorded approval",
+      "why": "only owners change the policy",
+      "next": {
+        "kind": "wait",
+        "text": "an owner confirms or reverts it in the App: #433"
+      },
+      "show_next": true
+    }
+  ],
+  "author": "do the `next` step of each record."
+}

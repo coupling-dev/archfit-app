@@ -1,0 +1,24 @@
+{
+  "status": "waiting",
+  "status_line": "Archfit: waiting, request #431",
+  "records": [
+    {
+      "path": "pkg/tc/netem.go",
+      "line": 12,
+      "rule": "graph",
+      "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+      "balance": {
+        "value": 9,
+        "min": 7
+      },
+      "next": {
+        "kind": "wait",
+        "text": "wait for an owner: #431"
+      },
+      "show_next": false,
+      "request": 431
+    }
+  ],
+  "author": "nothing to do. This check runs again when #431 is answered.",
+  "owner": "answer #431."
+}
