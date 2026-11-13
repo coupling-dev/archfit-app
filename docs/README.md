@@ -5,24 +5,23 @@ The [README](../README.md) is the front page. This index does not track release 
 
 ## Choose a path
 
-| Reader                           | Read next                                                         |
-| -------------------------------- | ----------------------------------------------------------------- |
-| New developer                    | [Architecture](architecture.md), then [tech stack](tech-stack.md) |
-| Repository admin or policy owner | [User guide](user-guide.md)                                       |
-| Operator                         | [User guide operator section](user-guide.md#for-the-operator)     |
+| Reader                           | Read next                                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| New developer                    | [Architecture](architecture.md), then [tech stack](tech-stack.md)                                       |
+| Repository admin or policy owner | [User guide](user-guide.md)                                                                             |
+| Operator                         | [Cloud operations](design/cloud/operations.md)                                                          |
 | Owner deploying to Google Cloud  | [Visual cloud architecture](cloud-architecture.html), then [infrastructure runbook](../infra/README.md) |
-| Design reader                    | [Design records](#design-records)                                 |
+| Design reader                    | [Design records](#design-records)                                                                       |
 
 ## Current behavior
 
 The [module specifications](../internal/module.md) describe the Archfit 4 implementation.
-Architecture and user-guide sections describing Archfit 3 are historical during the page transition;
-their opening contract notice lists the removed inputs and endpoints.
+The architecture and user guide describe the current Archfit 4 implementation and its release limitations.
 
 | Document                                       | Use it for                                                                            |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------- |
 | [Architecture](architecture.md)                | Product boundary, request flows, package boundaries, routes, and runtime requirements |
-| [User guide](user-guide.md)                    | Onboarding, policy changes, feedback, plans, and operator requests                    |
+| [User guide](user-guide.md)                    | Setup, policy changes, feedback, expiry, and drift                                    |
 | [Tech stack](tech-stack.md)                    | Language, dependencies, tests, frontend, and platform seams                           |
 | [Module specifications](../internal/module.md) | Package contracts, invariants, and test specifications                                |
 | [`AGENTS.md`](../AGENTS.md)                    | Repository rules for contributors and coding agents                                   |
