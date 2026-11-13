@@ -95,9 +95,9 @@ func newEnv(t *testing.T) *env {
 		t.Fatalf("session.New: %v", err)
 	}
 	e.handler = newHandler(Deps{
-		Account: e.acct, Consents: e.consents,
+		Account: e.acct, Consents: e.consents, RepoStates: gate.NewRepoStates(e.store, e.admit),
 		Admissions: e.admit, PullViews: gate.NewPullViews(gh, mem), PolicyViews: e.policy, RequestViews: e.requests, Answers: e.answers, Owners: e.owners, Setups: e.setups, Passkeys: e.passkeys, Operators: []int64{operatorID}, BaseURL: baseURL, Now: clock,
-	}, github{files: gh, checks: gh, pulls: gh, users: gh, installs: gh}, sessions, testWeb)
+	}, github{files: gh, pulls: gh, users: gh, installs: gh}, sessions, testWeb)
 
 	e.addRepo(repoName, installA, 10)
 	e.addRepo(otherRepo, installB, 20)

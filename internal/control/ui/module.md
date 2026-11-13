@@ -22,7 +22,7 @@ The gate facade supplies policy/request views, answers and owner actions; UI imp
 - Passkeys list, register, step up and remove the signed-in user's credentials.
 - Installation admin routes require configured operator user IDs. Account admission is checked before
   repository data access. Data-sharing consent routes remain administrator-scoped.
-- /api/repos retains the accessible-repository listing and historical check summaries.
+- /api/repos lists accessible repositories in name order, at most 100, with state from the gate RepoStates façade and no historical check reads.
 
 ## Legacy input removal
 
@@ -93,3 +93,11 @@ Each view has one submit button, which starts the passkey ceremony for the displ
 
 The owner action POST accepts `view_digest` beside the original M2 `digest`. It forwards both
 unchanged to control/answers, which checks the view twice and binds the passkey to the view.
+
+## Repositories page
+
+`GET /api/repos` keeps installation admission separate from repository state. Unadmitted installations retain the
+waiting marker without a repository read. For admitted repositories, `gate.NewRepoStates` reads only the stored
+`v4/repo` value: no approved policy means `not set up`, then an outside-flow marker takes precedence, then the
+stored `expired`, `drift` or `clean` state. Missing, partial or unrecognised evidence is `unknown`; read errors fail
+the request. The page shows a dot and a word, with fail colour only for `expired`.

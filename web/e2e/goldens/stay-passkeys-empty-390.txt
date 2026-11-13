@@ -1,0 +1,24 @@
+Archfit
+/
+acme
+/
+app
+Auto
+Light
+Dark
+A
+@alice
+Sign out
+Home
+Policy
+Passkeys
+
+You have no passkey in this App installation yet.
+
+Your passkeys 0
+Add a passkey
+
+An owner's answer that loosens the policy needs a passkey with user verification: a fingerprint, a face, or a PIN. Only an owner named in the policy can register one, or a repository administrator before the first policy. A new passkey, and the removal of your last one, open an issue for the owners.
+
+Documentation Third-party licences
+About this App · v0.12.0

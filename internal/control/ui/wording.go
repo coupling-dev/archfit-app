@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/control/passkey"
@@ -16,10 +15,7 @@ import (
 const (
 	retryAfterSeconds = "60"
 
-	stateNone       = "no state yet"
-	stateUnknown    = "unknown"
-	stateViolations = "violations found"
-	stateWaiting    = "waiting for approval"
+	stateWaiting = "waiting for approval"
 )
 
 // userError is a refusal ui decides itself: its status, its log outcome and the sentence shown.
@@ -125,50 +121,4 @@ func explain(err error) (status int, outcome, sentence string) {
 		}
 	}
 	return http.StatusBadGateway, "upstream", "GitHub or an Archfit service failed. Nothing was changed. Try again."
-}
-
-var conclusionWords = map[string]string{
-	"":                "in progress",
-	"success":         "healthy",
-	"neutral":         "attention",
-	"failure":         stateViolations, // never "blocked": in advisory mode nothing blocks
-	"action_required": "action required",
-	"cancelled":       "cancelled",
-	"timed_out":       "timed out",
-	"skipped":         "skipped",
-	"stale":           "outdated",
-}
-
-// stateTones colour a state word in the web app; a word not listed is "neutral". The word is always shown next to
-// the colour, so the colour is never the only signal.
-var stateTones = map[string]string{
-	"healthy":         "success",
-	"attention":       "attention",
-	stateViolations:   "danger",
-	"action required": "danger",
-	"in progress":     "accent",
-}
-
-func toneOf(word string) string {
-	if t, ok := stateTones[word]; ok {
-		return t
-	}
-	return "neutral"
-}
-
-// stateWord is a check run as one word, the same wherever it is shown. An advisory check that found violations is
-// neutral, so its headline decides: "violations found", never "attention" over the engine's blocked verdict.
-func stateWord(conclusion, title string) string {
-	if conclusion == "neutral" &&
-		(strings.HasPrefix(title, "Architecture violations found") || strings.HasPrefix(title, "Architecture gate failing")) {
-		return stateViolations
-	}
-	return conclusionWord(conclusion)
-}
-
-func conclusionWord(c string) string {
-	if w, ok := conclusionWords[c]; ok {
-		return w
-	}
-	return stateUnknown
 }

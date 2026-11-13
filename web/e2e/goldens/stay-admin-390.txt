@@ -1,0 +1,34 @@
+Archfit
+Admin
+1 waiting
+Auto
+Light
+Dark
+A
+@alice
+Sign out
+Installations
+
+Approve an account to let Archfit run on its repositories. Until then nothing runs and nothing is posted.
+
+Waiting 1
+O
+octo Organization · installed 21 October 2026
+tool
+ledger · private
+Approve
+octo
+Approved 2
+A
+acme Organization
+Approved by vladikk on 18 October 2026 · 1 repository
+app · private
+Revoke
+acme
+A
+alexei-led User auto
+From the App settings · 1 repository
+ccgram
+Revoke stops Archfit from the account's next event on. Checks already on GitHub stay. Accounts marked "auto" change by pull request.
+Documentation Third-party licences
+About this App · v0.12.0

@@ -18,7 +18,7 @@
 <div class="page-head">
   <div>
     <h1>Repositories</h1>
-    <p class="lede">The state of each default branch, from the last Archfit check on its head.</p>
+    <p class="lede">The stored state of each repository.</p>
   </div>
 </div>
 
@@ -28,21 +28,20 @@
   <Skeleton rows={4} />
 {:else if body.repos.length === 0}
   <div class="box blankslate">
-    <h3>No repository yet</h3>
+    <h2>No repository yet</h2>
     <p>No repository is available to you through an Archfit installation yet.</p>
   </div>
 {:else}
   <div class="box table-wrap">
     <table class="data">
       <thead>
-        <tr><th scope="col">Repository</th><th scope="col">Default branch</th><th scope="col">Reason</th></tr>
+        <tr><th scope="col">Repository</th><th scope="col">State</th></tr>
       </thead>
       <tbody>
         {#each body.repos as row (row.full_name)}
           <tr>
             <td><a href={repoPage(row.full_name)}>{row.full_name}</a></td>
-            <td><span class="status {row.tone}">{row.state}</span></td>
-            <td class="muted">{row.reason}</td>
+            <td><span class="status" class:danger={row.state === 'expired'} class:neutral={row.state !== 'expired'}>{row.state}</span></td>
           </tr>
         {/each}
       </tbody>
