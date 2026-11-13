@@ -212,23 +212,21 @@ func (v view) annotations() []api.Annotation {
 // per error and unknown reason, then the author line and the owner line. Records that do not fit in budget are left
 // out after a line that counts them.
 func (v view) comment(budget int) string {
-	head := "## " + heading(v.result.Summary) + "\n"
+	p := v.page()
+	head := "## " + p.StatusLine + "\n"
 	var tail strings.Builder
-	if v.author != "" {
-		tail.WriteString("\n**Author:** " + v.author + "\n")
+	if p.Author != "" {
+		tail.WriteString("\n**Author:** " + p.Author + "\n")
 	}
-	if v.owner != "" {
-		if v.author == "" {
+	if p.Owner != "" {
+		if p.Author == "" {
 			tail.WriteString("\n")
 		}
-		tail.WriteString("**Owner:** " + v.owner + "\n")
+		tail.WriteString("**Owner:** " + p.Owner + "\n")
 	}
 	var blocks []string
-	for _, e := range v.result.Errors {
-		blocks = append(blocks, "\n"+v.markdown(place(e.Path, e.Line), e.Rule, e.What, e.Why, e.Instead, e.Balance, e.Next))
-	}
-	for _, u := range v.result.Unknown {
-		blocks = append(blocks, "\n"+v.markdown(place(u.Path, u.Line), u.Cause, u.What, u.Why, "", nil, u.Next))
+	for _, r := range p.Records {
+		blocks = append(blocks, "\n"+r.markdown())
 	}
 	kept := fit(blocks, budget-len(head)-tail.Len(), func(n int) string { return "\n" + moreLine(n) + "\n" })
 	return head + strings.Join(kept, "") + tail.String()
@@ -243,26 +241,28 @@ func heading(line string) string {
 }
 
 // markdown is one record of the comment: where in code, the rule in bold, what; then its fields as a list.
-func (v view) markdown(where, label, what, why, instead string, balance *result.Balance, next result.Next) string {
+func (r Record) markdown() string {
+	where := place(r.Path, r.Line)
 	var b strings.Builder
 	if where != "" {
 		b.WriteString(codeSpan(where) + " ")
 	}
-	b.WriteString("**" + prose(label) + "**")
-	if what != "" {
-		b.WriteString(" " + prose(what))
+	b.WriteString("**" + prose(r.Rule) + "**")
+	if r.What != "" {
+		b.WriteString(" " + prose(r.What))
 	}
 	b.WriteString("\n")
-	if why != "" {
-		b.WriteString("- why: " + prose(why) + "\n")
+	if r.Why != "" {
+		b.WriteString("- why: " + prose(r.Why) + "\n")
 	}
-	if instead != "" {
-		b.WriteString("- instead: " + prose(instead) + "\n")
+	if r.Instead != "" {
+		b.WriteString("- instead: " + prose(r.Instead) + "\n")
 	}
-	if balance != nil {
-		fmt.Fprintf(&b, "- balance: %d/10 (min %d)\n", balance.Value, balance.Min)
+	if r.Balance != nil {
+		fmt.Fprintf(&b, "- balance: %d/10 (min %d)\n", r.Balance.Value, r.Balance.Min)
 	}
-	if !v.says(next) {
+	if r.ShowNext {
+		next := r.Next
 		step := prose(next.Text)
 		if next.Kind != nextFix && next.Kind != nextWait {
 			step = codeSpan(next.Text)

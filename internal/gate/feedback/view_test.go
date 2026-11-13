@@ -1,6 +1,7 @@
 package feedback
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -67,27 +68,87 @@ func TestCommentsOfDesign12_5(t *testing.T) {
 	}
 }
 
-// TestViewGoldens writes, for each state, the comment and the check as testdata/golden4/<case>.{comment.md,check.md}.
+// Every form uses the same fixture, including the 8.1 examples and the three
+// comments printed in 12.5. Existing combined check goldens also keep annotations.
 func TestViewGoldens(t *testing.T) {
-	for _, tc := range []struct {
-		name, result string
-		advisory     bool
-	}{
-		{"pass", "pass", false},
-		{"fail-fix", "deny", false},
-		{"fail-advisory", "deny", true},
-		{"fail-ask", "graph", false},
-		{"fail-copy", "duplication", false},
-		{"fail-expired-exception", "expired_exception", false},
-		{"waiting", "waiting", false},
-		{"unknown", "policy_differs", false},
-	} {
+	for _, tc := range viewFixtures(t) {
 		t.Run(tc.name, func(t *testing.T) {
-			v := newView(engineResult(t, tc.result))
+			v := newView(tc.result)
 			golden4(t, tc.name+".comment.md", v.comment(maxBody))
-			golden4(t, tc.name+".check.md", checkText(v, tc.advisory))
+			switch tc.name {
+			case "pass", "fail-fix", "fail-advisory", "fail-ask", "fail-copy", "fail-expired-exception", "waiting", "unknown":
+				golden4(t, tc.name+".check.md", checkText(v, tc.advisory))
+			}
+			golden4(t, tc.name+".title.txt", v.title()+"\n")
+			golden4(t, tc.name+".summary.md", v.summary()+"\n")
+			raw, err := json.MarshalIndent(BuildPage(tc.result), "", "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			golden4(t, tc.name+".page.json", string(raw)+"\n")
 		})
 	}
+}
+
+type viewFixture struct {
+	name     string
+	result   result.Result
+	advisory bool
+}
+
+func viewFixtures(t *testing.T) []viewFixture {
+	t.Helper()
+	fixtures := []viewFixture{
+		{"pass", engineResult(t, "pass"), false},
+		{"fail-fix", engineResult(t, "deny"), false},
+		{"fail-advisory", engineResult(t, "deny"), true},
+		{"fail-ask", engineResult(t, "graph"), false},
+		{"fail-copy", engineResult(t, "duplication"), false},
+		{"fail-expired-exception", engineResult(t, "expired_exception"), false},
+		{"waiting", engineResult(t, "waiting"), false},
+		{"unknown", engineResult(t, "policy_differs"), false},
+		{"design-12-5-rule", engineResult(t, "deny"), false},
+	}
+	for _, tc := range []struct{ name, source string }{
+		{"design-12-5-ask", "graph"},
+		{"design-12-5-waiting", "waiting"},
+	} {
+		r := engineResult(t, tc.source)
+		r.Errors[0].Why = ""
+		fixtures = append(fixtures, viewFixture{tc.name, r, false})
+	}
+	// A can answer is not an uploadable check result. Carry its record text
+	// into a fail fixture without broadening the result wire contract.
+	can := result.Result{Status: result.StatusFail, Summary: "archfit: fail, 1 error", Errors: []result.Error{{
+		Path: "pkg_tc -> pkg_util", Rule: "graph", What: "not an allowed dependency",
+		Balance: &result.Balance{Value: 9, Min: 7},
+		Next:    result.Next{Kind: nextCommand, Text: `archfit request -m "<why you need it>"`},
+	}}}
+	fixtures = append(fixtures, viewFixture{"can-record", can, false})
+	waiting := engineResult(t, "waiting")
+	waiting.Errors = append(waiting.Errors, waiting.Errors[0], waiting.Errors[0])
+	waiting.Errors[1].Path = "pkg/tc/second.go"
+	waiting.Errors[1].Next.Text = "wait for an owner: #432"
+	waiting.Summary = "archfit: waiting, requests #431 and #432"
+	fixtures = append(fixtures, viewFixture{"waiting-many", waiting, false})
+	for _, tc := range []struct {
+		name string
+		u    result.Unknown
+	}{
+		{"unknown-workflow", result.Unknown{Path: ".github/workflows/archfit.yaml", Cause: "tool",
+			What: "differs from main", Why: "a pull request runs its own workflow file",
+			Next: result.Next{Kind: nextFix, Text: "update the branch; if the pull request changes the workflow, an owner approves it in the App"}}},
+		{"unknown-outside-flow", result.Unknown{Path: ".archfit.yaml", Cause: "policy",
+			What: "changed on main with no recorded approval", Why: "only owners change the policy",
+			Next: result.Next{Kind: nextWait, Text: "an owner confirms or reverts it in the App: #433"}}},
+		{"unknown-missing-evidence", result.Unknown{Cause: "tool", What: "the check finished without an uploaded result",
+			Next: result.Next{Kind: nextFix, Text: "run the Archfit check again"}}},
+	} {
+		fixtures = append(fixtures, viewFixture{tc.name, result.Result{
+			Status: result.StatusUnknown, Summary: "archfit: unknown, no verdict", Unknown: []result.Unknown{tc.u},
+		}, false})
+	}
+	return fixtures
 }
 
 // checkText is a check run as a reader sees it: its state, title, summary and annotations.
@@ -103,6 +164,9 @@ func checkText(v view, advisory bool) string {
 
 func golden4(t *testing.T, name, got string) {
 	t.Helper()
+	if found := wording.NotUsedIn(got); len(found) > 0 {
+		t.Errorf("%s uses %q", name, found)
+	}
 	path := filepath.Join("testdata", "golden4", name)
 	if *update {
 		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {

@@ -22,11 +22,23 @@ are read only to prevent overwriting newer existing publications; this is not an
 Annotations are batched; newer runs and comments belonging to another current head are not overwritten.
 Producer text is bounded and made inert for Markdown/annotations.
 
+The shared result model also supplies `BuildPage(result.Result) Page`: status, status line,
+ordered `Record` values, author and owner lines. The comment renders those same page records.
+Each record retains its next step; `ShowNext` is false when the author line already names it.
+`Request` binds an error's wait step to its issue number, including an expired exception.
+Records omit upload-only metadata. Page strings remain untrusted text, not HTML.
+The builder renders the App's judged result; it does not verify evidence or grant authority.
+External callers use the gate facade's `BuildPullView`, never this child package.
+
 Archfit 3 report rendering, comparability reasons, baseline/labels receipts, waiver warnings,
 repair issues and legacy publisher methods are removed.
 
 ## Checks
 
-`view_test.go` and `testdata/golden4/` cover result rendering. `publish4_test.go` and
+`view_test.go` uses one fixture set for comment, check title, summary, annotations and page JSON
+in `testdata/golden4/`, with wording checks on every form. It covers design 8.1 and the three
+12.5 comments byte for byte. The non-uploadable `can` example contributes its text record to a
+fail fixture. `page_test.go` and `page_bounds_test.go` check request binding, next-step display,
+text bounds and isolation from the source result. `publish4_test.go` and
 `withdraw4_test.go` cover status mapping, ordering, batching and authority races.
 `lease_test.go` exercises the retained lease failures, cancellation, takeover and release behavior through v4.

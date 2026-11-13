@@ -1,0 +1,18 @@
+{
+  "status": "unknown",
+  "status_line": "Archfit: unknown, no verdict",
+  "records": [
+    {
+      "path": ".github/workflows/archfit.yaml",
+      "rule": "tool",
+      "what": "differs from main",
+      "why": "a pull request runs its own workflow file",
+      "next": {
+        "kind": "fix",
+        "text": "update the branch; if the pull request changes the workflow, an owner approves it in the App"
+      },
+      "show_next": true
+    }
+  ],
+  "author": "do the `next` step of each record."
+}
