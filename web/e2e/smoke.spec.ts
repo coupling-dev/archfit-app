@@ -80,9 +80,6 @@ const reporting = {
   main_at: '',
   pulls_to_update: 0,
   pulls_unread: 0,
-  decisions_pending: 0,
-  decisions: [],
-  decisions_error: false,
   steps: steps(4),
   next: 'Make the gate required. Rehearse it first on one forbidden and one legitimate change.',
   next_how: 'A forbidden change must show a rule violation on archfit/state. Then merge the settings pull request.',
@@ -92,7 +89,6 @@ const reporting = {
   draft_state: '',
   banner: 'The trial ends on 1 November 2026.',
   admin: true,
-  managed_ai: 'not_allowed',
   can_start: false,
   can_discover: false, // discovery is no step once the policy is merged
   pulls_url: 'https://github.com/acme/app/pulls',
@@ -102,20 +98,6 @@ const reporting = {
 // ago is a time that long before now, so the page words its age the same on every run.
 const hour = 3600e3;
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
-
-const decisionRequest = (over: object = {}) => ({
-  pull: 4,
-  title: 'feat: read options',
-  status: 'pending',
-  finding: '0a1b2c3d',
-  rule: 'boundary.no-import',
-  edge: 'orders → billing',
-  requester: 'release-agent',
-  head: 'a1b2c3d',
-  created: ago(3 * hour),
-  href: '/r/acme/app/pull/4',
-  ...over,
-});
 
 const movedPull = {
   number: 6,
@@ -129,7 +111,7 @@ const movedPull = {
 };
 
 // watching is a repository whose gate runs with agents: the main branch was checked, a pull request waits for an update
-// after the target moved, and decision requests wait for an owner.
+// after the target moved.
 const watching = {
   ...reporting,
   main_state: 'healthy',
@@ -140,17 +122,6 @@ const watching = {
   pulls: [...reporting.pulls, movedPull],
   pulls_to_update: 1,
   pulls_unread: 0,
-  decisions_pending: 7,
-  decisions: [
-    decisionRequest(),
-    decisionRequest({
-      pull: 5,
-      title: 'chore: bump deps',
-      finding: '7e8f9a0b',
-      created: ago(26 * hour),
-      href: '/r/acme/app/pull/5',
-    }),
-  ],
 };
 
 const installed = {
@@ -731,7 +702,6 @@ test('overview: state, pull requests, setup and history', async ({ page }) => {
   await expect(page.getByText('Go through the repository.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open the graph' })).toHaveAttribute('href', '/r/acme/app/graph');
   await expect(page.getByRole('link', { name: 'Data sharing' })).toHaveAttribute('href', '/r/acme/app/data-sharing');
-  await expect(page.getByText('Managed AI: not allowed')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Consent' })).toHaveCount(0);
   // the next step is the gate, so no button for another step: one sentence, one action
   const needs = page.getByRole('region', { name: 'Needs you' });
@@ -740,24 +710,12 @@ test('overview: state, pull requests, setup and history', async ({ page }) => {
   expect(writes).toEqual([]);
 });
 
-test('overview: counters, the main-branch watch line and the decision requests under Needs you', async ({ page }) => {
+test('overview: counters and the main-branch watch line', async ({ page }) => {
   const writes = await open(page, '/r/acme/app', { overview: watching });
-  const counters = page.getByRole('group', { name: 'Pull requests and decision requests' });
+  const counters = page.getByRole('group', { name: 'Pull requests' });
   await expect(counters).toContainText('1 Pull request to update');
-  await expect(counters).toContainText('7 Decision requests pending');
   await expect(counters.getByRole('link')).toHaveCount(0);
   await expect(page.locator('#main-watch')).toHaveText('Last checked commit on main: 9f3a2c1, 2 hours ago.');
-
-  const needs = page.getByRole('region', { name: 'Needs you' });
-  await expect(needs).toContainText('7 decision requests wait for an owner.');
-  await expect(needs).toContainText('An agent cannot approve its own request');
-  const list = needs.getByRole('list', { name: 'Decision requests that wait for an owner' });
-  await expect(list.getByRole('listitem')).toHaveCount(2);
-  await expect(list.getByRole('link', { name: '#4 feat: read options' })).toHaveAttribute('href', '/r/acme/app/pull/4');
-  await expect(list.first()).toContainText(
-    'boundary.no-import orders → billing · requested by @release-agent · 3 hours ago',
-  );
-  await expect(needs).toContainText('5 more.');
 
   // the pull request that waits for an update names the modules, in the words of the comment
   const pulls = page.getByRole('region', { name: 'Open pull requests' });
@@ -774,12 +732,10 @@ test('overview: counters, the main-branch watch line and the decision requests u
 
 test('overview: counters say when they could not be read, and a quiet repository shows zeros', async ({ page }) => {
   await open(page, '/r/acme/app', {
-    overview: { ...watching, pulls_error: true, decisions_error: true, decisions: [], decisions_pending: 0 },
+    overview: { ...watching, pulls_error: true },
   });
-  const counters = page.getByRole('group', { name: 'Pull requests and decision requests' });
+  const counters = page.getByRole('group', { name: 'Pull requests' });
   await expect(counters).toContainText('– Pull requests to update the open pull requests could not be read');
-  await expect(counters).toContainText('– Decision requests pending could not be read');
-  await expect(page.getByRole('region', { name: 'Needs you' }).getByText('decision request')).toHaveCount(0);
 
   // One pull request's check could not be read: the count is a floor and says so, never the whole.
   await page.unrouteAll();
@@ -789,9 +745,7 @@ test('overview: counters say when they could not be read, and a quiet repository
   await page.unrouteAll();
   await open(page, '/r/acme/app');
   await expect(counters).toContainText('0 Pull requests to update');
-  await expect(counters).toContainText('0 Decision requests pending');
   await expect(page.locator('#main-watch')).toHaveCount(0);
-  await expect(page.getByRole('region', { name: 'Needs you' })).not.toContainText('wait for an owner');
 });
 
 test('pull request: the first screen is the comment, as text', async ({ page }) => {
