@@ -617,7 +617,7 @@ export async function open(page: Page, path: string, mock: Mock = {}) {
           });
         return json(200, sharing(allowed));
       case '/api/repos/acme/app/pulls/4':
-        return json(200, mock.pull ?? pull);
+        return json(200, mock.pull ?? JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/pull/pass.json', import.meta.url), 'utf8')));
       case '/api/repos/acme/app/findings':
         return json(200, findings);
       case '/api/repos/acme/app/graph':
