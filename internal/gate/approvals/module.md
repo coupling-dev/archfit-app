@@ -53,13 +53,43 @@ direct push to the policy is the new rule with no owner's word.
   judged, the upload compares the tip's policy with the approved digest (`policy_unapproved`), so a late judgement
   never lets a check pass.
 
-Not provided: the re-check of the waiting pull requests (task 21; the gate logs the hand-off), confirm and revert (task
-23), the sweep's comparison of the tip with the approved digest when a push event is lost (task 22).
+- A proposal that admits a workflow file (a first approval, `Proposal.WorkflowDigest`) is consumed only when its merge
+  commit also holds that file: one first approval never admits another workflow. A merge with another file voids it
+  as a merge of another policy does; with no approved policy the push is then `unguarded`.
+- After a consume whose proposal holds a revert (M2 task 23, `gate/proposals`) ended the state, the issue of the state
+  gets a note and is closed (a notification: a failure is logged, a delivery again does not repeat it).
+- `WorkflowPushed` judges a default-branch push for the workflow approval it uses (M2 task 23): the open `workflow`
+  proposal whose pull request merged in the push is consumed (`records.ConsumeWorkflow`) when the merge commit holds
+  the approved workflow file, and voided otherwise. A push that leaves `.github/workflows/archfit.yaml` alone is
+  `none`, and so is the same push again. `Pushed` passes over workflow proposals, `WorkflowPushed` over the others. A
+  workflow file changed with no approval is not a state of its own: each run is compared with the default branch's
+  file (`gate`, `upload4.go`).
+- Owner actions outside requests (M2 task 23): `Bind` reads what an action binds to now (`Change`: the pull request's
+  head, its policy digest and workflow digest; or the default branch's tip and its policy digest), and `Act` binds it
+  again, refuses a change that is not the one the owner's step-up was bound to (`ErrMoved`, before the step-up is
+  used), checks who acts, redeems the step-up, records the approval (`records.First`, `Workflow`, `ApproveCurrent`,
+  `Confirm`) and records it on GitHub, naming the owner and the passkey (design 19):
+  - **first** of an onboarding pull request: a repository administrator; the pull request is open, of this repository,
+    into the default branch, which has no policy of version 3; its head has one and has the workflow file. Recorded on
+    the pull request.
+  - **first** of the policy already on the default branch (an already-converted repository with no record): a
+    repository administrator who is also an owner the policy names (manager, 2026-11-13; the passkey registration rule
+    is unchanged). Takes effect at once; recorded on a new issue assigned to the owners.
+  - **workflow**: an owner named in the approved policy; the repository has an approved policy and is not outside the
+    flow; the head changes the workflow file. Recorded on the pull request.
+  - **confirm**: an owner named in the approved policy; the tip's policy is the digest the state recorded (a later
+    change waits for its own judgement). Ends the state; recorded on its issue, which closes.
+  Owners are read from the policy at `Repo.ApprovedCommit`, never from the default branch: a policy changed outside the
+  flow could name anyone.
+
+Not provided: the re-check of the waiting pull requests (task 21; the gate logs the hand-off), the revert (written by
+`gate/proposals` as an answer is), the re-run that gives an approved head its verdict (`gate`, `owner.go`), the sweep's
+comparison of the tip with the approved digest when a push event is lost (task 22).
 
 ## Subdomain Classification
 
-Core: the one-use step of design 9.2 and the state of design 7.1. Volatility: high during milestone 2; task 23 adds the
-end of the state and the first approval's proposal (the onboarding pull request), which this module consumes as it is.
+Core: the one-use step of design 9.2 and the state of design 7.1, and the owner actions that start change control or
+end the state (M2 task 23). Volatility: high during milestone 2.
 
 ## Encapsulated Knowledge
 
@@ -75,6 +105,7 @@ end of the state and the first approval's proposal (the onboarding pull request)
 
 ```go
 const PolicyPath = ".archfit.yaml"
+const WorkflowPath = ".github/workflows/archfit.yaml"
 const JudgedNone, JudgedUnguarded, JudgedConsumed, JudgedOutside = "none", "unguarded", "consumed", "outside"
 
 type GitHub interface { /* File, BranchHead, Pull, Compare, CreateIssue, CreateComment, CloseIssue, ReopenIssue,
@@ -92,24 +123,40 @@ type Outcome struct {
     Voided   string // a proposal whose pull request merged another policy
 }
 func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error)
+func (s *Service) WorkflowPushed(ctx context.Context, p Push) (Outcome, error)
+
+type Owner struct { ID int64; Login string; Admin bool }
+type Action struct { Kind string; Pull int } // records.KindFirst, KindWorkflow or KindConfirm; Pull 0 without a pull request
+type Change struct { Kind string; Pull int; HeadSHA, Commit, Policy, Workflow string }
+func (c Change) Digest() string // what the owner's step-up is bound to
+type Input struct {
+    Action Action
+    Owner  Owner
+    Digest string // the digest the step-up was bound to
+    Redeem func(ctx context.Context, digest string) (passkeyID string, err error)
+}
+type Done struct { Approval string; Change Change; Passkey string; Issue int }
+func (s *Service) Bind(ctx context.Context, r api.Repo, a Action) (Change, error)
+func (s *Service) Act(ctx context.Context, r api.Repo, in Input) (Done, error)
+
+var ErrNotAdmin, ErrNotOwner, ErrNotDue, ErrNotApprovable, ErrMoved, ErrNeedsPasskey error
 ```
 
 ## Integrations
 
-- **gate** (parent): builds the `Service` with the gate's GitHub client and Store; `events.go` calls it through the
-  façade file `approvals.go` on every `DefaultBranchPush`, before the repository sweep, and logs the hand-off of a
-  consume (`gate recheck handed`). `upload4.go` reads the state it sets (`Repo.OutsideFlow`, `ApprovedDigest`).
-- **gate/records**: `Consume` (`Merge`), `Outside`, `Unguarded`, `OutsideIssue`, `Void`, `VoidProposal`, `Push`, the keys
-  and values.
+- **gate** (parent): builds the `Service` with the gate's GitHub client and Store; `events.go` calls `Pushed` through
+  the façade file `approvals.go` and `WorkflowPushed` through `owner.go` on every `DefaultBranchPush`, before the
+  repository sweep, and logs the hand-off of a consume (`gate recheck handed`). `owner.go` calls `Bind` and `Act`.
+  `upload4.go` reads the state it sets (`Repo.OutsideFlow`, `ApprovedDigest`) and the open first and workflow proposals.
+- **gate/records**: `Consume` (`Merge`), `Outside`, `Unguarded`, `OutsideIssue`, `Void`, `VoidProposal`, `First`,
+  `Workflow`, `ConsumeWorkflow`, `ApproveCurrent`, `Confirm`, `FileDigest`, `Push`, the keys and values.
+  **gate/requests**: `PasskeyShown`.
 - **wire/policy3**: `Digest`, `Decode` (owners). **github/api**: the roles of `GitHub`.
 - Contract strength; LCA gate / rank 1 / distance 1; balanced.
 
 ## Change Vectors
 
-- Task 23: confirm and revert end the state; the first approval and the workflow approval are proposals on their own
-  pull requests, consumed here unchanged. An approval recorded there without a consume (the first approval of an
-  already-converted repository, a confirm) sets `Repo.ApprovedCommit`, and the first one `GuardedSince`, as `Consume`
-  does.
+- Milestone 3 (owner action page): `Bind` is what the page shows before the step-up.
 - Task 21 replaces the logged hand-off with the re-check.
 
 ## Constraints and Invariants
@@ -118,7 +165,14 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error)
   one merge commit.
 - The repository's state is set before its issue exists; at most one issue per state (a second one opened by a
   concurrent delivery is closed with a note naming the first).
-- A consume while outside the flow keeps the state and the approved digest (`records.Consume`).
+- A consume while outside the flow keeps the state and the approved digest (`records.Consume`), unless its proposal
+  holds a revert.
+- An owner action is bound to the digest of what the owner saw; it is refused before the step-up is used when that
+  moved. Owners of a workflow approval, a confirm and a revert are the approved policy's.
+- **Stated limit**: a workflow file changed on the default branch with no approval (a direct push, a bypass) becomes
+  the file every run is compared with. A pull request cannot do it under the required check; the ruleset makes the
+  rest an administrator bypass (design 10.8).
+- **Stated limit**: the issue of a state a revert ended is closed after the consume; a crash in between leaves it open.
 - No log line holds a repository name, a login or a policy; notification failures log the step and the HTTP status.
 - **Stated limit**: a crash between opening the issue and recording it opens a second issue on the retry (as for
   requests).
@@ -126,7 +180,7 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error)
   digest is not the expected one: the push is outside the flow and the proposal void (fail closed).
 - **Stated limit**: two consumes handled out of order use both proposals' approvals; the approved digest is the newer
   one. A first consume after an unjudged direct push approves nothing: the repository stays without an approved policy
-  (`first_approval`) until task 23's first approval.
+  (`first_approval`) until the first approval.
 - **Stated limit**: a direct push that lands while the first consume of a repository is in flight (after it read the
   tip, before its swap) is judged unguarded, and the consume approves: the tip then holds a policy no approval made,
   with no state and no issue. Every upload is `unknown` (`policy_unapproved`, fail closed) until the sweep compares the
@@ -162,6 +216,17 @@ Over a fake GitHub (the policy per commit, pull requests, issues) and the memory
   `TestALatePushFromBeforeTheFirstApprovalIsNotOutsideTheFlow` (a push back to the first approval's commit is judged),
   `TestAConsumeThatLosesARaceKeepsTheNewerApproval`, `TestARewrittenHistoryDoesNotStopLaterApprovals`,
   `TestALateBranchCreationFromBeforeTheFirstApprovalIsNotOutsideTheFlow`.
+
+Owner actions and workflow pushes (`owner_test.go`, the fake also holds the workflow file per commit):
+`TestTheFirstApprovalOfAnOnboardingPullRequestIsConsumedByItsMerge` (a non-administrator refused; the record on the pull
+request), `TestOneFirstApprovalNeverAdmitsAnotherWorkflow`, `TestAFirstApprovalIsBoundToWhatTheAdministratorSaw` (a push
+after `Bind`: `ErrMoved` before the step-up), `TestAFirstApprovalRefuses` (approved repository, fork, head without a
+policy of version 3 or without the workflow, a branch with a policy, no pull request),
+`TestTheFirstApprovalOfAnAlreadyConvertedRepository` (an administrator the policy does not name refused; the issue
+assigned to the owners; a later direct push is outside the flow), `TestAWorkflowApprovalIsConsumedByItsMergeOnce`,
+`TestAWorkflowMergedWithAnotherFileVoidsItsApproval`, `TestAWorkflowApprovalRefuses`,
+`TestOnlyAnOwnerOfTheApprovedPolicyConfirms` (the owner a direct push named is refused),
+`TestAConfirmWaitsForTheJudgementOfALaterChange`, `TestARevertConsumeEndsTheStateAndClosesItsIssue`.
 
 In `internal/gate` (`approvals_test.go`), over the gate's fake GitHub: `TestADirectPushPutsEveryUploadOutsideTheFlow`
 (one issue, the upload `unknown` with `outside_flow` naming it), `TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed`,

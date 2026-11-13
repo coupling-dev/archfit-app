@@ -15,6 +15,9 @@ notes the answer on the request issue. Without it an answer is a record nobody a
 ## Functional Responsibilities
 
 - `Digest`: the change digest of an answer, which the owner's passkey step-up is bound to (`control/passkey` Purpose).
+- While the repository's policy changed outside the flow (`records.Repo.OutsideFlow`), `Digest` and `Answer` refuse
+  with `ErrOutsideFlow`, and so does `records.Answer` inside its swap (M2 task 23): an answer would be written on a
+  policy no owner approved, by owners that policy names. An owner confirms or reverts first.
 - `Answer`, under a per-repository lease (`records.ProposalLeaseKey`, 60 s; a second answer waits at most 10 s, then
   `ErrBusy`). One answer ends within 50 s, inside the App's 55 s UI deadline: 10 s for the lease, 15 s on the caller's
   context up to the record, then 25 s on a context the caller cannot cancel, so a closed tab or a deadline never leaves
@@ -22,11 +25,13 @@ notes the answer on the request issue. Without it an answer is a record nobody a
   1. Read the default branch's tip and its policy (`requests.ErrNoPolicy` without one). The user's login must be in
      `owners`, case-insensitive (`ErrNotOwner`); any owner may answer, the one who filed it too. The request must be
      open (`requests.ErrNoRequest`, `requests.ErrClosedRequest`); `requests.ChangeOf` checks the answer.
-  2. Find the open proposal: the proposal index entry whose pull request is open. A proposal whose pull request merged
+  2. Find the open proposal: the proposal index entry, with no kind, whose pull request is open (a `first` or
+     `workflow` proposal is a pull request someone else wrote, M2 task 23). A proposal whose pull request merged
      waits for the push that consumes it (task 20). One whose pull request was closed without a merge is void: its
      approvals first (their requests open again), the proposal and its index entry last, so a cleanup that stops half
      way is finished by the next answer, which still finds the proposal.
-  3. Write, in order, every open approval's change of that proposal and then the new one into the tip's policy
+  3. Write, in order, every open approval's change of that proposal and then the new one into the tip's policy (into
+     the approved policy a revert in the proposal restores, when it holds one)
      (`requests.Edit`, comment `request #N`). An older change the policy no longer takes (`requests.ErrByHand`) voids its
      approval, which leaves the proposal's list; its request opens again (`records.Void`), its issue is reopened with a
      note. The new change must apply. It joins the proposal when the default branch does not say it yet, even when an
@@ -54,6 +59,18 @@ notes the answer on the request issue. Without it an answer is a record nobody a
   `MergePull(number, head)` (squash, expected head, no bypass actor: design appendix D.2). On any refusal (405, 409,
   422) read the pull request: merged anyway (an owner, an earlier attempt; unmeasured) is `merged`, else it stays open
   for the sweep (task 22) or an owner's merge on GitHub. A failed check is never followed by a merge.
+
+- `Revert` (M2 task 23), under the same lease and deadlines: the policy changed outside the flow is replaced on
+  `archfit/policy` by the last approved policy (read at `Repo.ApprovedCommit` and checked against `ApprovedDigest`), with
+  the open answers of the proposal written on it again (one that no longer applies is voided as above). Only an owner
+  the approved policy names reverts (`ErrNotOwner`): the changed policy could name anyone. The revert is bound to
+  `RevertDigest` (the approved commit and digest, and the changed digest; `ErrMoved` when it moved, before the step-up
+  is used). A tip that already holds what the revert writes is `ErrNothingToRevert` (confirm it instead); a repository
+  not outside the flow is `ErrNotOutside`. The approval (`records.RevertTo`, kind `revert`) joins the proposal; the
+  pull request lists it (no request) with its owner and passkey; the issue of the state gets a note naming them. Its
+  merge push ends the state (`records.Consume`, `gate/approvals`).
+- `IsProposalPull` is true only for a proposal with no kind: a first or workflow approval's pull request gets its
+  verdict from its uploads.
 
 Not provided: the consume on the merge push (`gate/approvals`, task 20), the re-check of waiting pull requests (task
 21), the sweep's merge retry and the 24-hour void of an approval without a pull request (task 22), the pages (task 24).
@@ -99,9 +116,18 @@ type Outcome struct { Approval string; PullRequest int; State, Merge string } //
 
 func (s *Service) Digest(ctx context.Context, r api.Repo, number int, a requests.Answer) (string, error)
 func (s *Service) Answer(ctx context.Context, r api.Repo, in Input) (Outcome, error)
-func IsProposalPull(ctx context.Context, s store.Store, r api.Repo, pull int) (bool, error) // an open proposal's pull request
+func IsProposalPull(ctx context.Context, s store.Store, r api.Repo, pull int) (bool, error) // the App's open proposal's pull request
 
-var ErrNotOwner, ErrNeedsPasskey, ErrBusy, ErrFull error
+type RevertInput struct {
+    Owner  Owner
+    Digest string // RevertDigest when the owner looked
+    Later  bool
+    Redeem func(ctx context.Context, digest string) (passkeyID string, err error)
+}
+func (s *Service) RevertDigest(ctx context.Context, r api.Repo) (string, error)
+func (s *Service) Revert(ctx context.Context, r api.Repo, in RevertInput) (Outcome, error)
+
+var ErrNotOwner, ErrNeedsPasskey, ErrBusy, ErrFull, ErrOutsideFlow, ErrNotOutside, ErrNothingToRevert, ErrMoved error
 ```
 
 An error from `Answer` means the answer was not recorded (the request is still open; a token may have been used). What
@@ -114,7 +140,8 @@ void. The digest is
 - **gate** (parent): builds the `Service` with the gate's GitHub client and Store; the façade `answers.go` serves it to
   `control` after the installation's admission, and keeps an upload for an open proposal's pull request from setting
   its verdict (D13).
-- **gate/records**: `Answer`, `Join` (a pin after a rewrite that adds no answer), `Void`, `VoidProposal`, the keys.
+- **gate/records**: `Answer`, `Join` (a pin after a rewrite that adds no answer), `Void`, `VoidProposal`, `RevertTo`,
+  `Revert`, the keys.
 - **gate/requests**: `ChangeOf`, `Edit`, `RequestComment`, the refusals, `AnswerNote`, `ReopenNote`, `PasskeyShown`.
 - **wire/policy3**: `Decode` (owners), `Digest`, `Loosens`. **github/api**: the roles of `GitHub`.
 - Contract strength; LCA gate / rank 1 / distance 1 for the gate siblings; balanced.
@@ -178,3 +205,8 @@ an `archfit/gate` success on the head (design appendix D.2), and the memory Stor
   pull request from another repository, into another branch, closed.
 - `TestTheLease`: a held lease is `ErrBusy` with no write; an expired one is taken over and released; a release never
   deletes another holder's lease.
+- `TestAnAnswerOutsideTheFlowIsRefused` (an owner a direct push added and an owner of the approved policy: nothing
+  written, no step-up used), `TestARevertRestoresTheApprovedPolicyWithTheOpenAnswers` (a "merge later" answer survives
+  the revert; the issue and the pull request record owner and passkey), `TestOnlyAnOwnerOfTheApprovedPolicyReverts`,
+  `TestARevertRefuses` (inside the flow, moved, nothing to revert),
+  `TestAProposalOfAPullRequestSomeoneElseWroteIsNotThePolicyPullRequest`.
