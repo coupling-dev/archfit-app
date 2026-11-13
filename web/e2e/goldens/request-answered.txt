@@ -1,0 +1,52 @@
+Request #431
+
+answered Request #431 is answered.
+
+Reason
+
+netem needs the retry helper of pkg_util to apply a rule again after a container restart.
+
+Rule graph · pkg_tc -> pkg_util · asked until 2026-12-01
+
+Request #431 on GitHub
+
+Record
+
+Balance: 9/10 (min 7)
+
+pkg/tc/netem.go:12 graph pkg_tc -> pkg_util is not an allowed dependency
+  balance: 9/10 (min 7)
+The map
+adapters
+No layer
+A rule denies this dependency · no-tc-to-util
+pkg_tc
+Volatility: high
+pkg_util
+Volatility: low
+An allowed dependency
+A requested one (with its #431)
+One a rule denies
+An exception (with its date)
+Drift
+Show the map as a list
+
+A dependency that is not drawn needs a request.
+
+Why the balance
+
+Balance: 9/10 (min 7)
+
+The policy declares the volatility of each module:
+
+pkg_tc: Layer adapters · Volatility high
+
+pkg_util: Volatility low · subdomain generic
+
+Earlier answers 1
+Exception to graph for pkg_tc -> pkg_util until 2026-10-01. Why: Until the port lands.
+Answer
+
+Rejected. What to do instead: Use a port.
+
+No answer is open. The request on GitHub names the owner who answered and the passkey used.

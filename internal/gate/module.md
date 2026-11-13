@@ -67,3 +67,7 @@ Read failures are returned, not turned into a clean answer. The setup state stil
 and `control/onboarding`; Home does not implement onboarding again.
 
 A missing or invalid target policy with recorded outside-flow state is returned without a map, so the owner can revert it. Proposed policy files are read at pull head only for workflow-action eligibility.
+
+## Request page view
+
+`RequestView` reads the request and exposes declared volatility, layers outer-first and structured deny/exception dependencies from one target-policy snapshot. When an answered request has an approval pointer, the facade reads the recorded answer; older records without it provide no answer detail. The view includes the request issue link, which remains the source for the owner and passkey.

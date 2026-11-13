@@ -50,11 +50,13 @@ Open `/r/<owner>/<repo>/passkeys` after signing in. A policy owner can register 
 
 A worker can comment `/archfit request <reason>` on a pull request, or file a request through the CLI. The App creates or joins request issues. CLI-filed measurements are marked **as reported**, not verified.
 
-1. Open `/r/<owner>/<repo>/requests/<number>` and review the reason, evidence, affected modules and earlier answers.
+1. Open `/r/<owner>/<repo>/requests/<number>`. Read the status, reason and record with its balance, then the two-module map and declared volatility. Numbers without a confirming pull request remain **as reported**.
 2. Preview the policy change and affected pull requests.
-3. Choose **Approve**, **Approve until a date**, or **Reject** with what to do instead. An expiry date must be in the future and at most 365 days away.
+3. Read earlier answers, then choose **Approve and merge**, **Approve until a date**, or **Reject** with what to do instead. An expiry date must be in the future and at most 365 days away.
 4. Confirm an approval with your passkey. Reject does not require a passkey.
 5. Check the result. The App attempts to merge the policy pull request unless you chose merge later. If GitHub refuses, the pull request remains open. A merge-later answer takes effect when that pull request merges.
+
+An answered request shows its recorded answer and links to the GitHub issue that names the owner and passkey. Older records without an approval pointer show the issue link only, with no answer buttons.
 
 Only an owner named in the current policy can answer. The requester may answer if also an owner. Several answers can join one policy pull request. After consumption, the App attempts to re-check affected pull requests; a fresh result is needed before they can pass.
 
