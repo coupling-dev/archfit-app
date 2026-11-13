@@ -140,7 +140,7 @@ func TestSweepForgetsOrphanTenants(t *testing.T) {
 
 func TestSweepStopsWhenInstallationsUnavailable(t *testing.T) {
 	st := &flakyStore{Store: store.NewMemory()}
-	acct, _ := account.New(st)
+	acct := account.New(st)
 	repos := &fakeRepos{installErr: api.ErrRateLimited}
 	c := newControl(acct, repos, st, admitAll{}, okHandler, newClock().Now)
 

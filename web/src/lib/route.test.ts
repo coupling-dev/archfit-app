@@ -10,7 +10,7 @@ describe('parseRoute', () => {
     ['/r/acme/app/', { kind: 'repo', owner: 'acme', name: 'app', fullName: 'acme/app' }],
     ['/r/acme/my.app', { kind: 'repo', owner: 'acme', name: 'my.app', fullName: 'acme/my.app' }],
     ['/r/acme', { kind: 'unknown' }],
-    ['/r/acme/app/data-sharing', { kind: 'data-sharing', owner: 'acme', name: 'app', fullName: 'acme/app' }],
+    ['/r/acme/app/data-sharing', { kind: 'unknown' }],
     ['/r/acme/app/data-sharing/x', { kind: 'unknown' }],
     ['/r/acme/app/pull/4/data-sharing', { kind: 'unknown' }],
     ['/r/acme/app/graph/data-sharing', { kind: 'unknown' }],
@@ -28,7 +28,7 @@ describe('parseRoute', () => {
     ['/r/acme/app/requests/431/graph', { kind: 'unknown' }],
     ['/r/acme/app/pull/4/requests/431', { kind: 'unknown' }],
     ['/r/acme/app/consent', { kind: 'unknown' }],
-    ['/r/acme/app/graph', { kind: 'graph', owner: 'acme', name: 'app', fullName: 'acme/app' }],
+    ['/r/acme/app/graph', { kind: 'unknown' }],
     ['/r/acme/app/graph/x', { kind: 'unknown' }],
     ['/r/acme/%E0%A4%A', { kind: 'unknown' }],
     ['/r/acme/%2E%2E', { kind: 'unknown' }],
@@ -36,8 +36,8 @@ describe('parseRoute', () => {
     ['/r/acme/app/pull/4', { kind: 'pull', number: 4, owner: 'acme', name: 'app', fullName: 'acme/app' }],
     ['/r/acme/app/pull/0', { kind: 'unknown' }],
     ['/r/acme/app/pull/4x', { kind: 'unknown' }],
-    ['/r/acme/app/pull/4/graph', { kind: 'pull-graph', number: 4, owner: 'acme', name: 'app', fullName: 'acme/app' }],
-    ['/r/acme/app/pull/4/graph/', { kind: 'pull-graph', number: 4, owner: 'acme', name: 'app', fullName: 'acme/app' }],
+    ['/r/acme/app/pull/4/graph', { kind: 'unknown' }],
+    ['/r/acme/app/pull/4/graph/', { kind: 'unknown' }],
     ['/elsewhere', { kind: 'unknown' }],
   ])('%s', (path, want) => {
     expect(parseRoute(path)).toEqual(want);

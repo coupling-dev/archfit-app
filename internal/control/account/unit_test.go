@@ -61,7 +61,7 @@ func (pc planCase) apply(t *testing.T, a Account) {
 func TestPlanStateMachine(t *testing.T) {
 	for _, pc := range planCases {
 		t.Run(pc.name, func(t *testing.T) {
-			a, _, _ := newTest(store.NewMemory())
+			a, _ := newTest(store.NewMemory())
 			pc.apply(t, a)
 			st, err := a.Status(context.Background(), instA, day(pc.now))
 			mustNil(t, err)
@@ -83,7 +83,7 @@ func TestEntitlementFields(t *testing.T) {
 	for _, pc := range planCases {
 		t.Run(pc.name, func(t *testing.T) {
 			s := store.NewMemory()
-			a, _, _ := newTest(s)
+			a, _ := newTest(s)
 			pc.apply(t, a)
 			mustNil(t, a.Refresh(context.Background(), instA, day(pc.now)))
 			e := readEntitlement(t, s, instA)
@@ -128,7 +128,7 @@ func TestNoticeTexts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := store.NewMemory()
-			a, _, _ := newTest(s)
+			a, _ := newTest(s)
 			planCase{private: true, grants: tt.grants}.apply(t, a)
 			mustNil(t, a.Refresh(context.Background(), instA, tt.now))
 			if got := readEntitlement(t, s, instA).Notice; got != tt.want {

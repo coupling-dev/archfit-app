@@ -1,8 +1,6 @@
 package control
 
 import (
-	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -31,23 +29,6 @@ func (b *browser) do(method, target string, form url.Values) *httptest.ResponseR
 	} else {
 		req = httptest.NewRequest(method, target, nil)
 	}
-	return b.send(req)
-}
-
-// postJSON is a write of the web app: a JSON body and the session's CSRF token, read from /api/session.
-func (b *browser) postJSON(target string, body any) *httptest.ResponseRecorder {
-	b.t.Helper()
-	var sess struct{ CSRF string }
-	if err := json.Unmarshal(b.get("/api/session").Body.Bytes(), &sess); err != nil || sess.CSRF == "" {
-		b.t.Fatalf("no session token: %v", err)
-	}
-	payload, err := json.Marshal(body)
-	if err != nil {
-		b.t.Fatal(err)
-	}
-	req := httptest.NewRequest(http.MethodPost, target, bytes.NewReader(payload))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-CSRF-Token", sess.CSRF)
 	return b.send(req)
 }
 

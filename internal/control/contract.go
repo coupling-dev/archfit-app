@@ -56,9 +56,6 @@ type Control struct {
 	admit   admitter
 	ui      http.Handler
 	now     func() time.Time
-
-	// Held for the composition only; the façade never calls them.
-	consents account.Consents
 }
 
 func New(d Deps) (*Control, error) {
@@ -68,7 +65,7 @@ func New(d Deps) (*Control, error) {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	acct, consents := account.New(d.Store)
+	acct := account.New(d.Store)
 	passkeys, err := passkey.New(passkey.Config{BaseURL: d.BaseURL}, d.Store,
 		passkey.NewOwners(d.GitHub), passkey.NewIssues(d.GitHub, d.GitHub), d.Now)
 	if err != nil {
@@ -78,7 +75,7 @@ func New(d Deps) (*Control, error) {
 		Answers: answers.New(d.Answers, passkeys),
 		Owners:  answers.NewOwners(d.OwnerActions, passkeys), Setups: onboarding.NewSetup(d.GitHub, d.SetupViews),
 		OAuth: d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
-		Account: acct, Consents: consents,
+		Account:    acct,
 		Admissions: d.Admissions, PolicyViews: d.PolicyViews, RequestViews: d.RequestViews, Passkeys: passkeys, Operators: d.Operators, Now: d.Now,
 
 		RepoStates: gate.NewRepoStates(d.Store, d.Admissions),
@@ -88,7 +85,6 @@ func New(d Deps) (*Control, error) {
 		return nil, fmt.Errorf("control: ui: %w", err)
 	}
 	c := newControl(acct, d.GitHub, d.Store, d.Admissions, page, d.Now)
-	c.consents = consents
 	return c, nil
 }
 
@@ -115,7 +111,7 @@ func NewWorker(d WorkerDeps) (*Control, error) {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	acct, _ := account.New(d.Store)
+	acct := account.New(d.Store)
 	return &Control{account: acct, repos: d.GitHub, tenants: d.Store, admit: d.Admissions, now: d.Now}, nil
 }
 

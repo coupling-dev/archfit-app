@@ -3,7 +3,6 @@ package account
 import (
 	"bytes"
 	"context"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +13,7 @@ import (
 
 func TestObserveStartsTrialOnce(t *testing.T) {
 	ctx := context.Background()
-	a, _, _ := newTest(store.NewMemory())
+	a, _ := newTest(store.NewMemory())
 
 	mustNil(t, a.Observe(ctx, instA, false, day(0)))
 	st, err := a.Status(ctx, instA, day(0))
@@ -44,7 +43,7 @@ func TestObserveBackfillsMissingRecord(t *testing.T) {
 
 	t.Run("private", func(t *testing.T) {
 		s := store.NewMemory()
-		a, _, _ := newTest(s)
+		a, _ := newTest(s)
 		mustNil(t, a.Observe(ctx, instA, true, t1))
 		if rawKey(t, s, instA, recordKeyName) == nil {
 			t.Error("account key missing")
@@ -61,7 +60,7 @@ func TestObserveBackfillsMissingRecord(t *testing.T) {
 
 	t.Run("public", func(t *testing.T) {
 		s := store.NewMemory()
-		a, _, _ := newTest(s)
+		a, _ := newTest(s)
 		mustNil(t, a.Observe(ctx, instA, false, t1))
 		if e := readEntitlement(t, s, instA); e != (gate.Entitlement{}) {
 			t.Errorf("entitlement = %+v, want the zero record", e)
@@ -72,7 +71,7 @@ func TestObserveBackfillsMissingRecord(t *testing.T) {
 func TestGrantOverridesAndLapses(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
-	a, _, logs := newTest(s)
+	a, logs := newTest(s)
 	mustNil(t, a.Observe(ctx, instA, true, day(0)))
 	now := day(40)
 	if st, _ := a.Status(ctx, instA, now); st.Plan != PlanSuspended {
@@ -112,7 +111,7 @@ func TestGrantOverridesAndLapses(t *testing.T) {
 func TestRefreshIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	s := newSpy()
-	a, _, _ := newTest(s)
+	a, _ := newTest(s)
 	mustNil(t, a.Observe(ctx, instA, true, day(0)))
 	recordBytes := rawKey(t, s, instA, recordKeyName)
 	entWrites := len(s.writes(gate.EntitlementKey))
@@ -138,54 +137,14 @@ func TestRefreshIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestConsentRoundTrip(t *testing.T) {
-	ctx := context.Background()
-	_, c, _ := newTest(store.NewMemory())
-	k := ConsentSourceProcessing
-
-	if c.Has(ctx, instA, k) {
-		t.Error("Has before Record = true")
-	}
-	if _, ok, err := c.Get(ctx, instA, k); ok || err != nil {
-		t.Errorf("Get before Record = %v, %v; want false, nil", ok, err)
-	}
-	mustNil(t, c.Record(ctx, instA, Consent{Kind: k, By: "octocat", ByID: 1, At: day(1)}))
-	if !c.Has(ctx, instA, k) {
-		t.Error("Has after Record = false")
-	}
-	if got, ok, err := c.Get(ctx, instA, k); !ok || err != nil || got != (Consent{Kind: k, By: "octocat", ByID: 1, At: day(1).UTC()}) {
-		t.Errorf("Get after Record = %+v, %v, %v; want octocat (1) at %v", got, ok, err, day(1))
-	}
-	if err := c.Record(ctx, instA, Consent{Kind: k, By: "hubot", ByID: 2, At: day(2)}); !errors.Is(err, ErrConsentExists) {
-		t.Errorf("second Record = %v, want ErrConsentExists", err)
-	}
-	if got, _, _ := c.Get(ctx, instA, k); got.By != "octocat" || !got.At.Equal(day(1)) {
-		t.Errorf("after a second Record = %+v; want the first who and when", got)
-	}
-	if c.Has(ctx, instA, "other") {
-		t.Error("Has for another kind = true")
-	}
-	if c.Has(ctx, instB, k) {
-		t.Error("Has for another installation = true")
-	}
-	mustNil(t, c.Revoke(ctx, instA, k))
-	if c.Has(ctx, instA, k) {
-		t.Error("Has after Revoke = true")
-	}
-	if _, ok, err := c.Get(ctx, instA, k); ok || err != nil {
-		t.Errorf("Get after Revoke = %v, %v; want false, nil", ok, err)
-	}
-	mustNil(t, c.Revoke(ctx, instA, k))
-}
-
 func TestForgetDeletesTenantOnly(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
-	a, c, _ := newTest(s)
+	a, _ := newTest(s)
 	keys := []string{recordKeyName, gate.EntitlementKey, "consent/source_processing"}
 	for _, id := range []int64{instA, instB} {
 		mustNil(t, a.Observe(ctx, id, true, day(0)))
-		mustNil(t, c.Record(ctx, id, Consent{Kind: ConsentSourceProcessing, By: "octocat", ByID: 1, At: day(0)}))
+		mustNil(t, s.Put(ctx, store.Tenant(id), "consent/source_processing", []byte("historical record")))
 	}
 	wantB := map[string][]byte{}
 	for _, k := range keys {
@@ -216,7 +175,7 @@ func TestForgetDeletesTenantOnly(t *testing.T) {
 func TestAdmitUnadmitRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
-	a, _, logs := newTest(s)
+	a, logs := newTest(s)
 	admissions := gate.NewAdmissions(s, nil)
 	adm := gate.Admission{Account: "octo-labs", By: "alexei-led", ByID: 1898375, At: day(0)}
 

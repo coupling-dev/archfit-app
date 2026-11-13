@@ -58,7 +58,6 @@ type env struct {
 	t        *testing.T
 	gh       *fakeGH
 	acct     *fakeAccount
-	consents *fakeConsents
 	passkeys *fakePasskeys
 	policy   *fakePolicyViews
 	requests *fakeRequestViews
@@ -78,13 +77,12 @@ func newEnv(t *testing.T) *env {
 	t.Helper()
 	gh := newFakeGH()
 	mem := store.NewMemory()
-	realAccount, _ := account.New(mem)
+	realAccount := account.New(mem)
 	reads := &downable{Store: mem}
 	e := &env{
 		t: t, gh: gh, store: mem, readsDown: &reads.down,
 		admit:    gate.NewAdmissions(reads, []string{"acme", "rival"}),
 		acct:     &fakeAccount{Account: realAccount, status: account.Status{Plan: account.PlanPublic}},
-		consents: newFakeConsents(),
 		passkeys: &fakePasskeys{}, policy: &fakePolicyViews{}, requests: &fakeRequestViews{}, answers: &fakeAnswers{},
 		owners: &fakeOwners{}, setups: &fakeSetups{}, oauth: &fakeOAuth{tokens: map[string]auth.UserToken{}},
 		now: time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC),
@@ -95,7 +93,7 @@ func newEnv(t *testing.T) *env {
 		t.Fatalf("session.New: %v", err)
 	}
 	e.handler = newHandler(Deps{
-		Account: e.acct, Consents: e.consents, RepoStates: gate.NewRepoStates(e.store, e.admit),
+		Account: e.acct, RepoStates: gate.NewRepoStates(e.store, e.admit),
 		Admissions: e.admit, PullViews: gate.NewPullViews(gh, mem), PolicyViews: e.policy, RequestViews: e.requests, Answers: e.answers, Owners: e.owners, Setups: e.setups, Passkeys: e.passkeys, Operators: []int64{operatorID}, BaseURL: baseURL, Now: clock,
 	}, github{files: gh, pulls: gh, users: gh, installs: gh}, sessions, testWeb)
 

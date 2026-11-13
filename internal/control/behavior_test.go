@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -95,7 +94,6 @@ func TestControlFailureNeverReachesTheGate(t *testing.T) {
 	h.gh.install(7, ghr(70, r.FullName, true))
 	h.gh.allow("alice", r.FullName, "admin")
 	h.event(webhook.InstallationAdded, 7)
-	h.consent(7, account.ConsentSourceProcessing)
 	b := newBrowser(t, h.c.UIHandler())
 	b.signIn("alice")
 	lastGood := h.rawEntitlement(7)
@@ -115,7 +113,7 @@ func TestControlFailureNeverReachesTheGate(t *testing.T) {
 	if err := h.c.Grant(ctx, 7, h.clock.Now().Add(day)); err == nil {
 		t.Error("Grant = nil, want the error returned to app")
 	}
-	if rec := b.get("/api/repos/org7/app/overview"); rec.Code < 400 {
+	if rec := b.get("/api/repos/org7/app/policy"); rec.Code < 400 {
 		t.Errorf("UI overview = %d, want an error", rec.Code)
 	}
 

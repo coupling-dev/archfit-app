@@ -226,7 +226,7 @@ func TestHasPrivateComesFromGitHub(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			st := store.NewMemory()
-			acct, _ := account.New(st)
+			acct := account.New(st)
 			repos := &fakeRepos{repos: map[int64][]api.Repo{7: {repo(7, "org7/app", tt.githubPrivate), repo(7, "org7/docs", false)}}}
 			c := newControl(acct, repos, st, admitAll{}, okHandler, newClock().Now)
 

@@ -16,7 +16,7 @@ import (
 func TestTrialGraceSuspensionTimeline(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
-	a, _, _ := newTest(s)
+	a, _ := newTest(s)
 	mustNil(t, a.Observe(ctx, instA, true, day(0)))
 
 	for h := range 40 * 24 {
@@ -44,7 +44,7 @@ func TestTrialGraceSuspensionTimeline(t *testing.T) {
 func TestRestoredEntitlementOnlyMovesTheDate(t *testing.T) {
 	ctx := context.Background()
 	s := newSpy()
-	a, _, _ := newTest(s)
+	a, _ := newTest(s)
 	mustNil(t, a.Observe(ctx, instA, true, day(0)))
 	now := day(45)
 	mustNil(t, a.Refresh(ctx, instA, now))
@@ -71,7 +71,7 @@ func TestRestoredEntitlementOnlyMovesTheDate(t *testing.T) {
 func TestReinstallStartsNewTenant(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
-	a, _, _ := newTest(s)
+	a, _ := newTest(s)
 	mustNil(t, a.Observe(ctx, instA, true, day(0)))
 	mustNil(t, a.Forget(ctx, instA))
 
@@ -98,7 +98,7 @@ func TestCrashBetweenWritesChangesNothing(t *testing.T) {
 	for _, op := range []string{"Observe", "Refresh", "Grant"} {
 		t.Run(op, func(t *testing.T) {
 			s := newSpy()
-			a, _, _ := newTest(s)
+			a, _ := newTest(s)
 			mustNil(t, a.Observe(ctx, instA, true, day(0)))
 			mustNil(t, a.Refresh(ctx, instA, day(20)))
 			recordBefore := rawKey(t, s, instA, recordKeyName)
@@ -123,7 +123,7 @@ func TestCrashBetweenWritesChangesNothing(t *testing.T) {
 func TestConcurrentGrantDuringObserveIsKept(t *testing.T) {
 	ctx := context.Background()
 	s := newSpy()
-	a, _, _ := newTest(s)
+	a, _ := newTest(s)
 	s.beforeWrite = func() { mustNil(t, a.Grant(ctx, instA, day(90), day(0))) }
 
 	mustNil(t, a.Observe(ctx, instA, true, day(0)))
@@ -138,7 +138,7 @@ func TestConcurrentGrantDuringObserveIsKept(t *testing.T) {
 func TestEndlessConcurrentWritesAreAnError(t *testing.T) {
 	ctx := context.Background()
 	s := newSpy()
-	a, _, _ := newTest(s)
+	a, _ := newTest(s)
 	mustNil(t, a.Observe(ctx, instA, true, day(0)))
 
 	// Another writer changes the entitlement before every swap of this call.

@@ -12,13 +12,13 @@ export interface Repo {
 export type Route =
   | { kind: 'home' }
   | { kind: 'admin' }
-  | ({ kind: 'repo' | 'graph' | 'policy' | 'data-sharing' | 'passkeys' } & Repo)
-  | ({ kind: 'pull' | 'pull-graph' | 'request'; number: number } & Repo)
+  | ({ kind: 'repo' | 'policy' | 'passkeys' } & Repo)
+  | ({ kind: 'pull' | 'request'; number: number } & Repo)
   | ({ kind: 'owner'; action: OwnerKind; pull: number } & Repo)
   | { kind: 'unknown' };
 
 const repoPath =
-  /^\/r\/([^/]+)\/([^/]+)(?:(?:\/pull\/([1-9][0-9]{0,9}))?(\/graph)?|\/(data-sharing|passkeys|policy)|\/requests\/([1-9][0-9]{0,9}))\/?$/;
+  /^\/r\/([^/]+)\/([^/]+)(?:\/pull\/([1-9][0-9]{0,9})|\/(passkeys|policy)|\/requests\/([1-9][0-9]{0,9}))?\/?$/;
 
 export function parseRoute(pathname: string, search = ''): Route {
   const owner = /^\/r\/([^/]+)\/([^/]+)\/owner\/(first|workflow|confirm|revert)\/?$/.exec(pathname);
@@ -47,11 +47,10 @@ export function parseRoute(pathname: string, search = ''): Route {
   } catch {
     return { kind: 'unknown' };
   }
-  if (m[5]) return { kind: m[5] as 'data-sharing' | 'passkeys' | 'policy', ...repo };
-  if (m[6]) return { kind: 'request', number: Number(m[6]), ...repo };
-  const graph = m[4] !== undefined;
-  if (m[3]) return { kind: graph ? 'pull-graph' : 'pull', number: Number(m[3]), ...repo };
-  return { kind: graph ? 'graph' : 'repo', ...repo };
+  if (m[4]) return { kind: m[4] as 'passkeys' | 'policy', ...repo };
+  if (m[5]) return { kind: 'request', number: Number(m[5]), ...repo };
+  if (m[3]) return { kind: 'pull', number: Number(m[3]), ...repo };
+  return { kind: 'repo', ...repo };
 }
 
 // guideURL is the user guide on GitHub: the App's pages link to it so a customer can read how it works.

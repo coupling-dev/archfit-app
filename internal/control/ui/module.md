@@ -21,19 +21,8 @@ The gate facade supplies policy/request views, answers and owner actions; UI imp
   checks policy ownership. Other actions require ownership, not merely GitHub write/admin permission.
 - Passkeys list, register, step up and remove the signed-in user's credentials.
 - Installation admin routes require configured operator user IDs. Account admission is checked before
-  repository data access. Data-sharing consent routes remain administrator-scoped.
+  repository data access.
 - /api/repos lists accessible repositories in name order, at most 100, with state from the gate RepoStates façade and no historical check reads.
-
-## Legacy input removal
-
-All existing page shells stay mounted, including repository, pull, graph and Data sharing pages.
-The legacy-only overview/findings/graph/pull-graph APIs and onboarding/discovery POST APIs remain mounted,
-authorized and CSRF-protected, but return an explicit 409 instead of reading deleted contracts or dispatching
-discovery. Invalid/missing pull numbers still return 404. The v2 policy schema URL returns 404.
-
-The old graph builder, report artifact decoder/cache, prefetch hints and v3 onboarding adapter are removed.
-No legacy report, baseline or settings fixture is read. Archfit 4 page-data implementation is separate work;
-this removal does not remove frontend pages.
 
 ## Security and checks
 
@@ -44,7 +33,18 @@ Page errors use the shell with a fresh nonce; JSON errors never echo upstream te
 
 Route/permission, tenant isolation, CSRF, admission, session revocation, CSP and log privacy tests remain.
 Setup, owner/admin/permission, policy, request, answer and passkey suites cover the retained v4 APIs.
-The route table tests expect 409 only for legacy-only data routes, not removal of their page shells.
+`removed_test.go` checks that Graph, pull Graph, Decisions, Data sharing, consent and their old APIs return 404,
+not redirects or 409, for signed-in and anonymous clients with no data dependencies wired.
+`web/src/route-parity.test.ts` reads the real page registrations and Route kinds and requires each to have a
+server route and a case in the words-checked browser spec. Mutation checks reject missing routes, kinds and words checks.
+
+## Removed surfaces
+
+Graph, pull Graph, Decisions, Data sharing and consent pages are not mounted. Legacy overview/findings/graph,
+pull-graph and Data sharing APIs, onboarding/discover POSTs and the consent redirect are gone; unmatched routes
+return 404 before repository authorization or data access. The v2 policy schema URL also returns 404.
+No report cache, old graph builder, Archfit 3 renderer or consent reader remains. Stored consent records stay unread.
+`overview.go` remains because it implements the retained `/api/repos` list, not the removed Overview page.
 
 ## Home API (M3 task 4)
 
@@ -79,7 +79,7 @@ If the outside-flow policy is missing or invalid, Home omits the map and confirm
 `GET /api/repos/{o}/{n}/pulls/{number}` authorizes repository read and admission before calling the gate pull
 read façade. It returns the current pull record, check state, waiting requests and shared feedback page form,
 or a single no-result, untrusted-result or pending-publication line. The browser uses only text and constructs
-request links from the current route and request numbers; the pull graph endpoint remains unchanged.
+request links from the current route and request numbers. There is no pull graph endpoint.
 ## Owner action views
 
 `GET /api/repos/{o}/{n}/owner/{first|workflow|confirm|revert}/view` returns the read-only owner

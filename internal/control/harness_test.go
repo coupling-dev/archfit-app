@@ -56,7 +56,7 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 		t.Fatalf("New: %v", err)
 	}
 	h.c = c
-	h.status, _ = account.New(h.store)
+	h.status = account.New(h.store)
 	return h
 }
 

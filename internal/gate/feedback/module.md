@@ -17,7 +17,7 @@ Uncertain writes keep the lease until expiry; a known-unwritten call releases it
 end before lease expiry and releases cannot delete another holder's lease.
 
 The external ID is `v2:<run>:<attempt>:<digest>`. Historical v1 external IDs and comment head markers
-are read only to prevent overwriting newer existing publications; this is not an envelope v1 upload path.
+are read only to prevent overwriting newer existing publications; this is not an envelope v1 upload path or an Archfit 3 renderer.
 `Receipt` retains only run and attempt for ordering and re-checks.
 Annotations are batched; newer runs and comments belonging to another current head are not overwritten.
 Producer text is bounded and made inert for Markdown/annotations.
