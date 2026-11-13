@@ -10,7 +10,7 @@ test('overview: state, pull requests, setup and history', async ({ page }) => {
     'In the latest report: 1 advisory; testability and operations are partially measured.',
   );
   await expect(page.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByRole('navigation', { name: 'Repository' }).getByRole('link')).toHaveText(['Overview', 'Architecture']);
+  await expect(page.getByRole('navigation', { name: 'Repository' }).getByRole('link')).toHaveText(['Overview', 'Architecture', 'Policy']);
   await expect(page.getByRole('link', { name: '#4 feat: read options' })).toHaveAttribute('href', '/r/acme/app/pull/4');
   await expect(page.getByText('2 more open pull requests')).toBeVisible();
   await expect(page.getByText('The trial ends')).toBeVisible();

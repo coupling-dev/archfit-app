@@ -10,6 +10,7 @@ describe('early reads', () => {
   it.each([
     ['/', ['/api/repos']],
     ['/r/acme/app', ['/api/repos/acme/app/overview', '/api/repos/acme/app/findings']],
+    ['/r/acme/app/policy', ['/api/repos/acme/app/policy']],
     ['/r/acme/app/graph', ['/api/repos/acme/app/graph']],
     ['/r/acme/app/pull/4', ['/api/repos/acme/app/pulls/4']],
     ['/r/acme/app/pull/4/graph', ['/api/repos/acme/app/pulls/4/graph']],

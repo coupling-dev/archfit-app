@@ -12,6 +12,7 @@
   import Overview from './pages/Overview.svelte';
   import Passkeys from './pages/Passkeys.svelte';
   import Pull from './pages/Pull.svelte';
+  import Policy from './pages/Policy.svelte';
   import Repos from './pages/Repos.svelte';
   import Request from './pages/Request.svelte';
   import Waiting from './pages/Waiting.svelte';
@@ -55,8 +56,8 @@
           ? `${route.fullName} request #${route.number}`
         : route.kind === 'repo' || route.kind === 'graph'
           ? `${route.fullName}${route.kind === 'graph' ? ' architecture' : ''}`
-          : route.kind === 'data-sharing' || route.kind === 'passkeys'
-            ? `${route.fullName} ${route.kind === 'passkeys' ? 'passkeys' : 'data sharing'}`
+          : route.kind === 'data-sharing' || route.kind === 'passkeys' || route.kind === 'policy'
+            ? `${route.fullName} ${route.kind === 'passkeys' ? 'passkeys' : route.kind === 'policy' ? 'policy' : 'data sharing'}`
             : signedOut
               ? 'Sign in'
               : 'Repositories',
@@ -76,7 +77,7 @@
   {repo}
   tab={route.kind === 'repo'
     ? 'overview'
-    : route.kind === 'graph'
+    : route.kind === 'graph' || route.kind === 'policy'
       ? route.kind
       : ''}
   pull={route.kind === 'pull' || route.kind === 'pull-graph' ? route.number : 0}
@@ -101,6 +102,8 @@
     <Admin {session} {here} />
   {:else if route.kind === 'repo'}
     <Overview {route} {session} {here} />
+  {:else if route.kind === 'policy'}
+    <Policy {route} {here} />
   {:else if route.kind === 'request'}
     <Request {route} {session} {here} />
   {:else if route.kind === 'passkeys'}

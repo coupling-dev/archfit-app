@@ -431,3 +431,17 @@ export function explainLoad(e: ApiError, here: string, go?: (url: string) => voi
 export function repoAPI(owner: string, name: string, suffix: string): string {
   return `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${suffix}`;
 }
+
+// Policy is the default-branch policy read by the policy page, not the open proposal.
+export interface Policy {
+  owners: string[] | null;
+  gate: string;
+  layers: string[] | null;
+  modules: { name: string; paths: string[] | null; public: string[] | null; volatility: string; subdomain: string; layer: string; depends_on: string[] }[];
+  builtin: { graph: string; coupling: string; duplication: string; cycle: string; layers: string; unowned: string; min_balance: number | null };
+  rules: { id: string; deny?: { from: string[]; to: string[] }; only?: { use: string; in: string[] }; note?: string; not_checked: boolean; why: string; instead?: string }[];
+  exceptions: { rule: string; from: string; to?: string; expires?: string; days_left?: number; why: string; request?: number; request_href?: string }[];
+  yaml: string;
+  digest: string;
+  edit: { available: boolean; reason: string; file?: string; digest?: string };
+}

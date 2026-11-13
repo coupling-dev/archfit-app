@@ -12,6 +12,8 @@ export function firstPaths(route: Route): string[] {
       return ['/api/repos'];
     case 'repo':
       return [repoAPI(route.owner, route.name, 'overview'), repoAPI(route.owner, route.name, 'findings')];
+    case 'policy':
+      return [repoAPI(route.owner, route.name, 'policy')];
     case 'graph':
       return [repoAPI(route.owner, route.name, 'graph')];
     case 'pull':

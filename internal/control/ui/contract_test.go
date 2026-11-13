@@ -92,9 +92,8 @@ func (c *client) send(rt route) int {
 }
 
 // archfit3Routes are the routes of the Archfit 3 decision requests, owner approvals and overrides, policy editor and
-// AI assist. Archfit 4 asks with an issue and answers on the request page; nothing serves them any more.
+// AI assist. Archfit 4 asks with an issue and answers on the request page; their old handlers are gone.
 var archfit3Routes = []struct{ method, path string }{
-	{http.MethodGet, "/r/" + repoName + "/policy"},
 	{http.MethodGet, "/r/" + repoName + "/decisions"},
 	{http.MethodGet, "/api/repos/" + repoName + "/decisions"},
 	{http.MethodPost, "/api/repos/" + repoName + "/pulls/4/approve"},
