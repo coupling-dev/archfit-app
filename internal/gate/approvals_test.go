@@ -118,7 +118,14 @@ func TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed(t *testing.T) {
 	merge := w.sha()
 	w.gh.pulls[pullKey(shopName, policyPull)] = api.Pull{Number: policyPull, State: "closed", Merged: true, MergeCommitSHA: merge}
 	w.setFile(w.shop, merge, policyPath, []byte(answered))
+	// The merge moved main in the policy only, so the waiting pull requests can be re-run (design 10.5).
+	w.gh.heads[branchKey(shopName, testBranch)] = merge
+	for _, n := range []int{7, 8} {
+		base := w.gh.pulls[pullKey(shopName, n)].BaseSHA
+		w.gh.compares[shopName+"|"+base+"|"+merge] = api.Comparison{Status: "ahead", Paths: []string{policyPath}}
+	}
 	w.handle(w.policyPush(w.tip, merge))
+	w.tip = merge
 
 	var p records.Proposal
 	if err := records.Load(ctx, w.mem, store.Tenant(shopInstallation), records.ProposalKey(shopName, "p1"), &p); err != nil ||
@@ -128,8 +135,29 @@ func TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed(t *testing.T) {
 	if len(w.gh.issues[shopName]) != 1 {
 		t.Errorf("issues = %+v, want no issue for a consumed proposal", w.gh.issues[shopName])
 	}
-	third := w.pullBy(9)
-	w.uploadAsk(third, "graph", "fail") // the key is free: no answered request covers it now
+	// The consume hands both waiting pull requests to the re-check after an answer (task 21): each latest run runs again.
+	for _, n := range []int{7, 8} {
+		var rec records.Pull
+		if err := records.Load(ctx, w.mem, store.Tenant(shopInstallation), records.PullKey(shopName, n), &rec); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Recheck == nil || rec.Recheck.Proposal != "p1" || rec.Recheck.Path != "rerun" {
+			t.Errorf("#%d recheck = %+v, want a re-run for p1", n, rec.Recheck)
+		}
+	}
+	if len(w.gh.reruns) != 2 {
+		t.Errorf("re-runs = %v, want the latest run of #7 and #8", w.gh.reruns)
+	}
+	notes := w.gh.comments[pullKey(shopName, firstRequest)]
+	if len(notes) == 0 || !strings.Contains(notes[len(notes)-1].Body, "#7: its check runs again") ||
+		!strings.Contains(notes[len(notes)-1].Body, "#8: its check runs again") {
+		t.Errorf("request comments = %+v, want #7 and #8 told", notes)
+	}
+	// The key is free: no answered request covers it now. The run reads the merged policy from the new tip.
+	third := w.spec4(w.pullBy(9), "graph")
+	third.env.PolicyDigest = policy3.Digest([]byte(answered))
+	third.result["policy"].(map[string]any)["digest"] = third.env.PolicyDigest
+	w.wantStatus(w.send4(third), "fail", "")
 }
 
 // TestAnUploadBeforeItsPushIsJudgedGivesNoVerdict: the policy on the default branch changed and no judgement reached

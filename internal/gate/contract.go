@@ -53,6 +53,8 @@ type Gate struct {
 	asks       *asks.Service      // request lines: issues and the status waiting (M2 task 16)
 	proposals  *proposals.Service // owners' answers and the policy pull request (M2 task 19)
 	approvals  *approvals.Service // the judgement of a default-branch push that changes the policy (M2 task 20)
+	recheckGH  sweep.AnswerGitHub // the re-check after an answer (M2 task 21)
+	store      store.Store
 }
 
 // admitter is the one method of Admissions every gate path asks before it does anything for an installation.
@@ -98,6 +100,7 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 	g.asks = asks.New(gh, s, publisher4)
 	g.proposals = proposals.New(gh, s, now)
 	g.approvals = approvals.New(gh, s)
+	g.recheckGH, g.store = gh, s
 	return g
 }
 

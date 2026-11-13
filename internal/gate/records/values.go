@@ -167,6 +167,18 @@ type Pull struct {
 	// none. The engine's keys are compared, never parsed, so the preview of an answer reads these to know which errors
 	// the answer clears.
 	RequestKeys []string `json:"request_keys,omitempty"`
+	// Recheck is how the App got this pull request a fresh result after an answer it waited on (M2 task 21). The next
+	// upload replaces the record, and with it this field.
+	Recheck *Recheck `json:"recheck,omitempty"`
+}
+
+// Recheck records the re-check after an answer: the consumed proposal, the path that ran, the condition of design
+// 10.5 that kept a re-run from running ("" when none did), and the head the App acted on.
+type Recheck struct {
+	Proposal string `json:"proposal"`
+	Path     string `json:"path"`
+	Unmet    string `json:"unmet,omitempty"`
+	HeadSHA  string `json:"head_sha"`
 }
 
 // Value is a type of this package that Encode and Decode accept. stamp names the value's schema; for the record
