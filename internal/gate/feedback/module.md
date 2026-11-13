@@ -167,6 +167,7 @@ type Publication4 struct {
     RunAttempt int
     Digest     string        // the payload digest of the upload
     Advisory   bool          // the policy's gate is advisory: a fail shows as neutral, with the same records
+    Fresh      bool          // create a fresh check rather than updating an existing one
     Result     result.Result // Status is the status the App gave; the status line and the records are shown as given
 }
 

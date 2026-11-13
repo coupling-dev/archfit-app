@@ -162,6 +162,18 @@ func TestPublish4WaitingAfterACompletedRunIsANewRun(t *testing.T) {
 }
 
 // A pending check (in_progress, no receipt, no annotation) is completed in place.
+func TestPublish4FreshWaitingReplacesTheOldRun(t *testing.T) {
+	h := newHarness(headB)
+	p := pub4(prTarget(headB), 7, 1, engineResult(t, "waiting"))
+	h.publish4(t, p)
+	p.Fresh = true
+	h.publish4(t, p)
+	runs := h.checks.named(headB, gateCheck)
+	if len(runs) != 2 || runs[1].Status != statusInProgress || runs[1].ID == runs[0].ID {
+		t.Fatalf("runs = %+v, want a fresh in-progress check", runs)
+	}
+}
+
 func TestPublish4CompletesAPendingCheckInPlace(t *testing.T) {
 	h := newHarness(headB)
 	h.checks.add(api.CheckRun{Name: gateCheck, HeadSHA: headB, Status: statusInProgress, Title: pendingTitle})

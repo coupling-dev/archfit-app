@@ -125,7 +125,7 @@ func (s *publisher) writeCheck4(ctx context.Context, p Publication4, run api.Che
 	switch {
 	case found && superseded(existing):
 		return actionSkippedNewer, nil
-	case found && reusable4(existing, run):
+	case found && !p.Fresh && reusable4(existing, run):
 		run.ID, run.Annotations = existing.ID, nil
 		return actionUpdated, s.checks.UpdateCheckRun(ctx, r, run)
 	}

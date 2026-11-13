@@ -115,6 +115,7 @@ type Publication4 struct {
 	RunAttempt int
 	Digest     string        // the payload digest of the upload
 	Advisory   bool          // the policy's gate is advisory: a fail shows as neutral, with the same records
+	Fresh      bool          // create a fresh check instead of updating a reusable one
 	Result     result.Result // Status is the status the App gave; the status line and the records are shown as given
 	// Current, when set, is called inside the head's publication lease before anything is written. false means the
 	// status was decided from inputs that are no longer current: Publish4 writes nothing and returns ErrStaleInputs, so

@@ -170,6 +170,8 @@ type Pull struct {
 	RunID         int64  `json:"run_id"`
 	RunAttempt    int    `json:"run_attempt"`
 	PayloadDigest string `json:"payload_digest"`
+	PolicyDigest  string `json:"policy_digest,omitempty"` // policy of the accepted result
+	Reason        string `json:"reason,omitempty"`        // App refusal code, for the guarded recheck
 	Status        string `json:"status"`
 	// Date is the date the result judged exceptions on (YYYY-MM-DD), for a result the App accepted as it is: an
 	// exception that expired after it is one the result did not judge (M2 task 22).
