@@ -173,6 +173,9 @@ type Publication4 struct {
 
 // Publisher4 publishes Archfit 4 results. It writes no archfit/state check.
 type Publisher4 interface {
+    // Withdraw4 only publishes unknown and reads the live head receipt inside the same lease. Current still guards
+    // policy and record freshness; a head without a matching pull record cannot retain an old success.
+    Withdraw4(ctx context.Context, p Publication4) error
     // Publish4 writes archfit/gate on p's head and, for a pull request, the one comment, in place, inside the head's
     // publication lease. It never overwrites the check or the comment of a newer run or attempt, and skips the comment
     // of a head that is no longer the pull request's.

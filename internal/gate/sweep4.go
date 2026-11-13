@@ -124,14 +124,19 @@ func (g *Gate) sweepRepo4(ctx context.Context, r api.Repo, sum *Summary) error {
 	sum.Repos++
 	out, err := g.approvals.Reconcile(ctx, r, tip)
 	if err != nil {
-		return err
+		if stop := sweep4Error(ctx, sum, err); stop != nil {
+			return stop
+		}
 	}
 	if out.Judged == approvals.JudgedConsumed {
-		if err := sweep.AfterAnswer(ctx, g.recheckGH, g.store, r, sweep.Consumed{Proposal: out.Proposal, Requests: out.Requests, Pulls: out.Waiting}, g.now()); err != nil {
-			return err
+		err := sweep.AfterAnswer(ctx, g.recheckGH, g.store, r, sweep.Consumed{Proposal: out.Proposal, Requests: out.Requests, Pulls: out.Waiting}, g.now())
+		if err == nil {
+			err = records.SweepRechecked(ctx, g.store, store.Tenant(r.InstallationID), r.FullName, out.Proposal)
 		}
-		if err := records.SweepRechecked(ctx, g.store, store.Tenant(r.InstallationID), r.FullName, out.Proposal); err != nil {
-			return err
+		if err != nil {
+			if stop := sweep4Error(ctx, sum, err); stop != nil {
+				return stop
+			}
 		}
 	}
 	state, err = g.v4.repoState(ctx, r)
@@ -240,6 +245,9 @@ func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip stri
 			}
 		}
 		pub.Result = (decision4{Reasons: reasons}).shown(nil)
+		if rec.RunID == 0 {
+			return g.v4.publisher.Withdraw4(ctx, pub)
+		}
 		return g.v4.publisher.Publish4(ctx, pub)
 	}
 	accepted := rec.PolicyDigest != "" && slices.Contains([]string{"pass", "fail", "waiting"}, rec.Status)
@@ -260,6 +268,10 @@ func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip stri
 		if err := g.v4.publisher.Publish4(ctx, pub); err != nil {
 			return err
 		}
+	}
+	// A failed recovered handoff remains owed; this pass withdraws stale authority but does not retry the same read.
+	if state.SweepRecheck != "" && (stale || len(due) > 0) {
+		return nil
 	}
 	missing, err := g.missingUpload4(ctx, r, pl, rec, pub, sum)
 	if err != nil || missing || rec.RunID == 0 {
@@ -468,7 +480,12 @@ func (g *Gate) missingUpload4(ctx context.Context, r api.Repo, pl api.Pull, rec 
 		return false, nil
 	}
 	pub.Result = unknownSweep4("the check finished without an uploaded result", "run the Archfit check again")
-	if err := g.v4.publisher.Publish4(ctx, pub); err != nil {
+	if pub.RunID == 0 {
+		err = g.v4.publisher.Withdraw4(ctx, pub)
+	} else {
+		err = g.v4.publisher.Publish4(ctx, pub)
+	}
+	if err != nil {
 		return false, err
 	}
 	sum.TimedOut++

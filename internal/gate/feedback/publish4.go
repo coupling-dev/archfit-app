@@ -2,8 +2,10 @@ package feedback
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/result"
@@ -67,18 +69,38 @@ func reusable4(existing, run api.CheckRun) bool {
 // Publish4 writes p inside the head's lease, unless p.Current says its status was decided from inputs that are no
 // longer current.
 func (s *serialized) Publish4(ctx context.Context, p Publication4) error {
-	return s.hold(ctx, p.Target, func(ctx context.Context) error {
-		if p.Current != nil {
-			current, err := p.Current(ctx)
-			if err != nil {
-				return fmt.Errorf("feedback: read the inputs again: %w: %w", errUnwritten, err)
-			}
-			if !current {
-				return ErrStaleInputs
-			}
+	return s.hold(ctx, p.Target, func(ctx context.Context) error { return s.current4(ctx, p, false) })
+}
+
+// Withdraw4 resolves a missing record's publication identity from the live check under the same lease.
+func (s *serialized) Withdraw4(ctx context.Context, p Publication4) error {
+	if p.Result.Status != result.StatusUnknown {
+		return errors.New("feedback: a withdrawal must be unknown")
+	}
+	return s.hold(ctx, p.Target, func(ctx context.Context) error { return s.current4(ctx, p, true) })
+}
+
+func (s *serialized) current4(ctx context.Context, p Publication4, withdraw bool) error {
+	if p.Current != nil {
+		ok, err := p.Current(ctx)
+		if err != nil {
+			return fmt.Errorf("feedback: read the inputs again: %w: %w", errUnwritten, err)
 		}
-		return s.next.publish4(ctx, p)
-	})
+		if !ok {
+			return ErrStaleInputs
+		}
+	}
+	if withdraw {
+		existing, found, err := s.next.latestRun(ctx, p.Target.Repo.RepoRef, p.Target.HeadSHA, gateCheck)
+		if err != nil {
+			return err
+		}
+		if _, run, attempt, ok := externalRun(existing.ExternalID); found && ok {
+			p.RunID, p.RunAttempt = run, attempt
+			p.Digest = strings.SplitN(existing.ExternalID, ":", 4)[3]
+		}
+	}
+	return s.next.publish4(ctx, p)
 }
 
 func (s *publisher) publish4(ctx context.Context, p Publication4) (err error) {

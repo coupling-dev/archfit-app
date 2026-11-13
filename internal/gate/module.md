@@ -89,6 +89,8 @@ graph. A rate limit stops the pass with `Summary.RateLimited`; other failed unit
   A proven direct change with no proposal goes outside the flow. An ambiguous range consumes and voids nothing:
   its endpoints are logged and stored in `Pull.SweepNote`, and the check stays unknown. Follow-up 3 is only partially
   satisfied: multiple policy changes, non-linear/cut/unreadable history, or unmatched proposals require owner action.
+- Reconciliation notification or handoff errors are counted and retried independently of enforcement: the pass
+  reloads authority and withdraws affected checks even when an outside-flow issue cannot be created.
 - `expiry.Approved` reads authority independently of `Warn`: a warning failure never prevents expiry enforcement.
   From the UTC day after `expires`, a result judged on or before that date is re-run under the 10.5 guard, or receives
   the expired-exception failure when refused. The old success is withdrawn before any re-run read/request, so a failed re-run call also leaves unknown,
@@ -101,7 +103,9 @@ graph. A rate limit stops the pass with `Summary.RateLimited`; other failed unit
 - A ten-day waiting check is replaced with a fresh check, after reading the artifact, matching its payload digest,
   strict decoding and head/policy binding, and covering its errors again against current requests. Unverifiable
   artifacts become unknown; transient reads are retried, never treated as clean. The head lease rechecks the live
-  pull, default tip, approval state, pull record, latest check and request coverage.
+  pull, default tip, approval state, pull record, latest check and request coverage. A force-pushed-back head with
+  no matching pull record is withdrawn using its live check receipt inside the lease (`Withdraw4`), never a zero
+  identity that an old success could outrank.
 - Indexed pull requests absent from the open listing are read individually; closed or gone ones leave the index
   while their records remain. The App's policy proposal verdict is left to the owner flow.
 
