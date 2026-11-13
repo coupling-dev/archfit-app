@@ -598,17 +598,17 @@ func TestArchfit3KeysAreNeitherReadNorWritten(t *testing.T) {
 		records.Join(ctx, s, tenant, repoName, "a1", "p1", "h2", "d2"),
 		records.Consume(ctx, s, tenant, repoName, merge("p1", "c1", "d2")),
 		records.Consume(ctx, s, tenant, repoName, merge("p1", "c1", "d2")),
-		func() error {
-			_, _, err := records.Outside(ctx, s, tenant, repoName, records.Push{After: "c9"}, "d9")
-			return err
-		}(),
-		func() error { _, err := records.OutsideIssue(ctx, s, tenant, repoName, 9); return err }(),
 		records.Load(ctx, s, tenant, records.PullKey(repoName, 5), &records.Pull{}),
 		openRequest(ctx, s, 432, "graph c d"),
 		records.Answer(ctx, s, tenant, repoName, "a2", records.Approval{Kind: records.KindApprove, Request: 432},
 			&records.Pin{Proposal: "p2", PullRequest: 51, HeadSHA: "h3", Digest: "d3"}),
 		func() error { _, _, err := records.Void(ctx, s, tenant, repoName, "a2"); return err }(),
 		records.VoidProposal(ctx, s, tenant, repoName, "p2"),
+		func() error {
+			_, _, err := records.Outside(ctx, s, tenant, repoName, records.Push{After: "c9"}, "d9")
+			return err
+		}(),
+		func() error { _, err := records.OutsideIssue(ctx, s, tenant, repoName, 9); return err }(),
 		records.RevertTo(ctx, s, tenant, repoName, "a3", ownerApproval(records.KindRevert),
 			records.Revert{Commit: "c1", Digest: "d2", Outside: "d9", Issue: 9},
 			records.Pin{Proposal: "p3", PullRequest: 52, HeadSHA: "h4", Digest: "d2"}),

@@ -50,6 +50,10 @@ var (
 	// ErrFull refuses an answer that writes a line while the open proposal holds records.MaxApprovals answers: it
 	// merges first.
 	ErrFull = errors.New("proposals: the policy pull request holds the most answers it can")
+	// ErrOutsideFlow refuses an answer while the policy on the default branch changed outside the flow (design 7.1): its
+	// change would be written on a policy no owner approved, by owners that policy names. An owner confirms or reverts
+	// it first (M2 task 23).
+	ErrOutsideFlow = errors.New("proposals: the policy changed outside the flow; an owner confirms or reverts it first")
 	// errRefused is a D13 condition that does not hold, so archfit/gate is not set.
 	errRefused = errors.New("proposals: the pull request is not the App's proposal as recorded")
 )
@@ -115,6 +119,9 @@ type Outcome struct {
 
 // Digest is the change digest of answer a to request number: what the owner's passkey step-up is bound to.
 func (s *Service) Digest(ctx context.Context, r api.Repo, number int, a requests.Answer) (string, error) {
+	if err := s.insideFlow(ctx, r); err != nil {
+		return "", err
+	}
 	req, err := s.openRequest(ctx, r, number)
 	if err != nil {
 		return "", err
@@ -143,22 +150,28 @@ func (s *Service) Answer(ctx context.Context, r api.Repo, in Input) (Outcome, er
 	return s.answer(ctx, r, in)
 }
 
-// approved is an open approval of a proposal with its change.
+// approved is an open approval of a proposal with its change: an answer's, or, for a revert, revert.
 type approved struct {
 	id     string
 	rec    records.Approval
 	change requests.Change
+	revert *records.Revert
 }
 
-// proposal is the open proposal of a repository whose pull request is open, with its open approvals in order.
+// proposal is the open proposal of a repository whose pull request is open, with its open approvals in order. base is
+// the approved policy a revert in it restores, which its answers are written on instead of the tip's; nil without one.
 type proposal struct {
 	id        string
 	rec       records.Proposal
 	approvals []approved
+	base      []byte
 }
 
 func (s *Service) answer(ctx context.Context, r api.Repo, in Input) (Outcome, error) {
 	ref, t := r.RepoRef, tenant(r)
+	if err := s.insideFlow(ctx, r); err != nil {
+		return Outcome{}, err
+	}
 	tip, err := s.gh.BranchHead(ctx, ref, r.DefaultBranch)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("proposals: read the default branch head: %w", err)
@@ -226,6 +239,8 @@ func (s *Service) answer(ctx context.Context, r api.Repo, in Input) (Outcome, er
 	switch err := records.Answer(ctx, s.store, t, r.FullName, id, approval, pin); {
 	case errors.Is(err, records.ErrAnswered):
 		return Outcome{}, requests.ErrClosedRequest
+	case errors.Is(err, records.ErrOutsideFlow):
+		return Outcome{}, ErrOutsideFlow
 	case err != nil:
 		return Outcome{}, fmt.Errorf("proposals: record the answer: %w", err)
 	}
@@ -268,6 +283,19 @@ func (s *Service) policyAt(ctx context.Context, ref api.RepoRef, at string) ([]b
 		return nil, policy3.File{}, fmt.Errorf("%w: %w", requests.ErrNoPolicy, err)
 	}
 	return file, pol, nil
+}
+
+// insideFlow refuses with ErrOutsideFlow while the repository's policy changed outside the flow.
+func (s *Service) insideFlow(ctx context.Context, r api.Repo) error {
+	var repo records.Repo
+	err := records.Load(ctx, s.store, tenant(r), records.RepoKey(r.FullName), &repo)
+	switch {
+	case err != nil && !errors.Is(err, records.ErrNoRecord):
+		return fmt.Errorf("proposals: read the repository: %w", err)
+	case repo.OutsideFlow != nil:
+		return ErrOutsideFlow
+	}
+	return nil
 }
 
 // openRequest reads request number, which must be open.
@@ -322,7 +350,8 @@ func (s *Service) current(ctx context.Context, r api.Repo) (*proposal, error) {
 		if err := records.Load(ctx, s.store, t, records.ProposalKey(r.FullName, e.ID), &p.rec); err != nil {
 			return nil, fmt.Errorf("proposals: read proposal %s: %w", e.ID, err)
 		}
-		if p.rec.State != records.StateOpen {
+		// A proposal of a pull request someone else wrote (M2 task 23) is not the App's policy pull request.
+		if p.rec.State != records.StateOpen || p.rec.Kind != "" {
 			continue
 		}
 		pull, err := s.gh.Pull(ctx, r.RepoRef, p.rec.PullRequest)
@@ -361,7 +390,17 @@ func (s *Service) loadApprovals(ctx context.Context, r api.Repo, p *proposal) er
 		if a.rec.State != records.StateOpen {
 			continue
 		}
-		if err := json.Unmarshal(a.rec.Change, &a.change); err != nil {
+		if a.rec.Kind == records.KindRevert {
+			a.revert = &records.Revert{}
+			if err := json.Unmarshal(a.rec.Change, a.revert); err != nil {
+				return fmt.Errorf("proposals: approval %s holds an unreadable revert: %w", id, err)
+			}
+			base, err := s.approvedPolicy(ctx, r.RepoRef, *a.revert)
+			if err != nil {
+				return err
+			}
+			p.base = base
+		} else if err := json.Unmarshal(a.rec.Change, &a.change); err != nil {
 			return fmt.Errorf("proposals: approval %s holds an unreadable change: %w", id, err)
 		}
 		p.approvals = append(p.approvals, a)
@@ -369,14 +408,22 @@ func (s *Service) loadApprovals(ctx context.Context, r api.Repo, p *proposal) er
 	return nil
 }
 
-// apply writes the changes of the open approvals of cur, in order, into the tip's policy. An approval whose change
-// the policy no longer takes (ErrByHand: a module it names is gone, a list the writer cannot place) is voided.
+// apply writes the changes of the open approvals of cur, in order, into the tip's policy, or, when cur holds a revert,
+// into the approved policy it restores. An approval whose change the policy no longer takes (ErrByHand: a module it
+// names is gone, a list the writer cannot place) is voided.
 func apply(tipFile []byte, cur *proposal) (file []byte, kept, voided []approved, err error) {
 	file = tipFile
 	if cur == nil {
 		return file, nil, nil, nil
 	}
+	if cur.base != nil {
+		file = cur.base
+	}
 	for _, a := range cur.approvals {
+		if a.revert != nil {
+			kept = append(kept, a)
+			continue
+		}
 		out, err := requests.Edit(file, a.change, requests.RequestComment(a.change.Request))
 		switch {
 		case errors.Is(err, requests.ErrByHand):
@@ -621,6 +668,14 @@ func IsProposalPull(ctx context.Context, s store.Store, r api.Repo, pull int) (b
 	case err != nil:
 		return false, fmt.Errorf("proposals: read the proposal index: %w", err)
 	}
-	_, ok := index.Lookup(records.PullEntry(pull))
-	return ok, nil
+	id, ok := index.Lookup(records.PullEntry(pull))
+	if !ok {
+		return false, nil
+	}
+	var p records.Proposal
+	if err := records.Load(ctx, s, tenant(r), records.ProposalKey(r.FullName, id), &p); err != nil {
+		return false, fmt.Errorf("proposals: read proposal %s: %w", id, err)
+	}
+	// A proposal of a pull request someone else wrote (M2 task 23) gets its verdict from its uploads.
+	return p.Kind == "", nil
 }
