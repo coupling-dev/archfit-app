@@ -77,6 +77,11 @@ func TestParseIssue(t *testing.T) {
 		answer *request.Answer
 	}{
 		{"leading blank lines", "\n \n" + line + "```text\n" + can + "```\n", can, graph},
+		{"unprotected policy", line + "```text\n" + can + "policy: not protected\n```\n", can + "policy: not protected\n", graph},
+		{"unknown trailing line", line + "```text\n" + can + "policy: unknown\n```\n", can + "policy: unknown\n", nil},
+		{"policy prefix", line + "```text\n" + can + "policy: not protected extra\n```\n", can + "policy: not protected extra\n", nil},
+		{"policy before fields", line + "```text\na -> b: graph: x\npolicy: not protected\n  next: x\n```\n", "a -> b: graph: x\npolicy: not protected\n  next: x\n", nil},
+		{"duplicate policy", line + "```text\n" + can + "policy: not protected\npolicy: not protected\n```\n", can + "policy: not protected\npolicy: not protected\n", nil},
 		{"a longer fence", line + "````text\n" + can + "````\n", can, graph},
 		{"text before the block", line + "Asked from a laptop.\n\n```text\n" + can + "```\n", can, graph},
 		{"the first text block", line + "```text\n" + can + "```\n```text\nother\n```\n", can, graph},
