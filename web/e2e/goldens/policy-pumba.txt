@@ -1,0 +1,153 @@
+Policy
+
+acme/app · default branch
+
+Edit
+Policy settings
+Check mode
+required
+Owners
+alexei-led
+Layers, inner first
+core, cmd
+Modules
+cmd
+Paths
+cmd/**
+Public
+cmd
+Volatility
+low
+Subdomain
+supporting
+Layer
+cmd
+Allowed dependencies
+pkg_chaos, pkg_container, pkg_runtime
+pkg_chaos
+Paths
+pkg/chaos/**
+Public
+pkg/chaos, pkg/chaos/cliflags, pkg/chaos/*/cmd
+Volatility
+high
+Subdomain
+core
+Layer
+core
+Allowed dependencies
+pkg_container, pkg_util
+pkg_container
+Paths
+pkg/container/**
+Public
+pkg/container
+Volatility
+medium
+Subdomain
+core
+Layer
+core
+Allowed dependencies
+None
+pkg_runtime
+Paths
+pkg/runtime/**
+Public
+pkg/runtime/*
+Volatility
+high
+Subdomain
+core
+Layer
+core
+Allowed dependencies
+pkg_container, pkg_tc
+pkg_tc
+Paths
+pkg/tc/**
+Public
+pkg/tc
+Volatility
+high
+Subdomain
+core
+Layer
+core
+Allowed dependencies
+None
+pkg_util
+Paths
+pkg/util/**
+Public
+pkg/util
+Volatility
+low
+Subdomain
+supporting
+Layer
+core
+Allowed dependencies
+None
+Built-in rules
+Graph
+ask
+Coupling
+deny
+Duplication
+ask
+Cycle
+deny
+Layers
+deny
+Unowned
+deny
+Minimum balance
+7
+Custom rules and notes
+no-container-to-chaos
+
+Deny: pkg_container → pkg_chaos
+
+Why: pkg/container is the domain model that chaos consumes. Importing chaos inverts the dependency and couples the model to every chaos action.
+
+Instead: Move the shared type or value into pkg/container, and import it from pkg/chaos.
+
+no-chaos-to-runtime
+
+Deny: pkg_chaos → pkg_runtime
+
+Why: Chaos says what to do through the container.Client interface; runtime adapters say how. A direct import bypasses the interface and ties chaos actions to one runtime.
+
+Instead: Add the method to a container.Client sub-interface in pkg/container/client.go, and implement it in the runtime adapters.
+
+no-util-to-domain
+
+Deny: pkg_util → pkg_chaos
+
+Why: pkg/util must stay domain-agnostic so any package can use it without pulling in chaos behavior.
+
+Instead: Keep code that needs chaos types in pkg/chaos; give pkg/util functions plain values.
+
+Exceptions
+duplication: cmd → pkg_chaos
+
+The error existed when archfit init wrote this policy.
+
+duplication: cmd → pkg_runtime
+
+The error existed when archfit init wrote this policy.
+
+duplication: pkg_chaos → pkg_runtime
+
+The error existed when archfit init wrote this policy.
+
+duplication: pkg_container → pkg_runtime
+
+The error existed when archfit init wrote this policy.
+
+Policy file
+
+Digest: sha256:9965602be855e855a4e8f7967277a01753a7ec9a4038d2991504f45186910815
+
+Show raw YAML

@@ -1,0 +1,94 @@
+Policy
+
+acme/app · default branch
+
+Edit
+Policy settings
+Check mode
+required
+Owners
+alexei-led
+Layers, inner first
+core, cmd
+Modules
+pkg_chaos
+Paths
+pkg/chaos/**
+Public
+pkg/chaos, pkg/chaos/cliflags
+Volatility
+high
+Layer
+core
+Allowed dependencies
+pkg_container, pkg_util
+pkg_tc
+Paths
+pkg/tc/**
+Public
+pkg/tc
+Volatility
+high
+Layer
+core
+Allowed dependencies
+None
+pkg_util
+Paths
+pkg/util/**
+Public
+None
+Volatility
+low
+Layer
+core
+Allowed dependencies
+None
+Built-in rules
+Graph
+ask
+Coupling
+deny
+Duplication
+ask
+Cycle
+deny
+Layers
+deny
+Unowned
+deny
+Minimum balance
+7
+Custom rules and notes
+no-chaos-to-runtime
+
+Deny: pkg_chaos → pkg_runtime
+
+Why: A direct import ties a chaos action to one runtime.
+
+Instead: Add a method to container.Client.
+
+docker-sdk-in-runtime
+
+Only use github.com/docker/docker in pkg_runtime
+
+Why: One adapter owns the Docker API.
+
+fan-out-through-runner (not checked)
+
+Chaos actions fan out through RunOnContainers.
+
+Why: One place checks the target limit before injection.
+
+Exceptions
+duplication: pkg_tc → pkg_util
+
+Expires: 2026-11-19 (59 days left)
+
+Request #431 is open.
+
+Policy file
+
+Digest: sha256:1cf7e56b7dc701c6f69fd8bacee1be2b8b1d241e2aea04bf6545b3ba3bcc05f7
+
+Show raw YAML

@@ -1,0 +1,114 @@
+<script lang="ts">
+  import Skeleton from '../components/Skeleton.svelte';
+  import { explainLoad, repoAPI, type ApiError, type Policy } from '../lib/api';
+  import { firstJSON } from '../lib/early';
+  import { repoPage, safeHref, type Repo } from '../lib/route';
+
+  let { route, here }: { route: Repo; here: string } = $props();
+  let body = $state<Policy | null>(null);
+  let failure = $state('');
+
+  function load() {
+    firstJSON<Policy>(repoAPI(route.owner, route.name, 'policy')).then(
+      (b) => (body = b),
+      (e: ApiError) => (failure = explainLoad(e, here)),
+    );
+  }
+  load();
+</script>
+
+<div class="page-head">
+  <div><h1>Policy</h1><p class="muted">{route.fullName} · default branch</p></div>
+  {#if body?.edit.available}
+    <a class="btn primary" href={repoPage(route.fullName, '/policy?edit=1')}>Edit</a>
+  {:else if body}
+    <p class="muted">{body.edit.reason}</p>
+  {/if}
+</div>
+
+{#if failure}
+  <p class="flash error" role="alert">{failure}</p>
+{:else if !body}
+  <Skeleton rows={5} />
+{:else}
+  <section class="box" aria-labelledby="policy-summary">
+    <div class="box-head"><h2 id="policy-summary">Policy settings</h2></div>
+    <div class="box-body">
+      <dl class="kv">
+        <dt>Check mode</dt><dd>{body.gate}</dd>
+        <dt>Owners</dt><dd>{body.owners?.join(', ') || 'None'}</dd>
+        <dt>Layers, inner first</dt><dd>{body.layers?.join(', ') || 'None'}</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section class="box" aria-labelledby="modules">
+    <div class="box-head"><h2 id="modules">Modules</h2></div>
+    {#each body.modules as m (m.name)}
+      <div class="box-row stack-sm">
+        <h3>{m.name}</h3>
+        <dl class="kv">
+          <dt>Paths</dt><dd>{m.paths?.join(', ') || 'None'}</dd>
+          <dt>Public</dt><dd>{m.public?.join(', ') || 'None'}</dd>
+          <dt>Volatility</dt><dd>{m.volatility}</dd>
+          {#if m.subdomain}<dt>Subdomain</dt><dd>{m.subdomain}</dd>{/if}
+          <dt>Layer</dt><dd>{m.layer || 'None'}</dd>
+          <dt>Allowed dependencies</dt><dd>{m.depends_on.join(', ') || 'None'}</dd>
+        </dl>
+      </div>
+    {:else}<p class="box-row muted">None.</p>{/each}
+  </section>
+
+  <section class="box" aria-labelledby="builtin">
+    <div class="box-head"><h2 id="builtin">Built-in rules</h2></div>
+    <div class="box-body">
+      <dl class="kv">
+        <dt>Graph</dt><dd>{body.builtin.graph}</dd>
+        <dt>Coupling</dt><dd>{body.builtin.coupling}</dd>
+        <dt>Duplication</dt><dd>{body.builtin.duplication}</dd>
+        <dt>Cycle</dt><dd>{body.builtin.cycle}</dd>
+        <dt>Layers</dt><dd>{body.builtin.layers}</dd>
+        <dt>Unowned</dt><dd>{body.builtin.unowned}</dd>
+        <dt>Minimum balance</dt><dd>{body.builtin.min_balance ?? 'None'}</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section class="box" aria-labelledby="rules">
+    <div class="box-head"><h2 id="rules">Custom rules and notes</h2></div>
+    {#each body.rules as rule (rule.id)}
+      <div class="box-row stack-sm">
+        <h3>{rule.id}{rule.not_checked ? ' (not checked)' : ''}</h3>
+        {#if rule.deny}<p>Deny: {rule.deny.from.join(', ')} → {rule.deny.to.join(', ')}</p>{/if}
+        {#if rule.only}<p>Only use {rule.only.use} in {rule.only.in.join(', ')}</p>{/if}
+        {#if rule.note}<p>{rule.note}</p>{/if}
+        {#if rule.why}<p><strong>Why:</strong> {rule.why}</p>{/if}
+        {#if rule.instead}<p><strong>Instead:</strong> {rule.instead}</p>{/if}
+      </div>
+    {:else}<p class="box-row muted">None.</p>{/each}
+  </section>
+
+  <section class="box" aria-labelledby="exceptions">
+    <div class="box-head"><h2 id="exceptions">Exceptions</h2></div>
+    {#each body.exceptions as exception, i (i)}
+      <div class="box-row stack-sm">
+        <h3>{exception.rule}: {exception.from}{exception.to ? ` → ${exception.to}` : ''}</h3>
+        {#if exception.expires}<p>Expires: <time datetime={exception.expires}>{exception.expires}</time>{#if exception.days_left != null}<span>{exception.days_left < 0 ? ` (expired ${-exception.days_left} ${exception.days_left === -1 ? 'day' : 'days'} ago)` : ` (${exception.days_left} ${exception.days_left === 1 ? 'day' : 'days'} left)`}</span>{/if}</p>{/if}
+        {#if exception.why}<p>{exception.why}</p>{/if}
+        {#if exception.request && safeHref(exception.request_href)}<p><a href={safeHref(exception.request_href)}>Request #{exception.request}</a></p>{/if}
+      </div>
+    {:else}<p class="box-row muted">None.</p>{/each}
+  </section>
+
+  <section class="box" aria-labelledby="raw">
+    <div class="box-head"><h2 id="raw">Policy file</h2></div>
+    <div class="box-body stack-sm">
+      <p class="small analysis">Digest: <code>{body.digest}</code></p>
+      <details class="disclosure"><summary>Show raw YAML</summary><pre>{body.yaml}</pre></details>
+    </div>
+  </section>
+{/if}
+
+<style>
+  .box-row { overflow-wrap: anywhere; }
+</style>

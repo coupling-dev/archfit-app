@@ -157,6 +157,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	})
 	mux.Handle("GET /r/{o}/{n}", page)
 	mux.Handle("GET /r/{o}/{n}/graph", page)
+	mux.Handle("GET /r/{o}/{n}/policy", page)
 	mux.Handle("GET /r/{o}/{n}/pull/{number}", pullPage)
 	mux.Handle("GET /r/{o}/{n}/pull/{number}/graph", pullPage)
 	mux.Handle("GET /r/{o}/{n}/data-sharing", page)

@@ -835,7 +835,12 @@ onboarding or discovery, only when that is the step's action. After the first re
 
 _A pull request waiting for an update names the modules of the cycle, as the pull request comment does. Sample data._
 
-The tabs under the header open the overview and the graph (Architecture). The header switches between
+The tabs under the header open the overview, the graph (Architecture), and the policy. The policy page lists modules,
+rules, notes and exceptions from the default branch, with links to recorded requests. **Show raw YAML** opens the
+file; the digest identifies its content. **Edit** appears only when change control is available, but the editor is not
+yet available: the link currently returns to the read view.
+
+The header switches between
 the light and the dark theme, or follows the system (Auto); the choice is kept in this browser. The App needs a
 browser with JavaScript.
 

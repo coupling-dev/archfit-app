@@ -14,7 +14,7 @@ describe('parseRoute', () => {
     ['/r/acme/app/data-sharing/x', { kind: 'unknown' }],
     ['/r/acme/app/pull/4/data-sharing', { kind: 'unknown' }],
     ['/r/acme/app/graph/data-sharing', { kind: 'unknown' }],
-    ['/r/acme/app/policy', { kind: 'unknown' }],
+    ['/r/acme/app/policy', { kind: 'policy', owner: 'acme', name: 'app', fullName: 'acme/app' }],
     ['/r/acme/app/decisions', { kind: 'unknown' }],
     ['/r/acme/app/passkeys', { kind: 'passkeys', owner: 'acme', name: 'app', fullName: 'acme/app' }],
     ['/r/acme/app/passkeys/', { kind: 'passkeys', owner: 'acme', name: 'app', fullName: 'acme/app' }],

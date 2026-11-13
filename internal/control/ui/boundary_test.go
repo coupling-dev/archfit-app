@@ -618,7 +618,7 @@ func TestRepositoryPagesAreOneShell(t *testing.T) {
 		h.Del("X-Request-Id") // per request, as the nonce
 		return strings.ReplaceAll(fmt.Sprint(res.Code, h, res.Body.String()), m[1], "NONCE")
 	}
-	for _, suffix := range []string{"", "/graph", "/pull/4", "/pull/4/graph", "/data-sharing", "/passkeys"} {
+	for _, suffix := range []string{"", "/graph", "/pull/4", "/pull/4/graph", "/data-sharing", "/passkeys", "/policy", "/policy?edit=1"} {
 		var want string
 		for _, repo := range []string{repoName, otherRepo, "acme/missing"} {
 			res := c.get("/r/" + repo + suffix)

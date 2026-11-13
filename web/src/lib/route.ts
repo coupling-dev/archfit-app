@@ -10,12 +10,12 @@ export interface Repo {
 export type Route =
   | { kind: 'home' }
   | { kind: 'admin' }
-  | ({ kind: 'repo' | 'graph' | 'data-sharing' | 'passkeys' } & Repo)
+  | ({ kind: 'repo' | 'graph' | 'policy' | 'data-sharing' | 'passkeys' } & Repo)
   | ({ kind: 'pull' | 'pull-graph' | 'request'; number: number } & Repo)
   | { kind: 'unknown' };
 
 const repoPath =
-  /^\/r\/([^/]+)\/([^/]+)(?:(?:\/pull\/([1-9][0-9]{0,9}))?(\/graph)?|\/(data-sharing|passkeys)|\/requests\/([1-9][0-9]{0,9}))\/?$/;
+  /^\/r\/([^/]+)\/([^/]+)(?:(?:\/pull\/([1-9][0-9]{0,9}))?(\/graph)?|\/(data-sharing|passkeys|policy)|\/requests\/([1-9][0-9]{0,9}))\/?$/;
 
 export function parseRoute(pathname: string): Route {
   if (pathname === '/') return { kind: 'home' };
@@ -32,7 +32,7 @@ export function parseRoute(pathname: string): Route {
   } catch {
     return { kind: 'unknown' };
   }
-  if (m[5]) return { kind: m[5] as 'data-sharing' | 'passkeys', ...repo };
+  if (m[5]) return { kind: m[5] as 'data-sharing' | 'passkeys' | 'policy', ...repo };
   if (m[6]) return { kind: 'request', number: Number(m[6]), ...repo };
   const graph = m[4] !== undefined;
   if (m[3]) return { kind: graph ? 'pull-graph' : 'pull', number: Number(m[3]), ...repo };
