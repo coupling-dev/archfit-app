@@ -74,8 +74,8 @@ A missing or invalid target policy with recorded outside-flow state is returned 
 App-generated publication receipt takes precedence over the artifact; pending, omitted or corrupt receipts
 never produce a verdict. Otherwise the run artifact is fetched with a bound and its exact bytes are checked
 against the stored digest before decoding. Missing artifacts, digest mismatches and publication pending
-states remain distinct. `BuildPullView` is the only result-to-page form; engine results are covered
-from the live request index first. The pull head must match the stored record.
+states remain distinct. `BuildPullView` is the only result-to-page form; only coverable required-policy or already-waiting engine
+results are covered from the live request index. Advisory failures stay fail. The pull head must match the stored record.
 
 A missing-upload receipt remains readable before the first pull record exists. References to outside-flow
 issues are plain text, not request links; only the shared model's explicit request numbers become links.

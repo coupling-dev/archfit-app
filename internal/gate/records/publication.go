@@ -11,7 +11,8 @@ func PublicationKey(fullName string, pull int, head string) string {
 }
 
 // Publication is the result successfully published by the App. Pending means a write
-// is in progress or could not be confirmed; Omitted means its body did not fit.
+// is in progress or could not be confirmed; Unpublished marks an upload deliberately not published,
+// and Omitted means its body did not fit.
 type Publication struct {
 	Schema      string    `json:"schema"`
 	HeadSHA     string    `json:"head_sha"`
@@ -23,6 +24,7 @@ type Publication struct {
 	Source      string    `json:"source,omitempty"`
 	Pending     bool      `json:"pending,omitempty"`
 	Token       string    `json:"token,omitempty"`
+	Unpublished bool      `json:"unpublished,omitempty"`
 	Omitted     bool      `json:"omitted,omitempty"`
 }
 

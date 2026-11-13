@@ -162,7 +162,7 @@ func TestPullPageCoversFromLiveRequests(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			put(records.PullKey(r.FullName, 4), &records.Pull{HeadSHA: "head", RunID: 42, RunAttempt: 1, Status: storedStatus, PolicyDigest: "accepted", PayloadDigest: envelope.PayloadDigest(raw)})
+			put(records.PullKey(r.FullName, 4), &records.Pull{HeadSHA: "head", RunID: 42, RunAttempt: 1, Status: storedStatus, Coverable: true, PolicyDigest: "accepted", PayloadDigest: envelope.PayloadDigest(raw)})
 			index := records.Index{Schema: records.SchemaRequestIndex, Entries: []records.Entry{{Key: "graph pkg_tc pkg_util", ID: "431"}}}
 			put(records.RequestIndexKey(r.FullName), &index)
 			put(records.RequestKey(r.FullName, 431), &records.Request{Key: "graph pkg_tc pkg_util", State: records.StateOpen, Waiting: []int{4}})
@@ -183,5 +183,33 @@ func TestPullPageCoversFromLiveRequests(t *testing.T) {
 				t.Fatalf("answered request: %+v", got)
 			}
 		})
+	}
+}
+
+func TestAdvisoryFailureDoesNotWaitForOpenRequest(t *testing.T) {
+	raw, err := os.ReadFile("../wire/result/testdata/result/graph.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem := store.NewMemory()
+	r := api.Repo{RepoRef: api.RepoRef{InstallationID: 1, FullName: "acme/app"}}
+	put := func(key string, v records.Value) {
+		b, err := records.Encode(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = mem.Put(t.Context(), 1, key, b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(records.PullKey(r.FullName, 4), &records.Pull{HeadSHA: "head", RunID: 42, RunAttempt: 1, Status: "fail", PolicyDigest: "approved", PayloadDigest: envelope.PayloadDigest(raw)})
+	put(records.RequestIndexKey(r.FullName), &records.Index{Schema: records.SchemaRequestIndex, Entries: []records.Entry{{Key: "graph pkg_tc pkg_util", ID: "431"}}})
+	put(records.RequestKey(r.FullName, 431), &records.Request{Key: "graph pkg_tc pkg_util", State: records.StateOpen, Waiting: []int{4}})
+	got, err := NewPullViews(&pullReadGitHub{pull: api.Pull{HeadSHA: "head"}, artifact: raw}, mem).PullPage(t.Context(), r, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.View == nil || got.View.Status != result.StatusFail || got.View.Records[0].Request != 0 {
+		t.Fatalf("advisory result became waiting: %+v", got.View)
 	}
 }

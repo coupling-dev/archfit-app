@@ -289,6 +289,13 @@ func TestUpload4GivesUnknown(t *testing.T) {
 				t.Errorf("pull record = %+v, want status unknown and no error keys", rec)
 			}
 			if tt.reason == reasonEnvelopeMismatch || tt.reason == reasonUnsupportedEvent {
+				page, err := NewPullViews(pullSummaryGitHub{w.gh}, w.mem).PullPage(t.Context(), w.shop, p.number)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if page.View != nil || page.Message != "No result yet." {
+					t.Fatalf("unpublished page %+v", page)
+				}
 				if n := w.gh.writes(); n != 0 {
 					t.Errorf("%d check or comment writes for a run the App does not judge for the default branch", n)
 				}
@@ -729,7 +736,7 @@ func TestUpload4KeepsTheNewestRecord(t *testing.T) {
 	store := func(head string, run int64, attempt int, status result.Status) error {
 		u := ingest.Upload4{Binding: ingest.Binding4{Repo: w.shop, Event: "pull_request", PullRequest: 7, HeadSHA: head, RunID: run, RunAttempt: attempt},
 			Envelope: envelope.EnvelopeV2{PayloadDigest: "sha256:" + strings.Repeat("c", 64)}}
-		return w.gate.v4.storePull(context.Background(), u, decision4{Status: status})
+		return w.gate.v4.storePull(context.Background(), u, decision4{Status: status}, true)
 	}
 	steps := []struct {
 		head    string

@@ -321,3 +321,7 @@ the head, run/attempt, source, time, SHA-256 and the exact JSON bytes of an App-
 engine results remain in the run artifact; their successful publication clears the marker. The Store's
 64 KiB limit applies to the entire encoded value: a receipt whose body cannot fit records the digest and
 `omitted` instead. A unique pending token prevents an older writer from confirming a newer marker.
+
+A pull's optional `coverable` bit records that the App accepted a required-policy fail that can wait
+on requests. Old records lack the bit; an already-waiting record still re-covers its live requests. A
+deliberately unpublished upload stages an `unpublished` marker, not a pending one; it carries no verdict.

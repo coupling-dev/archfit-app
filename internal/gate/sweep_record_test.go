@@ -24,7 +24,7 @@ func TestPullRecordKeepsOnlyAnUnambiguousPolicyChangedRefusal(t *testing.T) {
 			p := w.openPull(w.shop, 7)
 			u := ingest.Upload4{Binding: ingest.Binding4{Repo: w.shop, PullRequest: 7, HeadSHA: p.head, RunID: p.runID, RunAttempt: 1},
 				Envelope: envelope.EnvelopeV2{PolicyDigest: "untrusted", PayloadDigest: "sha256:result"}}
-			if err := w.gate.v4.storePull(context.Background(), u, decision4{Status: result.StatusUnknown, Reasons: tc.reasons}); err != nil {
+			if err := w.gate.v4.storePull(context.Background(), u, decision4{Status: result.StatusUnknown, Reasons: tc.reasons}, true); err != nil {
 				t.Fatal(err)
 			}
 			rec, _ := w.pullRecord(p)

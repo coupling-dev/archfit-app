@@ -54,3 +54,6 @@ receipt failure is logged, leaving the marker pending rather than retrying GitHu
 a pending token prevent older or superseded writers from confirming another publication. Oversize result
 bodies are omitted, not truncated. Upload also stages a pending marker atomically with the pull record,
 so lease acquisition failure cannot expose a result that was not published.
+
+An upload deliberately excluded from publication (such as the App's policy proposal or an unsupported
+event) records an `unpublished` marker instead of a pending marker; its engine result never becomes a verdict.

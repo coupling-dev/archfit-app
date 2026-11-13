@@ -32,6 +32,7 @@ type PullState struct {
 	SweepNote     string        `json:"sweep_note,omitempty"`
 	Reason        string        `json:"reason,omitempty"`
 	Status        string        `json:"status"`
+	Coverable     bool          `json:"coverable,omitempty"`
 	Date          string        `json:"date,omitempty"`
 	Errors        []string      `json:"errors,omitempty"`
 	RequestKeys   []string      `json:"request_keys,omitempty"`
@@ -102,7 +103,7 @@ func (v *pullViews) PullPage(ctx context.Context, r api.Repo, number int) (PullP
 	}
 	if rec.RunID != 0 {
 		state := &PullState{Schema: rec.Schema, HeadSHA: rec.HeadSHA, RunID: rec.RunID, RunAttempt: rec.RunAttempt, PayloadDigest: rec.PayloadDigest,
-			PolicyDigest: rec.PolicyDigest, SweepNote: rec.SweepNote, Reason: rec.Reason, Status: rec.Status, Date: rec.Date, Errors: rec.Errors, RequestKeys: rec.RequestKeys}
+			PolicyDigest: rec.PolicyDigest, SweepNote: rec.SweepNote, Reason: rec.Reason, Status: rec.Status, Coverable: rec.Coverable, Date: rec.Date, Errors: rec.Errors, RequestKeys: rec.RequestKeys}
 		for _, x := range rec.Rechecks {
 			state.Rechecks = append(state.Rechecks, PullRecheck{Proposal: x.Proposal, Path: x.Path, Unmet: x.Unmet, HeadSHA: x.HeadSHA})
 		}
@@ -137,6 +138,10 @@ func (v *pullViews) PullPage(ctx context.Context, r api.Repo, number int) (PullP
 	}
 	newer := pub.RunID > rec.RunID || pub.RunID == rec.RunID && pub.RunAttempt >= rec.RunAttempt
 	if err == nil && pub.HeadSHA == pl.HeadSHA && newer {
+		if pub.Unpublished {
+			out.Message = "No result yet."
+			return out, nil
+		}
 		if pub.Pending {
 			out.Message = "The App has not published this result yet."
 			return out, nil
@@ -192,7 +197,9 @@ func (v *pullViews) PullPage(ctx context.Context, r api.Repo, number int) (PullP
 		out.Message = "The stored result cannot be trusted."
 		return out, nil
 	}
-	res, _ = asks.Cover(res, index)
+	if rec.Coverable || rec.Status == string(result.StatusWaiting) {
+		res, _ = asks.Cover(res, index)
+	}
 	view := BuildPullView(res)
 	out.View = &view
 	return out, nil

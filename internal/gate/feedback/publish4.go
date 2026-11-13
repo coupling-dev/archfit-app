@@ -20,8 +20,8 @@ const (
 	conclusionActionRequired = "action_required"
 )
 
-// receiptV2 starts the external_id of an Archfit 4 check run: "v2:<run_id>:<attempt>:<payload_digest>". The check is
-// its own receipt, as in v1; nothing else is stored.
+// receiptV2 starts the GitHub check's ordering receipt: "v2:<run_id>:<attempt>:<payload_digest>".
+// Pending markers and App-generated result receipts are kept separately in the Store.
 const receiptV2 = "v2"
 
 // checkState is the check run status and conclusion of a status (design 11.6, appendix D.2): pass is a success; fail

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { expectClean, expectPageText, open } from './support';
 
-const states = ['pass', 'fail-advisory', 'fail-fix', 'fail-ask', 'fail-copy', 'fail-expired-exception', 'unknown', 'unknown-workflow', 'unknown-outside-flow', 'unknown-missing-evidence', 'waiting', 'no-result', 'missing-artifact', 'mismatch', 'pending'];
+const states = ['pass', 'fail-advisory', 'fail-advisory-request', 'required-request', 'fail-fix', 'fail-ask', 'fail-copy', 'fail-expired-exception', 'unknown', 'unknown-workflow', 'unknown-outside-flow', 'unknown-missing-evidence', 'waiting', 'unpublished', 'no-result', 'missing-artifact', 'mismatch', 'pending'];
 for (const state of states) {
   test(`pull request: ${state}`, async ({ page }) => {
     const body = JSON.parse(readFileSync(new URL(`../../internal/control/ui/testdata/pull/${state}.json`, import.meta.url), 'utf8')) as object;
@@ -11,6 +11,8 @@ for (const state of states) {
     await expectPageText(page, `pull-${state}`);
     await expectClean(page);
     if (state === 'waiting') await expect(page.getByRole('link', { name: '#431' }).first()).toHaveAttribute('href', '/r/acme/app/requests/431');
+    if (state === 'fail-advisory-request') await expect(page.locator('main h1')).toHaveText('Archfit: fail, 1 error');
+    if (state === 'required-request') await expect(page.locator('main h1')).toHaveText('Archfit: waiting, request #431');
     if (state === 'unknown-outside-flow') await expect(page.locator('main a[href*="/requests/"]')).toHaveCount(0);
   });
 }

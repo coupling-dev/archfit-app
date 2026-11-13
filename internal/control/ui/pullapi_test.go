@@ -19,10 +19,10 @@ import (
 
 func TestPullAPIGoldens(t *testing.T) {
 	cases := []struct{ name, source, status string }{
-		{"pass", "pass", "pass"}, {"fail-advisory", "deny", "fail"}, {"fail-fix", "deny", "fail"}, {"fail-ask", "graph", "fail"},
+		{"pass", "pass", "pass"}, {"fail-advisory", "deny", "fail"}, {"fail-advisory-request", "graph", "fail"}, {"required-request", "graph", "fail"}, {"fail-fix", "deny", "fail"}, {"fail-ask", "graph", "fail"},
 		{"fail-copy", "duplication", "fail"}, {"fail-expired-exception", "expired_exception", "fail"},
 		{"unknown", "policy_differs", "unknown"}, {"waiting", "graph", "waiting"},
-		{"unknown-workflow", "pass", "unknown"}, {"unknown-outside-flow", "pass", "unknown"}, {"unknown-missing-evidence", "pass", "unknown"}, {"no-result", "", ""}, {"missing-artifact", "pass", "pass"}, {"mismatch", "pass", "pass"}, {"pending", "pass", "pass"},
+		{"unknown-workflow", "pass", "unknown"}, {"unknown-outside-flow", "pass", "unknown"}, {"unknown-missing-evidence", "pass", "unknown"}, {"unpublished", "pass", "pass"}, {"no-result", "", ""}, {"missing-artifact", "pass", "pass"}, {"mismatch", "pass", "pass"}, {"pending", "pass", "pass"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -37,13 +37,13 @@ func TestPullAPIGoldens(t *testing.T) {
 				if tc.name == "mismatch" {
 					digest = envelope.PayloadDigest([]byte("different"))
 				}
-				homePut(t, e, "pull/4", map[string]any{"schema": "archfit-app.pull.v1", "head_sha": sha(4), "run_id": int64(42), "run_attempt": 1, "payload_digest": digest, "policy_digest": "accepted", "status": tc.status})
+				homePut(t, e, "pull/4", map[string]any{"schema": "archfit-app.pull.v1", "head_sha": sha(4), "run_id": int64(42), "run_attempt": 1, "payload_digest": digest, "policy_digest": "accepted", "status": tc.status, "coverable": tc.name == "required-request"})
 				e.gh.artifacts[42] = raw
 			}
 			if tc.name == "missing-artifact" {
 				delete(e.gh.artifacts, 42)
 			}
-			if tc.name == "waiting" {
+			if tc.name == "waiting" || tc.name == "fail-advisory-request" || tc.name == "required-request" {
 				homePut(t, e, "request-index", map[string]any{"schema": "archfit-app.request-index.v1", "entries": []any{map[string]any{"key": "graph pkg_tc pkg_util", "id": "431"}}})
 				homePut(t, e, "request/431", map[string]any{"schema": "archfit-app.request.v1", "key": "graph pkg_tc pkg_util", "state": "open", "waiting": []int{4}, "reason": "reason", "numbers": map[string]any{}})
 			}
@@ -68,6 +68,9 @@ func TestPullAPIGoldens(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			if tc.name == "unpublished" {
+				homePut(t, e, "publication/4/"+sha(4), map[string]any{"schema": "archfit-app.publication.v1", "head_sha": sha(4), "run_id": 42, "run_attempt": 1, "unpublished": true})
+			}
 			if tc.name == "pending" {
 				homePut(t, e, "publication/4/"+sha(4), map[string]any{"schema": "archfit-app.publication.v1", "head_sha": sha(4), "run_id": 42, "run_attempt": 1, "pending": true})
 			}
@@ -83,7 +86,7 @@ func TestPullAPIGoldens(t *testing.T) {
 				case "unknown":
 					check.Conclusion = "action_required"
 				}
-				if tc.name == "fail-advisory" {
+				if tc.name == "fail-advisory" || tc.name == "fail-advisory-request" {
 					check.Conclusion = "neutral"
 				}
 				e.gh.checks[repoName+"@"+sha(4)+"#archfit/gate"] = []api.CheckRun{check}

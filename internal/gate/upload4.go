@@ -131,15 +131,18 @@ func (g *Gate) serveUpload4(w http.ResponseWriter, req *http.Request) {
 	if err == nil {
 		d, err = g.v4.cover(ctx, u, d)
 	}
-	if err == nil {
-		err = g.v4.storePull(ctx, u, d)
-	}
-	if err == nil && d.publishes() {
+	publish := d.publishes()
+	if err == nil && publish {
 		// The App's policy pull request gets archfit/gate from the App alone (M2 D13).
 		var own bool
-		if own, err = proposals.IsProposalPull(ctx, g.v4.store, u.Binding.Repo, u.Binding.PullRequest); err == nil && !own {
-			err = g.v4.publish(ctx, u, d)
-		}
+		own, err = proposals.IsProposalPull(ctx, g.v4.store, u.Binding.Repo, u.Binding.PullRequest)
+		publish = !own
+	}
+	if err == nil {
+		err = g.v4.storePull(ctx, u, d, publish)
+	}
+	if err == nil && publish {
+		err = g.v4.publish(ctx, u, d)
 	}
 	if err == nil {
 		err = g.driftPushed(ctx, u, d)
@@ -471,13 +474,13 @@ func problemRecord(p ingest.Problem, branch string) (string, result.Unknown) {
 // storePull keeps the pull record of a pull request upload (M2 D6) with its index entry, in one swap. A record of a
 // newer run or attempt stays: GitHub's run ids grow, so a late upload of an older head never replaces a newer one.
 // The error keys are kept only for a result the App accepted as it is.
-func (v *upload4) storePull(ctx context.Context, u ingest.Upload4, d decision4) error {
+func (v *upload4) storePull(ctx context.Context, u ingest.Upload4, d decision4, publish bool) error {
 	b := u.Binding
 	if b.PullRequest == 0 {
 		return nil
 	}
 	rec := records.Pull{HeadSHA: b.HeadSHA, RunID: b.RunID, RunAttempt: b.RunAttempt,
-		PayloadDigest: u.Envelope.PayloadDigest, Status: string(d.Status)}
+		PayloadDigest: u.Envelope.PayloadDigest, Status: string(d.Status), Coverable: d.Coverable}
 	if len(d.Reasons) == 1 && d.Reasons[0].Code == reasonPolicyChanged {
 		rec.Reason = reasonPolicyChanged
 	}
@@ -532,7 +535,7 @@ func (v *upload4) storePull(ctx context.Context, u ingest.Upload4, d decision4) 
 		if err != nil {
 			return nil, err
 		}
-		pending, err := records.Encode(&records.Publication{HeadSHA: b.HeadSHA, RunID: b.RunID, RunAttempt: b.RunAttempt, Pending: true, Source: "upload"})
+		pending, err := records.Encode(&records.Publication{HeadSHA: b.HeadSHA, RunID: b.RunID, RunAttempt: b.RunAttempt, Pending: publish, Unpublished: !publish, Source: "upload"})
 		if err != nil {
 			return nil, err
 		}
