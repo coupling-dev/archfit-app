@@ -115,7 +115,7 @@ func TestJoin(t *testing.T) {
 			beforeA, _ := s.Get(ctx, tenant, records.ApprovalKey(repoName, "a1"))
 			beforeP, _ := s.Get(ctx, tenant, records.ProposalKey(repoName, "p1"))
 
-			err := records.Join(ctx, s, tenant, repoName, "a1", "p1", "h2", "d2")
+			err := records.Join(ctx, s, tenant, repoName, "a1", "p1", "h2", "d2", 0)
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("Join = %v, want %v", err, tt.want)
 			}
@@ -134,10 +134,10 @@ func TestJoin(t *testing.T) {
 				got.HeadSHA != "h2" || got.ExpectedDigest != "d2" {
 				t.Errorf("proposal %+v, want approvals [a1] pinned to h2 and d2", got)
 			}
-			if err := records.Join(ctx, s, tenant, repoName, "a1", "p1", "h2", "d2"); err != nil {
+			if err := records.Join(ctx, s, tenant, repoName, "a1", "p1", "h2", "d2", 0); err != nil {
 				t.Errorf("the same join again = %v, want nil", err)
 			}
-			if err := records.Join(ctx, s, tenant, repoName, "a1", "p1", "h3", "d3"); err != nil {
+			if err := records.Join(ctx, s, tenant, repoName, "a1", "p1", "h3", "d3", 0); err != nil {
 				t.Errorf("the same join after a rewrite = %v, want nil", err)
 			}
 			if got := load[records.Proposal](t, s, records.ProposalKey(repoName, "p1")); len(got.Approvals) != 1 ||
@@ -158,7 +158,7 @@ func TestAnApprovalJoinsOneProposalOnly(t *testing.T) {
 		errs := make([]error, 2)
 		var wg sync.WaitGroup
 		for i, id := range []string{"p1", "p2"} {
-			wg.Go(func() { errs[i] = records.Join(ctx, clients[i], tenant, repoName, "a1", id, "h2", "d2") })
+			wg.Go(func() { errs[i] = records.Join(ctx, clients[i], tenant, repoName, "a1", id, "h2", "d2", 0) })
 		}
 		wg.Wait()
 		won := -1
@@ -182,7 +182,7 @@ func TestAnApprovalJoinsOneProposalOnly(t *testing.T) {
 		if got := load[records.Proposal](t, clients[0], records.ProposalKey(repoName, loser)); len(got.Approvals) != 0 {
 			t.Errorf("the losing proposal holds %v", got.Approvals)
 		}
-		if err := records.Join(ctx, clients[0], tenant, repoName, "a1", loser, "h2", "d2"); !errors.Is(err, records.ErrJoined) {
+		if err := records.Join(ctx, clients[0], tenant, repoName, "a1", loser, "h2", "d2", 0); !errors.Is(err, records.ErrJoined) {
 			t.Errorf("a later join of the other proposal = %v, want ErrJoined", err)
 		}
 	})
@@ -317,7 +317,7 @@ func TestAMergeOfAnOlderHeadCannotConsumeAJoinedApproval(t *testing.T) {
 	s := store.NewMemory()
 	openProposal(t, s, "p1", 50, "d1")
 	put(t, s, records.ApprovalKey(repoName, "a2"), approval(records.StateOpen))
-	if err := records.Join(ctx, s, tenant, repoName, "a2", "p1", "h2", "d2"); err != nil {
+	if err := records.Join(ctx, s, tenant, repoName, "a2", "p1", "h2", "d2", 0); err != nil {
 		t.Fatalf("Join: %v", err)
 	}
 	if err := records.Consume(ctx, s, tenant, repoName, merge("p1", "c-old", "d1")); !errors.Is(err, records.ErrMoved) {
@@ -595,7 +595,7 @@ func TestArchfit3KeysAreNeitherReadNorWritten(t *testing.T) {
 	steps := []error{
 		openRequest(ctx, s, 431, "graph a b"),
 		answerRequest(ctx, s, 431),
-		records.Join(ctx, s, tenant, repoName, "a1", "p1", "h2", "d2"),
+		records.Join(ctx, s, tenant, repoName, "a1", "p1", "h2", "d2", 0),
 		records.Consume(ctx, s, tenant, repoName, merge("p1", "c1", "d2")),
 		records.Consume(ctx, s, tenant, repoName, merge("p1", "c1", "d2")),
 		records.Load(ctx, s, tenant, records.PullKey(repoName, 5), &records.Pull{}),

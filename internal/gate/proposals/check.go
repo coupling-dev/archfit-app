@@ -34,6 +34,9 @@ const (
 // Any condition false sets nothing: a ruleset that requires the check then refuses the merge.
 func (s *Service) check(ctx context.Context, r api.Repo, tip string, pin records.Pin, listed []approved) error {
 	ref := r.RepoRef
+	if err := s.editTarget(ctx, r, tip, listed); err != nil {
+		return err
+	}
 	if err := s.stateAllows(ctx, r, tip, listed); err != nil {
 		return err
 	}

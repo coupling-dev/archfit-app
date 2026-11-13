@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/control/answers"
 	"github.com/alexei-led/archfit-app/internal/control/passkey"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
+	"github.com/alexei-led/archfit-app/internal/gate"
 )
 
 // The passkey routes (M2 task 18): the signed-in user registers, lists and removes their own passkeys, and makes the
@@ -27,10 +30,13 @@ type passkeyOptionsJSON struct {
 }
 
 type stepUpJSON struct {
-	Action  string `json:"action"`
-	Request int    `json:"request,omitempty"`
-	Digest  string `json:"digest,omitempty"`
-	Passkey string `json:"passkey,omitempty"`
+	Action     string `json:"action"`
+	Request    int    `json:"request,omitempty"`
+	Digest     string `json:"digest,omitempty"`
+	Passkey    string `json:"passkey,omitempty"`
+	Target     string `json:"target,omitempty"`
+	BaseDigest string `json:"base_digest,omitempty"`
+	YAML       string `json:"yaml,omitempty"`
 }
 
 type stepUpTokenJSON struct {
@@ -119,7 +125,23 @@ func (s *server) apiPasskeyStepUp(r *http.Request, sc scope) (any, error) {
 	if err := decodeJSON(r, &in); err != nil {
 		return nil, err
 	}
-	p := passkey.Purpose{Action: in.Action, Request: in.Request, Digest: in.Digest, Passkey: in.Passkey}
+	if in.Action == "edit" {
+		if len(in.YAML) > gate.MaxEditBytes {
+			return nil, gate.ErrEditSize
+		}
+		v, err := s.answers.PreviewEdit(r.Context(), sc.repo, passkey.User{ID: sc.user.UserID, Login: sc.user.Login},
+			answers.EditAnswer{YAML: in.YAML, Base: in.BaseDigest, Target: in.Target})
+		if err != nil {
+			return nil, err
+		}
+		if len(v.Errors) > 0 {
+			return nil, invalid(strings.Join(v.Errors, "\n"))
+		}
+		if v.Digest != in.Digest || v.Target != in.Target {
+			return nil, gate.ErrEditChanged
+		}
+	}
+	p := passkey.Purpose{Action: in.Action, Request: in.Request, Digest: in.Digest, Passkey: in.Passkey, Target: in.Target, BaseDigest: in.BaseDigest}
 	options, err := s.passkeys.BeginStepUp(r.Context(), sc.repo, passkey.User{ID: sc.user.UserID, Login: sc.user.Login}, p)
 	if err != nil {
 		return nil, err

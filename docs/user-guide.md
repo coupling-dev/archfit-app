@@ -30,7 +30,26 @@ If the layout worker fails, Home says so and the list is still available.
 
 The repository tabs are **Home** and **Policy**. Policy lists modules, rules, notes and exceptions from the default
 branch, with links to recorded requests. **Show raw YAML** opens the file. **Edit** appears only when change control
-is available, but the editor is not yet available: the link currently returns to the read view.
+is available.
+
+### Edit the policy YAML
+
+Open **Edit** to start from the open policy proposal's file, or from the default branch when no proposal is open.
+The editor accepts a whole file up to 32 KiB. **Preview the edit** lists every decoder error by line and shows
+the App's text diff against the current default-branch policy. Check path globs locally before approval:
+`archfit check --policy <file>`.
+
+If an earlier branch write was not recorded, **Reload the policy** restores only the recorded proposal under the App\'s proposal lock.
+It does not approve or merge new bytes. Preview and confirm the edit again after reload.
+
+Every edit needs your passkey, even one that tightens the policy. **Approve and merge with passkey** appends it
+as the last change in the App's `archfit/policy` pull request. Its comment names the owner and the passkey.
+The merge push consumes the approval once.
+
+If the starting file changed, the App says **the policy changed; reload**. Reload and review again.
+Any default-branch tip movement before the merge, including a code-only push, voids the edit's approval.
+The App does not replay its YAML on the new tip; edit and confirm again. This is the fail-closed reading of D9,
+not a comparison of whether the new policy loosens or tightens a rule.
 
 ## Configure the ruleset
 
@@ -48,13 +67,13 @@ Each page starts with the status, shows the App's diff of the actual files, and 
 That action asks for your passkey before it submits. **Show the files and their SHA-256s** opens
 all input files and their immutable commit refs. GitHub issue links and direct loads use the same pages.
 
-| Action | Path after `/r/<owner>/<repo>` |
-| --- | --- |
-| Approve the first policy on the default branch | `/owner/first` |
-| Approve the first policy in an onboarding pull request | `/owner/first?pull=<number>` |
-| Approve a workflow change | `/owner/workflow?pull=<number>` |
-| Confirm a policy changed outside the flow | `/owner/confirm` |
-| Revert a policy changed outside the flow | `/owner/revert` |
+| Action                                                 | Path after `/r/<owner>/<repo>`  |
+| ------------------------------------------------------ | ------------------------------- |
+| Approve the first policy on the default branch         | `/owner/first`                  |
+| Approve the first policy in an onboarding pull request | `/owner/first?pull=<number>`    |
+| Approve a workflow change                              | `/owner/workflow?pull=<number>` |
+| Confirm a policy changed outside the flow              | `/owner/confirm`                |
+| Revert a policy changed outside the flow               | `/owner/revert`                 |
 
 The first approval has no approved baseline: every policy line is shown as an addition.
 Only a repository administrator named in that policy can make it. Other actions require an owner
@@ -99,13 +118,13 @@ An accepted default-branch result that reports drift opens or updates an `archfi
 
 ## Troubleshooting
 
-| Situation | Action |
-| --- | --- |
-| The check is `unknown` | Read its reason and restore the named authority or input. Unknown is not a pass. |
-| A policy changed outside the approval flow | An owner must confirm or revert it with a passkey. Review the issue and the policy before acting. |
-| A workflow changed | An owner must approve the workflow change with a passkey unless only the Action ref moved to an approved commit. |
-| A request shows **as reported** | Treat its measurements as a claim. Review the source and a current pull-request result. |
-| The App cannot confirm a ruleset or bypass | Ask a repository administrator to inspect the ruleset in GitHub. |
-| A passkey prompt fails or the policy moved | Start the action again and review the new preview. A step-up is bound to one action and expires. |
+| Situation                                  | Action                                                                                                           |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| The check is `unknown`                     | Read its reason and restore the named authority or input. Unknown is not a pass.                                 |
+| A policy changed outside the approval flow | An owner must confirm or revert it with a passkey. Review the issue and the policy before acting.                |
+| A workflow changed                         | An owner must approve the workflow change with a passkey unless only the Action ref moved to an approved commit. |
+| A request shows **as reported**            | Treat its measurements as a claim. Review the source and a current pull-request result.                          |
+| The App cannot confirm a ruleset or bypass | Ask a repository administrator to inspect the ruleset in GitHub.                                                 |
+| A passkey prompt fails or the policy moved | Start the action again and review the new preview. A step-up is bound to one action and expires.                 |
 
 For operators, see [configuration](architecture.md#configuration) and [cloud operations](design/cloud/operations.md).

@@ -40,11 +40,13 @@ type User struct {
 // Purpose is what one step-up token allows. A token is redeemed only for an equal Purpose. Repo is always set from
 // the repository the call names; a value the caller puts there is replaced.
 type Purpose struct {
-	Repo    string `json:"repo"`              // lower-case owner/name
-	Action  string `json:"action"`            // ActionRegister, ActionRemove, or an answer kind of control/answers
-	Request int    `json:"request,omitempty"` // the request issue; 0 when none
-	Digest  string `json:"digest,omitempty"`  // the policy change digest; "" when none
-	Passkey string `json:"passkey,omitempty"` // ActionRemove: the id of the passkey to remove
+	Repo       string `json:"repo"`                  // lower-case owner/name
+	Action     string `json:"action"`                // ActionRegister, ActionRemove, or an answer kind of control/answers
+	Request    int    `json:"request,omitempty"`     // the request issue; 0 when none
+	Digest     string `json:"digest,omitempty"`      // the policy change digest; "" when none
+	Target     string `json:"target,omitempty"`      // edit: exact protected tip of the preview
+	BaseDigest string `json:"base_digest,omitempty"` // edit: exact bytes the editor started from
+	Passkey    string `json:"passkey,omitempty"`     // ActionRemove: the id of the passkey to remove
 }
 
 // Passkey is one registered passkey as its user sees it.

@@ -76,6 +76,8 @@ func (s *server) apiAnswer(r *http.Request, sc scope) (any, error) {
 func answeredNotice(out gate.AnswerOutcome) string {
 	pull := "#" + strconv.Itoa(out.PullRequest)
 	switch {
+	case out.State == gate.AnswerVoided:
+		return "the policy changed; reload"
 	case out.PullRequest == 0:
 		return "Answered. The policy needs no new line for it."
 	case out.State == gate.AnswerMerged:

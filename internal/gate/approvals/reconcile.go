@@ -9,14 +9,18 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
 
-// JudgedAmbiguous leaves the range unknown without consuming or voiding any approval.
+// JudgedAmbiguous leaves the range unknown without consuming its approvals.
+// Independently proven stale edits can be voided before the history judgement.
 const JudgedAmbiguous = "ambiguous"
 
 // Reconcile repairs only a proven single policy change on a complete linear history from the approved commit
 // to tip. An indexed proposal must uniquely match that change's merge commit and the tip's digest. Every other
-// range is ambiguous: unlike Pushed, this entry point never voids a proposal. A pending recovered handoff is
+// range is ambiguous: unlike Pushed, this entry point never voids a proposal for an ambiguous range. A pending recovered handoff is
 // returned until the gate finishes AfterAnswer and clears Repo.SweepRecheck.
 func (s *Service) Reconcile(ctx context.Context, r api.Repo, tip string) (Outcome, error) {
+	if err := s.retireMovedEdits(ctx, r); err != nil {
+		return Outcome{}, err
+	}
 	var rec records.Repo
 	err := records.Load(ctx, s.store, tenant(r), records.RepoKey(r.FullName), &rec)
 	if errors.Is(err, records.ErrNoRecord) {
@@ -89,11 +93,18 @@ func (s *Service) Reconcile(ctx context.Context, r api.Repo, tip string) (Outcom
 	if match == nil {
 		return s.outsideIf(ctx, Push{Repo: r, Before: push.Before, After: tip}, digest, rec)
 	}
+	parent, err := s.editParent(ctx, r, match)
+	if err != nil {
+		if errors.Is(err, records.ErrMoved) || api.Permanent(err) {
+			return ambiguous, nil
+		}
+		return Outcome{}, err
+	}
 	if err := s.retire(ctx, r, match, proposals.RetiredUsed); err != nil {
 		return Outcome{}, err
 	}
 	err = records.Consume(ctx, s.store, tenant(r), r.FullName, records.Merge{
-		Proposal: match.id, Commit: commit, Digest: digest, Push: push, AtTip: true, Over: rec.ApprovedCommit, Recheck: true,
+		Proposal: match.id, Commit: commit, Digest: digest, Push: push, AtTip: true, Over: rec.ApprovedCommit, Recheck: true, Parent: parent,
 	})
 	if errors.Is(err, records.ErrMoved) || errors.Is(err, records.ErrApprovedMoved) {
 		return ambiguous, nil

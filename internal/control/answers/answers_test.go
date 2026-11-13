@@ -17,6 +17,7 @@ var repo = api.Repo{RepoRef: api.RepoRef{InstallationID: 7, FullName: "acme/shop
 // fakeGate is the gate: it remembers the last input and, for an answer that loosens the policy, calls Redeem with its
 // digest, as gate/proposals does.
 type fakeGate struct {
+	gate.Edits
 	target gate.Target
 	number int
 	answer gate.RequestAnswer

@@ -41,6 +41,7 @@ const (
 	KindWorkflow     = "workflow"
 	KindConfirm      = "confirm"
 	KindRevert       = "revert"
+	KindEdit         = "edit"
 )
 
 // MaxApprovals is the most approvals one proposal holds (M2 plan, "Approval records").
@@ -164,6 +165,8 @@ type Proposal struct {
 	PullRequest    int      `json:"pull_request,omitempty"`
 	HeadSHA        string   `json:"head_sha,omitempty"`
 	ExpectedDigest string   `json:"expected_digest"`
+	EditEpoch      uint64   `json:"edit_epoch,omitempty"`  // increments when an edit leaves this proposal
+	EditVoided     bool     `json:"edit_voided,omitempty"` // this head still contains a void edit; repin before merging
 	// WorkflowDigest is the FileDigest of .github/workflows/archfit.yaml at HeadSHA that the approval admits; "" when it
 	// admits none. Its merge must land that file too.
 	WorkflowDigest string `json:"workflow_digest,omitempty"`

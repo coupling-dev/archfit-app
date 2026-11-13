@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"math"
 	"reflect"
@@ -44,23 +45,37 @@ func Decode(data []byte) (File, error) {
 	if err := checkVersion(data); err != nil {
 		return File{}, err
 	}
+	var doc, extra yaml.Node
+	nodes := yaml.NewDecoder(bytes.NewReader(data))
+	if err := nodes.Decode(&doc); err != nil {
+		return File{}, err
+	}
+	if err := nodes.Decode(&extra); err != io.EOF {
+		if err != nil {
+			return File{}, err
+		}
+		line := max(1, extra.Line)
+		return File{}, fmt.Errorf("line %d: second document: %w", line, ErrLayout)
+	}
 	var f File
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
+	var all []string
 	if err := dec.Decode(&f); err != nil {
-		return File{}, err
-	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return File{}, err
+		var types *yaml.TypeError
+		if !errors.As(err, &types) {
+			return File{}, err
+		}
+		all = append(all, types.Errors...)
 	}
 	var kinds problems
 	checkKinds(&kinds, toAny(doc.Content[0]), reflect.TypeFor[File](), "")
-	if err := kinds.err(); err != nil {
-		return File{}, err
-	}
+	all = append(all, kinds...)
 	if err := f.check(); err != nil {
-		return File{}, err
+		all = append(all, err.Error())
+	}
+	if len(all) > 0 {
+		return File{}, errors.New(strings.Join(all, "\n"))
 	}
 	return f, nil
 }

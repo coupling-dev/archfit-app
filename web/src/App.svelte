@@ -106,7 +106,7 @@
   {:else if route.kind === 'repo'}
     <Home {route} {here} />
   {:else if route.kind === 'policy'}
-    <Policy {route} {here} />
+    <Policy {route} {here} {session} />
   {:else if route.kind === 'owner'}
     <Owner {route} {session} {here} />
   {:else if route.kind === 'request'}
