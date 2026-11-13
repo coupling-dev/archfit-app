@@ -26,7 +26,7 @@ func TestPullViewFacade(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var page gate.PullView = gate.BuildPullView(r)
+			page := gate.BuildPullView(r)
 			got, err := json.MarshalIndent(page, "", "  ")
 			if err != nil {
 				t.Fatal(err)
