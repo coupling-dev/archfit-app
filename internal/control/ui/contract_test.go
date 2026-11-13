@@ -1,33 +1,17 @@
 package ui
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"path/filepath"
 	"reflect"
-	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
-	"github.com/alexei-led/archfit-app/internal/control/onboarding"
-	"github.com/alexei-led/archfit-app/internal/control/proposal"
-	"github.com/alexei-led/archfit-app/internal/control/ui/graph"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/policy"
-	"github.com/alexei-led/archfit-app/internal/wire/report"
-	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 type route struct {
@@ -50,7 +34,11 @@ func repoRoutes(fullName string) []route {
 	return []route{
 		{http.MethodGet, base, signedInOnly, nil, nil},
 		{http.MethodGet, api + "/overview", permRead, nil, nil},
-		{http.MethodPost, api + "/onboarding", permAdmin, nil, onboardingJSON{Mode: "customer", Owners: "alice"}},
+		{http.MethodGet, api + "/setup", permRead, nil, nil},
+		{http.MethodGet, api + "/policy", permRead, nil, nil},
+		{http.MethodGet, api + "/requests/431", permRead, nil, nil},
+		{http.MethodGet, api + "/requests/431/preview", permRead, nil, nil},
+		{http.MethodPost, api + "/onboarding", permAdmin, nil, map[string]string{"mode": "customer", "owners": "alice"}},
 		{http.MethodPost, api + "/discover", permAdmin, nil, struct{}{}},
 		{http.MethodGet, base + "/graph", signedInOnly, nil, nil},
 		{http.MethodGet, base + "/pull/4", signedInOnly, nil, nil},
@@ -126,22 +114,9 @@ func TestArchfit3RoutesAreGone(t *testing.T) {
 	e.noWrites(t)
 	// The Archfit 4 routes beside them still answer.
 	for _, rt := range repoRoutes(repoName) {
-		if got := c.send(rt); got != http.StatusOK {
+		if got := c.send(rt); got != rt.expectedStatus() {
 			t.Errorf("%s %s = %d, want 200", rt.method, rt.path, got)
 		}
-	}
-}
-
-func TestOnboardingOffersOnlyCustomerDiscovery(t *testing.T) {
-	e := newEnv(t)
-	e.onb.progress.Stage = onboarding.StageInstalled
-	var body statusBody
-	e.as("alice", permAdmin).getJSON("/api/repos/"+repoName+"/overview", &body)
-	if !body.Admin || !body.CanStart {
-		t.Errorf("admin = %v, can start = %v; want an administrator who can start onboarding", body.Admin, body.CanStart)
-	}
-	if strings.Contains(e.signIn("alice").get("/api/repos/"+repoName+"/overview").Body.String(), "managed") {
-		t.Error("onboarding offers managed discovery without an available sandbox")
 	}
 }
 
@@ -168,7 +143,7 @@ func TestRoutesAndMinimumPermissions(t *testing.T) {
 					if got != http.StatusNotFound {
 						t.Errorf("%s: status = %d, want 404", perm, got)
 					}
-				case got != http.StatusOK:
+				case got != rt.expectedStatus():
 					t.Errorf("%s: status = %d, want 200", perm, got)
 				}
 			}
@@ -195,7 +170,7 @@ func TestRoutesAndMinimumPermissions(t *testing.T) {
 	})
 	t.Run("public assets", func(t *testing.T) {
 		e := newEnv(t)
-		for _, path := range []string{"/schema/policy.json", "/assets/app-1a2b.js", licensesRoute} {
+		for _, path := range []string{"/assets/app-1a2b.js", licensesRoute} {
 			res := e.anonymous().get(path)
 			wantStatus(t, res, http.StatusOK)
 			if res.Body.Len() == 0 {
@@ -209,7 +184,7 @@ func TestRoutesAndMinimumPermissions(t *testing.T) {
 		if got := licences.Header().Get("Cache-Control"); got != "no-cache" || licences.Body.String() != string(testWeb["assets/licenses-9f8e.txt"].Data) {
 			t.Errorf("licences: Cache-Control %q, body %q; want no-cache and the build's licence file", got, licences.Body.String())
 		}
-		for _, path := range []string{"/static/app.css", "/assets/", "/assets/missing.js", "/index.html", "/api/nothing"} {
+		for _, path := range []string{"/schema/policy.json", "/static/app.css", "/assets/", "/assets/missing.js", "/index.html", "/api/nothing"} {
 			wantStatus(t, e.anonymous().get(path), http.StatusNotFound)
 		}
 	})
@@ -221,136 +196,6 @@ func requestOf(rt route) *http.Request {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	return req
-}
-
-func TestOverviewReadsStateOnDefaultBranchHead(t *testing.T) {
-	e := newEnv(t)
-	rows := []struct {
-		name, want string
-		runs       []api.CheckRun
-		headFails  bool
-	}{
-		{"acme/a-healthy", "healthy", []api.CheckRun{{Name: checkState, Status: "completed", Conclusion: "success", Title: "No new findings"}}, false},
-		{"acme/b-neutral", "attention", []api.CheckRun{{Name: checkState, Status: "completed", Conclusion: "neutral", Title: "Coverage is partial"}}, false},
-		{"acme/c-none", stateNone, nil, false},
-		{"acme/d-broken", stateUnknown, nil, true},
-	}
-	for i, row := range rows {
-		e.addRepo(row.name, installA, int64(30+i))
-		e.grant("alice", row.name, permRead)
-		e.gh.checks[row.name+"@"+sha(30+i)+"#"+checkState] = row.runs
-		e.gh.checks[row.name+"@"+sha(30+i)+"#"+checkGate] = []api.CheckRun{{Name: checkGate, Conclusion: "failure", Title: "GATE-MARKER"}}
-		if row.headFails {
-			e.gh.fail["BranchHead "+row.name] = errors.New("boom")
-		}
-	}
-	c := e.signIn("alice")
-	res := c.get("/api/repos")
-	wantStatus(t, res, http.StatusOK)
-	body := res.Body.String()
-	var got overviewBody
-	if err := json.Unmarshal([]byte(body), &got); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	states := map[string]string{}
-	for _, r := range got.Repos {
-		states[r.FullName] = r.State
-	}
-	for _, row := range rows {
-		if states[row.name] != row.want {
-			t.Errorf("%s: row reads %q, want %q", row.name, states[row.name], row.want)
-		}
-	}
-	wantContains(t, body, "No new findings", "Coverage is partial")
-	if strings.Contains(body, "GATE-MARKER") {
-		t.Error("archfit/gate is shown on the overview")
-	}
-	if got := len(e.gh.called("BranchHead")); got != len(rows) {
-		t.Errorf("BranchHead calls = %d, want %d", got, len(rows))
-	}
-	checks := e.gh.called("CheckRuns")
-	if len(checks) != len(rows)-1 {
-		t.Errorf("CheckRuns calls = %d, want %d", len(checks), len(rows)-1)
-	}
-	for _, c := range checks {
-		if !strings.HasSuffix(c.detail, "#"+checkState) {
-			t.Errorf("CheckRuns looked up %q", c.detail)
-		}
-	}
-}
-
-func TestGraphPageBuildsFromArtifact(t *testing.T) {
-	e := newEnv(t)
-	c := e.as("alice", permRead)
-	payload := artifact(t, "real-blocked-no-baseline")
-	payload = bytes.ReplaceAll(payload, []byte(`"from_glob":"pkg/a/**"`), []byte(`"from_glob":"MARKER-matched-by/**"`))
-	payload = bytes.ReplaceAll(payload, []byte(`"go/packages":"go1.27.1"`), []byte(`"go/packages":"MARKER-measurement"`))
-	if bytes.Count(payload, []byte("MARKER-")) < 2 {
-		t.Fatal("markers were not placed in the fixture")
-	}
-	rep, err := report.Decode(payload, "v3.0.0")
-	if err != nil {
-		t.Fatalf("fixture does not decode: %v", err)
-	}
-	e.publishReport(repoName, payload)
-
-	wantStatus(t, c.get("/r/"+repoName+"/graph"), http.StatusOK)
-	path := "/api/repos/" + repoName + "/graph"
-	var got graphJSON
-	c.getJSON(path, &got)
-	want := graph.Build(rep, []byte(policyText))
-	if got.View == nil || !reflect.DeepEqual(*got.View, want) {
-		t.Errorf("view = %+v\nwant %+v", got.View, want)
-	}
-	if len(want.Nodes) == 0 || len(want.Links) == 0 || want.Stale {
-		t.Fatalf("fixture gives a useless view: %+v", want)
-	}
-	if got.PolicyHref != "https://github.com/"+repoName+"/blob/"+mainBranch+"/.archfit.yaml" || got.Branch != mainBranch || got.Pull != nil || got.Unavailable != "" || got.StaleReason != "" {
-		t.Errorf("body = %+v", got)
-	}
-	// hard_gates: fail with nothing unevaluated: the violations are the message, so the page does not say incomplete.
-	if want.Incomplete || got.View.Incomplete {
-		t.Error("Incomplete = true for a failed hard gate with no unevaluated required rule")
-	}
-	if strings.Contains(c.get(path).Body.String(), "MARKER-") {
-		t.Error("a field the decoder drops reached the API")
-	}
-	for _, call := range e.gh.called("ArtifactByID") {
-		if call.detail != fmt.Sprintf("77 %d", report.MaxBytes) {
-			t.Errorf("ArtifactByID(%s)", call.detail)
-		}
-	}
-}
-
-// TestGraphPageShowsTheEngineSeamPolicy: an engine v3.0.0 artifact decodes, and each link shows the engine's
-// seams[].policy status, allowed included, raised by the accepted advisories it leaves out (graph.Build).
-func TestGraphPageShowsTheEngineSeamPolicy(t *testing.T) {
-	e := newEnv(t)
-	c := e.as("alice", permRead)
-	payload, err := os.ReadFile(filepath.Join("..", "..", "wire", "testdata", "report", "real-seam-policy.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	rep, err := report.DecodeStored(payload)
-	if err != nil {
-		t.Fatalf("capture does not decode: %v", err)
-	}
-	e.publishReport(repoName, payload)
-
-	var got graphJSON
-	c.getJSON("/api/repos/"+repoName+"/graph", &got)
-	if want := graph.Build(rep, []byte(policyText)); got.View == nil || !reflect.DeepEqual(*got.View, want) {
-		t.Fatalf("view = %+v\nwant %+v", got.View, want)
-	}
-	statuses := map[graph.LinkStatus]bool{}
-	for _, l := range got.View.Links {
-		statuses[l.Status] = true
-	}
-	for _, s := range []graph.LinkStatus{graph.StatusViolation, graph.StatusAccepted, graph.StatusAllowed} {
-		if !statuses[s] {
-			t.Errorf("no %s link", s)
-		}
-	}
 }
 
 func TestDataSharingAllowAndRevoke(t *testing.T) {
@@ -482,241 +327,6 @@ func TestOldConsentPageMovedToDataSharing(t *testing.T) {
 	}
 }
 
-// Each stage offers only its own action: an overview never shows a button for a step that is not the next one.
-func TestOverviewOffersOnlyTheStepsAction(t *testing.T) {
-	draft := &proposal.Draft{URL: "https://github.com/" + repoName + "/pull/9", State: proposal.DraftOpen}
-	tests := []struct {
-		name            string
-		progress        onboarding.Progress
-		start, discover bool
-	}{
-		{"installed", onboarding.Progress{Stage: onboarding.StageInstalled}, true, false},
-		{"installed, onboarding pull request open", onboarding.Progress{Stage: onboarding.StageInstalled, OpenDraft: draft}, false, false},
-		{"installed, settings merged without the workflow", onboarding.Progress{Stage: onboarding.StageInstalled, Workflow: &onboarding.WorkflowFile{
-			Branch: "main", Path: ".github/workflows/archfit.yaml", Content: []byte("name: archfit\n"),
-		}}, false, false},
-		{"workflow merged", onboarding.Progress{Stage: onboarding.StageWorkflowMerged}, false, true},
-		{"workflow merged, policy pull request open", onboarding.Progress{Stage: onboarding.StageWorkflowMerged, OpenDraft: draft}, false, false},
-		{"report received, no policy", onboarding.Progress{Stage: onboarding.StageReportReceived}, false, true},
-		{"policy merged", onboarding.Progress{Stage: onboarding.StagePolicyMerged}, false, false},
-		{"gate advisory", onboarding.Progress{Stage: onboarding.StageAdvisory}, false, false},
-		{"gate required", onboarding.Progress{Stage: onboarding.StageRequired}, false, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			e := newEnv(t)
-			e.onb.progress = tt.progress
-			var b statusBody
-			e.as("alice", permAdmin).getJSON("/api/repos/"+repoName+"/overview", &b)
-			if b.CanStart != tt.start || b.CanDiscover != tt.discover {
-				t.Errorf("can_start = %v, can_discover = %v, want %v, %v", b.CanStart, b.CanDiscover, tt.start, tt.discover)
-			}
-			if tt.discover && b.Next != discoverNext.next {
-				t.Errorf("next = %q, want the discovery step", b.Next)
-			}
-		})
-	}
-}
-
-// The overview hands out the workflow with a GitHub link that opens the new-file page on its branch, filled in.
-func TestOverviewHandsOutTheWorkflow(t *testing.T) {
-	content := "name: archfit\non:\n  push:\n    branches: [\"main\"]\njobs: {} # 100% & more\n"
-	e := newEnv(t)
-	e.onb.progress = onboarding.Progress{Stage: onboarding.StageInstalled, Workflow: &onboarding.WorkflowFile{
-		Branch: "archfit/onboarding", Path: ".github/workflows/archfit.yaml", Content: []byte(content),
-	}}
-	var b statusBody
-	e.as("alice", permAdmin).getJSON("/api/repos/"+repoName+"/overview", &b)
-	if b.Workflow == nil {
-		t.Fatal("workflow absent")
-	}
-	if b.Workflow.Content != content || b.Workflow.Branch != "archfit/onboarding" || b.Workflow.Path != ".github/workflows/archfit.yaml" {
-		t.Errorf("workflow = %+v", b.Workflow)
-	}
-	u, err := url.Parse(b.Workflow.AddURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if u.Host != "github.com" || u.Path != "/"+repoName+"/new/archfit/onboarding" {
-		t.Errorf("add_url host and path = %s %s", u.Host, u.Path)
-	}
-	if q := u.Query(); q.Get("filename") != ".github/workflows/archfit.yaml" || q.Get("value") != content {
-		t.Errorf("add_url query = %v; want the path and the content byte for byte", q)
-	}
-
-	e.onb.progress = onboarding.Progress{Stage: onboarding.StageWorkflowMerged}
-	var after statusBody
-	e.as("alice", permAdmin).getJSON("/api/repos/"+repoName+"/overview", &after)
-	if after.Workflow != nil {
-		t.Errorf("workflow = %+v once it is on the default branch", after.Workflow)
-	}
-}
-
-func TestOnboardingAndDiscoverActions(t *testing.T) {
-	e := newEnv(t)
-	e.onb.progress = onboarding.Progress{Stage: onboarding.StageInstalled, Diagnostic: "Start onboarding."}
-	c := e.as("alice", permAdmin)
-	base := "/api/repos/" + repoName
-
-	res := c.postJSON(base+"/onboarding", onboardingJSON{Mode: "customer", Owners: "alice\r\n\r\n  acme/platform-team \n"})
-	wantStatus(t, res, http.StatusOK)
-	wantContains(t, res.Body.String(), `"notice":"`+notices["onboarding"]+`"`)
-	if len(e.onb.customer) != 1 || !reflect.DeepEqual(e.onb.customer[0].owners, []string{"alice", "acme/platform-team"}) {
-		t.Errorf("StartCustomer calls = %+v", e.onb.customer)
-	}
-	if e.onb.customer[0].repo.InstallationID != installA {
-		t.Errorf("StartCustomer repo = %+v", e.onb.customer[0].repo)
-	}
-
-	res = c.postJSON(base+"/onboarding", onboardingJSON{Mode: "managed", Owners: "alice"})
-	wantStatus(t, res, http.StatusOK)
-	var next noticeJSON
-	if err := json.Unmarshal(res.Body.Bytes(), &next); err != nil || next.Location != "/r/"+repoName+"/data-sharing" {
-		t.Errorf("answer = %s, want Data sharing as location", res.Body.String())
-	}
-	if len(e.onb.managed) != 0 {
-		t.Error("StartManaged was called without consent")
-	}
-	_ = e.consents.Record(t.Context(), installA, account.Consent{Kind: account.ConsentSourceProcessing})
-	wantStatus(t, c.postJSON(base+"/onboarding", onboardingJSON{Mode: "managed", Owners: "alice"}), http.StatusOK)
-	if len(e.onb.managed) != 1 {
-		t.Errorf("StartManaged calls = %d, want 1", len(e.onb.managed))
-	}
-
-	wantStatus(t, c.postJSON(base+"/discover", struct{}{}), http.StatusConflict)
-	if len(e.gh.called("Dispatch")) != 0 {
-		t.Fatal("discovery was dispatched before workflow_merged")
-	}
-	e.onb.progress.Stage = onboarding.StageWorkflowMerged
-	wantStatus(t, c.postJSON(base+"/discover", struct{}{}), http.StatusOK)
-	calls := e.gh.called("Dispatch")
-	if len(calls) != 1 || calls[0].detail != workflow+"@"+mainBranch+" map[mode:discovery]" || calls[0].installationID != installA {
-		t.Errorf("Dispatch calls = %+v", calls)
-	}
-}
-
-func TestPullPageShowsTheReportOfItsCheck(t *testing.T) {
-	payload := artifact(t, "real-blocked-no-baseline")
-	sum := sha256.Sum256(payload)
-	digest := "sha256:" + hex.EncodeToString(sum[:])
-	path := "/api/repos/" + repoName + "/pulls/4"
-	check := func(e *env, externalID string) {
-		e.gh.checks[repoName+"@"+sha(4)+"#archfit/state"] = []api.CheckRun{{
-			ID: 9, Name: "archfit/state", HeadSHA: sha(4), Status: "completed", Conclusion: "neutral",
-			Title: "Architecture violations found · advisory · no baseline", ExternalID: externalID,
-		}}
-	}
-	findings := func(b pullJSON) int { return len(b.Cycles) + len(b.Other) + len(b.Advisories) + len(b.Accepted) }
-	tests := []struct {
-		name   string
-		setup  func(e *env)
-		status int
-		check  func(t *testing.T, b pullJSON)
-	}{
-		{"no check on the head", func(*env) {}, http.StatusOK, func(t *testing.T, b pullJSON) {
-			if b.Title != "feat: read options" || b.Unavailable != noResult || b.Result != "" || b.HeadSHA != sha(4)[:shortSHA] {
-				t.Errorf("body = %+v", b)
-			}
-		}},
-		{"the report of the check", func(e *env) {
-			check(e, "v1:88:1:"+digest)
-			e.gh.artifacts[88] = payload
-		}, http.StatusOK, func(t *testing.T, b pullJSON) {
-			if b.Unavailable != "" || b.Headline != "Architecture violations found · advisory · no baseline" || b.Result != "violations found" ||
-				b.Tone != "danger" || b.Required || !b.NoBaseline || b.Compared || b.RunID != 88 {
-				t.Errorf("header = %+v", b)
-			}
-			if b.ViolationCount == 0 || len(b.Other) == 0 || b.Other[0].RuleID != "no_direct_b_dependency" || b.Other[0].Origin != "" {
-				t.Errorf("violations = %d %+v", b.ViolationCount, b.Other)
-			}
-			if b.URL != "https://github.com/"+repoName+"/pull/4" {
-				t.Errorf("url = %q", b.URL)
-			}
-		}},
-		{"a report that does not match its check", func(e *env) {
-			check(e, "v1:88:1:sha256:"+strings.Repeat("0", 64))
-			e.gh.artifacts[88] = payload
-		}, http.StatusOK, func(t *testing.T, b pullJSON) {
-			if b.Unavailable != reportMismatch || findings(b) != 0 || b.Result != "violations found" { // the title says it, no report needed
-				t.Errorf("body = %+v", b)
-			}
-		}},
-		{"an expired report", func(e *env) { check(e, "v1:88:1:"+digest) }, http.StatusOK, func(t *testing.T, b pullJSON) {
-			if b.Unavailable != reportExpired || findings(b) != 0 {
-				t.Errorf("body = %+v", b)
-			}
-		}},
-		{"a result without an upload", func(e *env) { check(e, "v1:0:0:") }, http.StatusOK, func(t *testing.T, b pullJSON) {
-			if b.Unavailable != noUpload {
-				t.Errorf("body = %+v", b)
-			}
-		}},
-		{"an unknown pull request", func(e *env) { delete(e.gh.pulls, repoName+"#4") }, http.StatusNotFound, nil},
-		{"a withdrawn result keeps its old run but shows no finding", func(e *env) {
-			check(e, "v1:88:1:"+digest)
-			e.gh.checks[repoName+"@"+sha(4)+"#archfit/state"][0].Conclusion = "action_required"
-			e.gh.checks[repoName+"@"+sha(4)+"#archfit/state"][0].Title = "Action required"
-			e.gh.artifacts[88] = payload
-		}, http.StatusOK, func(t *testing.T, b pullJSON) {
-			if b.Unavailable != actionRequired || b.Headline != "Action required" || b.Result != "action required" ||
-				findings(b) != 0 || b.TaskCount != 0 {
-				t.Errorf("body = %+v", b)
-			}
-		}},
-		{"a report that does not decode", func(e *env) {
-			broken := []byte(`{"schema_version":"nope"}`)
-			s := sha256.Sum256(broken)
-			check(e, "v1:88:1:sha256:"+hex.EncodeToString(s[:]))
-			e.gh.artifacts[88] = broken
-		}, http.StatusOK, func(t *testing.T, b pullJSON) {
-			if b.Unavailable != reportUnavailable || findings(b) != 0 {
-				t.Errorf("body = %+v", b)
-			}
-		}},
-		{"the newest check run wins", func(e *env) {
-			check(e, "v1:88:1:"+digest)
-			e.gh.artifacts[88] = payload
-			key := repoName + "@" + sha(4) + "#archfit/state"
-			older := api.CheckRun{ID: 3, Name: "archfit/state", Status: "completed", Conclusion: "action_required", Title: "Older", ExternalID: "v1:0:0:"}
-			e.gh.checks[key] = append([]api.CheckRun{older}, e.gh.checks[key]...)
-		}, http.StatusOK, func(t *testing.T, b pullJSON) {
-			if b.Headline == "Older" || len(b.Other) == 0 {
-				t.Errorf("body = %+v", b)
-			}
-		}},
-		{"added only with a comparison", func(e *env) {
-			compared := bytes.Replace(payload, []byte(`"comparison":{"status":"not_requested"`), []byte(`"comparison":{"status":"not_requested","origin_status":"comparable"`), 1)
-			// The top-level finding is the last object with this id; dimension references come first.
-			id := []byte(`{"id":"ba3803eca947bf3c1b7efa8f37854d5e"`)
-			at := bytes.LastIndex(compared, id) + len(id)
-			compared = append(compared[:at:at], append([]byte(`,"origin":"introduced"`), compared[at:]...)...)
-			s := sha256.Sum256(compared)
-			check(e, "v1:88:1:sha256:"+hex.EncodeToString(s[:]))
-			e.gh.artifacts[88] = compared
-		}, http.StatusOK, func(t *testing.T, b pullJSON) {
-			if !b.Compared || len(b.Other) == 0 || b.Other[0].Origin != "added" {
-				t.Errorf("compared = %v, other = %+v", b.Compared, b.Other)
-			}
-		}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			e := newEnv(t)
-			tt.setup(e)
-			res := e.as("alice", permRead).get(path)
-			wantStatus(t, res, tt.status)
-			if tt.check == nil {
-				return
-			}
-			var b pullJSON
-			if err := json.Unmarshal(res.Body.Bytes(), &b); err != nil {
-				t.Fatal(err)
-			}
-			tt.check(t, b)
-		})
-	}
-}
-
 func TestPullPageNumberMustBeAPull(t *testing.T) {
 	e := newEnv(t)
 	c := e.as("alice", permRead)
@@ -732,372 +342,11 @@ func TestPullPageNumberMustBeAPull(t *testing.T) {
 	}
 }
 
-// TestPullGraphDrawsTheReportOfItsCheck: the pull request graph is the report of the run the head's archfit/state
-// check names, the one the pull request page shows, never the default branch's latest report.
-func TestPullGraphDrawsTheReportOfItsCheck(t *testing.T) {
-	e := newEnv(t)
-	e.publishReport(repoName, artifact(t, "healthy"))
-	payload := prArtifact(t, prPolicy)
-	e.checkPull(payload)
-	e.gh.setFile(repoName, sha(4), policy.PolicyPath, prPolicy)
-	rep, err := report.Decode(payload, "v3.0.1")
-	if err != nil {
-		t.Fatalf("fixture does not decode: %v", err)
-	}
-
-	wantStatus(t, e.as("alice", permRead).get("/r/"+repoName+"/pull/4/graph"), http.StatusOK)
-	var got graphJSON
-	e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/pulls/4/graph", &got)
-	if want := graph.Build(rep, []byte(prPolicy)); got.View == nil || !reflect.DeepEqual(*got.View, want) {
-		t.Fatalf("view = %+v\nwant %+v", got.View, want)
-	}
-	if got.View.Stale || got.StaleReason != "" {
-		t.Error("the head's policy is the report's, yet the view is stale")
-	}
-	for _, call := range e.gh.called("ArtifactID") {
-		if !strings.HasPrefix(call.detail, "88 ") {
-			t.Errorf("ArtifactID(%s): the graph read another run than the check's", call.detail)
+func (rt route) expectedStatus() int {
+	for _, suffix := range []string{"/overview", "/onboarding", "/discover", "/pulls/4", "/pulls/4/graph", "/graph", "/findings"} {
+		if rt.api() && strings.HasSuffix(rt.path, suffix) {
+			return http.StatusConflict
 		}
 	}
-	if calls := e.gh.called("LatestRun"); len(calls) != 0 {
-		t.Errorf("LatestRun called %d times: the default branch's report has no place here", len(calls))
-	}
-	h := got.Pull
-	if h == nil || h.Number != 4 || h.Title != "feat: read options" || h.HeadSHA != sha(4)[:shortSHA] ||
-		h.Headline != "Architecture violations found · advisory" || h.URL != "https://github.com/"+repoName+"/pull/4" ||
-		!h.Compared || h.Unavailable != "" {
-		t.Errorf("pull header = %+v", h)
-	}
-	if want := "https://github.com/" + repoName + "/blob/" + sha(4) + "/.archfit.yaml"; got.PolicyHref != want {
-		t.Errorf("policy_href = %q, want %q", got.PolicyHref, want)
-	}
-	added := 0
-	for _, l := range got.View.Links {
-		if l.Origin == report.PairAdded {
-			added++
-		}
-	}
-	if got.Added != added || added == 0 {
-		t.Errorf("added = %d, want the %d added links", got.Added, added)
-	}
-}
-
-func TestPullPageReadsTheGateModeOfTheBase(t *testing.T) {
-	e := newEnv(t)
-	pull := e.gh.pulls[repoName+"#4"]
-	pull.BaseRef = "release"
-	e.gh.pulls[repoName+"#4"] = pull
-	e.gh.setFile(repoName, "release", settings.Path, strings.Replace(settingsText, "gate: advisory", "gate: required", 1))
-	var body pullJSON
-	e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/pulls/4", &body)
-	if !body.Required {
-		t.Error("the base requires the gate, the page says advisory")
-	}
-}
-
-// The page states the engine's decision as the report gives it, the balancing move of each advisory's seam, and the
-// findings whose agent task leaves the move to the owner.
-func TestPullPageStatesTheEngineDecision(t *testing.T) {
-	var doc map[string]any
-	if err := json.Unmarshal(prArtifact(t, prPolicy), &doc); err != nil {
-		t.Fatal(err)
-	}
-	read := func(t *testing.T, doc map[string]any) pullJSON {
-		t.Helper()
-		payload, err := json.Marshal(doc)
-		if err != nil {
-			t.Fatal(err)
-		}
-		e := newEnv(t)
-		e.checkPull(payload)
-		var body pullJSON
-		e.as("alice", permRead).getJSON("/api/repos/"+repoName+"/pulls/4", &body)
-		return body
-	}
-
-	t.Run("as the pilot's report gives it", func(t *testing.T) {
-		b := read(t, doc)
-		want := decisionJSON{Verdict: "blocked", Detail: "hard gates fail, 4 active blockers, every required rule evaluated. PR impact: 6 introduced findings, 6 pre-existing, 0 unknown. Finding origin does not establish that each module pair or listed source site was added. Declared rule checks: 2/2 evaluated. Implicit accepted-reference metric checks: inventory not reported. Accepted reference: comparable.",
-			HardGates: "fail", Blockers: 4, Unevaluated: []report.UnevaluatedRule{}, OriginReasons: []string{}}
-		if b.Decision == nil || !reflect.DeepEqual(*b.Decision, want) {
-			t.Errorf("decision = %+v, want %+v", b.Decision, want)
-		}
-		// Both new advisories lie on the cycle's dependencies: they join those rows, as on the comment, and are not
-		// counted again among the advisories.
-		if !b.AdvisoriesElsewhere {
-			t.Error("advisories_elsewhere is false, want true: advisories joined the cycle's rows")
-		}
-		if len(b.Advisories) != 0 || b.AdvisoryCount != 0 {
-			t.Errorf("advisories = %d listed, %d counted; want both on the violations' rows", len(b.Advisories), b.AdvisoryCount)
-		}
-		also := map[string][]string{}
-		for _, c := range b.Cycles {
-			for _, d := range c.Directions {
-				if len(d.Also) > 0 {
-					also[d.From+" -> "+d.To] = d.Also
-				}
-			}
-		}
-		want2 := map[string][]string{
-			"pkg_container -> pkg_chaos": {"Imbalanced coupling · critical"},
-			"pkg_util -> pkg_chaos":      {"Imbalanced coupling · critical"},
-		}
-		if !reflect.DeepEqual(also, want2) {
-			t.Errorf("also reported = %v, want %v", also, want2)
-		}
-	})
-
-	t.Run("unevaluated rules, attribution notes and an owner decision", func(t *testing.T) {
-		doc["decision"].(map[string]any)["unevaluated_required_rules"] = []any{map[string]any{"rule_id": "layers", "reason": "selector matches no module"}}
-		doc["comparison"].(map[string]any)["origin_reasons"] = []any{"base report lacks finding identities"}
-		advisory := doc["findings"].([]any)[4].(map[string]any)
-		// on a dependency no violation names, so it stays an advisory of its own
-		edge := advisory["edge"].(map[string]any)
-		edge["from"].(map[string]any)["module"], edge["to"].(map[string]any)["module"] = "pkg_cmd", "pkg_util"
-		doc["agent_tasks"] = []any{map[string]any{"finding_id": advisory["id"], "rule_id": advisory["rule_id"],
-			"repair_kind": "needs_owner_decision", "goal": "Decide", "constraints": []any{}, "files": []any{}, "validation": []any{}}}
-		b := read(t, doc)
-		if d := b.Decision; d == nil || len(d.Unevaluated) != 1 || d.Unevaluated[0] != (report.UnevaluatedRule{RuleID: "layers", Reason: "selector matches no module"}) ||
-			!slices.Equal(d.OriginReasons, []string{"base report lacks finding identities"}) {
-			t.Errorf("decision = %+v", b.Decision)
-		}
-		owners := 0
-		for _, f := range b.Advisories {
-			if f.OwnerDecision {
-				owners++
-			}
-		}
-		if owners != 1 {
-			t.Errorf("owner decisions = %d, want the one finding its task names", owners)
-		}
-		if len(b.Advisories) != 1 || b.Advisories[0].Move != report.BalancingMoves["follow_rule"] {
-			t.Errorf("advisories = %+v, want the one on pkg_cmd -> pkg_util with its seam's balancing move", b.Advisories)
-		}
-	})
-}
-
-// The pull request page and its graph read their parts side by side, yet each part fails the answer exactly as when
-// they were read in turn.
-func TestPullPartsFailAsWhenReadInTurn(t *testing.T) {
-	baseSettings, listing, download := "File release:"+settings.Path, "ArtifactID", "ArtifactByID"
-	tests := []struct {
-		name     string
-		path     string
-		fail     map[string]error
-		want     int
-		coldOnly bool // a warm page has the report in its cache, so it downloads nothing
-	}{
-		{"settings of the base", "/pulls/4", map[string]error{baseSettings: api.ErrRateLimited}, http.StatusServiceUnavailable, false},
-		{"the report's listing", "/pulls/4", map[string]error{listing: api.ErrRateLimited}, http.StatusServiceUnavailable, false},
-		{"the report's download", "/pulls/4", map[string]error{download: api.ErrRateLimited}, http.StatusServiceUnavailable, true},
-		{"both, the settings' first", "/pulls/4", map[string]error{baseSettings: api.ErrRateLimited, listing: errors.New("boom")}, http.StatusServiceUnavailable, false},
-		{"the check", "/pulls/4", map[string]error{"CheckRuns": api.ErrRateLimited}, http.StatusServiceUnavailable, false},
-		{"the policy of the head", "/pulls/4/graph", map[string]error{"File " + sha(4) + ":" + policy.PolicyPath: api.ErrRateLimited}, http.StatusServiceUnavailable, false},
-		{"the policy of the base, once the head's is the report's", "/pulls/4/graph", map[string]error{"File release:" + policy.PolicyPath: api.ErrRateLimited}, http.StatusOK, false},
-	}
-	for _, tt := range tests {
-		// Warm, the first request left its hint: the same reads are made ahead, and must fail the page the same way.
-		for _, warm := range []bool{false, true} {
-			if warm && tt.coldOnly {
-				continue
-			}
-			t.Run(fmt.Sprintf("%s, warm %v", tt.name, warm), func(t *testing.T) {
-				e := newEnv(t)
-				c := e.as("alice", permRead)
-				pull := e.gh.pulls[repoName+"#4"]
-				pull.BaseRef = "release"
-				e.gh.pulls[repoName+"#4"] = pull
-				e.checkPull(prArtifact(t, prPolicy))
-				e.gh.setFile(repoName, sha(4), policy.PolicyPath, prPolicy)
-				if warm {
-					wantStatus(t, c.get("/api/repos/"+repoName+tt.path), http.StatusOK)
-				}
-				e.gh.mu.Lock()
-				maps.Copy(e.gh.fail, tt.fail)
-				e.gh.mu.Unlock()
-				wantStatus(t, c.get("/api/repos/"+repoName+tt.path), tt.want)
-			})
-		}
-	}
-}
-
-func TestParseExternalID(t *testing.T) {
-	tests := []struct {
-		id     string
-		run    int64
-		digest string
-		ok     bool
-	}{
-		{"v1:39113331372:1:sha256:2f34", 39113331372, "2f34", true},
-		{"v1:7:1:4444", 7, "4444", true},
-		{"v1:0:0:", 0, "", true},
-		{"v2:7:1:abc", 0, "", false},
-		{"v1:x:1:abc", 0, "", false},
-		{"", 0, "", false},
-	}
-	for _, tt := range tests {
-		run, digest, ok := parseExternalID(tt.id)
-		if run != tt.run || digest != tt.digest || ok != tt.ok {
-			t.Errorf("parseExternalID(%q) = %d, %q, %v; want %d, %q, %v", tt.id, run, digest, ok, tt.run, tt.digest, tt.ok)
-		}
-	}
-}
-
-func TestStatusPageShowsBranchPullsAndSetup(t *testing.T) {
-	setup := func(e *env, stage onboarding.Stage) {
-		e.onb.progress = onboarding.Progress{Stage: stage}
-		e.gh.checks[repoName+"@"+sha(10)+"#"+checkState] = []api.CheckRun{{ID: 1, Conclusion: "neutral", Title: "Architecture needs attention"}}
-		e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{ID: 2, Conclusion: "neutral", Title: "Architecture violations found · advisory"}}
-	}
-	path := "/api/repos/" + repoName + "/overview"
-	read := func(e *env) statusBody {
-		var body statusBody
-		e.as("alice", permRead).getJSON(path, &body)
-		return body
-	}
-	stepOf := func(body statusBody, label string) step {
-		for _, s := range body.Steps {
-			if s.Label == label {
-				return s
-			}
-		}
-		t.Fatalf("no step %q in %+v", label, body.Steps)
-		return step{}
-	}
-	t.Run("advisory", func(t *testing.T) {
-		e := newEnv(t)
-		setup(e, onboarding.StageAdvisory)
-		body := read(e)
-		if body.DefaultBranch != mainBranch || body.MainState != "attention" || body.MainTone != "attention" || body.MainReason != "Architecture needs attention" {
-			t.Errorf("default branch = %q %q %q", body.DefaultBranch, body.MainState, body.MainReason)
-		}
-		want := pullRow{Number: 4, Title: "feat: read options", State: "violations found", Tone: "danger", Reason: "Architecture violations found · advisory", Href: "/r/" + repoName + "/pull/4"}
-		if len(body.Pulls) != 1 || body.Pulls[0] != want {
-			t.Errorf("pulls = %+v, want [%+v]", body.Pulls, want)
-		}
-		if !stepOf(body, "Advisory").Current || !stepOf(body, "Policy merged").Done || !strings.Contains(body.Next, "Make the gate required") || !strings.Contains(body.NextHow, "gate: required") {
-			t.Errorf("steps = %+v, next = %q", body.Steps, body.Next)
-		}
-	})
-	// The default branch and the pull requests are read on the chance of a report, and dropped without one.
-	t.Run("before the first report there is nothing to show", func(t *testing.T) {
-		e := newEnv(t)
-		setup(e, onboarding.StageWorkflowMerged)
-		body := read(e)
-		if body.MainState != "" || body.MainTone != "" || body.Pulls != nil || body.PullsError {
-			t.Errorf("default branch %q, pulls %+v shown before any report", body.MainState, body.Pulls)
-		}
-		if !stepOf(body, "Workflow merged").Current {
-			t.Errorf("steps = %+v", body.Steps)
-		}
-	})
-	t.Run("a merged policy without a report shows nothing and marks no report", func(t *testing.T) {
-		e := newEnv(t)
-		setup(e, onboarding.StagePolicyMerged)
-		body := read(e)
-		if body.MainState != "" || body.Pulls != nil {
-			t.Errorf("state or pull requests shown before a report")
-		}
-		if first := stepOf(body, "First report"); first.Done || first.Current || !stepOf(body, "Policy merged").Current {
-			t.Errorf("steps = %+v", body.Steps)
-		}
-	})
-	t.Run("an enforced gate has no setup step left", func(t *testing.T) {
-		e := newEnv(t)
-		setup(e, onboarding.StageRequired)
-		e.onb.progress.Enforcement = onboarding.EnforcementEnforced
-		body := read(e)
-		if body.Next != "" || body.Stage != "Gate is required" || !stepOf(body, "Required").Current {
-			t.Errorf("stage = %q, next = %q, steps = %+v", body.Stage, body.Next, body.Steps)
-		}
-	})
-	// The settings alone never block a merge: a gate GitHub is not known to require stays on the Advisory step and says
-	// which rule to add, or that the App could not confirm it.
-	for _, tt := range []struct {
-		name        string
-		enforcement onboarding.Enforcement
-		stage, next string
-	}{
-		{"not enforced", onboarding.EnforcementNotEnforced, "Gate is required in settings, not enforced by GitHub",
-			"Make archfit/gate a required status check in a GitHub ruleset on " + mainBranch + "."},
-		{"unknown", onboarding.EnforcementUnknown, "Gate is required in settings, enforcement not confirmed",
-			"Confirm archfit/gate is a required status check on " + mainBranch + "."},
-	} {
-		t.Run("a required gate that is "+tt.name+" stays at advisory", func(t *testing.T) {
-			e := newEnv(t)
-			setup(e, onboarding.StageAdvisory)
-			e.onb.progress.Enforcement = tt.enforcement
-			body := read(e)
-			if body.Stage != tt.stage || body.Next != tt.next || !strings.Contains(body.NextHow, "archfit/gate") ||
-				!stepOf(body, "Advisory").Current || stepOf(body, "Required").Done || stepOf(body, "Required").Current {
-				t.Errorf("stage = %q, next = %q, how = %q, steps = %+v", body.Stage, body.Next, body.NextHow, body.Steps)
-			}
-		})
-	}
-	t.Run("a failed list leaves the page", func(t *testing.T) {
-		e := newEnv(t)
-		setup(e, onboarding.StageAdvisory)
-		e.gh.fail["OpenPulls"] = errors.New("boom")
-		body := read(e)
-		if !body.PullsError || body.MainState != "attention" {
-			t.Errorf("pulls error = %v, main state = %q", body.PullsError, body.MainState)
-		}
-	})
-	t.Run("every optional part failing at once leaves the page", func(t *testing.T) {
-		e := newEnv(t)
-		setup(e, onboarding.StageAdvisory)
-		e.gh.fail["CheckRuns"] = errors.New("boom")
-		e.gh.fail["OpenPulls"] = errors.New("boom")
-		e.acct.err = errors.New("store down")
-		e.consents.readErr = errors.New("store down")
-		var body statusBody
-		e.as("alice", permAdmin).getJSON(path, &body)
-		if !body.Admin || body.MainState != stateUnknown || !body.PullsError || body.Banner != "" {
-			t.Errorf("admin %v, main %q, pulls error %v, banner %q", body.Admin, body.MainState, body.PullsError, body.Banner)
-		}
-		if !stepOf(body, "Advisory").Current {
-			t.Errorf("steps = %+v", body.Steps)
-		}
-	})
-	t.Run("at most maxStatusPulls are looked up", func(t *testing.T) {
-		e := newEnv(t)
-		setup(e, onboarding.StageAdvisory)
-		for n := 100; n < 100+maxStatusPulls+3; n++ {
-			e.gh.pulls[repoName+"#"+strconv.Itoa(n)] = api.Pull{Number: n, Title: "p", State: "open", HeadSHA: sha(n)}
-		}
-		body := read(e)
-		if len(body.Pulls) != maxStatusPulls || body.PullsMore != 4 {
-			t.Errorf("pulls = %d, more = %d; want %d and 4", len(body.Pulls), body.PullsMore, maxStatusPulls)
-		}
-		if got := len(e.gh.called("CheckRuns")); got != maxStatusPulls+1 {
-			t.Errorf("CheckRuns calls = %d, want %d (one per listed pull request and one for the default branch)", got, maxStatusPulls+1)
-		}
-	})
-}
-
-// The graphs read their policy text beside the report, but its failure counts only once there is a report: without
-// one the answer says why, as when the text was read after it.
-func TestPolicyReadFailsNothingWithoutAReport(t *testing.T) {
-	limited := api.ErrRateLimited
-	tests := []struct {
-		name string
-		path string
-		fail map[string]error
-		want string
-	}{
-		{"repository graph", "/graph", map[string]error{"File " + mainBranch + ":" + policy.PolicyPath: limited}, noReport},
-		{"pull request graph", "/pulls/4/graph", map[string]error{
-			"File " + sha(4) + ":" + policy.PolicyPath: limited, "File " + mainBranch + ":" + policy.PolicyPath: limited}, noResult},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			e := newEnv(t)
-			maps.Copy(e.gh.fail, tt.fail)
-			var body graphJSON
-			e.as("alice", permRead).getJSON("/api/repos/"+repoName+tt.path, &body)
-			if body.Unavailable != tt.want || body.View != nil {
-				t.Errorf("unavailable = %q, view %v; want %q", body.Unavailable, body.View != nil, tt.want)
-			}
-		})
-	}
+	return http.StatusOK
 }

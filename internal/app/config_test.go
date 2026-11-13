@@ -45,7 +45,6 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 		CookieKeyFile:     "/run/secrets/cookie",
 		OperatorTokenFile: "/run/secrets/operator",
 		StoreDriver:       "memory",
-		SandboxDriver:     "none",
 		Role:              "all",
 		QueueDriver:       "inline",
 		ApprovedAccounts:  []string{"alexei-led", "vladikk", "coupling-dev"},
@@ -90,7 +89,6 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 	all := requiredEnv()
 	all[envAddr] = "127.0.0.1:9000"
 	all[envStore] = "memory"
-	all[envSandbox] = "none"
 	all[envRole] = "public"
 	all[envQueue] = "cloudtasks"
 	all[envTasksQueue] = everything.TasksQueue
@@ -119,7 +117,6 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 		{name: "missing operator token file", env: without(requiredEnv(), envOperatorTokenFile), wantErr: envOperatorTokenFile},
 		{name: "first missing wins", env: without(without(requiredEnv(), envOperatorTokenFile), envAppID), wantErr: envAppID},
 		{name: "unknown store", env: with(requiredEnv(), envStore, "MARKER-redis"), wantErr: envStore},
-		{name: "unknown sandbox", env: with(requiredEnv(), envSandbox, "MARKER-docker"), wantErr: envSandbox},
 		{name: "firestore without a project", env: firestoreEnv(""), wantErr: envFirestoreProject},
 		{name: "firestore with a named database", env: with(firestoreEnv("coupling-dev-510710"), envFirestoreDatabase, "archfit"), want: onFirestore},
 		{name: "firestore emulator", env: with(firestoreEnv("archfit-local"), envFirestoreEmulator, "127.0.0.1:8086"), want: onEmulator},

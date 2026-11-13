@@ -41,7 +41,7 @@ type setups struct {
 	actionApproved func(string) bool
 }
 
-// NewSetup returns the v4 read side; the old Progress flow remains for v3.
+// NewSetup returns the v4 onboarding read side.
 func NewSetup(gh *api.Client, g gate.SetupViews) Setups {
 	return &setups{gh: gh, gate: g, actionApproved: manifest.ActionApproved}
 }
@@ -163,3 +163,8 @@ func (s *setups) workflowAt(ctx context.Context, r api.Repo, ref string) (bool, 
 	}
 	return found, nil
 }
+
+const (
+	workflowPath  = ".github/workflows/archfit.yaml"
+	gateCheckName = "archfit/gate"
+)

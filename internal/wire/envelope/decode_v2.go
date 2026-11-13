@@ -76,7 +76,7 @@ func DecodeV2(raw, payload []byte) (EnvelopeV2, error) {
 		return EnvelopeV2{}, errors.New("envelope: invalid UTF-8")
 	}
 	fs := fieldsV2()
-	// The v1 pre-pass reads only each key's name and JSON type; envelope 2 has no object-valued key.
+	// The pre-pass checks each key's name and JSON type before decoding values.
 	shape := make([]field, len(fs))
 	for i, f := range fs {
 		shape[i] = field{name: f.name, bits: f.bits}

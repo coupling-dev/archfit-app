@@ -39,7 +39,7 @@ func TestOwnersComeFromThePolicyOnTheDefaultBranch(t *testing.T) {
 		{"an Archfit 3 policy", fakeFiles{content: []byte(archfit3Policy)}, nil, false, nil},
 		{"a schema 3 policy that does not decode", fakeFiles{content: []byte("version: 3\nowners: []\n")}, nil, false, ErrPolicy},
 		{"a schema 3 policy with Archfit 3 keys only", fakeFiles{content: []byte("version: 3\nmodules:\n  app:\n    paths: [x]\n")}, nil, false, ErrPolicy},
-		{"an Archfit 3 policy with a wrong key", fakeFiles{content: []byte(archfit3Policy + "owners: [mallory]\n")}, nil, false, ErrPolicy},
+		{"a version 2 policy with other keys", fakeFiles{content: []byte(archfit3Policy + "owners: [mallory]\n")}, nil, false, nil},
 		{"not YAML", fakeFiles{content: []byte(":\n\t- [")}, nil, false, ErrPolicy},
 		{"GitHub fails", fakeFiles{err: githubDown}, nil, false, githubDown},
 	} {

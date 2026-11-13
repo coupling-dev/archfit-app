@@ -15,6 +15,10 @@ The [README](../README.md) is the front page. This index does not track release 
 
 ## Current behavior
 
+The [module specifications](../internal/module.md) describe the Archfit 4 implementation.
+Architecture and user-guide sections describing Archfit 3 are historical during the page transition;
+their opening contract notice lists the removed inputs and endpoints.
+
 | Document                                       | Use it for                                                                            |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------- |
 | [Architecture](architecture.md)                | Product boundary, request flows, package boundaries, routes, and runtime requirements |

@@ -2,8 +2,6 @@ package ui
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -17,14 +15,11 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
-	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/auth"
 	"github.com/alexei-led/archfit-app/internal/store"
-	"github.com/alexei-led/archfit-app/internal/wire/policy"
-	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 const (
@@ -41,12 +36,7 @@ const (
 	operatorLogin = "ops"
 	operatorID    = int64(9001)
 
-	policyText = "version: 2\nmodules:\n  a:\n    layer: core\n    paths: [\"pkg/a/**\"]\n  b:\n    layer: edge\n    paths: [\"pkg/b/**\"]\n"
-
-	settingsText = "version: 1\nowners: [alice]\ngate: advisory\nworkflow: " + workflow + "\ndata_mode: managed\n"
-
-	// config_hash of testdata/healthy.json, replaced by the digest of the policy a test uses.
-	fixtureConfigHash = "4a18013bab44d922fa67d9e8e699463b2b5284f1c2908b62d2b7c5f607c55574"
+	policyText = "version: 3\nowners: [alice]\nmodules:\n  a:\n    layer: core\n    paths: [\"pkg/a/**\"]\n  b:\n    layer: edge\n    paths: [\"pkg/b/**\"]\n"
 )
 
 var cookieKey = bytes.Repeat([]byte{7}, 32)
@@ -69,7 +59,6 @@ type env struct {
 	gh       *fakeGH
 	acct     *fakeAccount
 	consents *fakeConsents
-	onb      *fakeOnboarding
 	passkeys *fakePasskeys
 	policy   *fakePolicyViews
 	requests *fakeRequestViews
@@ -95,7 +84,7 @@ func newEnv(t *testing.T) *env {
 		t: t, gh: gh, store: mem, readsDown: &reads.down,
 		admit:    gate.NewAdmissions(reads, []string{"acme", "rival"}),
 		acct:     &fakeAccount{Account: realAccount, status: account.Status{Plan: account.PlanPublic}},
-		consents: newFakeConsents(), onb: &fakeOnboarding{progress: onboarding.Progress{Stage: onboarding.StagePolicyMerged}},
+		consents: newFakeConsents(),
 		passkeys: &fakePasskeys{}, policy: &fakePolicyViews{}, requests: &fakeRequestViews{}, answers: &fakeAnswers{},
 		owners: &fakeOwners{}, setups: &fakeSetups{}, oauth: &fakeOAuth{tokens: map[string]auth.UserToken{}},
 		now: time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC),
@@ -106,9 +95,9 @@ func newEnv(t *testing.T) *env {
 		t.Fatalf("session.New: %v", err)
 	}
 	e.handler = newHandler(Deps{
-		Account: e.acct, Consents: e.consents, Onboarding: e.onb,
+		Account: e.acct, Consents: e.consents,
 		Admissions: e.admit, PolicyViews: e.policy, RequestViews: e.requests, Answers: e.answers, Owners: e.owners, Setups: e.setups, Passkeys: e.passkeys, Operators: []int64{operatorID}, BaseURL: baseURL, Now: clock,
-	}, github{files: gh, checks: gh, actions: gh, pulls: gh, users: gh, installs: gh}, sessions, testWeb)
+	}, github{files: gh, checks: gh, pulls: gh, users: gh, installs: gh}, sessions, testWeb)
 
 	e.addRepo(repoName, installA, 10)
 	e.addRepo(otherRepo, installB, 20)
@@ -125,8 +114,7 @@ func (e *env) addRepo(fullName string, installationID, id int64) {
 		Number: 4, Title: "feat: read options", Author: "alexei", State: "open", URL: "https://github.com/" + fullName + "/pull/4",
 		HeadSHA: sha(4), HeadRef: "feature", BaseRef: mainBranch, BaseSHA: sha(int(id)),
 	}
-	e.gh.setFile(fullName, mainBranch, policy.PolicyPath, policyText)
-	e.gh.setFile(fullName, mainBranch, settings.Path, settingsText)
+	e.gh.setFile(fullName, mainBranch, ".archfit.yaml", policyText)
 }
 
 // grant gives the login a permission on a repository, as GitHub reports it.
@@ -259,58 +247,6 @@ func decodeAs[T any](t *testing.T, res *httptest.ResponseRecorder) T {
 		t.Fatalf("decode %.200s: %v", res.Body.String(), err)
 	}
 	return out
-}
-
-// artifact is an engine state fixture ("healthy" or "real-blocked-no-baseline") whose config_hash matches policyText.
-func artifact(t *testing.T, name string) []byte {
-	t.Helper()
-	raw, err := os.ReadFile("testdata/" + name + ".json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Contains(raw, []byte(fixtureConfigHash)) {
-		t.Fatal("fixture config_hash changed")
-	}
-	return bytes.ReplaceAll(raw, []byte(fixtureConfigHash), []byte(policy.Digest([]byte(policyText))))
-}
-
-// publishReport makes payload the archfit-report artifact of the latest default-branch push run.
-func (e *env) publishReport(fullName string, payload []byte) {
-	e.gh.addRun(fullName, workflow, mainBranch, api.WorkflowRun{ID: 77, Event: "push", Status: "completed", Conclusion: "success"})
-	e.gh.mu.Lock()
-	defer e.gh.mu.Unlock()
-	e.gh.artifacts[77] = payload
-}
-
-// prPolicy is the policy of testdata/pr-cycle.json, a report shaped like coupling-dev/pumba-pilot#11 (engine v3.0.1,
-// --base, origin comparable): two module cycles and two coupling advisories added by the pull request, six accepted ones.
-// It is the real capture internal/wire/testdata/report/real-pr-origin.json with its findings, seams and modules replaced.
-const prPolicy = "version: 2\nmodules:\n  pkg_cmd:\n    paths: [\"pkg/cmd/**\"]\n  pkg_chaos:\n    paths: [\"pkg/chaos/**\"]\n" +
-	"  pkg_container:\n    paths: [\"pkg/container/**\"]\n  pkg_util:\n    paths: [\"pkg/util/**\"]\n"
-
-// prArtifact reads testdata/pr-cycle.json as a report computed from policyText.
-func prArtifact(t *testing.T, policyText string) []byte {
-	t.Helper()
-	raw, err := os.ReadFile("testdata/pr-cycle.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Contains(raw, []byte(fixtureConfigHash)) {
-		t.Fatal("fixture config_hash changed")
-	}
-	return bytes.ReplaceAll(raw, []byte(fixtureConfigHash), []byte(policy.Digest([]byte(policyText))))
-}
-
-// checkPull makes payload the report of run 88, which the archfit/state check on pull request #4's head names.
-func (e *env) checkPull(payload []byte) {
-	sum := sha256.Sum256(payload)
-	e.gh.mu.Lock()
-	defer e.gh.mu.Unlock()
-	e.gh.checks[repoName+"@"+sha(4)+"#"+checkState] = []api.CheckRun{{
-		ID: 9, Name: checkState, HeadSHA: sha(4), Status: "completed", Conclusion: "neutral",
-		Title: "Architecture violations found · advisory", ExternalID: "v1:88:1:sha256:" + hex.EncodeToString(sum[:]),
-	}}
-	e.gh.artifacts[88] = payload
 }
 
 // captureLogs swaps the default logger; tests that use it do not run in parallel.

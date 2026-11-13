@@ -33,7 +33,7 @@ const (
 	maxSweepResultBytes = 5 << 20
 )
 
-// sweep4 is separate from the Archfit 3 receipt pass: no legacy approval rule or module-graph rule applies to v4.
+// sweep4 reconciles Archfit 4 records and checks without legacy receipt or module-graph rules.
 func (g *Gate) sweep4(ctx context.Context, sum Summary) (Summary, error) {
 	if err := ctx.Err(); err != nil {
 		return sum, err

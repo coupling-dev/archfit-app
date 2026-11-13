@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 // fakeGitHub is an in-memory GitHub REST API. Unknown routes answer 404 and are logged,
@@ -105,24 +104,6 @@ func (g *fakeGitHub) usedTokenOf(id int64) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return slices.Contains(g.installTokens, id)
-}
-
-// awaitManagedJob blocks until the managed discovery goroutine has committed path to branch and
-// closed its "running" marker in the pull request body: its last write.
-func (g *fakeGitHub) awaitManagedJob(fullName, branch, path string) string {
-	g.t.Helper()
-	timeout := time.After(10 * time.Second)
-	for {
-		content, ok := g.file(fullName, branch, path)
-		if pulls := g.pulls(fullName); ok && len(pulls) > 0 && !strings.Contains(pulls[0].Body, "state=running") {
-			return content
-		}
-		select {
-		case <-g.wrote:
-		case <-timeout:
-			g.t.Fatalf("fake GitHub: the managed job never finished %s on %s", path, branch)
-		}
-	}
 }
 
 func ghr(id int64, fullName string, private bool) ghRepo {

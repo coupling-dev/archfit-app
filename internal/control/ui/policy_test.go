@@ -102,6 +102,7 @@ exceptions:
 
 func TestPolicyErrorsAndEdit(t *testing.T) {
 	e := newEnv(t)
+	e.gh.setFile(repoName, mainBranch, ".archfit.yaml", "version: 2\nmodules: {}\n")
 	c := e.as("alice", permRead)
 	res := c.get(policyAPI)
 	wantStatus(t, res, http.StatusConflict)

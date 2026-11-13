@@ -27,7 +27,6 @@ const (
 	envFirestoreDatabase   = "ARCHFIT_FIRESTORE_DATABASE"
 	// envFirestoreEmulator is the name every Firestore client reads; the emulator prints it on start.
 	envFirestoreEmulator = "FIRESTORE_EMULATOR_HOST"
-	envSandbox           = "ARCHFIT_SANDBOX"
 	envRole              = "ARCHFIT_ROLE"
 	envQueue             = "ARCHFIT_QUEUE"
 	envTasksQueue        = "ARCHFIT_TASKS_QUEUE"
@@ -45,7 +44,6 @@ const (
 
 	storeMemory    = "memory"
 	storeFirestore = "firestore"
-	sandboxNone    = "none"
 
 	queueInline     = "inline"
 	queueCloudTasks = "cloudtasks"
@@ -85,7 +83,6 @@ type Config struct {
 	FirestoreProject    string   // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
 	FirestoreDatabase   string   // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
 	FirestoreEmulator   string   // FIRESTORE_EMULATOR_HOST; host:port, plain HTTP and no credentials
-	SandboxDriver       string   // ARCHFIT_SANDBOX, "none" until docs/tech-stack.md picks one
 	Role                string   // ARCHFIT_ROLE: "all" (default), "public" or "worker"
 	QueueDriver         string   // ARCHFIT_QUEUE: "inline" (local all-role default); public requires "cloudtasks"
 	TasksQueue          string   // ARCHFIT_TASKS_QUEUE: "projects/<p>/locations/<l>/queues/<q>"; cloudtasks only
@@ -116,7 +113,6 @@ func Load(getenv func(string) string) (Config, error) {
 		FirestoreProject:    getenv(envFirestoreProject),
 		FirestoreDatabase:   getenv(envFirestoreDatabase),
 		FirestoreEmulator:   getenv(envFirestoreEmulator),
-		SandboxDriver:       cmp.Or(getenv(envSandbox), sandboxNone),
 		Role:                cmp.Or(getenv(envRole), roleAll),
 		QueueDriver:         cmp.Or(getenv(envQueue), queueInline),
 		TasksQueue:          getenv(envTasksQueue),
@@ -165,7 +161,6 @@ func (c Config) validate() error {
 		{envOperatorTokenFile, c.Role == rolePublic || c.OperatorTokenFile != ""},
 		{envStore, storeDrivers[c.StoreDriver] != nil},
 		{envFirestoreProject, c.StoreDriver != storeFirestore || c.FirestoreProject != ""},
-		{envSandbox, sandboxDrivers[c.SandboxDriver] != nil},
 		// Local all-role work is inline; public intake must use the durable queue.
 		{envQueue, c.QueueDriver == queueInline && c.Role != rolePublic || c.QueueDriver == queueCloudTasks && c.Role != roleAll},
 		{envTasksQueue, !enqueuesToCloudTasks || c.TasksQueue != ""},

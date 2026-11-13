@@ -5,8 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
-	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,8 +13,6 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
-	"github.com/alexei-led/archfit-app/internal/control/onboarding"
-	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/auth"
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -34,81 +30,23 @@ type ghCall struct {
 
 // fakeGH is GitHub as ui and session see it: the role-interface methods they call, over maps.
 type fakeGH struct {
-	mu        sync.Mutex
-	repos     map[string]api.Repo          // installed repositories by full name
-	perms     map[string]string            // token + " " + full name → permission
-	listed    map[string][]string          // token → full names UserRepos returns
-	files     map[string][]byte            // full name + "@" + ref + ":" + path
-	heads     map[string]string            // full name + "@" + branch
-	checks    map[string][]api.CheckRun    // full name + "@" + sha + "#" + check name
-	runs      map[string][]api.WorkflowRun // full name + "@" + workflow + "@" + branch, newest first
-	artifacts map[int64][]byte
-	pulls     map[string]api.Pull // full name + "#" + number
-	fail      map[string]error    // method, method + " " + full name, or method + " " + the call's detail
-	calls     []ghCall
-	meet      *meeting // set before the request: the calls that must be in flight together
-}
-
-// meeting holds the first call of each key it names until every key has arrived, so reads made in turn never meet.
-// A key is a method, or a method and the call's detail as in fakeGH.fail. A read that never comes leaves the others
-// to go on after a timeout, and the meeting reports the miss.
-type meeting struct {
-	mu      sync.Mutex
-	arrived map[string]bool
-	all     chan struct{}
-	missed  bool
-}
-
-func newMeeting(keys ...string) *meeting {
-	m := &meeting{arrived: map[string]bool{}, all: make(chan struct{})}
-	for _, k := range keys {
-		m.arrived[k] = false
-	}
-	return m
-}
-
-func (m *meeting) arrive(method, detail string) {
-	if m == nil {
-		return
-	}
-	m.mu.Lock()
-	key := ""
-	for _, k := range []string{method + " " + detail, method} {
-		if arrived, named := m.arrived[k]; named && !arrived {
-			key = k
-			break
-		}
-	}
-	if key == "" {
-		m.mu.Unlock()
-		return
-	}
-	m.arrived[key] = true
-	if !slices.Contains(slices.Collect(maps.Values(m.arrived)), false) {
-		close(m.all)
-	}
-	m.mu.Unlock()
-	select {
-	case <-m.all:
-	case <-time.After(2 * time.Second):
-		m.mu.Lock()
-		m.missed = true
-		m.mu.Unlock()
-	}
-}
-
-// met is true when every key arrived while the others were still in flight.
-func (m *meeting) met() bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return !m.missed && !slices.Contains(slices.Collect(maps.Values(m.arrived)), false)
+	mu     sync.Mutex
+	repos  map[string]api.Repo       // installed repositories by full name
+	perms  map[string]string         // token + " " + full name → permission
+	listed map[string][]string       // token → full names UserRepos returns
+	files  map[string][]byte         // full name + "@" + ref + ":" + path
+	heads  map[string]string         // full name + "@" + branch
+	checks map[string][]api.CheckRun // full name + "@" + sha + "#" + check name
+	pulls  map[string]api.Pull       // full name + "#" + number
+	fail   map[string]error          // method, method + " " + full name, or method + " " + the call's detail
+	calls  []ghCall
 }
 
 func newFakeGH() *fakeGH {
 	return &fakeGH{
 		repos: map[string]api.Repo{}, perms: map[string]string{}, listed: map[string][]string{},
 		files: map[string][]byte{}, heads: map[string]string{}, checks: map[string][]api.CheckRun{},
-		runs: map[string][]api.WorkflowRun{}, artifacts: map[int64][]byte{}, pulls: map[string]api.Pull{}, fail: map[string]error{},
+		pulls: map[string]api.Pull{}, fail: map[string]error{},
 	}
 }
 
@@ -139,12 +77,6 @@ func (g *fakeGH) setFile(fullName, ref, path, content string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.files[fullName+"@"+ref+":"+path] = []byte(content)
-}
-
-func (g *fakeGH) deleteFile(fullName, ref, path string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	delete(g.files, fullName+"@"+ref+":"+path)
 }
 
 func (g *fakeGH) Permission(_ context.Context, userToken, fullName string) (string, error) {
@@ -219,7 +151,6 @@ func (g *fakeGH) ResolveRepo(_ context.Context, fullName string) (api.Repo, erro
 }
 
 func (g *fakeGH) File(_ context.Context, r api.RepoRef, ref, path string) ([]byte, string, error) {
-	g.meet.arrive("File", ref+":"+path)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if err := g.record("File", r, ref+":"+path); err != nil {
@@ -249,7 +180,6 @@ func (g *fakeGH) File(_ context.Context, r api.RepoRef, ref, path string) ([]byt
 }
 
 func (g *fakeGH) BranchHead(_ context.Context, r api.RepoRef, branch string) (string, error) {
-	g.meet.arrive("BranchHead", branch)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if err := g.record("BranchHead", r, branch); err != nil {
@@ -274,7 +204,6 @@ func (g *fakeGH) BranchHead(_ context.Context, r api.RepoRef, branch string) (st
 }
 
 func (g *fakeGH) CheckRuns(_ context.Context, r api.RepoRef, headSHA, name string) ([]api.CheckRun, error) {
-	g.meet.arrive("CheckRuns", headSHA)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if err := g.record("CheckRuns", r, headSHA+"#"+name); err != nil {
@@ -284,7 +213,6 @@ func (g *fakeGH) CheckRuns(_ context.Context, r api.RepoRef, headSHA, name strin
 }
 
 func (g *fakeGH) PullSummary(_ context.Context, r api.RepoRef, number int) (api.Pull, error) {
-	g.meet.arrive("PullSummary", "")
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if err := g.record("PullSummary", r, strconv.Itoa(number)); err != nil {
@@ -299,7 +227,6 @@ func (g *fakeGH) PullSummary(_ context.Context, r api.RepoRef, number int) (api.
 
 // OpenPulls lists the open pull requests of a repository by number.
 func (g *fakeGH) OpenPulls(_ context.Context, r api.RepoRef) ([]api.Pull, error) {
-	g.meet.arrive("OpenPulls", "")
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if err := g.record("OpenPulls", r, ""); err != nil {
@@ -313,63 +240,6 @@ func (g *fakeGH) OpenPulls(_ context.Context, r api.RepoRef) ([]api.Pull, error)
 	}
 	slices.SortFunc(open, func(a, b api.Pull) int { return b.Number - a.Number })
 	return open, nil
-}
-
-func (g *fakeGH) Dispatch(_ context.Context, r api.RepoRef, workflowPath, ref string, inputs map[string]string) error {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	return g.record("Dispatch", r, fmt.Sprintf("%s@%s %v", workflowPath, ref, inputs))
-}
-
-// LatestRun filters as GitHub does: status matches a run's status or its conclusion.
-func (g *fakeGH) LatestRun(_ context.Context, r api.RepoRef, workflowPath string, f api.RunFilter) (api.WorkflowRun, error) {
-	g.meet.arrive("LatestRun", workflowPath)
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if err := g.record("LatestRun", r, fmt.Sprintf("%s@%s event=%s status=%s", workflowPath, f.Branch, f.Event, f.Status)); err != nil {
-		return api.WorkflowRun{}, err
-	}
-	for _, run := range g.runs[r.FullName+"@"+workflowPath+"@"+f.Branch] {
-		if (f.Event == "" || run.Event == f.Event) && (f.Status == "" || run.Status == f.Status || run.Conclusion == f.Status) {
-			return run, nil
-		}
-	}
-	return api.WorkflowRun{}, api.ErrNotFound
-}
-
-// addRun makes run the newest run of workflow on branch.
-func (g *fakeGH) addRun(fullName, workflowPath, branch string, run api.WorkflowRun) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	key := fullName + "@" + workflowPath + "@" + branch
-	g.runs[key] = append([]api.WorkflowRun{run}, g.runs[key]...)
-}
-
-// ArtifactID names a run's artifact by the run's ID: the fake keeps one artifact per run.
-func (g *fakeGH) ArtifactID(_ context.Context, r api.RepoRef, runID int64, name string) (int64, error) {
-	g.meet.arrive("ArtifactID", "")
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if err := g.record("ArtifactID", r, fmt.Sprintf("%d %s", runID, name)); err != nil {
-		return 0, err
-	}
-	if _, ok := g.artifacts[runID]; !ok {
-		return 0, api.ErrNotFound
-	}
-	return runID, nil
-}
-
-func (g *fakeGH) ArtifactByID(_ context.Context, r api.RepoRef, id int64, maxBytes int64) ([]byte, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if err := g.record("ArtifactByID", r, fmt.Sprintf("%d %d", id, maxBytes)); err != nil {
-		return nil, err
-	}
-	a, ok := g.artifacts[id]
-	if !ok {
-		return nil, api.ErrNotFound
-	}
-	return a, nil
 }
 
 type fakeAccount struct {
@@ -435,51 +305,6 @@ func (c *fakeConsents) Get(_ context.Context, installationID int64, k account.Co
 	}
 	got, ok := c.recorded[installationID][k]
 	return got, ok, nil
-}
-
-type startCall struct {
-	repo   api.Repo
-	owners []string
-}
-
-type fakeOnboarding struct {
-	progress onboarding.Progress
-	err      error // of Progress
-	panics   bool  // Progress panics
-	startErr error
-	customer []startCall
-	managed  []startCall
-	meet     *meeting // as fakeGH.meet, under the key "Progress"
-}
-
-func (o *fakeOnboarding) Progress(context.Context, api.Repo) (onboarding.Progress, error) {
-	o.meet.arrive("Progress", "")
-	if o.panics {
-		panic("boom")
-	}
-	return o.progress, o.err
-}
-
-func (o *fakeOnboarding) StartCustomer(_ context.Context, r api.Repo, owners []string) (proposal.Draft, error) {
-	o.customer = append(o.customer, startCall{r, owners})
-	return proposal.Draft{}, o.startErr
-}
-
-func (o *fakeOnboarding) StartManaged(_ context.Context, r api.Repo, owners []string) (proposal.Draft, error) {
-	o.managed = append(o.managed, startCall{r, owners})
-	return proposal.Draft{}, o.startErr
-}
-
-func (o *fakeOnboarding) DiscoveryHandler() http.Handler {
-	panic("ui must never mount DiscoveryHandler")
-}
-
-func (o *fakeOnboarding) BaselineHandler() http.Handler {
-	panic("ui must never mount BaselineHandler")
-}
-
-func (o *fakeOnboarding) ReanchorHandler() http.Handler {
-	panic("ui must never mount ReanchorHandler")
 }
 
 // fakeOAuth exchanges the code "code-<login>" for that login's token.

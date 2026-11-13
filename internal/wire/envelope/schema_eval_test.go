@@ -9,8 +9,6 @@ import (
 	"regexp"
 	"testing"
 	"unicode/utf8"
-
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
 )
 
 // parseJSON keeps numbers as json.Number and rejects trailing data.
@@ -25,31 +23,6 @@ func parseJSON(raw []byte) (any, error) {
 		return nil, io.ErrUnexpectedEOF
 	}
 	return v, nil
-}
-
-// schemaAccepts evaluates raw against Schema() with the test-local evaluator.
-func schemaAccepts(t *testing.T, raw []byte) bool {
-	t.Helper()
-	doc, err := parseJSON(envelope.Schema())
-	if err != nil {
-		t.Fatalf("Schema() is not valid JSON: %v", err)
-	}
-	schema, ok := doc.(map[string]any)
-	if !ok {
-		t.Fatalf("Schema() is not a JSON object")
-	}
-	inst, err := parseJSON(raw)
-	if err != nil {
-		return false
-	}
-	return evalSchema(t, schema, inst)
-}
-
-func wantSchemaAgrees(t *testing.T, raw []byte, decoded bool) {
-	t.Helper()
-	if got := schemaAccepts(t, raw); got != decoded {
-		t.Errorf("schema accepts = %v, Decode accepts = %v", got, decoded)
-	}
 }
 
 // evalSchema supports exactly the keywords the envelope schema uses and fails the test on any other.

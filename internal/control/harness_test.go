@@ -14,7 +14,6 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/auth"
 	"github.com/alexei-led/archfit-app/internal/store"
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
 )
 
 const testBaseURL = "https://archfit.test"
@@ -23,36 +22,31 @@ var testCookieKey = []byte("0123456789abcdef0123456789abcdef")
 
 // harness is a real Control over a memory Store and a fake GitHub HTTP server behind a real *api.Client.
 type harness struct {
-	t        *testing.T
-	c        *Control
-	gh       *fakeGitHub
-	store    *flakyStore
-	clock    *clock
-	receiver *fakeReceiver
-	sandbox  *fakeSandbox
+	t     *testing.T
+	c     *Control
+	gh    *fakeGitHub
+	store *flakyStore
+	clock *clock
 	// status reads the account records of the same Store without going through the façade.
 	status account.Account
 }
 
 type harnessOption func(*Deps)
 
-func withoutSandbox(d *Deps) { d.Sandbox = nil }
-
 func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	t.Helper()
 	h := &harness{
 		t: t, gh: newFakeGitHub(t), store: &flakyStore{Store: store.NewMemory()}, clock: newClock(),
-		receiver: &fakeReceiver{}, sandbox: &fakeSandbox{},
 	}
 	admissions := gate.NewAdmissions(h.store, testAccounts)
 	g := gate.New(gate.Deps{GitHub: h.gh.client(), Store: h.store, Admissions: admissions, Audience: testBaseURL, Now: h.clock.Now})
 	d := Deps{
-		GitHub: h.gh.client(), Tokens: fakeTokens{}, OAuth: fakeOAuth{}, Store: h.store, Receiver: h.receiver,
+		GitHub: h.gh.client(), OAuth: fakeOAuth{}, Store: h.store,
 		Admissions:   admissions,
 		PolicyViews:  g,
 		RequestViews: g,
 		Answers:      g,
-		Sandbox:      h.sandbox, CookieKey: testCookieKey, BaseURL: testBaseURL, Now: h.clock.Now,
+		CookieKey:    testCookieKey, BaseURL: testBaseURL, Now: h.clock.Now,
 	}
 	for _, o := range opts {
 		o(&d)
@@ -197,46 +191,6 @@ func (fakeOAuth) AuthorizeURL(state, redirectURL string) string {
 
 func (fakeOAuth) Exchange(_ context.Context, code string) (auth.UserToken, error) {
 	return auth.UserToken{AccessToken: "user-" + code, Login: code, UserID: 1}, nil
-}
-
-type fakeReceiver struct {
-	mu     sync.Mutex
-	upload gate.Upload
-	err    error
-	calls  int
-}
-
-func (f *fakeReceiver) Receive(_ context.Context, _ *http.Request, _ envelope.Kind) (gate.Upload, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls++
-	return f.upload, f.err
-}
-
-func (f *fakeReceiver) answer(u gate.Upload, err error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.upload, f.err = u, err
-}
-
-type fakeSandbox struct {
-	mu     sync.Mutex
-	jobs   []DiscoveryJob
-	result DiscoveryResult
-	err    error
-}
-
-func (f *fakeSandbox) Discover(_ context.Context, job DiscoveryJob) (DiscoveryResult, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.jobs = append(f.jobs, job)
-	return f.result, f.err
-}
-
-func (f *fakeSandbox) count() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return len(f.jobs)
 }
 
 // rewriteTransport sends every api.github.com request to the fake server.

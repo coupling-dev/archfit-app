@@ -3,7 +3,7 @@
 setup() {
 	ROOT=$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)
 	mkdir -p "$BATS_TEST_TMPDIR/internal/wire/manifest" "$BATS_TEST_TMPDIR/internal/wire/envelope" "$BATS_TEST_TMPDIR/bin"
-	cp "$ROOT/internal/wire/envelope/envelope.v1.schema.json" "$BATS_TEST_TMPDIR/internal/wire/envelope/"
+	cp "$ROOT/internal/wire/envelope/envelope.v2.schema.json" "$BATS_TEST_TMPDIR/internal/wire/envelope/"
 	cd "$BATS_TEST_TMPDIR" || return
 	export GITHUB_OUTPUT="$BATS_TEST_TMPDIR/output" GITHUB_STEP_SUMMARY="$BATS_TEST_TMPDIR/summary"
 	export RUNNER_TEMP="$BATS_TEST_TMPDIR"
@@ -19,21 +19,31 @@ setup() {
 }
 
 @test "Action pin job validates and deduplicates every transition ref" {
-	jq -n --arg a "$REF1" --arg b "$REF2" '{entries:[{action_ref:$a},{action_ref:$b},{action_ref:$a}]}' >internal/wire/manifest/manifest.json
+	jq -n --arg a "$REF1" --arg b "$REF2" '{version:2,engines:[{action_commits:[$a,$b]},{action_commits:[$a]}]}' >internal/wire/manifest/manifest4.json
 	run bash action-pin.sh
 	[ "$status" -eq 0 ]
 	[ "$(cat "$GITHUB_OUTPUT")" = "refs=[\"$REF1\",\"$REF2\"]" ]
 }
 
-@test "Action pin job fails closed for empty invalid or placeholder refs" {
+@test "Action pin job accepts an empty engine list without approving any Action" {
+	printf '%s\n' '{"version":2,"engines":[]}' >internal/wire/manifest/manifest4.json
+	run bash action-pin.sh
+	[ "$status" -eq 0 ]
+	[ "$(cat "$GITHUB_OUTPUT")" = 'refs=[]' ]
+}
+
+@test "Action pin job fails closed for malformed engines and invalid or placeholder refs" {
 	local manifest
-	for manifest in '{"entries":[]}' '{"entries":[{}]}' '{"entries":[{"action_ref":123}]}' \
-		'{"entries":[{"action_ref":"main"}]}' '{"entries":[{"action_ref":"cadf35c0d4885a49a3a1482b876f2a456d20de06\n"}]}' '{"entries":[{"action_ref":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}' \
-		'{"entries":[{"action_ref":"e0a1ef9473d68b426e9c56b2da5986bcee2fc769\ninjected=true"}]}'; do
-		printf '%s\n' "$manifest" >internal/wire/manifest/manifest.json
-		run bash action-pin.sh
-		[ "$status" -ne 0 ]
-		[ ! -e "$GITHUB_OUTPUT" ]
+	for manifest in '{"version":1,"engines":[]}' '{"version":2}' '{"version":2,"engines":null}' \
+	 '{"version":2,"engines":[{}]}' '{"version":2,"engines":[{"action_commits":[]}]}' \
+	 '{"version":2,"engines":[{"action_commits":[123]}]}' \
+	 '{"version":2,"engines":[{"action_commits":["main"]}]}' \
+	 '{"version":2,"engines":[{"action_commits":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]}]}' \
+	 '{"version":2,"engines":[{"action_commits":["e0a1ef9473d68b426e9c56b2da5986bcee2fc769\ninjected=true"]}]}'; do
+	 printf '%s\n' "$manifest" >internal/wire/manifest/manifest4.json
+	 run bash action-pin.sh
+	 [ "$status" -ne 0 ]
+	 [ ! -e "$GITHUB_OUTPUT" ]
 	done
 }
 
@@ -55,7 +65,7 @@ case $3 in
 		if [[ $(cat "$checkout/ref") == "${MISMATCH_REF:-}" ]]; then
 			printf 'different schema\n'
 		else
-			cat internal/wire/envelope/envelope.v1.schema.json
+			cat internal/wire/envelope/envelope.v2.schema.json
 		fi
 		;;
 	*) exit 2 ;;
@@ -86,13 +96,21 @@ MOCK
 	[ "$status" -ne 0 ]
 }
 
-@test "Action conformance rejects empty invalid and placeholder lists before fetching" {
+@test "Action conformance rejects invalid and placeholder lists before fetching" {
 	mock_git
 	local refs
-	for refs in '[]' 'null' '["main"]' '["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]'; do
+	for refs in 'null' '["main"]' '["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]'; do
 		export ACTION_REFS="$refs"
 		run bash action-conformance.sh
 		[ "$status" -ne 0 ]
 		[ ! -e fetched ]
 	done
+}
+
+@test "Action conformance accepts an empty approved list without fetching" {
+	mock_git
+	run env ACTION_REFS='[]' bash action-conformance.sh
+	[ "$status" -eq 0 ]
+	[ ! -e fetched ]
+	grep -q 'No approved Action commits' "$GITHUB_STEP_SUMMARY"
 }

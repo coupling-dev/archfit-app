@@ -60,9 +60,6 @@ type gateFacade interface {
 // controlFacade is the part of *control.Control the HTTP assembly uses.
 type controlFacade interface {
 	UIHandler() http.Handler
-	DiscoveryHandler() http.Handler
-	BaselineHandler() http.Handler
-	ReanchorHandler() http.Handler
 	HandleEvent(ctx context.Context, e webhook.Event) error
 	Sweep(ctx context.Context) error
 	Grant(ctx context.Context, installationID int64, until time.Time) error
@@ -96,9 +93,9 @@ func newHandler(d handlerDeps) http.Handler {
 	mux.HandleFunc(readyRoute, s.ready)
 	if d.role != roleWorker {
 		mux.Handle("POST /v1/reports", http.TimeoutHandler(d.gate.UploadHandler(), uploadTimeout, ""))
-		mux.Handle("POST /v1/discoveries", http.TimeoutHandler(d.control.DiscoveryHandler(), controlTimeout, ""))
-		mux.Handle("POST /v1/baselines", http.TimeoutHandler(d.control.BaselineHandler(), controlTimeout, ""))
-		mux.Handle("POST /v1/reanchors", http.TimeoutHandler(d.control.ReanchorHandler(), controlTimeout, ""))
+		for _, path := range []string{"/v1/discoveries", "/v1/baselines", "/v1/reanchors"} {
+			mux.Handle(path, http.NotFoundHandler())
+		}
 		mux.HandleFunc("POST /webhooks/github", s.webhook)
 		ui := d.control.UIHandler()
 		mux.Handle("/", http.TimeoutHandler(ui, controlTimeout, ""))

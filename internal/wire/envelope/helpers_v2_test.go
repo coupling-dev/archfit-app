@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -176,3 +177,17 @@ func loadFixturesV2(t testing.TB) []fixtureV2 {
 	}
 	return out
 }
+
+const (
+	expectSuffix = ".expect.json"
+	decodeOK     = "ok"
+	hex40        = "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f"
+	hex64        = "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b"
+)
+
+func quoted(s string) string { return strconv.Quote(s) }
+
+const (
+	maxRawBytes = 8192
+	leakMarker  = "LEAK-7f3a"
+)

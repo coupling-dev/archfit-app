@@ -4,6 +4,14 @@ Archfit checks each pull request against the architecture rules in your reposito
 This repository is the hosted GitHub App. Your CI runs the engine and sends the App a report with no source code.
 The App checks the report against your approved policy, then publishes a check and a comment on the pull request.
 
+## Archfit 4 input contract
+
+Only upload envelope 2, result v1, schema 3 policy and manifest 4 are supported.
+The discovery/baseline/reanchor upload URLs and /schema/policy.json return 404.
+The App no longer reads .archfit-app.yaml or Archfit 3 reports. Existing page shells remain;
+legacy-only page-data and onboarding/discovery APIs return 409 until their Archfit 4 replacements land.
+See the [current module contracts](internal/module.md); older guide sections about Archfit 3 are historical.
+
 ## Repository owners
 
 - **Install:** [Archfit Review on GitHub](https://github.com/apps/archfit-review), then choose the repositories.

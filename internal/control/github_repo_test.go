@@ -53,56 +53,12 @@ func (g *fakeGitHub) state(fullName string) *ghState {
 	return st
 }
 
-// merge merges the pull request of branch into its base.
-func (g *fakeGitHub) merge(fullName, branch string) {
-	g.set(func(g *fakeGitHub) {
-		st := g.state(fullName)
-		for _, p := range st.pulls {
-			if p.Head == branch && p.State == "open" {
-				snap := clone(st.commits[st.branches[p.Base]])
-				for path, c := range st.commits[st.branches[branch]] {
-					snap[path] = c
-				}
-				st.commit(p.Base, snap)
-				p.State, p.Merged, p.Draft = "closed", true, false
-				return
-			}
-		}
-		g.t.Errorf("fake GitHub: no open pull request for %s", branch)
-	})
-}
-
-func (g *fakeGitHub) pulls(fullName string) []ghPull {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	var out []ghPull
-	for _, p := range g.state(fullName).pulls {
-		out = append(out, *p)
-	}
-	return out
-}
-
-func (g *fakeGitHub) file(fullName, branch, path string) (string, bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	st := g.state(fullName)
-	c, ok := st.commits[st.branches[branch]][path]
-	return string(c), ok
-}
-
 func clone(m map[string][]byte) map[string][]byte {
 	out := make(map[string][]byte, len(m))
 	for k, v := range m {
 		out[k] = v
 	}
 	return out
-}
-
-func (st *ghState) commit(branch string, snap map[string][]byte) string {
-	id := sha("commit", branch, len(st.commits), st.branches[branch])
-	st.commits[id] = snap
-	st.branches[branch] = id
-	return id
 }
 
 func (st *ghState) pullJSON(fullName string, p *ghPull) map[string]any {

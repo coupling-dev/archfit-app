@@ -29,9 +29,6 @@ const (
 	idleTimeout   = 60 * time.Second
 	shutdownGrace = 10 * time.Second
 	clientTimeout = 30 * time.Second
-
-	missingUploadAfter = 60 * time.Minute
-	waiverWarnBefore   = 7 * 24 * time.Hour
 )
 
 // Run wires every module and serves until ctx is cancelled.
@@ -70,7 +67,7 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 	}
 	gh := api.New(tokens, hc)
 	verifier := oidc.New(hc)
-	st, sandbox, err := platform(c, hc)
+	st, err := platform(c, hc)
 	if err != nil {
 		return err
 	}
@@ -86,7 +83,6 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 		Store:      st,
 		Admissions: admissions,
 		Audience:   c.BaseURL,
-		Sweep:      gate.Config{MissingUploadAfter: missingUploadAfter, WaiverWarnBefore: waiverWarnBefore},
 		Now:        time.Now,
 	})
 	var ctl *control.Control
@@ -95,10 +91,8 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 	} else {
 		ctl, err = control.New(control.Deps{
 			GitHub:       gh,
-			Tokens:       tokens,
 			OAuth:        oauth,
 			Store:        st,
-			Receiver:     gate.NewReceiver(gh, verifier, c.BaseURL, admissions),
 			Admissions:   admissions,
 			PolicyViews:  g,
 			RequestViews: g,
@@ -106,7 +100,6 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 			SetupViews:   g,
 			Answers:      g,
 			Operators:    c.Operators,
-			Sandbox:      sandbox,
 			CookieKey:    sec.cookieKey,
 			BaseURL:      c.BaseURL,
 			Now:          time.Now,
@@ -156,7 +149,6 @@ var (
 		storeMemory:    func(Config, *http.Client) (store.Store, error) { return store.NewMemory(), nil },
 		storeFirestore: newFirestore,
 	}
-	sandboxDrivers = map[string]func() control.Sandbox{sandboxNone: func() control.Sandbox { return nil }}
 )
 
 // newFirestore reads the access token of the Cloud Run service account from the metadata server, except
@@ -179,18 +171,13 @@ func newFirestore(c Config, hc *http.Client) (store.Store, error) {
 	return st, nil
 }
 
-// platform selects the implementation behind each platform seam.
-// A nil Sandbox is valid: managed discovery then reports "not available".
-func platform(c Config, hc *http.Client) (store.Store, control.Sandbox, error) {
-	newStore, newSandbox := storeDrivers[c.StoreDriver], sandboxDrivers[c.SandboxDriver]
-	if newStore == nil || newSandbox == nil {
-		return nil, nil, c.validate()
+// platform selects the configured Store implementation.
+func platform(c Config, hc *http.Client) (store.Store, error) {
+	newStore := storeDrivers[c.StoreDriver]
+	if newStore == nil {
+		return nil, c.validate()
 	}
-	st, err := newStore(c, hc)
-	if err != nil {
-		return nil, nil, err
-	}
-	return st, newSandbox(), nil
+	return newStore(c, hc)
 }
 
 // serve runs one http.Server until ctx is cancelled, then lets in-flight requests finish within shutdownGrace.
