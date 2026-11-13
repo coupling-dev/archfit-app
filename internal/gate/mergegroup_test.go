@@ -378,36 +378,6 @@ func TestPullIntoAnotherBaseOnAMergedGroupCommitWithdrawsItsSuccess(t *testing.T
 	}
 }
 
-func TestAppRequestChangesWithdrawsAnExistingSuccessfulGroup(t *testing.T) {
-	w := newWorld(t)
-	p := w.openPull(w.shop, 1)
-	groups := w.enqueue(p)
-	w.changePolicyIn(p, loosenedPolicy, groups...)
-	w.approve(p, ownerLogin)
-	policyDigest := policy.Digest([]byte(loosenedPolicy))
-	w.wantAnswer(w.uploadGroup(groups[0], fixtureHealthy, configHash(policyDigest)), http.StatusOK, "success", "healthy")
-	w.wantGroupGate(groups[0], "success")
-
-	shown := w.pullApproval(p, ownerLogin)
-	if !shown.Granted {
-		t.Fatalf("approval before request changes = %+v", shown)
-	}
-	if err := w.gate.Decide(context.Background(), w.target(p), ownerLogin, shown.Digests,
-		DecisionRequestChanges, "Re-check this policy loosening.", nil); err != nil {
-		t.Fatalf("RequestChanges: %v", err)
-	}
-	if err := w.gate.Reevaluate(context.Background(), w.target(p)); err != nil {
-		t.Fatalf("Reevaluate: %v", err)
-	}
-	groupCheck := w.wantGroupGate(groups[0], "action_required")
-	if !strings.Contains(groupCheck.Summary, "owner_approval_missing") {
-		t.Errorf("group summary = %s, want owner_approval_missing", groupCheck.Summary)
-	}
-	if review := w.gh.reviews[pullKey(w.shop.FullName, p.number)]; len(review) != 0 {
-		t.Errorf("App request changes mutated native GitHub reviews: %+v", review)
-	}
-}
-
 func TestSharedHeadWithdrawsAMergedGroupAfterTheProtectedFilesMoved(t *testing.T) {
 	w := newWorld(t)
 	one := w.openPull(w.shop, 1)

@@ -47,7 +47,7 @@ func lookup(code ReasonCode) (entry, bool) {
 	case ReasonWorkflowNotApproved:
 		return entry{CategoryEvidence, ActionRequired, "Upload from the workflow named in `.archfit-app.yaml`."}, true
 	case ReasonOwnerApprovalMissing:
-		return entry{CategoryGovernance, ActionRequired, "An architecture owner must approve this exact commit with a GitHub review. An agent identity cannot approve; a new commit needs a new approval."}, true
+		return entry{CategoryGovernance, ActionRequired, "This pull request changes the policy. Only the App's policy pull request changes it: revert the change and ask with `archfit request -m \"<why>\"` or `/archfit request <why>`; an owner answers in the App."}, true
 	case ReasonSettingsMissing:
 		return entry{CategoryGovernance, ActionRequired, "Merge the Archfit onboarding PR to add `.archfit-app.yaml`."}, true
 	case ReasonForkUnsupported:
@@ -71,7 +71,7 @@ func lookup(code ReasonCode) (entry, bool) {
 	case ReasonSuspended:
 		return entry{CategorySubscription, ActionRequired, suspendedNext}, true
 	case ReasonMergeGroupConflict:
-		return entry{CategoryGovernance, ActionRequired, "Queued pull requests change the same protected file, or the queued file is not the one an owner approved. Remove all but one from the merge queue and queue the others again after it merges, or update the branch and have an owner approve the new head."}, true
+		return entry{CategoryGovernance, ActionRequired, "Queued pull requests change the same protected file. Remove all but one from the merge queue and queue the others again after it merges."}, true
 	case ReasonMergeGroupUnverified:
 		return entry{CategoryEvidence, ActionRequired, "GitHub does not confirm this merge group: it was destroyed or rebuilt, or a queued pull request changed. Queue the pull request again."}, true
 	}

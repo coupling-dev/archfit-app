@@ -202,13 +202,21 @@ func TestSuspensionIsItsOwnCategory(t *testing.T) {
 	wantCodes(t, decide(t, with(engine(verdictBlocked, gatesFail))), Failure, ReasonBlockingFindings)
 }
 
-// The App's pull request page has no owner action since M2 task 24: a missing approval is cleared by a GitHub review.
-func TestOwnerApprovalMissingNamesAGitHubReview(t *testing.T) {
+// No push, review or App button approves a pull request that changes the policy (M2 task 26): the author reverts it
+// and asks, and an owner answers the request in the App.
+func TestOwnerApprovalMissingSendsTheAuthorToARequest(t *testing.T) {
 	e, ok := lookup(ReasonOwnerApprovalMissing)
 	if !ok {
 		t.Fatal("owner_approval_missing is not in the catalog")
 	}
-	if !strings.Contains(e.next, "GitHub review") || strings.Contains(e.next, "Archfit App") {
-		t.Errorf("owner_approval_missing next = %q, want a GitHub review and no App action", e.next)
+	for _, want := range []string{"archfit request -m", "/archfit request", "an owner answers in the App"} {
+		if !strings.Contains(e.next, want) {
+			t.Errorf("owner_approval_missing next = %q, want %q", e.next, want)
+		}
+	}
+	for _, gone := range []string{"GitHub review", "approve this exact commit", "Approve"} {
+		if strings.Contains(e.next, gone) {
+			t.Errorf("owner_approval_missing next = %q still names %q", e.next, gone)
+		}
 	}
 }

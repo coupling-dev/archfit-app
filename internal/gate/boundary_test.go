@@ -348,7 +348,6 @@ func TestStoreWritesOnlyLeasesAndInputsRecords(t *testing.T) {
 	q := w.openPull(vault, 8)
 	w.editsBaseline(q)
 	w.handle(w.event(webhook.PullOpened, q))
-	w.approve(q, ownerLogin)
 	if len(w.store.tenants) == 0 {
 		t.Fatal("the Store was never read")
 	}
@@ -359,8 +358,8 @@ func TestStoreWritesOnlyLeasesAndInputsRecords(t *testing.T) {
 		}
 		written[strings.SplitN(w.store.recordKeys[i], "/", 2)[0]+"/"] = true
 	}
-	if !written[pusherKeyPrefix] || !written[approvalKeyPrefix] {
-		t.Fatalf("records touched: %v, want a pusher and an approval record", written)
+	if written[pusherKeyPrefix] {
+		t.Fatalf("records touched: %v; a push records nothing", written)
 	}
 	for i, key := range w.store.keys {
 		// A default-branch push reads the Archfit 4 records of its repository (gate/approvals); they are read, not written.

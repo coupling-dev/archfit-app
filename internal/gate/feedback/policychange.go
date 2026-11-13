@@ -68,11 +68,7 @@ func policyCard(pc *report.PolicyChange, s settings.Settings) string {
 		}
 		b = append(b, "", strings.Join(listed, "\n"))
 	}
-	rule := "A change to the protected policy needs an architecture owner's approval of this exact commit."
-	if pc.Direction == report.DirectionLoosening || pc.Direction == report.DirectionMixed {
-		rule += " A loosening is never approved by an agent."
-	}
-	b = append(b, "", rule)
+	b = append(b, "", "Only the App's policy pull request changes the policy. Revert this change and ask with a request; an owner answers in the App.")
 	if _, held := s.Effective(); held != "" {
 		b = append(b, text(held)+".")
 	}

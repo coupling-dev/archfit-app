@@ -12,7 +12,7 @@ This pull request loosens the policy (1 change).
 
 - Coverage lost: `pkg/a/**` is now excluded from the analysis
 
-A change to the protected policy needs an architecture owner's approval of this exact commit. A loosening is never approved by an agent.
+Only the App's policy pull request changes the policy. Revert this change and ask with a request; an owner answers in the App.
 
 **Next:** Nothing to do.
 

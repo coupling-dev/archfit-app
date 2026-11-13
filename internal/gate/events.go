@@ -17,9 +17,6 @@ import (
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
-// pusherTypeUser is the pusher_type of a push made by a user account.
-const pusherTypeUser = "user"
-
 // Reactions, as logged.
 const (
 	reactionNone         = "none"
@@ -34,18 +31,16 @@ const (
 	reactionOtherBase    = "other_base"   // a pull request into a branch other than the default branch: nothing is read or written
 	// reactionApprovalWithdrawn is owner_approval_missing published over a receipt that asked for no action.
 	reactionApprovalWithdrawn = "approval_withdrawn"
-	reactionDecisionStale     = "decision_stale"   // pending decision requests went stale with a new head or a closed pull request
-	reactionDecisionIgnored   = "decision_ignored" // a request on a pull request the gate does not decide: nothing is recorded or written
-	reactionGroupChecked      = "group_checked"    // merge groups were re-read inside their leases; a blocked one was corrected
+	reactionPullClosed        = "pull_closed"   // a closed pull request left the Archfit 4 pull index
+	reactionGroupChecked      = "group_checked" // merge groups were re-read inside their leases; a blocked one was corrected
 	// groupMerged is the destroyed reason of a merge group that landed: its result stands.
 	groupMerged = "merged"
 )
 
 // HandleEvent reacts to a verified webhook event: pending check on a new head, fork refusal,
 // owner_approval_missing on a review change that withdraws the approval a receipt relied on, re-run on a
-// review change when the last receipt was owner_approval_missing, a pusher record (attribution only, never an
-// approval) and a re-evaluation of the pull request on a pushed head, and a one-repository sweep when a
-// default-branch push changes a protected path.
+// review change when the last receipt was owner_approval_missing, a re-evaluation of the pull request on a pushed head
+// (a push never approves), and a one-repository sweep when a default-branch push changes a protected path.
 func (g *Gate) HandleEvent(ctx context.Context, e webhook.Event) error {
 	reaction, err := g.react(ctx, e)
 	slog.Default().InfoContext(ctx, "gate event",
@@ -70,21 +65,14 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 		if otherBase(e.DefaultBranch, e.BaseRef) {
 			return g.sharedHeadOpened(ctx, e)
 		}
-		reaction, err := g.newHead(ctx, eventTarget(e))
-		if e.Kind == webhook.PullSynchronized {
-			err = errors.Join(err, g.requests.HeadMoved(ctx, eventTarget(e), g.now()))
-		}
-		return reaction, err
+		return g.newHead(ctx, eventTarget(e))
 	case webhook.PullClosed:
-		if err := g.requests.Closed(ctx, eventTarget(e), g.now()); err != nil {
-			return reactionDecisionStale, fmt.Errorf("gate: close decision requests: %w", err)
-		}
-		return reactionDecisionStale, g.pullClosed(ctx, e)
+		return reactionPullClosed, g.pullClosed(ctx, e)
 	case webhook.PullCommented:
 		if asks.IsRequest(e.Body) {
 			return g.requestCommented(ctx, e)
 		}
-		return g.commented(ctx, e)
+		return reactionNone, nil
 	case webhook.IssueOpened:
 		return g.requestFiled(ctx, e)
 	case webhook.ReviewChanged:
@@ -163,15 +151,11 @@ func (g *Gate) sharedGroupHead(ctx context.Context, repo api.Repo, head string) 
 	return nil
 }
 
-// branchPushed records who moved the branch to e.HeadSHA, then re-evaluates the pull request on that head as a review
-// event does. The record approves nothing: a local coding agent pushes with its owner's credentials. A default-branch
-// push is judged for the policy it brings (policyPushed, M2 task 20); one that changes a protected path also runs the
-// repository sweep.
+// branchPushed re-evaluates the pull request on the pushed head as a review event does. A push approves nothing: a
+// local coding agent pushes with its owner's credentials. A default-branch push is judged for the policy it brings
+// (policyPushed, M2 task 20); one that changes a protected path also runs the repository sweep.
 func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error) {
 	t := eventTarget(e)
-	if err := g.recordPusher(ctx, t, e); err != nil {
-		return reactionNone, err
-	}
 	reaction, err := g.pullOnHead(ctx, t, e.Branch, e.DefaultBranch)
 	if err != nil || e.Kind == webhook.BranchPush {
 		return reaction, err
@@ -192,21 +176,6 @@ func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error
 		return reactionRepoSweep, fmt.Errorf("gate: repository sweep: %w", err)
 	}
 	return reactionRepoSweep, nil
-}
-
-// recordPusher records e.Pusher as a pusher of the head, for attribution. A push whose pusher_type is present and not
-// "user" (a deploy key) records nothing: GitHub does not say whose login sender carries then. An absent pusher_type
-// still trusts sender.
-func (g *Gate) recordPusher(ctx context.Context, t inputs.Target, e webhook.Event) error {
-	if e.PusherType != "" && e.PusherType != pusherTypeUser {
-		slog.Default().InfoContext(ctx, "gate pusher not recorded",
-			"delivery_id", e.DeliveryID, "installation_id", e.InstallationID, "head_sha", e.HeadSHA)
-		return nil
-	}
-	if err := g.resolver.RecordPusher(ctx, t, e.Pusher); err != nil {
-		return fmt.Errorf("gate: record pusher: %w", err)
-	}
-	return nil
 }
 
 // pullOnHead re-evaluates the newest pull request whose head is branch, when that head is the commit just pushed.
@@ -383,14 +352,6 @@ func (g *Gate) newHead(ctx context.Context, t inputs.Target) (string, error) {
 		}
 		return reactionForkRefused, nil
 	}
-	if len(trusted.ProtectedPaths) > 0 {
-		if err := g.publisher.DecisionBanner(ctx, t, trusted); err != nil {
-			return reactionNone, fmt.Errorf("gate: publish owner decision banner: %w", err)
-		}
-		if trusted.Approval != inputs.ApprovalGranted {
-			g.requestReviewers(ctx, t)
-		}
-	}
 	switch trusted.Settings.Gate {
 	case settings.GateRequired:
 		if err := g.publisher.Pending(ctx, t); err != nil {
@@ -399,32 +360,6 @@ func (g *Gate) newHead(ctx context.Context, t inputs.Target) (string, error) {
 		return reactionPending, nil
 	}
 	return reactionNone, nil
-}
-
-// requestReviewers best-effort requests eligible configured principals on a new protected-path head. It never changes
-// authority or event success; the stored per-head/protected-settings-snapshot state prevents repeated requests.
-func (g *Gate) requestReviewers(ctx context.Context, t inputs.Target) {
-	var pull api.Pull
-	var err error
-	if summary, ok := g.pulls.(interface {
-		PullSummary(context.Context, api.RepoRef, int) (api.Pull, error)
-	}); ok {
-		pull, err = summary.PullSummary(ctx, t.Repo.RepoRef, t.PullRequest)
-	} else {
-		pull, err = g.pulls.Pull(ctx, t.Repo.RepoRef, t.PullRequest)
-	}
-	if err != nil {
-		slog.Default().WarnContext(ctx, "gate reviewer request unavailable", "installation_id", t.Repo.InstallationID,
-			"repository_id", t.Repo.ID, "pr", t.PullRequest, "outcome", "pull_read_failed")
-		return
-	}
-	if pull.HeadSHA != t.HeadSHA || pull.State != "open" {
-		return // a late webhook must not request reviewers for a moved or closed candidate
-	}
-	if g.resolver.RequestEligibleReviewers(ctx, t, pull.Author, g.now()) {
-		slog.Default().WarnContext(ctx, "gate reviewer request unavailable", "installation_id", t.Repo.InstallationID,
-			"repository_id", t.Repo.ID, "pr", t.PullRequest, "head_sha", t.HeadSHA, "outcome", "notification_problem")
-	}
 }
 
 // approvalChanged reacts to an event that may withdraw or grant an owner approval: a review, an approval recorded in

@@ -2,11 +2,13 @@ package gate
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
+	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
@@ -91,28 +93,18 @@ func TestOwnerPushNeverApproves(t *testing.T) {
 	})
 }
 
-// The record of who pushed a head stays, for attribution; a deploy key's push records nothing.
-func TestPusherTypeOtherThanUserRecordsNothing(t *testing.T) {
-	tests := []struct {
-		pusherType string
-		recorded   bool
-	}{
-		{"", true}, // absent: sender is trusted
-		{"user", true},
-		{"deploy_key", false},
-		{"something_new", false},
-	}
-	for _, tt := range tests {
-		t.Run("pusher_type "+tt.pusherType, func(t *testing.T) {
+// A push is no approval and no attribution either: whoever pushed, nothing about the pusher is stored.
+func TestAPushStoresNoPusher(t *testing.T) {
+	for _, pusherType := range []string{"", "user", "deploy_key"} {
+		t.Run("pusher_type "+pusherType, func(t *testing.T) {
 			w := newWorld(t)
 			p, _ := w.missingApproval(7)
 			push := w.branchPush(p, ownerLogin)
-			push.PusherType = tt.pusherType
+			push.PusherType = pusherType
 
 			w.handle(push)
-			_, err := w.mem.Get(context.Background(), shopInstallation, pusherKeyPrefix+shopName+"/"+p.head)
-			if recorded := err == nil; recorded != tt.recorded {
-				t.Errorf("recorded = %v, want %v", recorded, tt.recorded)
+			if _, err := w.mem.Get(context.Background(), shopInstallation, pusherKeyPrefix+shopName+"/"+p.head); !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("pusher record: %v, want none", err)
 			}
 			if len(w.gh.reruns) != 0 {
 				t.Errorf("reruns = %v, want none", w.gh.reruns)
@@ -121,7 +113,7 @@ func TestPusherTypeOtherThanUserRecordsNothing(t *testing.T) {
 	}
 }
 
-func TestPusherRecordNeverAuthorizesAFork(t *testing.T) {
+func TestAPushNeverAuthorizesAFork(t *testing.T) {
 	w := newWorld(t)
 	p := w.openPull(w.shop, 7)
 	w.editPull(p, func(pl *api.Pull) { pl.HeadRepo = "mallory/shop" })
