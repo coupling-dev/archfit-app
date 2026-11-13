@@ -97,6 +97,7 @@ type Deps struct {
     Onboarding Onboarding
     Admissions *Admissions // which installations the App serves; the others see the Waiting page
     Passkeys   Passkeys    // the signed-in user's passkeys and the step-up of an answer (control/passkey)
+    PolicyViews PolicyViews // the policy page: change-control state, read only (gate)
     RequestViews RequestViews // the request page: a request and the preview of each answer, read only (gate)
     Answers    Answers     // an owner's answer to a request, with the passkey (control/answers)
     Operators  []int64     // GitHub user IDs that approve installations on /admin
@@ -171,6 +172,11 @@ package does not know is `422`, so a body cannot name a repository, a user or an
 - `GET /api/repos/{o}/{n}/graph` [read] — `{unavailable, view, stale_reason, policy_href, branch}`: the latest
   default-branch report against the policy on that branch. `policy_href` is the policy file on GitHub at the default
   branch. No link carries an origin.
+- `GET /api/repos/{o}/{n}/policy` [read] — the strict version 3 policy on the default branch as typed modules,
+  built-in and custom rules, exceptions (with calendar days left and request links from first-line comments only),
+  exact YAML and its SHA-256 policy digest. Built-in modes, minimum balance, gate and volatility include their schema defaults; an absent public list remains null (the whole module is public). Note rules are marked `not_checked`. `edit.available` requires an approved
+  digest and no outside-flow state. With `?edit=1`, the edit block includes the file and digest of the open same-repository
+  `archfit/policy` proposal, if present, else the default-branch file. A version 2 or invalid policy returns `409`.
 - `GET /api/repos/{o}/{n}/findings` [read] — `{unavailable, branch, no_baseline, attention_reason, …}`: the latest
   default-branch report's findings in the pull request page's groups, without origins. `attention_reason`, only for
   the verdict `needs_attention`, follows the engine's rule in its order: active advisories, required rules not

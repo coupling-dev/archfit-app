@@ -28,6 +28,7 @@ type Deps struct {
 	Onboarding   onboarding.Onboarding
 	Admissions   *gate.Admissions  // which installations the App serves; the others see the Waiting page
 	Passkeys     passkey.Passkeys  // the signed-in user's passkeys and the step-up of an answer
+	PolicyViews  gate.PolicyViews  // policy page change-control state
 	RequestViews gate.RequestViews // the request page: a request and the preview of each answer, read only
 	Answers      answers.Answers   // the request page: an owner's answer, with the passkey
 	Operators    []int64           // GitHub user IDs that approve installations on /admin
@@ -79,6 +80,7 @@ type server struct {
 	onboarding onboarding.Onboarding
 	admissions *gate.Admissions
 	passkeys   passkey.Passkeys
+	policy     gate.PolicyViews
 	requests   gate.RequestViews
 	answers    answers.Answers
 	operators  []int64
@@ -109,6 +111,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		onboarding: d.Onboarding,
 		admissions: d.Admissions,
 		passkeys:   d.Passkeys,
+		policy:     d.PolicyViews,
 		requests:   d.RequestViews,
 		answers:    d.Answers,
 		operators:  d.Operators,
@@ -175,6 +178,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("GET /api/repos", s.apiSignedIn(s.apiRepos))
 	mux.Handle("GET /api/repos/{o}/{n}/overview", s.apiRepo(permRead, s.apiStatus))
 	mux.Handle("GET /api/repos/{o}/{n}/findings", s.apiRepo(permRead, s.apiFindings))
+	mux.Handle("GET /api/repos/{o}/{n}/policy", s.apiRepo(permRead, s.apiPolicy))
 	mux.Handle("GET /api/repos/{o}/{n}/graph", s.apiRepo(permRead, s.apiGraph))
 	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}", s.apiRepo(permRead, s.apiPull))
 	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}/graph", s.apiRepo(permRead, s.apiPullGraph))

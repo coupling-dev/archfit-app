@@ -21,6 +21,7 @@ the gate would still verify reports, but nobody could onboard, answer a request,
 - Leave an installation whose account no operator approved alone: it gets no entitlement record, so its trial starts at the approval.
 - Apply the operator's manual beta grant.
 - Pass the admission seam (`Admissions`) and the operator IDs to `ui`, which lets an operator approve an installation.
+- Pass the gate's policy state seam (`PolicyViews`) to `ui` for edit visibility.
 - Pass the gate's request page seam (`RequestViews`) to `ui`: a request and the preview of each answer. It reads only.
 - Build `answers` from the gate's answer seam (`Answers`) and `passkey`, and pass it to `ui`: an owner's answer to a
   request, with the passkey step-up of an answer that loosens the policy (M2 task 19).
@@ -57,6 +58,7 @@ type Deps struct {
     Admissions *Admissions
     // RequestViews reads a request and the preview of each answer for the request page: the gate façade. It reads only.
     RequestViews RequestViews
+    PolicyViews PolicyViews
     // Answers records an owner's answer and carries it to the default branch: the gate façade. control/answers adds
     // the passkey.
     Answers Answers

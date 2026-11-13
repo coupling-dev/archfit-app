@@ -21,6 +21,7 @@ func TestNewValidatesWiring(t *testing.T) {
 		return Deps{
 			GitHub: gh.client(), Tokens: fakeTokens{}, OAuth: fakeOAuth{}, Store: store.NewMemory(),
 			Receiver: &fakeReceiver{}, Admissions: admissions,
+			PolicyViews:  g,
 			RequestViews: g,
 			Answers:      g,
 			Sandbox:      &fakeSandbox{},
@@ -37,6 +38,7 @@ func TestNewValidatesWiring(t *testing.T) {
 		{"nil Store", func(d *Deps) { d.Store = nil }, true},
 		{"nil Receiver", func(d *Deps) { d.Receiver = nil }, true},
 		{"nil Admissions", func(d *Deps) { d.Admissions = nil }, true},
+		{"nil PolicyViews", func(d *Deps) { d.PolicyViews = nil }, true},
 		{"nil RequestViews", func(d *Deps) { d.RequestViews = nil }, true},
 		{"nil Answers", func(d *Deps) { d.Answers = nil }, true},
 		{"16-byte CookieKey", func(d *Deps) { d.CookieKey = testCookieKey[:16] }, true},

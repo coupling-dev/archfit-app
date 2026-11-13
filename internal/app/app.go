@@ -100,6 +100,7 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 			Store:        st,
 			Receiver:     gate.NewReceiver(gh, verifier, c.BaseURL, admissions),
 			Admissions:   admissions,
+			PolicyViews:  g,
 			RequestViews: g,
 			Answers:      g,
 			Operators:    c.Operators,

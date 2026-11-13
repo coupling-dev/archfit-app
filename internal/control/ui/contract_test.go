@@ -104,7 +104,6 @@ var archfit3Routes = []struct{ method, path string }{
 	{http.MethodPost, "/api/repos/" + repoName + "/pulls/4/refresh-decision"},
 	{http.MethodPost, "/api/repos/" + repoName + "/pulls/4/decisions/" + strings.Repeat("f", 16) + "/" + sha(9) + "/approve"},
 	{http.MethodPost, "/api/repos/" + repoName + "/pulls/4/decisions/" + strings.Repeat("f", 16) + "/" + sha(9) + "/decline"},
-	{http.MethodGet, "/api/repos/" + repoName + "/policy"},
 	{http.MethodPost, "/api/repos/" + repoName + "/policy"},
 	{http.MethodPost, "/api/repos/" + repoName + "/policy/check"},
 	{http.MethodPost, "/api/repos/" + repoName + "/policy/ready"},
