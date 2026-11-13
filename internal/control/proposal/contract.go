@@ -43,7 +43,6 @@ type Proposals interface {
 	Propose(ctx context.Context, c Change, expectHeadSHA string) (Draft, error)
 	Get(ctx context.Context, r api.RepoRef, branch string) (Draft, error)
 	SetBody(ctx context.Context, r api.RepoRef, number int, body string) error
-	Ready(ctx context.Context, r api.RepoRef, number int) error
 }
 
 // ErrStale means the branch moved since the caller read it; the caller must reload and re-apply.
@@ -61,12 +60,6 @@ func ValidBranch(branch string) bool {
 		}
 	}
 	return true
-}
-
-// ValidHeadSHA reports whether sha is a full commit SHA: exactly 40 lowercase hex characters.
-// "" is not valid; a caller whose own contract allows "no draft yet" checks for "" itself.
-func ValidHeadSHA(sha string) bool {
-	return headSHAPattern.MatchString(sha)
 }
 
 func New(gh api.Changes, pulls api.Pulls) Proposals {

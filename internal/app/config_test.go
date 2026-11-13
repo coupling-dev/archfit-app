@@ -53,7 +53,6 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 	}
 	everything := requiredOnly
 	everything.Addr = "127.0.0.1:9000"
-	everything.AnthropicKeyFile = "/run/secrets/anthropic"
 	everything.Role, everything.OperatorTokenFile = "public", "/run/secrets/operator"
 	everything.QueueDriver = "cloudtasks"
 	everything.TasksQueue = "projects/coupling-test/locations/europe-west1/queues/webhooks"
@@ -90,7 +89,6 @@ func TestLoadDefaultsAndRequired(t *testing.T) {
 
 	all := requiredEnv()
 	all[envAddr] = "127.0.0.1:9000"
-	all[envAnthropicKeyFile] = "/run/secrets/anthropic"
 	all[envStore] = "memory"
 	all[envSandbox] = "none"
 	all[envRole] = "public"
@@ -190,7 +188,6 @@ func TestLoadNeverReadsSecretValuesFromEnv(t *testing.T) {
 		"ARCHFIT_GITHUB_OAUTH_SECRET":   "MARKER-oauth",
 		"ARCHFIT_COOKIE_KEY":            "MARKER-cookie",
 		"ARCHFIT_OPERATOR_TOKEN":        "MARKER-operator",
-		"ARCHFIT_ANTHROPIC_KEY":         "MARKER-anthropic",
 	}
 
 	t.Run("inline values do not satisfy the file variables", func(t *testing.T) {
@@ -210,7 +207,7 @@ func TestLoadNeverReadsSecretValuesFromEnv(t *testing.T) {
 			env[k] = v
 		}
 		var asked []string
-		c, err := Load(func(k string) string {
+		_, err := Load(func(k string) string {
 			asked = append(asked, k)
 			return env[k]
 		})
@@ -221,9 +218,6 @@ func TestLoadNeverReadsSecretValuesFromEnv(t *testing.T) {
 			if _, isInline := inline[k]; isInline {
 				t.Errorf("Load read %s", k)
 			}
-		}
-		if c.AnthropicKeyFile != "" {
-			t.Errorf("AnthropicKeyFile = %q, want empty", c.AnthropicKeyFile)
 		}
 	})
 }

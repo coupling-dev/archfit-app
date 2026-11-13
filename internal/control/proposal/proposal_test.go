@@ -130,7 +130,7 @@ func TestValidateChange(t *testing.T) {
 	}
 }
 
-func TestValidBranchAndHeadSHA(t *testing.T) {
+func TestValidBranch(t *testing.T) {
 	t.Parallel()
 	branches := []struct {
 		branch string
@@ -155,23 +155,6 @@ func TestValidBranchAndHeadSHA(t *testing.T) {
 	for _, tt := range branches {
 		if got := ValidBranch(tt.branch); got != tt.want {
 			t.Errorf("ValidBranch(%q) = %v, want %v", tt.branch, got, tt.want)
-		}
-	}
-	shas := []struct {
-		sha  string
-		want bool
-	}{
-		{strings.Repeat("a1", 20), true},
-		{strings.Repeat("a", 39), false},
-		{strings.Repeat("a", 41), false},
-		{strings.Repeat("A", 40), false},
-		{"abc1234", false},
-		{"HEAD~1", false},
-		{"", false},
-	}
-	for _, tt := range shas {
-		if got := ValidHeadSHA(tt.sha); got != tt.want {
-			t.Errorf("ValidHeadSHA(%q) = %v, want %v", tt.sha, got, tt.want)
 		}
 	}
 }
@@ -336,7 +319,7 @@ func TestGetFindsOnlyOwnBranch(t *testing.T) {
 	}
 }
 
-func TestSetBodyAndReady(t *testing.T) {
+func TestSetBody(t *testing.T) {
 	f := newFakeGit()
 	p := New(f, f)
 	d := mustPropose(t, p, validChange(), "")
@@ -344,27 +327,14 @@ func TestSetBodyAndReady(t *testing.T) {
 	if err := p.SetBody(context.Background(), testRepo, d.Number, "new body"); err != nil {
 		t.Fatalf("SetBody: %v", err)
 	}
-	if err := p.Ready(context.Background(), testRepo, d.Number); err != nil {
-		t.Fatalf("Ready: %v", err)
-	}
 
 	if want := []bodyCall{{d.Number, "new body"}}; !slices.Equal(f.bodies, want) {
 		t.Errorf("UpdatePullBody calls = %v, want %v", f.bodies, want)
 	}
-	if want := []int{d.Number}; !slices.Equal(f.ready, want) {
-		t.Errorf("MarkReady calls = %v, want %v", f.ready, want)
-	}
-	if got := mustGet(t, p).State; got != DraftInReview {
-		t.Errorf("State = %q, want %q", got, DraftInReview)
-	}
 
 	f.errs["UpdatePullBody"] = api.ErrNotFound
-	f.errs["MarkReady"] = api.ErrRateLimited
 	if err := p.SetBody(context.Background(), testRepo, d.Number, "x"); !errors.Is(err, api.ErrNotFound) {
 		t.Errorf("SetBody err = %v, want ErrNotFound", err)
-	}
-	if err := p.Ready(context.Background(), testRepo, d.Number); !errors.Is(err, api.ErrRateLimited) {
-		t.Errorf("Ready err = %v, want ErrRateLimited", err)
 	}
 }
 
@@ -454,8 +424,9 @@ func TestProposeKeepsReadyState(t *testing.T) {
 	f := newFakeGit()
 	p := New(f, f)
 	first := mustPropose(t, p, validChange(), "")
-	if err := p.Ready(context.Background(), testRepo, first.Number); err != nil {
-		t.Fatalf("Ready: %v", err)
+	// An owner marks the draft ready for review on GitHub.
+	if err := f.MarkReady(context.Background(), testRepo, first.Number); err != nil {
+		t.Fatalf("MarkReady: %v", err)
 	}
 	f.resetCalls()
 
@@ -486,11 +457,8 @@ func TestNeverTouchesBaseOrMerges(t *testing.T) {
 	if err := p.SetBody(ctx, testRepo, d.Number, "body"); err != nil {
 		t.Fatalf("SetBody: %v", err)
 	}
-	if err := p.Ready(ctx, testRepo, d.Number); err != nil {
-		t.Fatalf("Ready: %v", err)
-	}
 
-	allowed := []string{"EnsureBranch", "Commit", "EnsurePull", "UpdatePullBody", "MarkReady", "PullByHead"}
+	allowed := []string{"EnsureBranch", "Commit", "EnsurePull", "UpdatePullBody", "PullByHead"}
 	for _, call := range f.calls {
 		if !slices.Contains(allowed, call) {
 			t.Errorf("unexpected call %s", call)
@@ -626,11 +594,12 @@ func TestDraftLifecycle(t *testing.T) {
 	if first.State != DraftOpen {
 		t.Fatalf("after propose: State = %q, want %q", first.State, DraftOpen)
 	}
-	if err := p.Ready(context.Background(), testRepo, first.Number); err != nil {
-		t.Fatalf("Ready: %v", err)
+	// An owner marks the draft ready for review on GitHub.
+	if err := f.MarkReady(context.Background(), testRepo, first.Number); err != nil {
+		t.Fatalf("MarkReady: %v", err)
 	}
 	if got := mustGet(t, p).State; got != DraftInReview {
-		t.Fatalf("after Ready: State = %q, want %q", got, DraftInReview)
+		t.Fatalf("after MarkReady: State = %q, want %q", got, DraftInReview)
 	}
 	f.merge(first.Number)
 	if got := mustGet(t, p); got.State != DraftMerged || got.Number != first.Number {

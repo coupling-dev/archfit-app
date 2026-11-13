@@ -11,7 +11,6 @@ import (
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
-	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 const (
@@ -25,11 +24,10 @@ const (
 
 // sharedFeature is one managed feature that sends data out of the customer's environment, in the page's words.
 type sharedFeature struct {
-	kind    account.ConsentKind
-	title   string
-	leaves  string // what leaves the customer's environment, and when
-	note    string // shown under the feature; "" for none
-	managed bool   // the feature also needs data_mode: managed in the repository settings
+	kind   account.ConsentKind
+	title  string
+	leaves string // what leaves the customer's environment, and when
+	note   string // shown under the feature; "" for none
 	// offered: the page offers Allow. A feature the App does not start shows only Revoke of a consent given earlier.
 	// The POST still records it: a build with a sandbox driver grants managed discovery through it (onboarding).
 	offered bool
@@ -37,14 +35,6 @@ type sharedFeature struct {
 
 // sharedFeatures is the server's list of consent kinds: a POST naming any other kind is refused.
 var sharedFeatures = []sharedFeature{
-	{
-		kind:  account.ConsentManagedLLM,
-		title: "Managed AI",
-		leaves: "When someone asks for a policy proposal in managed mode, the draft policy text and the instruction are " +
-			"sent to the AI provider. No source code and no report is sent.",
-		managed: true,
-		offered: true,
-	},
 	{
 		kind:  account.ConsentSourceProcessing,
 		title: "Managed discovery",
@@ -96,7 +86,6 @@ func (s *server) apiDataSharing(r *http.Request, sc scope) (any, error) {
 func (s *server) dataSharing(ctx context.Context, sc scope) (dataSharingBody, error) {
 	owner, _, _ := strings.Cut(sc.repo.FullName, "/")
 	body := dataSharingBody{Owner: owner}
-	mode := s.dataMode(ctx, sc)
 	for _, f := range sharedFeatures {
 		c, ok, err := s.consents.Get(ctx, sc.repo.InstallationID, f.kind)
 		if err != nil {
@@ -108,29 +97,9 @@ func (s *server) dataSharing(ctx context.Context, sc scope) (dataSharingBody, er
 			out.By, out.At, allowed.State = c.By, c.At.UTC().Format(time.RFC3339), checkMet
 		}
 		out.Checks = []precondition{allowed}
-		if f.managed {
-			out.Checks = append(out.Checks, mode)
-		}
 		body.Features = append(body.Features, out)
 	}
 	return body, nil
-}
-
-// dataMode is the repository-settings precondition of a managed feature. Settings that cannot be read leave it
-// unknown: the page still answers who allowed what.
-func (s *server) dataMode(ctx context.Context, sc scope) precondition {
-	p := precondition{Label: "This repository's settings say data_mode: managed", State: checkUnknown}
-	set, err := s.settings(ctx, sc.repo)
-	switch {
-	case errors.Is(err, errNoSettings):
-		p.Label += " (the default branch has no valid settings file)"
-	case err != nil:
-	case set.DataMode == settings.DataManaged:
-		p.State = checkMet
-	default:
-		p.State = checkNotMet
-	}
-	return p
 }
 
 type dataSharingJSON struct {
@@ -184,45 +153,6 @@ func (s *server) shareData(ctx context.Context, sc scope, f sharedFeature, actio
 		return "", "", err
 	}
 	return "consent_recorded", f.title + " is allowed.", nil
-}
-
-// managedAIWord is the overview's one store read about data sharing; a failed read is unknown, never not_allowed.
-func (s *server) managedAIWord(ctx context.Context, sc scope) string {
-	_, ok, err := s.consents.Get(ctx, sc.repo.InstallationID, account.ConsentManagedLLM)
-	switch {
-	case err != nil:
-		return checkUnknown
-	case ok:
-		return "allowed"
-	}
-	return "not_allowed"
-}
-
-// managedMode is whether the editor offers managed AI and, when it does not, the reason in the page's words.
-// Settings that cannot be read for another reason than their absence give no reason: the page claims nothing.
-func (s *server) managedMode(ctx context.Context, sc scope) (offer bool, off, dataSharing string) {
-	set, err := s.settings(ctx, sc.repo)
-	switch {
-	case errors.Is(err, errNoSettings):
-		return false, "Managed mode is off: the default branch has no valid " + settings.Path + ".", ""
-	case err != nil:
-		return false, "", ""
-	case set.DataMode != settings.DataManaged:
-		return false, "Managed mode is off: this repository's settings say data_mode: " + string(set.DataMode) + ".", ""
-	}
-	_, ok, err := s.consents.Get(ctx, sc.repo.InstallationID, account.ConsentManagedLLM)
-	switch {
-	case err != nil:
-		return false, "Managed mode is off: whether managed AI is allowed could not be read. Try again.", ""
-	case ok:
-		return true, "", ""
-	}
-	owner, _, _ := strings.Cut(sc.repo.FullName, "/")
-	off = "Managed mode is off: managed AI is not allowed for " + owner + "."
-	if _, err := s.sessions.Authorize(ctx, sc.user, sc.repo.FullName, permAdmin); err == nil {
-		dataSharing = repoPath(sc, "/data-sharing")
-	}
-	return false, off, dataSharing
 }
 
 // consentMoved sends the old consent page to Data sharing. It reads only the path, the same for every repository, so

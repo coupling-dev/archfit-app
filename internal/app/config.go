@@ -22,7 +22,6 @@ const (
 	envOAuthSecretFile     = "ARCHFIT_GITHUB_OAUTH_SECRET_FILE"
 	envCookieKeyFile       = "ARCHFIT_COOKIE_KEY_FILE"
 	envOperatorTokenFile   = "ARCHFIT_OPERATOR_TOKEN_FILE"
-	envAnthropicKeyFile    = "ARCHFIT_ANTHROPIC_KEY_FILE"
 	envStore               = "ARCHFIT_STORE"
 	envFirestoreProject    = "ARCHFIT_FIRESTORE_PROJECT"
 	envFirestoreDatabase   = "ARCHFIT_FIRESTORE_DATABASE"
@@ -57,7 +56,7 @@ const (
 	roleAll    = "all"    // one process with every route except the worker task route; the local default
 	rolePublic = "public" // intake, uploads and the UI; no /internal/* route and no operator token
 	// roleWorker serves queued webhooks, the sweep and grants, each behind the invoker identity. It builds no UI,
-	// so it reads no OAuth secret, cookie key or Anthropic key.
+	// so it reads no OAuth secret or cookie key.
 	roleWorker = "worker"
 )
 
@@ -82,7 +81,6 @@ type Config struct {
 	OAuthSecretFile     string   // ARCHFIT_GITHUB_OAUTH_SECRET_FILE; never read by the worker role
 	CookieKeyFile       string   // ARCHFIT_COOKIE_KEY_FILE; never read by the worker role
 	OperatorTokenFile   string   // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
-	AnthropicKeyFile    string   // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM; never read by the worker role
 	StoreDriver         string   // ARCHFIT_STORE, "memory" (default) or "firestore"
 	FirestoreProject    string   // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
 	FirestoreDatabase   string   // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
@@ -114,7 +112,6 @@ func Load(getenv func(string) string) (Config, error) {
 		OAuthSecretFile:     getenv(envOAuthSecretFile),
 		CookieKeyFile:       getenv(envCookieKeyFile),
 		OperatorTokenFile:   getenv(envOperatorTokenFile),
-		AnthropicKeyFile:    getenv(envAnthropicKeyFile),
 		StoreDriver:         cmp.Or(getenv(envStore), storeMemory),
 		FirestoreProject:    getenv(envFirestoreProject),
 		FirestoreDatabase:   getenv(envFirestoreDatabase),
@@ -206,19 +203,17 @@ type secrets struct {
 	oauthSecret     []byte // nil in the worker role
 	cookieKey       []byte // nil in the worker role
 	operatorToken   []byte // nil in the public role
-	anthropicKey    []byte // nil when no key file is configured, and in the worker role
 }
 
 func loadSecrets(c Config) (secrets, error) {
 	var s secrets
 	// A role never reads a secret it does not use, even when it is configured.
-	oauthSecretFile, cookieKeyFile, anthropicKeyFile, operatorTokenFile :=
-		c.OAuthSecretFile, c.CookieKeyFile, c.AnthropicKeyFile, c.OperatorTokenFile
+	oauthSecretFile, cookieKeyFile, operatorTokenFile := c.OAuthSecretFile, c.CookieKeyFile, c.OperatorTokenFile
 	switch c.Role {
 	case rolePublic:
 		operatorTokenFile = ""
 	case roleWorker:
-		oauthSecretFile, cookieKeyFile, anthropicKeyFile = "", "", ""
+		oauthSecretFile, cookieKeyFile = "", ""
 	}
 	files := []struct {
 		env, path string
@@ -230,7 +225,6 @@ func loadSecrets(c Config) (secrets, error) {
 		{envOAuthSecretFile, oauthSecretFile, &s.oauthSecret},
 		{envCookieKeyFile, cookieKeyFile, &s.cookieKey},
 		{envOperatorTokenFile, operatorTokenFile, &s.operatorToken},
-		{envAnthropicKeyFile, anthropicKeyFile, &s.anthropicKey},
 	}
 	for _, f := range files {
 		if f.path == "" { // an optional secret, or one that the role never reads

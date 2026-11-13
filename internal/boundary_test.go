@@ -49,8 +49,7 @@ func TestBothOnboardingModesComplete(t *testing.T) {
 	t.Run("customer mode", func(t *testing.T) {
 		w := newWorld(t)
 		w.seedShop()
-		provider := &fakeProvider{}
-		s := newSystem(t, w, options{provider: provider})
+		s := newSystem(t, w, options{})
 		b := newBrowser(t, s.do)
 		b.signIn("alice")
 
@@ -115,16 +114,13 @@ func TestBothOnboardingModesComplete(t *testing.T) {
 		if checks := w.checkRuns(shopRepo); len(checks) != 0 {
 			t.Errorf("a discovery upload produced checks: %+v; discovery output never satisfies the gate", checks)
 		}
-		if provider.count() != 0 {
-			t.Error("customer onboarding called the LLM provider")
-		}
 	})
 
 	t.Run("managed mode without consent", func(t *testing.T) {
 		w := newWorld(t)
 		w.seedShop()
-		sandbox, provider := &fakeSandbox{draft: draft}, &fakeProvider{}
-		s := newSystem(t, w, options{sandbox: sandbox, provider: provider})
+		sandbox := &fakeSandbox{draft: draft}
+		s := newSystem(t, w, options{sandbox: sandbox})
 		b := newBrowser(t, s.do)
 		b.signIn("alice")
 
@@ -132,17 +128,16 @@ func TestBothOnboardingModesComplete(t *testing.T) {
 		if resp.StatusCode != http.StatusOK || !strings.Contains(page, `"location":"/r/`+shopRepo+`/data-sharing"`) {
 			t.Fatalf("managed onboarding without consent: %d %s; want Data sharing as the next location", resp.StatusCode, page)
 		}
-		if sandbox.count() != 0 || provider.count() != 0 || len(w.pullsOf(shopRepo)) != 0 {
-			t.Errorf("without consent: %d sandbox jobs, %d LLM calls, %d pull requests; want none",
-				sandbox.count(), provider.count(), len(w.pullsOf(shopRepo)))
+		if sandbox.count() != 0 || len(w.pullsOf(shopRepo)) != 0 {
+			t.Errorf("without consent: %d sandbox jobs, %d pull requests; want none", sandbox.count(), len(w.pullsOf(shopRepo)))
 		}
 	})
 
 	t.Run("managed mode with consent", func(t *testing.T) {
 		w := newWorld(t)
 		w.seedShop()
-		sandbox, provider := &fakeSandbox{draft: draft}, &fakeProvider{}
-		s := newSystem(t, w, options{sandbox: sandbox, provider: provider})
+		sandbox := &fakeSandbox{draft: draft}
+		s := newSystem(t, w, options{sandbox: sandbox})
 		b := newBrowser(t, s.do)
 		b.signIn("alice")
 		recordConsent(t, b, shopRepo, "source_processing", "")
@@ -163,9 +158,6 @@ func TestBothOnboardingModesComplete(t *testing.T) {
 		}
 		if sandbox.count() != 1 || sandbox.jobs[0].Token != fmt.Sprintf("read-%d", shopInstallation) {
 			t.Errorf("sandbox jobs = %+v; want one with a contents:read token", sandbox.jobs)
-		}
-		if provider.count() != 0 {
-			t.Error("managed discovery called the LLM provider; no LLM runs in the sandbox flow")
 		}
 	})
 
@@ -308,7 +300,7 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	}
 	b := newBrowser(t, a.do)
 	b.signIn("alice")
-	pages := []string{"/", "/api/repos", "/r/" + demoRepo, "/api/repos/" + demoRepo + "/overview", "/r/" + demoRepo + "/policy", "/r/" + demoRepo + "/data-sharing", "/api/repos/" + demoRepo + "/data-sharing"}
+	pages := []string{"/", "/api/repos", "/r/" + demoRepo, "/api/repos/" + demoRepo + "/overview", "/r/" + demoRepo + "/graph", "/r/" + demoRepo + "/data-sharing", "/api/repos/" + demoRepo + "/data-sharing"}
 	for _, page := range pages {
 		if resp, _ := b.get(page); resp.StatusCode != http.StatusOK {
 			t.Fatalf("GET %s: %d", page, resp.StatusCode)
@@ -422,8 +414,7 @@ func TestUninstallLeavesNoKeys(t *testing.T) {
 	w.seedDemo(f, "required", true)
 	w.seedShop()
 	st := newRecordingStore()
-	provider := &fakeProvider{text: string(f.policy) + "# proposed by the assistant\n"}
-	s := newSystem(t, w, options{store: st, provider: provider})
+	s := newSystem(t, w, options{store: st})
 	ctx := context.Background()
 
 	for _, id := range []int64{demoInstallation, shopInstallation} {
@@ -434,25 +425,16 @@ func TestUninstallLeavesNoKeys(t *testing.T) {
 	if err := s.ctl.Grant(ctx, demoInstallation, s.clock.Now().Add(90*day)); err != nil {
 		t.Fatal(err)
 	}
-	b := enableManagedAssist(t, s) // records managed_llm consent
+	w.allow("alice", demoRepo, "admin")
+	b := newBrowser(t, s.do)
+	b.signIn("alice")
 	recordConsent(t, b, demoRepo, "source_processing", "")
-	if resp := requestAssist(t, b, f.policy); resp.StatusCode != http.StatusOK || provider.count() != 1 {
-		t.Fatalf("assist: status %d after %d provider calls; want 200 after 1", resp.StatusCode, provider.count())
-	}
 
 	keys := st.written(store.Tenant(demoInstallation))
-	for _, want := range []string{"account", "entitlement", "consent/source_processing", "consent/managed_llm"} {
+	for _, want := range []string{"account", "entitlement", "consent/source_processing"} {
 		if !slices.Contains(keys, want) {
 			t.Fatalf("the tenant wrote %v; the scenario lacks %s", keys, want)
 		}
-	}
-	budgetKeys := st.written(store.SystemTenant)
-	if len(budgetKeys) != 1 {
-		t.Fatalf("system tenant keys = %v; want the budget counter", budgetKeys)
-	}
-	spent, err := st.Add(ctx, store.SystemTenant, budgetKeys[0], 0)
-	if err != nil || spent <= 0 {
-		t.Fatalf("budget counter = %d, %v; want the cost of one call", spent, err)
 	}
 
 	w.uninstall(demoInstallation)
@@ -468,9 +450,6 @@ func TestUninstallLeavesNoKeys(t *testing.T) {
 	tenants, err := st.Tenants(ctx)
 	if err != nil || slices.Contains(tenants, store.Tenant(demoInstallation)) || !slices.Contains(tenants, store.Tenant(shopInstallation)) {
 		t.Errorf("tenants = %v, %v; want the uninstalled one gone and the other kept", tenants, err)
-	}
-	if after, err := st.Add(ctx, store.SystemTenant, budgetKeys[0], 0); err != nil || after != spent {
-		t.Errorf("system budget counter = %d, %v; want %d unchanged", after, err, spent)
 	}
 
 	// The session outlives the installation; the tenant is gone for it too.

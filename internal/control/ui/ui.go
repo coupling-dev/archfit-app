@@ -9,10 +9,8 @@ import (
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/control/answers"
-	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/passkey"
-	"github.com/alexei-led/archfit-app/internal/control/proposal"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -21,24 +19,19 @@ import (
 )
 
 type Deps struct {
-	OAuth         auth.OAuth // ui builds its own session child from OAuth, CookieKey and BaseURL
-	CookieKey     []byte
-	BaseURL       string
-	GitHub        *api.Client
-	Account       account.Account
-	Consents      account.Consents
-	Onboarding    onboarding.Onboarding
-	Assist        assist.Assist
-	Proposals     proposal.Proposals
-	Admissions    *gate.Admissions   // which installations the App serves; the others see the Waiting page
-	Approvals     gate.Approvals     // owner approvals of pull request heads: read, and recorded by the Approve button
-	Decisions     gate.Decisions     // decision requests of unattended agents: listed, declined, approved by an owner
-	DecisionQueue gate.DecisionQueue // decision requests of unattended agents that wait for an owner: read only
-	Passkeys      passkey.Passkeys   // the signed-in user's passkeys and the step-up of an answer
-	RequestViews  gate.RequestViews  // the request page: a request and the preview of each answer, read only
-	Answers       answers.Answers    // the request page: an owner's answer, with the passkey
-	Operators     []int64            // GitHub user IDs that approve installations on /admin
-	Now           func() time.Time
+	OAuth        auth.OAuth // ui builds its own session child from OAuth, CookieKey and BaseURL
+	CookieKey    []byte
+	BaseURL      string
+	GitHub       *api.Client
+	Account      account.Account
+	Consents     account.Consents
+	Onboarding   onboarding.Onboarding
+	Admissions   *gate.Admissions  // which installations the App serves; the others see the Waiting page
+	Passkeys     passkey.Passkeys  // the signed-in user's passkeys and the step-up of an answer
+	RequestViews gate.RequestViews // the request page: a request and the preview of each answer, read only
+	Answers      answers.Answers   // the request page: an owner's answer, with the passkey
+	Operators    []int64           // GitHub user IDs that approve installations on /admin
+	Now          func() time.Time
 }
 
 // The parts of github/api ui calls: role-interface methods and the *Client readers kept for the UI.
@@ -70,10 +63,7 @@ type (
 )
 
 type github struct {
-	files fileReader
-	heads interface {
-		BranchHead(context.Context, api.RepoRef, string) (string, error)
-	}
+	files    fileReader
 	checks   checkReader
 	actions  workflows
 	pulls    pullReader
@@ -82,26 +72,21 @@ type github struct {
 }
 
 type server struct {
-	gh            github
-	sessions      session.Sessions
-	account       account.Account
-	consents      account.Consents
-	onboarding    onboarding.Onboarding
-	assist        assist.Assist
-	proposals     proposal.Proposals
-	admissions    *gate.Admissions
-	approvals     gate.Approvals
-	decisions     gate.Decisions
-	decisionQueue gate.DecisionQueue
-	passkeys      passkey.Passkeys
-	requests      gate.RequestViews
-	answers       answers.Answers
-	operators     []int64
-	now           func() time.Time
-	baseURL       string
-	shell         shellPage
-	reports       *reportCache
-	hints         *hints
+	gh         github
+	sessions   session.Sessions
+	account    account.Account
+	consents   account.Consents
+	onboarding onboarding.Onboarding
+	admissions *gate.Admissions
+	passkeys   passkey.Passkeys
+	requests   gate.RequestViews
+	answers    answers.Answers
+	operators  []int64
+	now        func() time.Time
+	baseURL    string
+	shell      shellPage
+	reports    *reportCache
+	hints      *hints
 }
 
 // New returns the UI mounted at "/". It serves the web app's build from the binary.
@@ -110,33 +95,28 @@ func New(d Deps) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	gh := github{files: d.GitHub, heads: d.GitHub, checks: d.GitHub, actions: d.GitHub, pulls: d.GitHub, users: d.GitHub, installs: d.GitHub}
+	gh := github{files: d.GitHub, checks: d.GitHub, actions: d.GitHub, pulls: d.GitHub, users: d.GitHub, installs: d.GitHub}
 	return newHandler(d, gh, sessions, builtWeb()), nil
 }
 
 // newHandler mounts every route. web is the build of the web app; tests hand in a small one.
 func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Handler {
 	s := &server{
-		gh:            gh,
-		sessions:      sessions,
-		account:       d.Account,
-		consents:      d.Consents,
-		onboarding:    d.Onboarding,
-		assist:        d.Assist,
-		proposals:     d.Proposals,
-		admissions:    d.Admissions,
-		approvals:     d.Approvals,
-		decisions:     d.Decisions,
-		decisionQueue: d.DecisionQueue,
-		passkeys:      d.Passkeys,
-		requests:      d.RequestViews,
-		answers:       d.Answers,
-		operators:     d.Operators,
-		now:           d.Now,
-		baseURL:       d.BaseURL,
-		shell:         newShell(web),
-		reports:       newReportCache(reportCacheBytes),
-		hints:         newHints(),
+		gh:         gh,
+		sessions:   sessions,
+		account:    d.Account,
+		consents:   d.Consents,
+		onboarding: d.Onboarding,
+		admissions: d.Admissions,
+		passkeys:   d.Passkeys,
+		requests:   d.RequestViews,
+		answers:    d.Answers,
+		operators:  d.Operators,
+		now:        d.Now,
+		baseURL:    d.BaseURL,
+		shell:      newShell(web),
+		reports:    newReportCache(reportCacheBytes),
+		hints:      newHints(),
 	}
 
 	mux := http.NewServeMux()
@@ -177,8 +157,6 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("GET /r/{o}/{n}/pull/{number}", pullPage)
 	mux.Handle("GET /r/{o}/{n}/pull/{number}/graph", pullPage)
 	mux.Handle("GET /r/{o}/{n}/data-sharing", page)
-	mux.Handle("GET /r/{o}/{n}/policy", page)
-	mux.Handle("GET /r/{o}/{n}/decisions", page)
 	mux.Handle("GET /r/{o}/{n}/passkeys", page)
 	mux.Handle("GET /r/{o}/{n}/requests/{number}", requestPage)
 	mux.Handle("GET /r/{o}/{n}/consent", s.signedIn(consentMoved))
@@ -197,26 +175,13 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("GET /api/repos", s.apiSignedIn(s.apiRepos))
 	mux.Handle("GET /api/repos/{o}/{n}/overview", s.apiRepo(permRead, s.apiStatus))
 	mux.Handle("GET /api/repos/{o}/{n}/findings", s.apiRepo(permRead, s.apiFindings))
-	mux.Handle("GET /api/repos/{o}/{n}/decisions", s.apiRepo(permRead, s.apiDecisions))
 	mux.Handle("GET /api/repos/{o}/{n}/graph", s.apiRepo(permRead, s.apiGraph))
 	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}", s.apiRepo(permRead, s.apiPull))
 	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}/graph", s.apiRepo(permRead, s.apiPullGraph))
-	mux.Handle("POST /api/repos/{o}/{n}/pulls/{number}/approve", s.apiRepo(permWrite, s.apiApprovePull))
-	mux.Handle("POST /api/repos/{o}/{n}/pulls/{number}/request-changes", s.apiRepo(permWrite, s.apiRequestChangesPull))
-	mux.Handle("POST /api/repos/{o}/{n}/pulls/{number}/withdraw", s.apiRepo(permWrite, s.apiWithdrawPull))
-	mux.Handle("POST /api/repos/{o}/{n}/pulls/{number}/override", s.apiRepo(permWrite, s.apiOverridePull))
-	mux.Handle("POST /api/repos/{o}/{n}/pulls/{number}/refresh-decision", s.apiRepo(permWrite, s.apiRefreshDecision))
-	mux.Handle("POST /api/repos/{o}/{n}/pulls/{number}/decisions/{finding}/{digest}/approve", s.apiRepo(permWrite, s.apiApproveDecision))
-	mux.Handle("POST /api/repos/{o}/{n}/pulls/{number}/decisions/{finding}/{digest}/decline", s.apiRepo(permWrite, s.apiDeclineDecision))
 	mux.Handle("POST /api/repos/{o}/{n}/onboarding", s.apiRepo(permAdmin, s.apiStartOnboarding))
 	mux.Handle("POST /api/repos/{o}/{n}/discover", s.apiRepo(permAdmin, s.apiDiscover))
 	mux.Handle("GET /api/repos/{o}/{n}/data-sharing", s.apiRepo(permAdmin, s.apiDataSharing))
 	mux.Handle("POST /api/repos/{o}/{n}/data-sharing", s.apiRepo(permAdmin, s.apiShareData))
-	mux.Handle("GET /api/repos/{o}/{n}/policy", s.apiRepo(permRead, s.apiPolicy))
-	mux.Handle("POST /api/repos/{o}/{n}/policy", s.apiRepo(permWrite, s.apiSavePolicy))
-	mux.Handle("POST /api/repos/{o}/{n}/policy/check", s.apiRepo(permRead, s.apiCheckPolicy))
-	mux.Handle("POST /api/repos/{o}/{n}/policy/ready", s.apiRepo(permWrite, s.apiReady))
-	mux.Handle("POST /api/repos/{o}/{n}/assist", s.apiRepo(permWrite, s.apiAssist))
 	mux.Handle("GET /api/repos/{o}/{n}/requests/{number}", s.apiRepo(permRead, s.apiRequest))
 	mux.Handle("GET /api/repos/{o}/{n}/requests/{number}/preview", s.apiRepo(permRead, s.apiRequestPreview))
 	// The answer routes need read: who answers is the owner rule of the policy on the default branch, which the gate

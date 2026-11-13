@@ -19,8 +19,7 @@ const (
 )
 
 var (
-	branchPattern  = regexp.MustCompile(`^archfit/[A-Za-z0-9._/-]+$`)
-	headSHAPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	branchPattern = regexp.MustCompile(`^archfit/[A-Za-z0-9._/-]+$`)
 )
 
 type service struct {
@@ -77,14 +76,6 @@ func (s *service) SetBody(ctx context.Context, r api.RepoRef, number int, body s
 	defer func() { logOutcome(ctx, "set_body", r, "", Draft{Number: number}, err) }()
 	if err := s.gh.UpdatePullBody(ctx, r, number, body); err != nil {
 		return fmt.Errorf("proposal: update body of pull %d: %w", number, err)
-	}
-	return nil
-}
-
-func (s *service) Ready(ctx context.Context, r api.RepoRef, number int) (err error) {
-	defer func() { logOutcome(ctx, "ready", r, "", Draft{Number: number}, err) }()
-	if err := s.gh.MarkReady(ctx, r, number); err != nil {
-		return fmt.Errorf("proposal: mark pull %d ready: %w", number, err)
 	}
 	return nil
 }

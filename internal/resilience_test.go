@@ -326,31 +326,6 @@ func TestSweepRepairsMissedEvents(t *testing.T) {
 	})
 }
 
-// enableManagedAssist makes the demo repository managed and records alice's consent to managed AI.
-func enableManagedAssist(t *testing.T, s *system) *browser {
-	t.Helper()
-	s.w.allow("alice", demoRepo, "admin")
-	s.w.edit(demoRepo, func(rp *repo) {
-		for branch, id := range map[string]string{"main": demoBase, "feature": demoHead} {
-			rp.push(branch, id, map[string]string{".archfit-app.yaml": settingsYAML("required", "managed")})
-		}
-	})
-	b := newBrowser(t, s.do)
-	b.signIn("alice")
-	recordConsent(t, b, demoRepo, "managed_llm", "")
-	return b
-}
-
-// requestAssist saves an edited policy and asks the managed assistant to improve it.
-func requestAssist(t *testing.T, b *browser, policy []byte) *http.Response {
-	t.Helper()
-	resp, _ := b.postJSON("/api/repos/"+demoRepo+"/assist", map[string]string{
-		"branch": "archfit/edit-alice", "head_sha": "",
-		"content": string(policy) + "# edited by alice\n", "mode": "managed", "instruction": "tighten the rules",
-	})
-	return resp
-}
-
 func TestGateSurvivesControlPlaneFailure(t *testing.T) {
 	second := pullPayload("opened", demoInstallation, demoRepo, demoRepo, true, 43, strings.Repeat("7c", 20))
 	openSecondPull := func(w *world) {
@@ -361,15 +336,16 @@ func TestGateSurvivesControlPlaneFailure(t *testing.T) {
 		})
 	}
 
-	t.Run("LLM provider failing and UI failing", func(t *testing.T) {
+	t.Run("UI failing", func(t *testing.T) {
 		f := loadFixture(t, "real-healthy")
 		w := newWorld(t)
 		w.seedDemo(f, "required", true)
-		provider := &fakeProvider{err: errDown}
-		s := newSystem(t, w, options{provider: provider})
-		b := enableManagedAssist(t, s)
-		if resp := requestAssist(t, b, f.policy); resp.StatusCode != http.StatusServiceUnavailable || provider.count() != 1 {
-			t.Fatalf("assist with a failing provider: status %d after %d provider calls; want 503 after 1", resp.StatusCode, provider.count())
+		s := newSystem(t, w, options{})
+		w.allow("alice", demoRepo, "admin")
+		b := newBrowser(t, s.do)
+		b.signIn("alice")
+		if resp, _ := b.get("/api/repos/" + demoRepo + "/overview"); resp.StatusCode != http.StatusOK {
+			t.Fatalf("the UI answered %d before the failure; want 200", resp.StatusCode)
 		}
 		// The UI cannot be made to panic from outside; it is made to fail instead: GitHub refuses every user token.
 		w.fail(http.StatusInternalServerError, -1, func(r *http.Request) bool { return callerOf(r).user != "" })

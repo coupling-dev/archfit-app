@@ -26,17 +26,8 @@ const (
 	maxWebhookBody = 25 << 20 // GitHub's own maximum delivery size
 	maxGrantBody   = 4 << 10
 
-	uploadTimeout  = 55 * time.Second // target: feedback within 60 seconds
-	controlTimeout = 55 * time.Second
-	// assistTimeout covers control's measured worst case of the managed assist route, about 285 s
-	// (the provider call alone may take 150 s). A shorter deadline cancels the provider call and
-	// the full budget reservation is settled for nothing.
-	assistTimeout = 300 * time.Second
-
-	// assistRoute restates one row of control/ui's route table: UIHandler is one opaque handler
-	// and only this route needs the long deadline.
-	assistRoute = "POST /api/repos/{owner}/{name}/assist"
-
+	uploadTimeout   = 55 * time.Second // target: feedback within 60 seconds
+	controlTimeout  = 55 * time.Second
 	headerRequestID = "X-Request-Id"
 	bearerPrefix    = "Bearer "
 
@@ -110,7 +101,6 @@ func newHandler(d handlerDeps) http.Handler {
 		mux.Handle("POST /v1/reanchors", http.TimeoutHandler(d.control.ReanchorHandler(), controlTimeout, ""))
 		mux.HandleFunc("POST /webhooks/github", s.webhook)
 		ui := d.control.UIHandler()
-		mux.Handle(assistRoute, http.TimeoutHandler(ui, assistTimeout, ""))
 		mux.Handle("/", http.TimeoutHandler(ui, controlTimeout, ""))
 		// Only the routes mounted below serve /internal/*; the UI never sees the prefix.
 		mux.Handle("/internal/", http.NotFoundHandler())

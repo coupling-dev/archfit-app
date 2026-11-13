@@ -14,7 +14,7 @@ import (
 
 func TestObserveStartsTrialOnce(t *testing.T) {
 	ctx := context.Background()
-	a, _, _, _ := newTest(store.NewMemory())
+	a, _, _ := newTest(store.NewMemory())
 
 	mustNil(t, a.Observe(ctx, instA, false, day(0)))
 	st, err := a.Status(ctx, instA, day(0))
@@ -44,7 +44,7 @@ func TestObserveBackfillsMissingRecord(t *testing.T) {
 
 	t.Run("private", func(t *testing.T) {
 		s := store.NewMemory()
-		a, _, _, _ := newTest(s)
+		a, _, _ := newTest(s)
 		mustNil(t, a.Observe(ctx, instA, true, t1))
 		if rawKey(t, s, instA, recordKeyName) == nil {
 			t.Error("account key missing")
@@ -61,7 +61,7 @@ func TestObserveBackfillsMissingRecord(t *testing.T) {
 
 	t.Run("public", func(t *testing.T) {
 		s := store.NewMemory()
-		a, _, _, _ := newTest(s)
+		a, _, _ := newTest(s)
 		mustNil(t, a.Observe(ctx, instA, false, t1))
 		if e := readEntitlement(t, s, instA); e != (gate.Entitlement{}) {
 			t.Errorf("entitlement = %+v, want the zero record", e)
@@ -72,7 +72,7 @@ func TestObserveBackfillsMissingRecord(t *testing.T) {
 func TestGrantOverridesAndLapses(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
-	a, _, _, logs := newTest(s)
+	a, _, logs := newTest(s)
 	mustNil(t, a.Observe(ctx, instA, true, day(0)))
 	now := day(40)
 	if st, _ := a.Status(ctx, instA, now); st.Plan != PlanSuspended {
@@ -112,7 +112,7 @@ func TestGrantOverridesAndLapses(t *testing.T) {
 func TestRefreshIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	s := newSpy()
-	a, _, _, _ := newTest(s)
+	a, _, _ := newTest(s)
 	mustNil(t, a.Observe(ctx, instA, true, day(0)))
 	recordBytes := rawKey(t, s, instA, recordKeyName)
 	entWrites := len(s.writes(gate.EntitlementKey))
@@ -140,8 +140,8 @@ func TestRefreshIsIdempotent(t *testing.T) {
 
 func TestConsentRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	_, c, _, _ := newTest(store.NewMemory())
-	k := ConsentManagedLLM
+	_, c, _ := newTest(store.NewMemory())
+	k := ConsentSourceProcessing
 
 	if c.Has(ctx, instA, k) {
 		t.Error("Has before Record = true")
@@ -162,8 +162,8 @@ func TestConsentRoundTrip(t *testing.T) {
 	if got, _, _ := c.Get(ctx, instA, k); got.By != "octocat" || !got.At.Equal(day(1)) {
 		t.Errorf("after a second Record = %+v; want the first who and when", got)
 	}
-	if c.Has(ctx, instA, ConsentSourceProcessing) {
-		t.Error("Has for the other kind = true")
+	if c.Has(ctx, instA, "other") {
+		t.Error("Has for another kind = true")
 	}
 	if c.Has(ctx, instB, k) {
 		t.Error("Has for another installation = true")
@@ -178,70 +178,15 @@ func TestConsentRoundTrip(t *testing.T) {
 	mustNil(t, c.Revoke(ctx, instA, k))
 }
 
-func TestBudgetReserveSettle(t *testing.T) {
-	ctx := context.Background()
-	const month = "2026-09"
-	now := day(3)
-
-	t.Run("cap", func(t *testing.T) {
-		s := store.NewMemory()
-		_, _, b, _ := newTest(s)
-		for i := range 4 {
-			if err := b.Reserve(ctx, 5_000_000, now); err != nil {
-				t.Fatalf("reserve %d: %v", i+1, err)
-			}
-		}
-		if err := b.Reserve(ctx, 5_000_000, now); !errors.Is(err, ErrBudgetExhausted) {
-			t.Fatalf("fifth reserve: %v, want ErrBudgetExhausted", err)
-		}
-		if got := counter(t, s, month); got != capMicroUSD {
-			t.Errorf("counter = %d, want %d", got, capMicroUSD)
-		}
-		mustNil(t, b.Settle(ctx, 5_000_000, 1_000_000, now))
-		if got := counter(t, s, month); got != 16_000_000 {
-			t.Errorf("counter after settle = %d, want 16000000", got)
-		}
-		mustNil(t, b.Reserve(ctx, 4_000_000, now))
-		if got := counter(t, s, month); got != capMicroUSD {
-			t.Errorf("counter = %d, want %d", got, capMicroUSD)
-		}
-	})
-
-	settles := []struct {
-		name   string
-		actual int64
-		delta  int64
-	}{
-		{"actual 0", 0, -5_000_000},
-		{"actual 2000000", 2_000_000, -3_000_000},
-		{"failed call, outcome unknown", 5_000_000, 0},
-		{"actual above the reservation", 6_000_000, 1_000_000},
-	}
-	for _, tt := range settles {
-		t.Run(tt.name, func(t *testing.T) {
-			s := store.NewMemory()
-			_, _, b, _ := newTest(s)
-			mustNil(t, b.Reserve(ctx, 5_000_000, now))
-			before := counter(t, s, month)
-			mustNil(t, b.Settle(ctx, 5_000_000, tt.actual, now))
-			if got := counter(t, s, month) - before; got != tt.delta {
-				t.Errorf("delta = %d, want %d", got, tt.delta)
-			}
-		})
-	}
-}
-
 func TestForgetDeletesTenantOnly(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
-	a, c, b, _ := newTest(s)
-	keys := []string{recordKeyName, gate.EntitlementKey, "consent/managed_llm", "consent/source_processing"}
+	a, c, _ := newTest(s)
+	keys := []string{recordKeyName, gate.EntitlementKey, "consent/source_processing"}
 	for _, id := range []int64{instA, instB} {
 		mustNil(t, a.Observe(ctx, id, true, day(0)))
-		mustNil(t, c.Record(ctx, id, Consent{Kind: ConsentManagedLLM, By: "octocat", ByID: 1, At: day(0)}))
 		mustNil(t, c.Record(ctx, id, Consent{Kind: ConsentSourceProcessing, By: "octocat", ByID: 1, At: day(0)}))
 	}
-	mustNil(t, b.Reserve(ctx, 3_000_000, day(0)))
 	wantB := map[string][]byte{}
 	for _, k := range keys {
 		wantB[k] = rawKey(t, s, instB, k)
@@ -266,15 +211,12 @@ func TestForgetDeletesTenantOnly(t *testing.T) {
 			t.Errorf("B's %q changed", k)
 		}
 	}
-	if got := counter(t, s, "2026-09"); got != 3_000_000 {
-		t.Errorf("counter = %d, want 3000000", got)
-	}
 }
 
 func TestAdmitUnadmitRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
-	a, _, _, logs := newTest(s)
+	a, _, logs := newTest(s)
 	admissions := gate.NewAdmissions(s, nil)
 	adm := gate.Admission{Account: "octo-labs", By: "alexei-led", ByID: 1898375, At: day(0)}
 

@@ -1,4 +1,4 @@
-// Package control is the façade of the control plane: UI, onboarding, entitlements and assist.
+// Package control is the façade of the control plane: UI, onboarding and entitlements.
 // It re-publishes the platform seams that platform packages and app may use.
 package control
 
@@ -12,7 +12,6 @@ import (
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/control/answers"
-	"github.com/alexei-led/archfit-app/internal/control/assist"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/passkey"
 	"github.com/alexei-led/archfit-app/internal/control/proposal"
@@ -25,7 +24,7 @@ import (
 
 const cookieKeyLen = 32
 
-// Deps are wired by internal/app. Sandbox and Provider may be nil: managed features then report "not available".
+// Deps are wired by internal/app. Sandbox may be nil: managed discovery then reports "not available".
 type Deps struct {
 	GitHub   *api.Client
 	Tokens   auth.TokenSource
@@ -34,13 +33,6 @@ type Deps struct {
 	Receiver gate.Receiver
 	// Admissions says which installations the App serves; Operators (GitHub user IDs) approve the others on /admin.
 	Admissions *gate.Admissions
-	// Approvals reads and records owner approvals of pull request heads for the pull request page: the gate façade.
-	Approvals gate.Approvals
-	// Decisions lists, declines and approves the decision requests of unattended agents for the pull request page.
-	Decisions gate.Decisions
-	// DecisionQueue lists the decision requests of unattended agents that wait for an owner, for the overview and the
-	// decisions page: the gate façade. It reads only.
-	DecisionQueue gate.DecisionQueue
 	// RequestViews reads a request and the preview of each answer for the request page: the gate façade. It reads only.
 	RequestViews gate.RequestViews
 	// Answers records an owner's answer and carries it to the default branch: the gate façade. control/answers adds
@@ -48,7 +40,6 @@ type Deps struct {
 	Answers   gate.Answers
 	Operators []int64
 	Sandbox   Sandbox
-	Provider  Provider
 	CookieKey []byte
 	BaseURL   string
 	Now       func() time.Time
@@ -72,9 +63,7 @@ type Control struct {
 
 	// Held for the composition only; the façade never calls them.
 	consents   account.Consents
-	budget     account.Budget
 	onboarding onboarding.Onboarding
-	assist     assist.Assist
 }
 
 func New(d Deps) (*Control, error) {
@@ -84,15 +73,11 @@ func New(d Deps) (*Control, error) {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	acct, consents, budget := account.New(d.Store)
+	acct, consents := account.New(d.Store)
 	proposals := proposal.New(d.GitHub, d.GitHub)
 	onb := onboarding.New(onboarding.Deps{
 		GitHub: d.GitHub, Tokens: d.Tokens, Receiver: d.Receiver, Proposals: proposals,
 		Consents: consents, Sandbox: d.Sandbox, BaseURL: d.BaseURL, Now: d.Now,
-	})
-	asst := assist.New(assist.Deps{
-		GitHub: d.GitHub, Provider: d.Provider, Consents: consents, Budget: budget,
-		Proposals: proposals, Now: d.Now,
 	})
 	passkeys, err := passkey.New(passkey.Config{BaseURL: d.BaseURL}, d.Store,
 		passkey.NewOwners(d.GitHub), passkey.NewIssues(d.GitHub, d.GitHub), d.Now)
@@ -102,8 +87,8 @@ func New(d Deps) (*Control, error) {
 	page, err := ui.New(ui.Deps{
 		Answers: answers.New(d.Answers, passkeys),
 		OAuth:   d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
-		Account: acct, Consents: consents, Onboarding: onb, Assist: asst, Proposals: proposals,
-		Admissions: d.Admissions, Approvals: d.Approvals, Decisions: d.Decisions, DecisionQueue: d.DecisionQueue, RequestViews: d.RequestViews, Passkeys: passkeys, Operators: d.Operators, Now: d.Now,
+		Account: acct, Consents: consents, Onboarding: onb,
+		Admissions: d.Admissions, RequestViews: d.RequestViews, Passkeys: passkeys, Operators: d.Operators, Now: d.Now,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("control: ui: %w", err)
@@ -111,12 +96,12 @@ func New(d Deps) (*Control, error) {
 	c := newControl(acct, d.GitHub, d.Store, d.Admissions, page, onb.DiscoveryHandler(), d.Now)
 	c.baseline = onb.BaselineHandler()
 	c.reanchor = onb.ReanchorHandler()
-	c.consents, c.budget, c.onboarding, c.assist = consents, budget, onb, asst
+	c.consents, c.onboarding = consents, onb
 	return c, nil
 }
 
 // WorkerDeps are the dependencies of the worker façade: it handles events, the sweep and grants, and serves no UI.
-// So it takes no OAuth, no cookie key, no Receiver, no Sandbox and no Provider.
+// So it takes no OAuth, no cookie key, no Receiver and no Sandbox.
 type WorkerDeps struct {
 	GitHub     *api.Client
 	Store      store.Store
@@ -138,7 +123,7 @@ func NewWorker(d WorkerDeps) (*Control, error) {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	acct, _, _ := account.New(d.Store)
+	acct, _ := account.New(d.Store)
 	return &Control{account: acct, repos: d.GitHub, tenants: d.Store, admit: d.Admissions, now: d.Now}, nil
 }
 
@@ -154,12 +139,6 @@ func (d Deps) validate() error {
 		return errors.New("control: nil Receiver")
 	case d.Admissions == nil:
 		return errors.New("control: nil Admissions")
-	case d.Approvals == nil:
-		return errors.New("control: nil Approvals")
-	case d.Decisions == nil:
-		return errors.New("control: nil Decisions")
-	case d.DecisionQueue == nil:
-		return errors.New("control: nil DecisionQueue")
 	case d.RequestViews == nil:
 		return errors.New("control: nil RequestViews")
 	case d.Answers == nil:
@@ -230,10 +209,3 @@ type (
 
 // ErrNoSandbox is owned by control/onboarding.
 var ErrNoSandbox = onboarding.ErrNoSandbox
-
-// Provider, Prompt and Completion are owned by control/assist.
-type (
-	Provider   = assist.Provider
-	Prompt     = assist.Prompt
-	Completion = assist.Completion
-)

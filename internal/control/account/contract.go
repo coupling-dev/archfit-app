@@ -52,7 +52,6 @@ type ConsentKind string
 
 const (
 	ConsentSourceProcessing ConsentKind = "source_processing" // managed discovery
-	ConsentManagedLLM       ConsentKind = "managed_llm"
 )
 
 type Consent struct {
@@ -79,22 +78,12 @@ type Consents interface {
 	Get(ctx context.Context, installationID int64, k ConsentKind) (Consent, bool, error)
 }
 
-var ErrBudgetExhausted = errors.New("account: managed LLM budget exhausted")
-
-// Budget is the App-wide managed-LLM hard cap: USD 20 per calendar month (UTC), in micro-USD.
-type Budget interface {
-	// Reserve atomically books maxCost; ErrBudgetExhausted if the cap would be exceeded.
-	Reserve(ctx context.Context, maxCostMicroUSD int64, now time.Time) error
-	// Settle returns the unused part of a reservation.
-	Settle(ctx context.Context, reservedMicroUSD, actualMicroUSD int64, now time.Time) error
-}
-
-func New(s store.Store) (Account, Consents, Budget) {
+func New(s store.Store) (Account, Consents) {
 	return newWithLogger(s, slog.Default())
 }
 
-func newWithLogger(s store.Store, log *slog.Logger) (Account, Consents, Budget) {
-	return &accounts{s: s, log: log}, &consents{s: s}, &budget{s: s, log: log}
+func newWithLogger(s store.Store, log *slog.Logger) (Account, Consents) {
+	return &accounts{s: s, log: log}, &consents{s: s}
 }
 
 func tenantOf(installationID int64) (store.Tenant, error) {

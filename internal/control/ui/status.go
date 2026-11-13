@@ -51,14 +51,9 @@ type statusBody struct {
 	PullsToUpdate int       `json:"pulls_to_update"` // listed pull requests that wait for an update after the target moved
 	PullsUnread   int       `json:"pulls_unread"`    // listed pull requests whose check could not be read: PullsToUpdate is a floor
 
-	// DecisionsPending counts the decision requests that wait for an owner in all pull requests; Decisions lists the
-	// first few. Neither is read for a repository without an open pull request.
-	DecisionsPending int           `json:"decisions_pending"`
-	Decisions        []decisionRow `json:"decisions"`
-	DecisionsError   bool          `json:"decisions_error"` // the requests could not be read; the rest of the page stands
-	Steps            []step        `json:"steps"`
-	Next             string        `json:"next"`     // the next setup step in one sentence, "" when there is none
-	NextHow          string        `json:"next_how"` // its details, shown behind "How"
+	Steps   []step `json:"steps"`
+	Next    string `json:"next"`     // the next setup step in one sentence, "" when there is none
+	NextHow string `json:"next_how"` // its details, shown behind "How"
 
 	Stage       string `json:"stage"`
 	Diagnostic  string `json:"diagnostic"`
@@ -66,7 +61,6 @@ type statusBody struct {
 	DraftState  string `json:"draft_state"`
 	Banner      string `json:"banner"`
 	Admin       bool   `json:"admin"`
-	ManagedAI   string `json:"managed_ai,omitempty"` // for an administrator: allowed, not_allowed or unknown
 	CanStart    bool   `json:"can_start"`
 	CanDiscover bool   `json:"can_discover"`
 	PullsURL    string `json:"pulls_url"`
@@ -109,7 +103,6 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 		progress    onboarding.Progress
 		progressErr error
 		admin       bool
-		managedAI   string
 		bannerText  string
 		main        branchCheck
 		pulls       struct {
@@ -122,9 +115,7 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 		func() { progress, progressErr = s.onboarding.Progress(ctx, sc.repo) },
 		func() {
 			_, adminErr := s.sessions.Authorize(ctx, sc.user, sc.repo.FullName, permAdmin)
-			if admin = adminErr == nil; admin {
-				managedAI = s.managedAIWord(ctx, sc)
-			}
+			admin = adminErr == nil
 		},
 		func() {
 			st, err := s.account.Status(ctx, sc.repo.InstallationID, s.now())
@@ -149,9 +140,7 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 		PullsURL:      "https://github.com/" + sc.repo.FullName + "/pulls?q=" + url.QueryEscape("is:pr head:archfit/"),
 		ChecksURL:     "https://github.com/" + sc.repo.FullName + "/commits/" + sc.repo.DefaultBranch,
 		Admin:         admin,
-		ManagedAI:     managedAI,
 		Banner:        bannerText,
-		Decisions:     []decisionRow{},
 	}
 	if d := progress.OpenDraft; d != nil {
 		body.DraftURL, body.DraftState = d.URL, draftWords[d.State]
@@ -178,14 +167,6 @@ func (s *server) apiStatus(r *http.Request, sc scope) (any, error) {
 			if p.Rerun != "" {
 				body.PullsToUpdate++
 			}
-		}
-		// A decision request belongs to an open pull request: without one there is nothing to read.
-		if len(pulls.rows) > 0 || pulls.failed {
-			titles := map[int]string{}
-			for _, p := range pulls.rows {
-				titles[p.Number] = p.Title
-			}
-			body.DecisionsPending, body.Decisions, body.DecisionsError = s.pendingDecisions(ctx, sc, maxNeedsYouDecisions, titles)
 		}
 	}
 	return body, nil
