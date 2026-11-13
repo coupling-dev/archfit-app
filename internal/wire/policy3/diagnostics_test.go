@@ -24,6 +24,16 @@ func TestPolicyDiagnosticsListEveryProblemByLine(t *testing.T) {
 	}
 }
 
+func TestVersionDiagnosticsUseTheVersionLine(t *testing.T) {
+	for _, version := range []string{"4", "\"3\"", "2"} {
+		data := []byte("# header\nversion: " + version + "\n")
+		got := policy3.Diagnostics(data)
+		if len(got) != 1 || !strings.HasPrefix(got[0], ".archfit.yaml:2: policy: version") {
+			t.Fatalf("version %s: %v", version, got)
+		}
+	}
+}
+
 func TestNamedRuleDiagnosticsUseTheRuleLine(t *testing.T) {
 	data, err := os.ReadFile("testdata/invalid/rule-two-forms-no-instead.yaml")
 	if err != nil {

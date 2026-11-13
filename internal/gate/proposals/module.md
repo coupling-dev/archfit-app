@@ -158,7 +158,9 @@ The owner is read from the protected, approved target, never the edited file.
 Every edit redeems a token for its new byte digest. It joins last as an ordinary requestless approval,
 using the same atomic record-and-pin step and `archfit/policy` branch. A pull-request comment names its owner and passkey.
 The merge push consumes the ordinary proposal. An edit is never replayed onto a different target tip, even
-when only code moved. Target checks before publishing and merging void it and retire its old success;
+when only code moved. Check publication and push/sweep retirement share the repository proposal lease. Retirement rereads its
+proposal and target after acquisition, so an in-flight publisher cannot restore success after invalidation.
+Target checks before publishing and merging void it and retire its old success;
 push/sweep handling also voids observed stale edits, and consumption requires proof of the exact merge parent.
 The owner can explicitly edit the proposal again with a fresh preview and passkey binding.
 `Editor` loads the recorded head, ignoring unrecorded pulls. If the live branch differs, `ReloadEditor` restores only

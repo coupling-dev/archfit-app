@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/proposals"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
@@ -49,6 +50,13 @@ func (s *Service) editParent(ctx context.Context, r api.Repo, p *proposal) (stri
 // retireMovedEdits also runs for code-only pushes and sweeps. A merged proposal
 // is checked by editParent at consumption, not compared to its own new tip.
 func (s *Service) retireMovedEdits(ctx context.Context, r api.Repo) error {
+	release, err := proposals.Hold(ctx, r, s.store, s.now)
+	if err != nil {
+		return err
+	}
+	defer release()
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
 	index := records.Index{Schema: records.SchemaProposalIndex}
 	if err := records.Load(ctx, s.store, tenant(r), records.ProposalIndexKey(r.FullName), &index); err != nil {
 		if errors.Is(err, records.ErrNoRecord) {

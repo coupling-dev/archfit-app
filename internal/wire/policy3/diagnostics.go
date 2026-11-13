@@ -41,6 +41,9 @@ func Diagnostics(data []byte) []string {
 			message = m[2]
 		} else {
 			path, _, _ := strings.Cut(diagnosticRule.ReplaceAllString(message, "${1}"), ":")
+			if strings.HasPrefix(message, "version ") {
+				path = "version"
+			}
 			for path != "" {
 				if n := lines[path]; n > 0 {
 					line = n

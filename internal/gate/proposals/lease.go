@@ -37,6 +37,16 @@ type lease struct {
 	Expires time.Time `json:"expires"`
 }
 
+// Hold takes the same repository lease used by answer/check publication.
+// Sibling lifecycle workers must hold it before retiring or voiding an edit.
+// Read their proposal and target state only after acquisition.
+func Hold(ctx context.Context, r api.Repo, s store.Store, now func() time.Time) (func(), error) {
+	if now == nil {
+		now = time.Now
+	}
+	return (&Service{store: s, now: now, sleep: sleepCtx}).hold(ctx, r)
+}
+
 // hold takes the repository's lease, waiting at most leaseWait, and returns its release. A value that cannot be read
 // is no lease: it is replaced.
 func (s *Service) hold(ctx context.Context, r api.Repo) (release func(), err error) {
