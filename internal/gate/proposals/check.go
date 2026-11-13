@@ -31,9 +31,14 @@ const (
 //     the state the revert was made in still holds and the tip holds the change it replaces (M2 task 23, review H1):
 //     an answer never starts change control.
 //
+// The caller holds the repository proposal lease through publication; edit
+// invalidation uses the same lease and cannot overwrite or be overwritten by it.
 // Any condition false sets nothing: a ruleset that requires the check then refuses the merge.
 func (s *Service) check(ctx context.Context, r api.Repo, tip string, pin records.Pin, listed []approved) error {
 	ref := r.RepoRef
+	if err := s.editTarget(ctx, r, tip, listed); err != nil {
+		return err
+	}
 	if err := s.stateAllows(ctx, r, tip, listed); err != nil {
 		return err
 	}

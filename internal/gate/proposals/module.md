@@ -91,7 +91,7 @@ Not provided: the consume on the merge push (`gate/approvals`, task 20), the re-
 ## Subdomain Classification
 
 Core: this is the protection of design 9.2, the only way a policy change reaches the default branch with an approval.
-Volatility: high during milestone 2; milestone 3 adds the YAML edit (M3 task 10) as another answer kind.
+Volatility: high while change-control behavior and its pages evolve.
 
 ## Encapsulated Knowledge
 
@@ -148,6 +148,25 @@ it found on its way (a pull request closed without a merge, an approval that no 
 void. The digest is
 `sha256:` and the hex SHA-256 of the JSON of `requests.Change`.
 
+## Whole-file edit
+
+`EditPreview` and `Edit` use the schema-3 decoder and its line diagnostics, with a 32 KiB cap first.
+The edit carries the entire file, the digest of the open proposal's file (otherwise the target's), and the
+preview's exact protected tip. A base/target mismatch is `the policy changed; reload`, before redemption or writes.
+The owner is read from the protected, approved target, never the edited file.
+
+Every edit redeems a token for its new byte digest. It joins last as an ordinary requestless approval,
+using the same atomic record-and-pin step and `archfit/policy` branch. A pull-request comment names its owner and passkey.
+The merge push consumes the ordinary proposal. An edit is never replayed onto a different target tip, even
+when only code moved. Check publication and push/sweep retirement share the repository proposal lease. Retirement rereads its
+proposal and target after acquisition, so an in-flight publisher cannot restore success after invalidation.
+Target checks before publishing and merging void it and retire its old success;
+push/sweep handling also voids observed stale edits, and consumption requires proof of the exact merge parent.
+The owner can explicitly edit the proposal again with a fresh preview and passkey binding.
+`Editor` loads the recorded head, ignoring unrecorded pulls. If the live branch differs, `ReloadEditor` restores only
+recorded approvals under the lease, without approving or merging new bytes. Preview stays read-only.
+Submission cleans closed proposals after valid redemption, reopening their requests as ordinary answers do.
+
 ## Integrations
 
 - **gate** (parent): builds the `Service` with the gate's GitHub client and Store; the façade `answers.go` serves it to
@@ -161,7 +180,7 @@ void. The digest is
 
 ## Change Vectors
 
-- The YAML edit of milestone 3 (M3 task 10): another answer kind whose change is a whole file, on the same branch.
+- Whole-file YAML edits and request answers share the same proposal lease, branch and ordered approvals.
 - The consume (task 20) and the sweep (task 22) read the proposal this module writes; the sweep retries the merge.
 
 ## Constraints and Invariants
@@ -178,7 +197,8 @@ void. The digest is
   that fails on the same key waits on it, and a new request line for the key opens no second issue. So the same key is
   never asked twice while an answer waits; an answer joins the open proposal without a new line only when another key
   wrote the same line.
-- **Stated limit**: a head keeps its `archfit/gate` success after the default branch moves. A ruleset that does not
+- **Stated limit for proposals without whole-file edits**: a head keeps its `archfit/gate` success after the default branch moves.
+  A proposal with an edit instead retires success and voids the edit on any observed target-tip movement. A ruleset that does not
   require an up-to-date branch lets an owner merge it on GitHub before the next answer rewrites it. When only other
   files moved, that merge is the approved policy. When the default branch's policy changed, the merged policy is not
   the expected digest, so the push is "policy changed outside the flow" (task 20): fail closed, not a silent approval.

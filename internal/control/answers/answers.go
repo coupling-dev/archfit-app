@@ -23,6 +23,7 @@ type Answer struct {
 
 // Answers takes in owners' answers.
 type Answers interface {
+	Edits
 	// Digest is the change digest of answer a to request number: the passkey step-up of the answer is bound to it,
 	// with the answer kind as its action and the request number.
 	Digest(ctx context.Context, r api.Repo, number int, a Answer) (string, error)

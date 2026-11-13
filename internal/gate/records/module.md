@@ -120,7 +120,7 @@ Functions, all under one installation tenant:
 - `Indexed(ctx, s, t, recordKey, indexKey, indexSchema, edit) error`: `edit` gets the record bytes (`nil` when
   missing) and the index (empty when missing), changes the index in place, and returns the next record bytes (`nil`
   deletes). Both keys change in one swap; a lost swap calls `edit` again; an `edit` error writes nothing.
-- `Join(ctx, s, t, repo, approvalID, proposalID, headSHA, digest) error`: an open approval joins an open proposal,
+- `Join(ctx, s, t, repo, approvalID, proposalID, headSHA, digest, editEpoch) error`: an open approval joins an open proposal,
   and the proposal's `HeadSHA` and `ExpectedDigest` become the head that carries all its approvals and that head's
   digest, in the same swap. So a merge of an older head never consumes the approval that just joined: its digest no
   longer matches. The same join again only pins again (after a branch rewrite); an approval of another proposal is
@@ -211,6 +211,19 @@ Functions, all under one installation tenant:
 
 Every write goes through `store.Update`; after 5 lost swaps it returns `store.ErrConflict`, and the caller may read
 again and retry.
+
+## Whole-file edit approvals
+
+`EditPolicy` records a requestless `edit` approval and pins it to the ordinary policy proposal in one swap.
+Its change holds base64 file bytes, the starting byte digest and the exact protected target SHA.
+The same proposal and merge-push consume are used; no separate edit approval store exists.
+
+Voiding an edit removes it from the ordered approval list and marks the current pin `edit_voided` in the same swap.
+That old head can no longer be consumed, even if it is merged after the edit was removed.
+An edit generation increments in the same void swap. Every writer binds its pin to the generation it read
+(after its own voids), so a concurrent invalidation cannot be cleared by a stale answer or resync.
+A writer that recomputes and repins the file at the matching generation clears the marker. Consume requires the caller's proved
+merge parent to equal every remaining edit's target. Request 0 never opens, reopens or joins the request index.
 
 ## Integrations
 

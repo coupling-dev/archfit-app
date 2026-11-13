@@ -26,7 +26,7 @@ var (
 // same swap means a merge of an older head can never consume the approval that just joined: its digest no longer
 // matches (Consume refuses it). The approval records the proposal once: joining the same proposal again only pins it
 // again, and any other proposal is ErrJoined.
-func Join(ctx context.Context, s store.Store, t store.Tenant, fullName, approvalID, proposalID, headSHA, digest string) error {
+func Join(ctx context.Context, s store.Store, t store.Tenant, fullName, approvalID, proposalID, headSHA, digest string, editEpoch uint64) error {
 	if approvalID == "" || proposalID == "" || digest == "" {
 		return errors.New("records: join: an empty id or digest")
 	}
@@ -43,12 +43,15 @@ func Join(ctx context.Context, s store.Store, t store.Tenant, fullName, approval
 		if err := Decode(cur[1], &p); err != nil {
 			return nil, err
 		}
+		if p.EditEpoch != editEpoch {
+			return nil, ErrMoved
+		}
 		again := a.Proposal == proposalID && slices.Contains(p.Approvals, approvalID)
 		switch {
 		case again && p.State != StateOpen:
 			return nil, ErrMoved
 		case again:
-			p.HeadSHA, p.ExpectedDigest = headSHA, digest
+			p.HeadSHA, p.ExpectedDigest, p.EditVoided = headSHA, digest, false
 			raw, err := Encode(&p)
 			if err != nil {
 				return nil, err
@@ -63,7 +66,7 @@ func Join(ctx context.Context, s store.Store, t store.Tenant, fullName, approval
 		}
 		a.Proposal = proposalID
 		p.Approvals = append(p.Approvals, approvalID)
-		p.HeadSHA, p.ExpectedDigest = headSHA, digest
+		p.HeadSHA, p.ExpectedDigest, p.EditVoided = headSHA, digest, false
 		return encodeAll(&a, &p)
 	})
 }
@@ -71,6 +74,7 @@ func Join(ctx context.Context, s store.Store, t store.Tenant, fullName, approval
 // Merge is a proposal's pull request landed on the default branch.
 type Merge struct {
 	Proposal string
+	Parent   string // proved merge parent; edits require their exact protected target
 	Commit   string // the pull request's merge commit
 	Digest   string // the policy digest it landed
 	Push     Push   // the push that landed it; its After is a later commit when a merge queue landed several
@@ -131,6 +135,7 @@ var errApprovalsMoved = errors.New("records: the proposal's approvals moved")
 type joined struct {
 	request int
 	revert  *Revert
+	edit    *Edit
 }
 
 // approvalsOf reads each approval of the proposal.
@@ -150,6 +155,15 @@ func approvalsOf(ctx context.Context, s store.Store, t store.Tenant, fullName, p
 			j.revert = &Revert{}
 			if err := json.Unmarshal(a.Change, j.revert); err != nil {
 				return nil, fmt.Errorf("records: approval %s holds an unreadable revert", id)
+			}
+		}
+		if a.Kind == KindEdit {
+			j.edit = &Edit{}
+			if err := json.Unmarshal(a.Change, j.edit); err != nil {
+				return nil, err
+			}
+			if a.State != StateOpen {
+				return nil, ErrMoved
 			}
 		}
 		out[id] = j
@@ -176,7 +190,7 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 		switch {
 		case p.State == StateMerged && p.Commit == m.Commit && p.ExpectedDigest == m.Digest:
 			return cur, nil
-		case p.State != StateOpen || p.PullRequest == 0 || p.ExpectedDigest != m.Digest:
+		case p.State != StateOpen || p.PullRequest == 0 || p.EditVoided || p.ExpectedDigest != m.Digest:
 			return nil, ErrMoved
 		}
 		push := PolicyPush{Schema: SchemaPolicyPush, Digest: m.Digest, Proposal: m.Proposal}
@@ -205,7 +219,12 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 			if !ok {
 				return nil, errApprovalsMoved
 			}
-			answered[strconv.Itoa(a.request)] = true
+			if a.edit != nil && (m.Parent == "" || a.edit.Target != m.Parent) {
+				return nil, ErrMoved
+			}
+			if a.request > 0 {
+				answered[strconv.Itoa(a.request)] = true
+			}
 			if a.revert != nil {
 				revs = append(revs, *a.revert)
 			}

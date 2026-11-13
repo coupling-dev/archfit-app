@@ -13,6 +13,9 @@ export interface Purpose {
   request?: number;
   digest?: string;
   passkey?: string;
+  target?: string;
+  base_digest?: string;
+  yaml?: string; // edit: revalidated by the App before the passkey prompt
 }
 
 async function credential(p: Promise<Credential | null>): Promise<object> {

@@ -116,6 +116,7 @@ func TestPolicyErrorsAndEdit(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.gh.setFile(repoName, mainBranch, ".archfit.yaml", string(raw))
+	e.answers.editor = gate.EditBase{File: raw, Digest: policy3.Digest(raw)}
 	for _, tt := range []struct {
 		name      string
 		state     gate.PolicyState
@@ -150,6 +151,7 @@ func TestPolicyEditUsesOpenProposalHead(t *testing.T) {
 	}
 	e.gh.setFile(repoName, mainBranch, ".archfit.yaml", string(raw))
 	proposal := string(raw) + "\n# proposal\n"
+	e.answers.editor = gate.EditBase{File: []byte(proposal), Digest: policy3.Digest([]byte(proposal))}
 	head := sha(123)
 	e.gh.setFile(repoName, head, ".archfit.yaml", proposal)
 	e.gh.pulls[repoName+"#11"] = api.Pull{Number: 11, State: "open", HeadRef: "archfit/policy", HeadRepo: repoName, BaseRef: mainBranch, HeadSHA: head}

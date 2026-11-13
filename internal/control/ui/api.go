@@ -3,6 +3,7 @@ package ui
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -110,6 +111,13 @@ func decodeJSON(r *http.Request, dst any) error {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return err
+		}
+		return invalid("The request could not be read.")
+	}
+	if err := dec.Decode(new(any)); err != io.EOF {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			return err

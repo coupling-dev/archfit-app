@@ -76,6 +76,8 @@ var sentinels = []struct {
 		"Only an owner named in .archfit.yaml on the default branch can answer a request."},
 	{gate.ErrNeedsPasskey, http.StatusForbidden, "needs_step_up",
 		"This answer loosens the policy. Confirm it with your passkey, then answer again."},
+	{gate.ErrEditChanged, http.StatusConflict, "edit_changed", "the policy changed; reload"},
+	{gate.ErrEditSize, http.StatusRequestEntityTooLarge, "edit_size", "The policy exceeds the 32 KiB edit limit."},
 	{gate.ErrAnswerBusy, http.StatusConflict, "answer_busy",
 		"Another answer for this repository is being written. Nothing was changed. Try again in a minute."},
 	{gate.ErrProposalFull, http.StatusConflict, "proposal_full",

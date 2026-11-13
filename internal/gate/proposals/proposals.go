@@ -163,6 +163,7 @@ type approved struct {
 	rec    records.Approval
 	change requests.Change
 	revert *records.Revert
+	edit   *records.Edit
 }
 
 // proposal is the open proposal of a repository whose pull request is open, with its open approvals in order. base is
@@ -175,6 +176,7 @@ type proposal struct {
 	base      []byte
 	inputs    []RevertApproval
 	stale     []approved
+	tip       string
 }
 
 func (s *Service) answer(ctx context.Context, r api.Repo, in Input) (Outcome, error) {
@@ -385,9 +387,13 @@ func (s *Service) readCurrent(ctx context.Context, r api.Repo, cleanup bool) (*p
 	if err := records.Load(ctx, s.store, t, records.RepoKey(r.FullName), &repo); err != nil && !errors.Is(err, records.ErrNoRecord) {
 		return nil, fmt.Errorf("proposals: read the repository: %w", err)
 	}
+	tip, err := s.gh.BranchHead(ctx, r.RepoRef, r.DefaultBranch)
+	if err != nil {
+		return nil, err
+	}
 	var open *proposal
 	for _, e := range index.Entries {
-		p := &proposal{id: e.ID}
+		p := &proposal{id: e.ID, tip: tip}
 		if err := records.Load(ctx, s.store, t, records.ProposalKey(r.FullName, e.ID), &p.rec); err != nil {
 			return nil, fmt.Errorf("proposals: read proposal %s: %w", e.ID, err)
 		}
@@ -455,6 +461,15 @@ func (s *Service) loadApprovals(ctx context.Context, r api.Repo, repo records.Re
 				return err
 			}
 			p.base = base
+		} else if a.rec.Kind == records.KindEdit {
+			a.edit = &records.Edit{}
+			if err := json.Unmarshal(a.rec.Change, a.edit); err != nil {
+				return fmt.Errorf("proposals: approval %s holds an unreadable edit: %w", id, err)
+			}
+			if a.edit.Target != p.tip {
+				p.stale = append(p.stale, a)
+				continue
+			}
 		} else if err := json.Unmarshal(a.rec.Change, &a.change); err != nil {
 			return fmt.Errorf("proposals: approval %s holds an unreadable change: %w", id, err)
 		}
@@ -480,6 +495,13 @@ func apply(tipFile []byte, cur *proposal) (file []byte, kept, voided []approved,
 			kept = append(kept, a)
 			continue
 		}
+		if a.edit != nil {
+			if _, err := policy3.Decode(a.edit.File); err != nil {
+				return nil, nil, nil, err
+			}
+			file, kept = a.edit.File, append(kept, a)
+			continue
+		}
 		out, err := requests.Edit(file, a.change, requests.RequestComment(a.change.Request))
 		switch {
 		case errors.Is(err, requests.ErrByHand):
@@ -502,7 +524,7 @@ func (s *Service) write(ctx context.Context, r api.Repo, cur *proposal, tip stri
 		if err != nil {
 			return nil, err
 		}
-		return &records.Pin{Proposal: cur.id, PullRequest: cur.rec.PullRequest, HeadSHA: head, Digest: digest}, nil
+		return &records.Pin{Proposal: cur.id, PullRequest: cur.rec.PullRequest, HeadSHA: head, Digest: digest, EditEpoch: editEpoch(cur)}, nil
 	}
 	files := []api.FileChange{{Path: policyPath, Content: want}}
 	head, err := s.gh.CommitOn(ctx, r.RepoRef, Branch, tip, commitMessage(listed), files, true)
@@ -571,7 +593,7 @@ func (s *Service) resync(ctx context.Context, r api.Repo, cur *proposal, tip str
 		return nil
 	}
 	pin := records.Pin{Proposal: cur.id, PullRequest: cur.rec.PullRequest, HeadSHA: head, Digest: policy3.Digest(file)}
-	if err := records.Join(ctx, s.store, t, r.FullName, kept[0].id, cur.id, head, pin.Digest); err != nil {
+	if err := records.Join(ctx, s.store, t, r.FullName, kept[0].id, cur.id, head, pin.Digest, editEpoch(cur)); err != nil {
 		logFailure(ctx, r, "pin the proposal", err)
 		return nil
 	}
@@ -642,6 +664,10 @@ func (s *Service) publish(ctx context.Context, r api.Repo, tip string, pin recor
 		logFailure(ctx, r, "describe the policy pull request", err)
 	}
 	err := s.check(ctx, r, tip, pin, listed)
+	if errors.Is(err, ErrEditChanged) {
+		s.voidMovedEdits(ctx, r, pin, listed)
+		return records.StateVoid, ""
+	}
 	switch {
 	case later:
 		if err != nil {
@@ -652,14 +678,22 @@ func (s *Service) publish(ctx context.Context, r api.Repo, tip string, pin recor
 		logFailure(ctx, r, "set archfit/gate on the policy pull request", err)
 		return requests.PullRefused, ""
 	}
-	return s.merge(ctx, r, pin)
+	return s.merge(ctx, r, tip, pin, listed)
 }
 
 // merge merges the proposal's pull request at its pinned head (design 9.2, appendix D.2: no bypass actor, so a
 // missing or pending check is GitHub's 405). After a refusal it reads the pull request: one that merged anyway (an
 // owner, or an earlier attempt) is merged; any other stays open for the sweep.
-func (s *Service) merge(ctx context.Context, r api.Repo, pin records.Pin) (state, merge string) {
+func (s *Service) merge(ctx context.Context, r api.Repo, tip string, pin records.Pin, listed []approved) (state, merge string) {
 	s.waitForHead(ctx, r.RepoRef, pin)
+	if err := s.editTarget(ctx, r, tip, listed); err != nil {
+		if errors.Is(err, ErrEditChanged) {
+			s.voidMovedEdits(ctx, r, pin, listed)
+			return records.StateVoid, ""
+		}
+		logFailure(ctx, r, "read the edit target before merge", err)
+		return requests.PullRefused, ""
+	}
 	sha, err := s.gh.MergePull(ctx, r.RepoRef, pin.PullRequest, pin.HeadSHA)
 	if err == nil {
 		return requests.PullMerged, sha

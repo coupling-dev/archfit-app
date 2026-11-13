@@ -21,7 +21,7 @@ const (
 func requestList(listed []approved) string {
 	var refs []string
 	for _, a := range listed {
-		if a.revert == nil {
+		if a.rec.Request > 0 {
 			refs = append(refs, "#"+strconv.Itoa(a.rec.Request))
 		}
 	}
@@ -46,6 +46,9 @@ func carried(listed []approved) string {
 	if reverts(listed) {
 		parts = append(parts, "the revert of the policy changed outside the flow")
 	}
+	if slices.ContainsFunc(listed, func(a approved) bool { return a.edit != nil }) {
+		parts = append(parts, "the owners' YAML edits")
+	}
 	if list := requestList(listed); list != "" {
 		parts = append(parts, "the owners' answers to "+list)
 	}
@@ -54,7 +57,7 @@ func carried(listed []approved) string {
 
 // commitMessage is the message of the App's commit on the policy branch.
 func commitMessage(listed []approved) string {
-	if !reverts(listed) {
+	if !reverts(listed) && !slices.ContainsFunc(listed, func(a approved) bool { return a.edit != nil }) {
 		return "archfit: answers to " + requestList(listed)
 	}
 	return "archfit: " + carried(listed)
@@ -85,6 +88,9 @@ func pullBody(base string, listed []approved) string {
 		request, answer := "#"+strconv.Itoa(a.rec.Request), answerWords(a.change)
 		if a.revert != nil {
 			request, answer = "none", "revert to the policy approved at "+a.revert.Commit
+		}
+		if a.edit != nil {
+			request, answer = "none", "edit the YAML"
 		}
 		b.WriteString("| " + request + " | " + answer + " | `" + a.rec.Login + "` | " + passkey + " |\n")
 	}

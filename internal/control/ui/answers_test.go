@@ -16,6 +16,7 @@ import (
 
 // fakeAnswers answers from fixed values and records what it was asked.
 type fakeAnswers struct {
+	answers.Edits
 	mu      sync.Mutex
 	digest  string
 	out     gate.AnswerOutcome
@@ -24,6 +25,8 @@ type fakeAnswers struct {
 	users   []passkey.User
 	numbers []int
 	answers []answers.Answer
+	edits   []answers.EditAnswer
+	editor  gate.EditBase
 }
 
 func (f *fakeAnswers) Digest(_ context.Context, r api.Repo, number int, a answers.Answer) (string, error) {
@@ -65,6 +68,7 @@ func TestAnswerAPIPassesTheAnswerTheUserAndTheToken(t *testing.T) {
 		{"later", gate.AnswerOutcome{PullRequest: 12, State: gate.AnswerLater}, "Answered. The policy change is in #12; it takes effect when #12 merges."},
 		{"refused", gate.AnswerOutcome{PullRequest: 12, State: gate.AnswerRefused},
 			"Answered. The policy change is in #12, but GitHub did not merge it. It stays open until it merges."},
+		{"edit voided", gate.AnswerOutcome{PullRequest: 12, State: gate.AnswerVoided}, "the policy changed; reload"},
 		{"no line", gate.AnswerOutcome{}, "Answered. The policy needs no new line for it."},
 	}
 	for _, tt := range tests {

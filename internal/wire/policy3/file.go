@@ -11,6 +11,7 @@ package policy3
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -179,7 +180,7 @@ func (n *Names) UnmarshalYAML(node *yaml.Node) error {
 	case yaml.SequenceNode:
 		var list []string
 		if err := node.Decode(&list); err != nil {
-			return errNames
+			return yamlProblem(node, errNames)
 		}
 		*n = Names(list)
 		if *n == nil {
@@ -187,10 +188,15 @@ func (n *Names) UnmarshalYAML(node *yaml.Node) error {
 		}
 		return nil
 	}
-	return errNames
+	return yamlProblem(node, errNames)
 }
 
 var errNames = errors.New("want one name or a list of names")
+
+// A TypeError lets yaml.v3 continue decoding sibling fields and collecting errors.
+func yamlProblem(node *yaml.Node, err error) error {
+	return &yaml.TypeError{Errors: []string{fmt.Sprintf("line %d: %s", node.Line, err)}}
+}
 
 // Switch is true, false or "auto". Decode keeps any other scalar in a form that
 // checkSwitches rejects.
@@ -201,7 +207,7 @@ type Switch string
 func (s *Switch) UnmarshalYAML(node *yaml.Node) error {
 	switch {
 	case node.Kind != yaml.ScalarNode:
-		return errSwitch
+		return yamlProblem(node, errSwitch)
 	case node.ShortTag() == "!!bool":
 		*s = Switch(strings.ToLower(node.Value))
 	case node.ShortTag() == "!!str" && node.Value == switchAuto:

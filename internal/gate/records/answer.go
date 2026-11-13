@@ -22,6 +22,7 @@ type Pin struct {
 	Proposal    string
 	PullRequest int
 	HeadSHA     string
+	EditEpoch   uint64 // proposal edit generation the writer read, after its own voids
 	Digest      string // the expected policy digest of HeadSHA
 }
 
@@ -111,13 +112,13 @@ func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approv
 			}
 		}
 		switch {
-		case p.State != StateOpen:
+		case p.State != StateOpen || p.EditEpoch != pin.EditEpoch:
 			return nil, ErrMoved
 		case len(p.Approvals) >= MaxApprovals:
 			return nil, ErrFull
 		}
 		p.Approvals = append(p.Approvals, approvalID)
-		p.HeadSHA, p.ExpectedDigest = pin.HeadSHA, pin.Digest
+		p.HeadSHA, p.ExpectedDigest, p.EditVoided = pin.HeadSHA, pin.Digest, false
 		proposalIndex, err := writeIndex(cur[4], before, proposals)
 		if err != nil {
 			return nil, err
@@ -175,6 +176,10 @@ func voidApproval(cur [][]byte, approvalID string, request int, reopened *bool) 
 			return nil, err
 		}
 		if i := slices.Index(p.Approvals, approvalID); i >= 0 {
+			if a.Kind == KindEdit {
+				p.EditVoided = true
+				p.EditEpoch++
+			}
 			p.Approvals = slices.Delete(p.Approvals, i, i+1)
 			if next[3], err = Encode(&p); err != nil {
 				return nil, err
@@ -182,7 +187,7 @@ func voidApproval(cur [][]byte, approvalID string, request int, reopened *bool) 
 		}
 	}
 	var req Request
-	if cur[1] == nil {
+	if request <= 0 || cur[1] == nil {
 		return next, nil
 	}
 	if err := Decode(cur[1], &req); err != nil {

@@ -1,0 +1,24 @@
+Policy
+
+acme/app · default branch
+
+Edit the policy
+
+Every YAML edit needs your passkey and goes through the policy pull request.
+
+Policy YAML
+
+preview it: archfit check --policy <file>
+
+Diff against the current policy
+--- a/.archfit.yaml
++++ b/.archfit.yaml
+@@ -6,0 +7 @@
++# owner edit <img src=x onerror=alert(1)>
+
+
+Confirm this edit with your passkey.
+
+Approve and merge with passkey
+
+Your passkeys · Back to policy

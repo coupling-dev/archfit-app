@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/alexei-led/archfit-app/internal/gate/proposals"
+	"github.com/alexei-led/archfit-app/internal/gate/records"
 	asks "github.com/alexei-led/archfit-app/internal/gate/requests"
 )
 
@@ -12,6 +13,7 @@ import (
 // archfit/policy with the other open answers, sets archfit/gate on that pull request when M2 D13 holds, and merges it
 // unless the owner chose to merge later. *Gate implements it.
 type Answers interface {
+	Edits
 	// AnswerDigest is the change digest of answer a to request number: the owner's passkey step-up is bound to it.
 	AnswerDigest(ctx context.Context, t Target, number int, a RequestAnswer) (string, error)
 	// Answer records and carries in. An error means the answer was not recorded; what the answer found on its way (a
@@ -31,6 +33,7 @@ const (
 	AnswerMerged  = asks.PullMerged
 	AnswerLater   = asks.PullLater
 	AnswerRefused = asks.PullRefused
+	AnswerVoided  = records.StateVoid
 )
 
 // The refusals of an answer, besides the request page's (ErrNoRequest, ErrClosedRequest, ErrAnswer, ErrNoPolicy,

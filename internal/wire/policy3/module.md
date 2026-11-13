@@ -99,8 +99,11 @@ Contract strength, root / 2 / 2: balanced.
 
 - The engine pin moves: replace `archfit.schema.json`, the fixtures and the `SCHEMA_SOURCE` lines together; at the
   release the pin becomes the tag. `TestTypesHaveTheKeysOfTheSchema` fails until the types carry a new key.
-- Milestone 3: a general comparison of two policies replaces `Loosens` by kind, and the YAML editor calls `Decode`.
+- YAML editing uses `Decode` and `Diagnostics`; every edit requires a passkey (M3 D9), without comparing loosen/tighten.
 - A new answer kind adds an edit and a row in `Loosens`.
+
+`Diagnostics` renders the same decoder errors as `.archfit.yaml:<line>: policy: <problem>`, in line order.
+Unknown/type errors and semantic problems are collected together; `Decode` refuses a second YAML document.
 
 ## Constraints and Invariants
 
