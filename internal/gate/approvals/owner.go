@@ -186,10 +186,10 @@ func (s *Service) bindTip(ctx context.Context, r api.Repo, a Action, repo record
 	return Change{Kind: a.Kind, Commit: tip, Policy: digest}, nil
 }
 
-// Approve makes an owner action outside requests: it binds the change again, checks it is the one the owner's
+// Act makes an owner action outside requests: it binds the change again, checks it is the one the owner's
 // step-up was bound to and who may make it, redeems the step-up, records the approval and records it on GitHub
 // (design 19). An error means nothing was recorded; a token Redeem used stays used.
-func (s *Service) Approve(ctx context.Context, r api.Repo, in Input) (Done, error) {
+func (s *Service) Act(ctx context.Context, r api.Repo, in Input) (Done, error) {
 	c, err := s.Bind(ctx, r, in.Action)
 	if err != nil {
 		return Done{}, err

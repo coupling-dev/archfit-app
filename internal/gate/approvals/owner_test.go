@@ -64,7 +64,7 @@ func (w *world) act(o Owner, a Action) (Done, error) {
 	if err != nil {
 		return Done{}, err
 	}
-	return w.svc.Approve(ctx, testRepo, Input{Action: a, Owner: o, Digest: c.Digest(), Redeem: redeem(c.Digest())})
+	return w.svc.Act(ctx, testRepo, Input{Action: a, Owner: o, Digest: c.Digest(), Redeem: redeem(c.Digest())})
 }
 
 func redeem(want string) func(context.Context, string) (string, error) {
@@ -154,10 +154,10 @@ func TestAFirstApprovalIsBoundToWhatTheAdministratorSaw(t *testing.T) {
 	}
 	w.openPull(12, "h2", policyV(1), "wf-2") // a push after the administrator looked
 	redeemed := false
-	_, err = w.svc.Approve(ctx, testRepo, Input{Action: Action{Kind: records.KindFirst, Pull: 12}, Owner: admin,
+	_, err = w.svc.Act(ctx, testRepo, Input{Action: Action{Kind: records.KindFirst, Pull: 12}, Owner: admin,
 		Digest: c.Digest(), Redeem: func(context.Context, string) (string, error) { redeemed = true; return passkeyID, nil }})
 	if !errors.Is(err, ErrMoved) || redeemed {
-		t.Errorf("Approve = %v, redeemed %v; want ErrMoved before the step-up is used", err, redeemed)
+		t.Errorf("Act = %v, redeemed %v; want ErrMoved before the step-up is used", err, redeemed)
 	}
 }
 

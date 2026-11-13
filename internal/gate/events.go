@@ -180,6 +180,9 @@ func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error
 	if err := g.policyPushed(ctx, e); err != nil {
 		return reaction, err
 	}
+	if err := g.workflowPushed(ctx, e); err != nil {
+		return reaction, err
+	}
 	if !protectedPush(e.ChangedPaths) {
 		// A rate limit is an error that wraps api.ErrRateLimited: the queue retries the delivery.
 		if _, err := g.sweeper.Recheck(ctx, t.Repo, e.HeadSHA, g.now()); err != nil {

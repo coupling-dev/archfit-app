@@ -489,14 +489,16 @@ func TestARepositoryWithoutAnApprovedPolicyIsNotJudged(t *testing.T) {
 	}
 }
 
-// TestAConsumeOutsideTheFlowKeepsTheState: the merged policy also carries the change no approval made.
+// TestAConsumeOutsideTheFlowKeepsTheState: an answer made before a direct push merges after it; the merged policy also
+// carries the change no approval made.
 func TestAConsumeOutsideTheFlowKeepsTheState(t *testing.T) {
 	w := newWorld(t)
 	w.approved(digestV(0))
 	w.gh.commit("c0", policyV(0))
+	w.answered(431, "graph a b", "p1", 21, digestV(2))
+	w.gh.pulls[21] = api.Pull{Number: 21, State: "open"}
 	w.gh.commit("c1", policyV(1))
 	outside := w.push("c0", "c1")
-	w.answered(431, "graph a b", "p1", 21, digestV(2))
 	w.merge(21, "c2", 2)
 	if out := w.push("c1", "c2"); out.Judged != JudgedConsumed {
 		t.Fatalf("outcome %+v, want consumed", out)

@@ -46,15 +46,6 @@ func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approv
 		if cur[0] != nil {
 			return nil, ErrExists
 		}
-		if repoBytes != nil {
-			var r Repo
-			if err := Decode(repoBytes, &r); err != nil {
-				return nil, err
-			}
-			if r.OutsideFlow != nil {
-				return nil, ErrOutsideFlow
-			}
-		}
 		var req Request
 		if cur[1] == nil {
 			return nil, ErrNoRecord
@@ -64,6 +55,15 @@ func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approv
 		}
 		if req.State != StateOpen {
 			return nil, ErrAnswered
+		}
+		if repoBytes != nil {
+			var r Repo
+			if err := Decode(repoBytes, &r); err != nil {
+				return nil, err
+			}
+			if r.OutsideFlow != nil {
+				return nil, ErrOutsideFlow
+			}
 		}
 		req.State = StateAnswered
 		requests, err := readIndex(cur[2], SchemaRequestIndex)
