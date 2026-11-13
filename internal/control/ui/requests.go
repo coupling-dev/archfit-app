@@ -13,21 +13,39 @@ import (
 // answer would do; it answers nothing. The texts are the request's and the policy's; the record is the check's.
 
 type requestJSON struct {
-	Number   int           `json:"number"`
-	State    string        `json:"state"` // open, answered or closed
-	Reason   string        `json:"reason"`
-	Rule     string        `json:"rule"`
-	Path     string        `json:"path,omitempty"`
-	From     string        `json:"from,omitempty"`
-	To       string        `json:"to,omitempty"`
-	Expires  string        `json:"expires,omitempty"`
-	Record   string        `json:"record"`
-	Verified bool          `json:"verified"` // false: the numbers are "as reported" by the CLI
-	Balance  *balanceJSON  `json:"balance,omitempty"`
-	Policy   bool          `json:"policy"` // false: the default branch has no policy of version 3
-	Modules  []moduleJSON  `json:"modules"`
-	Allowed  bool          `json:"allowed"`
-	Earlier  []earlierJSON `json:"earlier"`
+	Dependencies []requestDependencyJSON `json:"dependencies"`
+	IssueHref    string                  `json:"issue_href"`
+	Number       int                     `json:"number"`
+	State        string                  `json:"state"` // open, answered or closed
+	Reason       string                  `json:"reason"`
+	Rule         string                  `json:"rule"`
+	Path         string                  `json:"path,omitempty"`
+	From         string                  `json:"from,omitempty"`
+	To           string                  `json:"to,omitempty"`
+	Expires      string                  `json:"expires,omitempty"`
+	Record       string                  `json:"record"`
+	Verified     bool                    `json:"verified"` // false: the numbers are "as reported" by the CLI
+	Balance      *balanceJSON            `json:"balance,omitempty"`
+	Policy       bool                    `json:"policy"` // false: the default branch has no policy of version 3
+	Layers       []string                `json:"layers"`
+	Modules      []moduleJSON            `json:"modules"`
+	Allowed      bool                    `json:"allowed"`
+	Earlier      []earlierJSON           `json:"earlier"`
+	Answer       *requestAnswerJSON      `json:"answer,omitempty"`
+}
+
+type requestDependencyJSON struct {
+	Kind    string `json:"kind"`
+	Rule    string `json:"rule"`
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Expires string `json:"expires,omitempty"`
+}
+
+type requestAnswerJSON struct {
+	Kind    string `json:"kind"`
+	Until   string `json:"until,omitempty"`
+	Instead string `json:"instead,omitempty"`
 }
 
 type balanceJSON struct {
@@ -81,9 +99,15 @@ func (s *server) apiRequest(r *http.Request, sc scope) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	body := requestJSON{Number: v.Number, State: v.State, Reason: v.Reason, Rule: v.Rule, Path: v.Path, From: v.From,
+	body := requestJSON{IssueHref: v.IssueHref, Number: v.Number, State: v.State, Reason: v.Reason, Rule: v.Rule, Path: v.Path, From: v.From,
 		To: v.To, Expires: v.Expires, Record: v.Record, Verified: v.Numbers.Verified, Policy: v.Policy, Allowed: v.Allowed,
-		Modules: []moduleJSON{}, Earlier: []earlierJSON{}}
+		Dependencies: []requestDependencyJSON{}, Layers: append([]string{}, v.Layers...), Modules: []moduleJSON{}, Earlier: []earlierJSON{}}
+	for _, d := range v.Dependencies {
+		body.Dependencies = append(body.Dependencies, requestDependencyJSON{Kind: d.Kind, Rule: d.Rule, From: d.From, To: d.To, Expires: d.Expires})
+	}
+	if v.Answer != nil {
+		body.Answer = &requestAnswerJSON{Kind: string(v.Answer.Kind), Until: v.Answer.Until, Instead: v.Answer.Instead}
+	}
 	if b := v.Numbers.Balance; b != nil {
 		body.Balance = &balanceJSON{Value: b.Score, Max: b.Max, Min: b.Min}
 	}

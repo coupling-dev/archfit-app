@@ -160,3 +160,13 @@ func TestIndexAddRemoveLookup(t *testing.T) {
 		t.Errorf("after Remove: %v", x.Entries)
 	}
 }
+
+func TestOldRequestWithoutApprovalDecodes(t *testing.T) {
+	var req records.Request
+	if err := records.Decode([]byte(`{"schema":"archfit-app.request.v1","key":"graph a b","reason":"why","numbers":{"verified":false},"state":"answered"}`), &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.Approval != "" || req.State != records.StateAnswered {
+		t.Fatalf("request = %+v", req)
+	}
+}

@@ -46,6 +46,10 @@ func TestAnswerRecordsTheApprovalTheRequestAndANewProposalInOneSwap(t *testing.T
 	a := load[records.Approval](t, s, records.ApprovalKey(repoName, "a1"))
 	req := load[records.Request](t, s, records.RequestKey(repoName, 431))
 	p := load[records.Proposal](t, s, records.ProposalKey(repoName, "p1"))
+	raw := snapshot(t, s, records.RequestKey(repoName, 431))[0]
+	if !bytes.Contains(raw, []byte(`"approval":"a1"`)) {
+		t.Errorf("request lacks approval pointer: %s", raw)
+	}
 	if a.State != records.StateOpen || a.Proposal != "p1" || req.State != records.StateAnswered {
 		t.Errorf("approval %+v, request state %q", a, req.State)
 	}
@@ -84,6 +88,10 @@ func TestAnswerWithoutAProposal(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := load[records.Approval](t, s, records.ApprovalKey(repoName, "a1"))
+	raw := snapshot(t, s, records.RequestKey(repoName, 431))[0]
+	if !bytes.Contains(raw, []byte(`"approval":"a1"`)) {
+		t.Errorf("request lacks approval pointer: %s", raw)
+	}
 	if a.Proposal != "" || a.State != records.StateOpen {
 		t.Errorf("approval = %+v", a)
 	}

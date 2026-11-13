@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { assertion, authenticator, ceremony, expectClean, open, origin, type Handlers } from './support';
+import { assertion, authenticator, ceremony, expectClean, expectPageText, open, origin, type Handlers } from './support';
 
 const path = '/r/acme/app/requests/431';
 const api = '/api/repos/acme/app';
@@ -19,6 +19,8 @@ const request = {
   verified: true,
   balance: { value: 9, max: 10, min: 7 },
   policy: true,
+  dependencies: [],
+  layers: ['adapters'],
   modules: [
     { name: 'pkg_tc', layer: 'adapters', volatility: 'high', depends_on: ['pkg_container'] },
     { name: 'pkg_util', volatility: 'low', subdomain: 'generic', depends_on: [] },
@@ -142,11 +144,12 @@ test('request: the reason, the record with its balance, the two modules, the pre
   const record = page.getByRole('region', { name: 'Record' });
   await expect(record).toContainText('Balance: 9/10 (min 7)');
   await expect(record.locator('pre')).toHaveText(request.record);
-  const modules = page.getByRole('region', { name: 'Modules' });
-  await expect(modules).toContainText('Layer adapters · Volatility high');
-  await expect(modules).toContainText('Allowed dependencies: pkg_container');
-  await expect(modules).toContainText('Volatility low · subdomain generic');
-  await expect(modules).toContainText('Allowed dependencies: none');
+  const map = page.getByRole('region', { name: 'The map' });
+  await expect(map.locator('.map-node')).toHaveCount(2);
+  await expect(map.locator('.map-edge.requested')).toContainText('Requested dependency · #431');
+  const why = page.getByRole('region', { name: 'Why the balance' });
+  await expect(why).toContainText('Layer adapters · Volatility high');
+  await expect(why).toContainText('Volatility low · subdomain generic');
 
   const shown = page.getByRole('region', { name: 'Preview' });
   await expect(shown.getByLabel('Approve: the change to .archfit.yaml')).toContainText(
@@ -288,4 +291,35 @@ test('request: a request that does not exist is the API sentence, with no reposi
   await open(page, '/r/acme/app/requests/999', {});
   await expect(page.getByRole('heading', { name: 'This page cannot be shown' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Repository' })).toHaveCount(0);
+});
+
+for (const [name, data] of [
+  ['open', request],
+  ['as-reported', { ...request, verified: false }],
+  ['joined', { ...request, state: 'answered', dependencies: [{ kind: 'exception', from: 'pkg_tc', to: 'pkg_util', rule: 'graph', expires: '2027-01-15' }], answer: { kind: 'approve-until', until: '2027-01-15' } }],
+  ['answered', { ...request, state: 'answered', modules: request.modules.map((m) => m.name === 'pkg_tc' ? { ...m, depends_on: ['pkg_util'] } : m), dependencies: [{ kind: 'deny', from: 'pkg_tc', to: 'pkg_util', rule: 'no-tc-to-util' }], answer: { kind: 'reject', instead: 'Use a port.' } }],
+] as const) {
+  test(`request: ${name} text golden on direct load`, async ({ page }) => {
+    await open(page, path, { [`GET ${req}`]: () => [200, data], [`GET ${req}/preview`]: (_, url) => preview(url) });
+    await expect(page.getByRole('heading', { name: 'Request #431' })).toBeVisible();
+    await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toBeVisible();
+    if (!('answer' in data)) await expect(page.getByLabel('Approve: the change to .archfit.yaml')).toBeVisible();
+    else {
+      await expect(answerBox(page).getByRole('button')).toHaveCount(0);
+      await expect(page.locator('.map-edge.' + (data.answer.kind === 'reject' ? 'deny' : 'exception'))).toHaveCount(1);
+      await expect(page.locator('.map-edge.allowed')).toHaveCount(0);
+      await expect(answerBox(page)).toContainText(data.answer.kind === 'reject' ? 'Rejected. What to do instead: Use a port.' : 'Approved until 2027-01-15.');
+      await expect(page.getByRole('link', { name: 'Request #431 on GitHub' })).toHaveAttribute('href', 'https://github.com/acme/app/issues/431');
+    }
+    await expectPageText(page, 'request-' + name);
+    await expectClean(page);
+  });
+}
+
+test('request: old answered record links to issue without inventing an answer', async ({ page }) => {
+  await open(page, path, { [`GET ${req}`]: () => [200, { ...request, state: 'answered' }] });
+  await expect(answerBox(page)).toContainText('No answer is open.');
+  await expect(answerBox(page)).not.toContainText('Approved.');
+  await expect(answerBox(page).getByRole('button')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Request #431 on GitHub' })).toBeVisible();
 });
