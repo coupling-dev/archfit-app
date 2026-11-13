@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/policy"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
 )
 
@@ -32,20 +31,18 @@ func (o policyOwners) Owners(ctx context.Context, r api.Repo) ([]string, bool, e
 	if r.DefaultBranch == "" {
 		return nil, false, errors.New("passkey: the repository has no default branch")
 	}
-	raw, _, err := o.files.File(ctx, r.RepoRef, r.DefaultBranch, policy.PolicyPath)
+	raw, _, err := o.files.File(ctx, r.RepoRef, r.DefaultBranch, ".archfit.yaml")
 	switch {
 	case errors.Is(err, api.ErrNotFound):
 		return nil, false, nil
 	case err != nil:
 		return nil, false, fmt.Errorf("passkey: read the policy: %w", err)
 	}
-	if f, err := policy3.Decode(raw); err == nil {
+	f, err := policy3.Decode(raw)
+	if err == nil {
 		return f.Owners, true, nil
 	}
-	// An Archfit 3 policy is one its schema accepts in full, version 2 included: policy.Validate checks only key names,
-	// so a schema 3 file without owners would pass it. The Archfit 3 reader goes with Archfit 3 (M2 task 25); this
-	// check goes with it.
-	if policy.Diagnose(raw) == nil {
+	if errors.Is(err, policy3.ErrVersion2) {
 		return nil, false, nil
 	}
 	return nil, false, ErrPolicy

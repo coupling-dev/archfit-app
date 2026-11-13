@@ -756,12 +756,12 @@ func TestUpload4KeepsTheNewestRecord(t *testing.T) {
 	}
 }
 
-func TestUploadHandlerKeepsEnvelope1OnItsPath(t *testing.T) {
+func TestUploadHandlerRejectsEnvelope1(t *testing.T) {
 	w := newWorld4(t)
 	p := w.openPull(w.shop, 7)
 	a := w.upload(p, fixtureHealthy)
-	if a.status != http.StatusOK || a.Conclusion == "" || a.Status != "" {
-		t.Errorf("answer = %d %s, want an envelope 1 conclusion", a.status, a.raw)
+	if a.status != http.StatusBadRequest {
+		t.Errorf("answer = %d %s, want rejection of envelope 1", a.status, a.raw)
 	}
 }
 

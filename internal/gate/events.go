@@ -313,9 +313,5 @@ func protectedPush(paths []string) bool {
 
 // Sweep runs one reconciliation pass.
 func (g *Gate) Sweep(ctx context.Context) (Summary, error) {
-	sum, err := g.sweeper.Run(ctx, g.now())
-	if err != nil || sum.RateLimited {
-		return sum, err
-	}
-	return g.sweep4(ctx, sum)
+	return g.sweep4(ctx, Summary{})
 }

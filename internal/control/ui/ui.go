@@ -15,7 +15,6 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/auth"
-	"github.com/alexei-led/archfit-app/internal/wire/policy"
 )
 
 type Deps struct {
@@ -128,10 +127,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /schema/policy.json", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/schema+json")
-		_, _ = w.Write(policy.Schema())
-	})
+	mux.Handle("/schema/policy.json", http.NotFoundHandler())
 	mux.Handle("GET /auth/login", sessions.LoginHandler())
 	mux.Handle("GET /auth/callback", sessions.CallbackHandler())
 	mux.Handle("POST /auth/logout", s.signedIn(func(w http.ResponseWriter, r *http.Request, _ session.User) {
