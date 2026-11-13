@@ -35,20 +35,7 @@ export const analysisCheck = {
 };
 
 
-export const repos = {
-  repos: [
-    { full_name: 'acme/app', state: 'healthy', tone: 'success', reason: 'No new findings' },
-    {
-      full_name: 'acme/web',
-      state: 'violations found',
-      tone: 'danger',
-      reason: 'Architecture violations found',
-    },
-    { full_name: 'acme/new', state: 'no state yet', tone: 'neutral', reason: '' },
-    { full_name: 'octo/tool', waiting: true, state: 'waiting for approval', tone: 'attention', reason: '' },
-  ],
-  truncated: false,
-};
+export const repos = JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/repos/all-states.json', import.meta.url), 'utf8'));
 
 
 export const steps = (current: number) =>
@@ -554,6 +541,8 @@ export interface Mock {
   operator?: boolean; // the signed-in user approves installations
   tokenRejected?: boolean; // the session stands, but GitHub rejects the user's token on the first repository call
   overview?: object;
+  repos?: object;
+  passkeys?: object;
   sharingDown?: boolean; // the consent store cannot be read
   savedUnread?: boolean; // the write is saved, but the App cannot read it back in the same answer
   appBuild?: object;
@@ -605,7 +594,9 @@ export async function open(page: Page, path: string, mock: Mock = {}) {
         if (!mock.operator) return json(404, { error: 'Not found.' });
         return json(200, installations);
       case '/api/repos':
-        return json(200, repos);
+        return json(200, mock.repos ?? repos);
+      case '/api/repos/acme/app/passkeys':
+        return json(200, mock.passkeys ?? { passkeys: [] });
       case '/api/repos/acme/app/home':
         return json(200, JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/home/clean.json', import.meta.url), 'utf8')));
       case '/api/repos/acme/app/overview':

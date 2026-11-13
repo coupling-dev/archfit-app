@@ -114,13 +114,10 @@ func TestOverviewShowsOnlyAccessibleRepositories(t *testing.T) {
 	if strings.Contains(body, "concealed") || strings.Contains(body, otherRepo) {
 		t.Error("a repository GitHub did not list is on the page")
 	}
-	for _, call := range e.gh.called("BranchHead") {
-		if strings.Contains(call.fullName, "concealed") || call.fullName == otherRepo || call.fullName == repoName {
-			t.Errorf("lookup for %s", call.fullName)
+	for _, method := range []string{"BranchHead", "CheckRuns"} {
+		if calls := e.gh.called(method); len(calls) != 0 {
+			t.Errorf("repositories read historical %s: %v", method, calls)
 		}
-	}
-	if got := len(e.gh.called("BranchHead")); got != 3 {
-		t.Errorf("BranchHead calls = %d, want 3", got)
 	}
 }
 

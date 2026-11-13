@@ -48,7 +48,7 @@ func newHomeEnv(t *testing.T, pol string) *env {
 	}
 	e.handler = newHandler(Deps{Account: e.acct, Consents: e.consents,
 		Admissions: e.admit, HomeViews: gate.NewHome(e.gh, e.store, e.admit), Setups: e.setups, Now: clock,
-	}, github{files: e.gh, checks: e.gh, pulls: e.gh, users: e.gh, installs: e.gh}, sessions, testWeb)
+	}, github{files: e.gh, pulls: e.gh, users: e.gh, installs: e.gh}, sessions, testWeb)
 	return e
 }
 

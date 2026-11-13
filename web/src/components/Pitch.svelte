@@ -1,8 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
 
-  // Pitch says what Archfit does and why, on one page: the signed-out landing page and the Waiting page of an account
-  // no operator approved yet. top is the status or the sign-in under the headline; status is the box under the hero.
   let { top, status }: { top: Snippet; status?: Snippet } = $props();
 </script>
 
@@ -11,8 +9,8 @@
     {@render top()}
     <h1>Architecture checks on every pull request</h1>
     <p>
-      Archfit keeps your modules apart the way you designed them. It flags a pull request that crosses a boundary or
-      tightens the wrong coupling, before it merges.
+      Archfit checks each change against your policy: modules, allowed dependencies, rules and exceptions.
+      Workers fix errors or ask with a request. Owners approve or reject.
     </p>
   </div>
 
@@ -22,54 +20,37 @@
     <h2 id="pitch-how">How it works</h2>
     <ol class="pitch-flow">
       <li>
-        <span class="ic" aria-hidden="true">1</span><strong>Your CI runs the engine</strong>
-        <span>A workflow you add once. It reads your code where it already is.</span>
+        <span class="ic" aria-hidden="true">1</span><strong>Write the policy</strong>
+        <span>Keep modules, allowed dependencies, rules and exceptions in <code>.archfit.yaml</code>.</span>
       </li>
-      <li class="mid">
-        <span class="ic" aria-hidden="true">2</span><strong>A report, no source code</strong>
-        <span>Modules, dependencies and errors. GitHub signs the report to show where it came from.</span>
+      <li>
+        <span class="ic" aria-hidden="true">2</span><strong>Check each change</strong>
+        <span>Your CI runs Archfit. The check and comment show each error and the next step.</span>
       </li>
-      <li class="end">
-        <span class="ic" aria-hidden="true">✓</span><strong>A check on the pull request</strong>
-        <span>One check and one comment that say what changed and how to fix it.</span>
+      <li>
+        <span class="ic" aria-hidden="true">3</span><strong>Ask the owner</strong>
+        <span>A request is a GitHub issue. An owner answers in Archfit; approval changes the policy by pull request.</span>
       </li>
     </ol>
     <p class="pitch-privacy"><strong>Your code never leaves your CI.</strong></p>
   </section>
 
-  <section class="stack-sm" aria-labelledby="pitch-get">
-    <h2 id="pitch-get">What you get</h2>
-    <div class="pitch-cards">
-      <div>
-        <span class="k">Drift</span><strong>Catch boundary breaks before merge</strong>
-        <span>A pull request that makes <code>api</code> reach into <code>billing</code> internals is flagged before merge.</span>
-      </div>
-      <div>
-        <span class="k">Policy as code</span><strong>Rules live in your repository</strong>
-        <span><code>.archfit.yaml</code> is reviewed like any other change.</span>
-      </div>
-      <div>
-        <span class="k">Owners</span><strong>Only owners loosen the rules</strong>
-        <span>Workers ask with a request. An owner answers in Archfit with a passkey.</span>
-      </div>
-      <div>
-        <span class="k">Baseline</span><strong>Existing errors do not block</strong>
-        <span>Only new errors in the change count.</span>
-      </div>
+  <section class="stack-sm" aria-labelledby="pitch-status">
+    <h2 id="pitch-status">One status for each change</h2>
+    <div class="box">
+      <div class="box-row pitch-check"><span class="status success">pass</span><span>The change adds nothing a rule forbids.</span></div>
+      <div class="box-row pitch-check"><span class="status danger">fail</span><span>Fix the code, or ask, as the error says.</span></div>
+      <div class="box-row pitch-check"><span class="status attention">waiting</span><span>An open request covers the errors. Wait for the owner.</span></div>
+      <div class="box-row pitch-check"><span class="status neutral">unknown</span><span>No verdict: evidence is missing or the policy differs from the protected one.</span></div>
     </div>
   </section>
 
-  <section class="stack-sm" aria-labelledby="pitch-sample">
-    <h2 id="pitch-sample">What it looks like <span class="label">sample</span></h2>
-    <div class="box">
-      <div class="box-row pitch-check">
-        <span class="sev danger" aria-hidden="true">✕</span><code>archfit/state</code>
-        <span class="muted">1 rule error: <code>api → billing</code> crosses a layer boundary</span>
-      </div>
-      <div class="box-row pitch-check">
-        <span class="sev attention" aria-hidden="true">●</span><code>archfit/gate</code>
-        <span class="muted">Advisory: does not block merging</span>
-      </div>
-    </div>
-  </section>
+  <details>
+    <summary>How the policy stays protected</summary>
+    <p>
+      Only owners can loosen the policy. Approval needs a passkey, and takes effect when the policy pull request merges.
+      A policy changed outside the flow makes every change unknown.
+      An expired exception that still covers an error makes every change fail.
+    </p>
+  </details>
 </div>
