@@ -1,0 +1,54 @@
+{
+  "status": "1 exception expires in 7 days",
+  "needs_you": [
+    {
+      "kind": "exception",
+      "text": "1 exception expires in 7 days",
+      "href": "https://github.com/acme/app/issues/74",
+      "rule": "graph",
+      "from": "app",
+      "to": "other",
+      "expires": "2026-11-17",
+      "days_left": 7
+    }
+  ],
+  "map": {
+    "layers": [
+      "cmd",
+      "core",
+      ""
+    ],
+    "modules": [
+      {
+        "name": "app",
+        "layer": "cmd",
+        "volatility": "high"
+      },
+      {
+        "name": "util",
+        "layer": "core",
+        "volatility": "low"
+      },
+      {
+        "name": "other",
+        "layer": "",
+        "volatility": "high"
+      }
+    ],
+    "lines": [
+      {
+        "kind": "exception",
+        "from": "app",
+        "to": "other",
+        "rule": "graph",
+        "expires": "2026-11-17",
+        "days_left": 7
+      },
+      {
+        "kind": "allowed",
+        "from": "app",
+        "to": "util"
+      }
+    ]
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "status": "drift",
+  "needs_you": [
+    {
+      "kind": "drift",
+      "text": "Drift on the default branch.",
+      "href": "https://github.com/acme/app/issues/72"
+    }
+  ],
+  "map": {
+    "layers": [
+      "cmd",
+      "core",
+      ""
+    ],
+    "modules": [
+      {
+        "name": "app",
+        "layer": "cmd",
+        "volatility": "high"
+      },
+      {
+        "name": "util",
+        "layer": "core",
+        "volatility": "low"
+      },
+      {
+        "name": "other",
+        "layer": "",
+        "volatility": "high"
+      }
+    ],
+    "lines": [
+      {
+        "kind": "drift",
+        "from": "app",
+        "to": "other",
+        "rule": "graph"
+      },
+      {
+        "kind": "allowed",
+        "from": "app",
+        "to": "util"
+      }
+    ]
+  }
+}

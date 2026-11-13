@@ -26,6 +26,7 @@ type Deps struct {
 	Consents     account.Consents
 	Admissions   *gate.Admissions  // which installations the App serves; the others see the Waiting page
 	Passkeys     passkey.Passkeys  // the signed-in user's passkeys and the step-up of an answer
+	HomeViews    gate.HomeViews    // Home reads gate data through its read-only façade
 	PolicyViews  gate.PolicyViews  // policy page change-control state
 	RequestViews gate.RequestViews // the request page: a request and the preview of each answer, read only
 	Setups       onboarding.Setups
@@ -73,6 +74,7 @@ type server struct {
 	consents   account.Consents
 	admissions *gate.Admissions
 	passkeys   passkey.Passkeys
+	home       gate.HomeViews
 	policy     gate.PolicyViews
 	requests   gate.RequestViews
 	setups     onboarding.Setups
@@ -103,6 +105,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		consents:   d.Consents,
 		admissions: d.Admissions,
 		passkeys:   d.Passkeys,
+		home:       d.HomeViews,
 		policy:     d.PolicyViews,
 		requests:   d.RequestViews,
 		answers:    d.Answers, setups: d.Setups, owners: d.Owners,
@@ -167,6 +170,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("GET /api/repos/{o}/{n}/setup", s.apiRepo(permRead, s.apiSetup))
 	mux.Handle("POST /api/repos/{o}/{n}/owner/{action}/digest", s.apiRepo(permRead, s.apiOwnerDigest))
 	mux.Handle("POST /api/repos/{o}/{n}/owner/{action}", s.apiRepo(permRead, s.apiOwnerAct))
+	mux.Handle("GET /api/repos/{o}/{n}/home", s.apiRepo(permRead, s.apiHome))
 	mux.Handle("GET /api/repos/{o}/{n}/overview", s.apiRepo(permRead, s.apiLegacyUnavailable))
 	mux.Handle("GET /api/repos/{o}/{n}/findings", s.apiRepo(permRead, s.apiLegacyUnavailable))
 	mux.Handle("GET /api/repos/{o}/{n}/policy", s.apiRepo(permRead, s.apiPolicy))

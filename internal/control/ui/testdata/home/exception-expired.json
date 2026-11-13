@@ -1,0 +1,54 @@
+{
+  "status": "1 exception expired",
+  "needs_you": [
+    {
+      "kind": "exception",
+      "text": "1 exception expired",
+      "href": "/r/acme/app/policy",
+      "rule": "graph",
+      "from": "app",
+      "to": "other",
+      "expires": "2026-11-09",
+      "days_left": -1
+    }
+  ],
+  "map": {
+    "layers": [
+      "cmd",
+      "core",
+      ""
+    ],
+    "modules": [
+      {
+        "name": "app",
+        "layer": "cmd",
+        "volatility": "high"
+      },
+      {
+        "name": "util",
+        "layer": "core",
+        "volatility": "low"
+      },
+      {
+        "name": "other",
+        "layer": "",
+        "volatility": "high"
+      }
+    ],
+    "lines": [
+      {
+        "kind": "exception",
+        "from": "app",
+        "to": "other",
+        "rule": "graph",
+        "expires": "2026-11-09",
+        "days_left": -1
+      },
+      {
+        "kind": "allowed",
+        "from": "app",
+        "to": "util"
+      }
+    ]
+  }
+}

@@ -74,8 +74,25 @@ type Repo struct {
 	// it shows, so the same body is not written twice.
 	DriftIssue  int    `json:"drift_issue,omitempty"`
 	DriftDigest string `json:"drift_digest,omitempty"`
+	// Drift is the latest accepted push result. Nil means no repository evidence was stored.
+	Drift *DriftState `json:"drift,omitempty"`
 	// ExpiryIssues maps an exception and its date ("<exception key> <YYYY-MM-DD>") to the issue that warns of the date.
 	ExpiryIssues map[string]int `json:"expiry_issues,omitempty"`
+}
+
+// DriftState is the map data of a push result. Unread distinguishes partial evidence from a clean tree.
+type DriftState struct {
+	Head   string       `json:"head"`
+	State  string       `json:"state"`
+	Errors []DriftError `json:"errors"`
+	Unread bool         `json:"unread"`
+}
+
+// DriftError is the rule and modules of one default-branch error, never source text.
+type DriftError struct {
+	Rule string `json:"rule"`
+	From string `json:"from,omitempty"`
+	To   string `json:"to,omitempty"`
 }
 
 // OutsideFlow is "policy changed outside the flow": the digest seen and the issue opened for it (0 until it exists).
