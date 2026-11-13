@@ -5,10 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"maps"
 	"testing"
 
+	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/gate/requests"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
 )
@@ -105,5 +105,26 @@ func TestRevertPreviewRefusesAMovedProposalBeforePasskeyConsumption(t *testing.T
 				t.Fatalf("moved preview: %v, redeemed=%t", err, redeemed)
 			}
 		})
+	}
+}
+
+func TestRevertPreviewDoesNotCleanUpAClosedProposal(t *testing.T) {
+	w := newWorld(t)
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	open := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
+	w.outsideTheFlow()
+	pl := w.hub.pulls[open.PullRequest]
+	pl.State = "closed"
+	w.hub.pulls[open.PullRequest] = pl
+	before, writes := w.snapshot(), len(w.hub.writes())
+	view, err := w.svc.RevertPreview(t.Context(), testRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !maps.Equal(before, w.snapshot()) || len(w.hub.writes()) != writes {
+		t.Fatal("preview cleaned up a closed proposal")
+	}
+	if len(view.Proposals) != 0 || !bytes.Equal(view.Approved, view.Result) {
+		t.Fatalf("closed proposal included in preview: %+v", view)
 	}
 }

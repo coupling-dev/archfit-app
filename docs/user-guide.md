@@ -61,8 +61,9 @@ Only a repository administrator named in that policy can make it. Other actions 
 of the previously approved policy, not an owner added by an outside-flow change.
 A revert shows the exact policy it will write, including earlier approved answers kept from the open
 policy pull request. It also shows those answers relative to the approved policy and names that pull request.
-An approval does not mean the check passed: the outcome says whether a new run was requested, is pending,
-or could not be started.
+An approval does not mean the check passed. For first-policy and workflow pull-request approvals, the outcome
+says whether a new run was requested, is pending, or could not be started. First approval on the default
+branch and confirm do not report each re-run outcome.
 
 **Known limits:** Submit re-reads the displayed files, refs and open proposal answers before the passkey is
 consumed. A difference refuses the action and asks you to reload. GitHub and the Store do not provide one
