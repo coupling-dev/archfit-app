@@ -110,8 +110,9 @@ type Request struct {
 	Waiting []int   `json:"waiting,omitempty"` // pull requests waiting on this request
 	// Listed are the pull requests the issue body lists. An upload joins a pull request in the store alone, so the body
 	// can lag Waiting until a request line renders it again.
-	Listed []int  `json:"listed,omitempty"`
-	State  string `json:"state"`
+	Listed   []int  `json:"listed,omitempty"`
+	State    string `json:"state"`
+	Approval string `json:"approval,omitempty"` // the approval that answered this request
 	// What the issue asks, as wire/request's Issue names it: the rule, the path of unowned code, the two modules
 	// otherwise. With Expires and Record they let the App render the issue body again when a pull request joins.
 	Rule    string `json:"rule,omitempty"`

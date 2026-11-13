@@ -113,7 +113,8 @@ func PullClosed(ctx context.Context, s store.Store, r api.Repo, pull int) error
 
 type Answer struct { Kind policy3.Answer; Until, Instead string }
 type Change struct { Request int; Kind policy3.Answer; Rule, Path, From, To, Until, Instead string } // JSON, kept by an approval
-type View struct { /* Number, State, Reason, Rule, Path, From, To, Expires, Record, Numbers, Policy, Modules, Allowed, Earlier */ }
+type View struct { /* Number, State, Reason, Rule, Path, From, To, Expires, Record, Numbers, Policy, Layers (outer-first), Modules, Allowed, Earlier, Dependencies */ }
+type Dependency struct { Kind, Rule, From, To, Expires string } // structured map lines
 type Module struct { Name, Layer, Volatility, Subdomain string; DependsOn []string }
 type Earlier struct { Kind /* EarlierDeny, EarlierException */, Rule, From, To, Why, Instead, Expires string }
 type Preview struct { Answer Answer; Change Change; Diff, PolicyDigest string; Loosens bool; Pulls []PullEffect }

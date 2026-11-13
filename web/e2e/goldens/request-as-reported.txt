@@ -1,0 +1,90 @@
+Request #431
+
+waiting Request #431 waits for an owner to answer. Its numbers are as reported: no pull request confirmed them yet.
+
+Reason
+
+netem needs the retry helper of pkg_util to apply a rule again after a container restart.
+
+Rule graph · pkg_tc -> pkg_util · asked until 2026-12-01
+
+Request #431 on GitHub
+
+Record
+
+Balance: 9/10 (min 7), as reported
+
+pkg/tc/netem.go:12 graph pkg_tc -> pkg_util is not an allowed dependency
+  balance: 9/10 (min 7)
+The map
+adapters
+No layer
+Requested dependency · #431
+pkg_tc
+Volatility: high
+pkg_util
+Volatility: low
+An allowed dependency
+A requested one (with its #431)
+One a rule denies
+An exception (with its date)
+Drift
+Show the map as a list
+
+A dependency that is not drawn needs a request.
+
+Why the balance
+
+Balance: 9/10 (min 7), as reported
+
+The policy declares the volatility of each module:
+
+pkg_tc: Layer adapters · Volatility high
+
+pkg_util: Volatility low · subdomain generic
+
+Preview
+Approve
+
+Loosens the policy: it needs your passkey.
+
+--- a/.archfit.yaml
++++ b/.archfit.yaml
+@@ -4,3 +4,4 @@
+   pkg_tc:
+     depends_on:
+       - pkg_container
++      - pkg_util # request #431
+
+#12 (waiting), waits on this request: clears 1 error, 0 errors left
+#15 (fail): clears 1 error, 2 errors left
+Approve until a date
+
+Loosens the policy: it needs your passkey. Exception until 2026-12-01.
+
+--- a/.archfit.yaml
++++ b/.archfit.yaml
+@@ -4,3 +4,4 @@
++  - rule: graph # request #431
++    from: pkg_tc
++    to: pkg_util
++    expires: 2026-12-01
+
+#12 (waiting), waits on this request: clears 1 error, 0 errors left
+#15 (fail): clears 1 error, 2 errors left
+Reject
+
+Write what to do instead to see what this answer writes.
+
+Earlier answers 1
+Exception to graph for pkg_tc -> pkg_util until 2026-10-01. Why: Until the port lands.
+Answer
+
+Approve and approve until a date loosen the policy: your passkey confirms them. Your passkeys
+
+ Merge later: keep the policy pull request open, so the next answers join it
+Approve and merge
+The exception ends on
+Approve until a date
+What to do instead
+Reject

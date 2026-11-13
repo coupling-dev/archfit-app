@@ -79,3 +79,6 @@ results are covered from the live request index. Advisory failures stay fail. Th
 
 A missing-upload receipt remains readable before the first pull record exists. References to outside-flow
 issues are plain text, not request links; only the shared model's explicit request numbers become links.
+## Request page view
+
+`RequestView` reads the request and exposes declared volatility, layers outer-first and structured deny/exception dependencies from one target-policy snapshot. When an answered request has an approval pointer, the facade reads the recorded answer; older records without it provide no answer detail. The view includes the request issue link, which remains the source for the owner and passkey.

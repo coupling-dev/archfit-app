@@ -539,3 +539,33 @@ func TestAnExceptionClearsWhatItCovers(t *testing.T) {
 		})
 	}
 }
+
+func TestViewLayersAndVolatilityUseOnePolicy(t *testing.T) {
+	w := newPreviewWorld(t)
+	w.verifiedRequest()
+	w.gh.policy = []byte(strings.Replace(previewPolicy, "modules:\n", "layers: [core, adapters, outer]\nmodules:\n", 1))
+	v, err := w.svc.View(context.Background(), previewRepo, 431)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(v.Layers, []string{"outer", "adapters", "core"}) || len(v.Modules) != 2 || v.Modules[0].Volatility != "high" {
+		t.Fatalf("layers %v, modules %+v", v.Layers, v.Modules)
+	}
+}
+
+func TestViewKeepsStructuredDenyAndExceptionEndpoints(t *testing.T) {
+	w := newPreviewWorld(t)
+	w.verifiedRequest()
+	v, err := w.svc.View(t.Context(), previewRepo, 431)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Dependency{{Kind: EarlierException, Rule: "coupling", From: "pkg_tc", To: "pkg_util", Expires: "2026-12-01"}, {Kind: EarlierDeny, Rule: "no-util-to-tc", From: "pkg_util", To: "pkg_tc"}}
+	if !slices.Equal(v.Dependencies, want) {
+		t.Fatalf("dependencies = %+v, want %+v", v.Dependencies, want)
+	}
+	pol := policy3.File{Rules: []policy3.Rule{{ID: "deny", Deny: &policy3.Deny{From: []string{"a, b", "other"}, To: []string{"c"}}}}}
+	if got := dependencies(pol, "a, b", "c"); !slices.Equal(got, []Dependency{{Kind: EarlierDeny, Rule: "deny", From: "a, b", To: "c"}}) {
+		t.Fatalf("comma module: %+v", got)
+	}
+}

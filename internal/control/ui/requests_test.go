@@ -1,12 +1,16 @@
 package ui
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
@@ -51,14 +55,14 @@ func TestRequestAPIShowsTheRequest(t *testing.T) {
 	var body map[string]any
 	e.as("alice", permRead).getJSON(requestAPI, &body)
 	want := map[string]any{
-		"number": 431.0, "state": "open", "reason": "tc needs the retry helper", "rule": "graph", "from": "pkg_tc",
+		"dependencies": []any{}, "issue_href": "", "number": 431.0, "state": "open", "reason": "tc needs the retry helper", "rule": "graph", "from": "pkg_tc",
 		"to": "pkg_util", "expires": "2026-12-10", "record": "pkg/tc/netem.go:12: graph: …\n  balance: 9/10 (min 7)\n",
 		"verified": true, "balance": map[string]any{"value": 9.0, "max": 10.0, "min": 7.0}, "policy": true,
 		"modules": []any{
 			map[string]any{"name": "pkg_tc", "layer": "adapters", "depends_on": []any{"pkg_net"}},
 			map[string]any{"name": "pkg_util", "depends_on": []any{}},
 		},
-		"allowed": false,
+		"layers": []any{}, "allowed": false,
 		"earlier": []any{map[string]any{"kind": "deny", "rule": "no-util-to-tc", "from": "pkg_util", "to": "pkg_tc",
 			"why": "Util stays at the bottom.", "instead": "Pass a value in."}},
 	}
@@ -134,4 +138,62 @@ func TestRequestAPIRefusals(t *testing.T) {
 			t.Errorf("read for a user without access: %v", e.requests.numbers)
 		}
 	})
+}
+
+func TestRequestAPIGoldens(t *testing.T) {
+	base := gate.RequestView{IssueHref: "https://github.com/" + repoName + "/issues/431", Number: 431, State: "open", Reason: "Need the helper.", Rule: "graph", From: "app", To: "util",
+		Record: "app.go:3 graph app -> util\n  balance: 9/10 (min 7)\n", Numbers: gate.RequestNumbers{Verified: true, Balance: &gate.RequestBalance{Score: 9, Max: 10, Min: 7}},
+		Dependencies: []gate.RequestDependency{{Kind: gate.EarlierDeny, Rule: "no-util-to-app", From: "util", To: "app"}},
+		Policy:       true, Layers: []string{"outer", "core"}, Modules: []gate.RequestModule{{Name: "app", Layer: "outer", Volatility: "high"}, {Name: "util", Layer: "core", Volatility: "low"}}}
+	for _, tc := range []struct {
+		name string
+		view gate.RequestView
+	}{
+		{"open", base},
+		{"as-reported", func() gate.RequestView { v := base; v.Numbers.Verified = false; return v }()},
+		{"joined", func() gate.RequestView {
+			v := base
+			v.State = "answered"
+			v.Answer = &gate.RequestAnswer{Kind: policy3.ApproveUntil, Until: "2026-12-10"}
+			return v
+		}()},
+		{"answered", func() gate.RequestView {
+			v := base
+			v.State = "answered"
+			v.Answer = &gate.RequestAnswer{Kind: policy3.Reject, Instead: "Use a port."}
+			return v
+		}()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.now = time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+			e.requests.view = tc.view
+			res := e.as("alice", permRead).get(requestAPI)
+			wantStatus(t, res, http.StatusOK)
+			if words := wording.NotUsedIn(res.Body.String()); len(words) > 0 {
+				t.Fatalf("words: %v", words)
+			}
+			var pretty bytes.Buffer
+			if err := json.Indent(&pretty, res.Body.Bytes(), "", "  "); err != nil {
+				t.Fatal(err)
+			}
+			pretty.WriteByte('\n')
+			path := filepath.Join("testdata", "request", tc.name+".json")
+			if os.Getenv("UPDATE_GOLDEN") == "1" {
+				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, pretty.Bytes(), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(pretty.Bytes(), want) {
+				t.Fatalf("got %s, want %s", pretty.Bytes(), want)
+			}
+		})
+	}
 }

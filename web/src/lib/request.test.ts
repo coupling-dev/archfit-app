@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { mapLines } from '../components/map/model';
 import type { RequestView } from './api';
-import { answerProblem, balanceText, dependency, earlierLine, loosens, moduleLine, previewPath, pullLine, statusOf } from './request';
+import { answerProblem, balanceText, dependency, earlierLine, loosens, moduleLine, requestMap, previewPath, pullLine, statusOf } from './request';
 
 const open: RequestView = {
   number: 431,
@@ -13,6 +14,8 @@ const open: RequestView = {
   verified: true,
   balance: { value: 9, max: 10, min: 7 },
   policy: true,
+  dependencies: [],
+  layers: [],
   modules: [],
   allowed: false,
   earlier: [],
@@ -132,5 +135,30 @@ describe('moduleLine', () => {
     expect(moduleLine({ name: 'pkg_util', subdomain: 'generic', depends_on: [] })).toBe(
       'Volatility not set · subdomain generic',
     );
+  });
+});
+
+describe('requestMap', () => {
+  it('keeps the policy layer order and only lines between the declared modules', () => {
+    const result = requestMap({ ...open, layers: ['outer', 'core'], modules: [
+      { name: 'pkg_tc', layer: 'outer', volatility: 'high', depends_on: ['pkg_util', 'other'] },
+      { name: 'pkg_util', layer: 'core', depends_on: [] },
+    ], earlier: [{ kind: 'deny', rule: 'rule', from: 'pkg_util', to: 'pkg_tc' }] });
+    expect(result.layers).toEqual(['outer', 'core']);
+    expect(result.modules).toEqual([{ name: 'pkg_tc', layer: 'outer', volatility: 'high' }, { name: 'pkg_util', layer: 'core', volatility: 'not set' }]);
+    expect(result.lines).toEqual([
+      { kind: 'allowed', from: 'pkg_tc', to: 'pkg_util' },
+      { kind: 'requested', from: 'pkg_tc', to: 'pkg_util', rule: 'graph', request: 431 },
+    ]);
+  });
+});
+
+describe('requestMap policy lines', () => {
+  it.each(['deny', 'exception'] as const)('keeps %s on an answered dependency', (kind) => {
+    const result = requestMap({ ...open, state: 'answered', modules: [
+      { name: 'pkg_tc', volatility: 'high', depends_on: ['pkg_util'] },
+      { name: 'pkg_util', volatility: 'low', depends_on: [] },
+    ], dependencies: [{ kind, from: 'pkg_tc', to: 'pkg_util', rule: 'rule', expires: '2026-12-10' }] });
+    expect(mapLines(result.lines)).toEqual([{ kind, from: 'pkg_tc', to: 'pkg_util', rule: 'rule', expires: '2026-12-10' }]);
   });
 });

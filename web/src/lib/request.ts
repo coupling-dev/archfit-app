@@ -1,3 +1,4 @@
+import type { MapModel } from '../components/map/model';
 // The words and rules of the request page (design 10.4, 12.3). The server decides who may answer and checks every
 // answer again; these helpers only say what the page shows and keep a button off until its field is filled.
 
@@ -81,4 +82,20 @@ export function pullLine(e: PullEffect): string {
 export function moduleLine(m: RequestModule): string {
   const parts = [m.layer && `Layer ${m.layer}`, `Volatility ${m.volatility || 'not set'}`, m.subdomain && `subdomain ${m.subdomain}`];
   return parts.filter(Boolean).join(' · ');
+}
+
+// requestMap uses only the policy's two declared modules and their known dependencies.
+export function requestMap(r: RequestView): MapModel {
+  const modules = r.modules.map((m) => ({ name: m.name, layer: m.layer || '', volatility: m.volatility || 'not set' }));
+  const names = new Set(modules.map((m) => m.name));
+  const lines: MapModel['lines'] = [];
+  for (const m of r.modules) {
+    for (const to of m.depends_on) if (names.has(to)) lines.push({ kind: 'allowed', from: m.name, to });
+  }
+  for (const line of r.dependencies) {
+    if (names.has(line.from) && names.has(line.to)) lines.push(line);
+  }
+  if (r.state === 'open' && r.from && r.to && names.has(r.from) && names.has(r.to))
+    lines.push({ kind: 'requested', from: r.from, to: r.to, rule: r.rule, request: r.number });
+  return { layers: r.layers, modules, lines };
 }
