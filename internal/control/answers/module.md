@@ -22,7 +22,22 @@ passkey or reach into the gate's records.
   after it (a failed branch write or record) leaves it used, and the owner confirms again. A reject redeems nothing.
 
 Not provided: the owner rule, the records, the policy pull request (the gate), the passkey ceremonies (`passkey`), the
-pages (M2 task 24). Owner actions outside requests (M2 task 23) and the YAML edit (M3 task 10) come here later.
+pages. YAML edits are owned by the gate's policy proposal path.
+
+## Owner actions outside requests
+
+`NewOwners(gate.OwnerActions, passkey.Passkeys) Owners` exposes `OwnerDigest` and `OwnerAct`.
+`OwnerAction` holds the kind (`first`, `workflow`, `confirm`, `revert`), optional PR, seen digest,
+merge-later choice and step-up token. `OwnerAct` takes an authenticated `gate.OwnerUser`; its `Admin`
+authority must come from the caller's repository authorization, never the request body.
+
+The adapter preserves the gate's digest and owner checks, and gives it a `Redeem` bound to repository,
+user id and token. The gate supplies the digest at redemption; the purpose is `{Action: kind, Digest}`
+with no request number. All owner actions need the passkey; refusals propagate unchanged. No approval
+record is written in control.
+
+`owner_test.go` covers both first-approval forms, workflow approval, confirm and revert, including exact
+purpose/identity binding and gate/passkey refusals.
 
 ## Subdomain Classification
 

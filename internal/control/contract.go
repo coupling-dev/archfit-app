@@ -38,12 +38,14 @@ type Deps struct {
 	PolicyViews  gate.PolicyViews
 	// Answers records an owner's answer and carries it to the default branch: the gate façade. control/answers adds
 	// the passkey.
-	Answers   gate.Answers
-	Operators []int64
-	Sandbox   Sandbox
-	CookieKey []byte
-	BaseURL   string
-	Now       func() time.Time
+	OwnerActions gate.OwnerActions
+	SetupViews   gate.SetupViews
+	Answers      gate.Answers
+	Operators    []int64
+	Sandbox      Sandbox
+	CookieKey    []byte
+	BaseURL      string
+	Now          func() time.Time
 }
 
 // tenantLister is the only Store method the façade calls itself.
@@ -87,7 +89,8 @@ func New(d Deps) (*Control, error) {
 	}
 	page, err := ui.New(ui.Deps{
 		Answers: answers.New(d.Answers, passkeys),
-		OAuth:   d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
+		Owners:  answers.NewOwners(d.OwnerActions, passkeys), Setups: onboarding.NewSetup(d.GitHub, d.SetupViews),
+		OAuth: d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
 		Account: acct, Consents: consents, Onboarding: onb,
 		Admissions: d.Admissions, PolicyViews: d.PolicyViews, RequestViews: d.RequestViews, Passkeys: passkeys, Operators: d.Operators, Now: d.Now,
 	})

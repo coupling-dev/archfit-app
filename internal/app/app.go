@@ -102,6 +102,8 @@ func run(ctx context.Context, c Config, log *slog.Logger, hc *http.Client, googl
 			Admissions:   admissions,
 			PolicyViews:  g,
 			RequestViews: g,
+			OwnerActions: g,
+			SetupViews:   g,
 			Answers:      g,
 			Operators:    c.Operators,
 			Sandbox:      sandbox,

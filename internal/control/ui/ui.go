@@ -30,8 +30,10 @@ type Deps struct {
 	Passkeys     passkey.Passkeys  // the signed-in user's passkeys and the step-up of an answer
 	PolicyViews  gate.PolicyViews  // policy page change-control state
 	RequestViews gate.RequestViews // the request page: a request and the preview of each answer, read only
-	Answers      answers.Answers   // the request page: an owner's answer, with the passkey
-	Operators    []int64           // GitHub user IDs that approve installations on /admin
+	Setups       onboarding.Setups
+	Owners       answers.Owners
+	Answers      answers.Answers // the request page: an owner's answer, with the passkey
+	Operators    []int64         // GitHub user IDs that approve installations on /admin
 	Now          func() time.Time
 }
 
@@ -55,6 +57,7 @@ type (
 		OpenPulls(ctx context.Context, r api.RepoRef) ([]api.Pull, error)
 	}
 	repoLister interface {
+		Permission(ctx context.Context, userToken, fullName string) (string, error)
 		UserRepos(ctx context.Context, userToken string) ([]api.Repo, error)
 	}
 	installLister interface {
@@ -82,6 +85,8 @@ type server struct {
 	passkeys   passkey.Passkeys
 	policy     gate.PolicyViews
 	requests   gate.RequestViews
+	setups     onboarding.Setups
+	owners     answers.Owners
 	answers    answers.Answers
 	operators  []int64
 	now        func() time.Time
@@ -113,13 +118,13 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		passkeys:   d.Passkeys,
 		policy:     d.PolicyViews,
 		requests:   d.RequestViews,
-		answers:    d.Answers,
-		operators:  d.Operators,
-		now:        d.Now,
-		baseURL:    d.BaseURL,
-		shell:      newShell(web),
-		reports:    newReportCache(reportCacheBytes),
-		hints:      newHints(),
+		answers:    d.Answers, setups: d.Setups, owners: d.Owners,
+		operators: d.Operators,
+		now:       d.Now,
+		baseURL:   d.BaseURL,
+		shell:     newShell(web),
+		reports:   newReportCache(reportCacheBytes),
+		hints:     newHints(),
 	}
 
 	mux := http.NewServeMux()
@@ -176,6 +181,9 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("POST /api/admin/installations/{id}/approve", s.apiOperator(s.apiApprove))
 	mux.Handle("POST /api/admin/installations/{id}/revoke", s.apiOperator(s.apiRevoke))
 	mux.Handle("GET /api/repos", s.apiSignedIn(s.apiRepos))
+	mux.Handle("GET /api/repos/{o}/{n}/setup", s.apiRepo(permRead, s.apiSetup))
+	mux.Handle("POST /api/repos/{o}/{n}/owner/{action}/digest", s.apiRepo(permRead, s.apiOwnerDigest))
+	mux.Handle("POST /api/repos/{o}/{n}/owner/{action}", s.apiRepo(permRead, s.apiOwnerAct))
 	mux.Handle("GET /api/repos/{o}/{n}/overview", s.apiRepo(permRead, s.apiStatus))
 	mux.Handle("GET /api/repos/{o}/{n}/findings", s.apiRepo(permRead, s.apiFindings))
 	mux.Handle("GET /api/repos/{o}/{n}/policy", s.apiRepo(permRead, s.apiPolicy))

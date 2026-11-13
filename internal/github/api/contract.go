@@ -19,6 +19,8 @@ type Repo struct {
 	RepoRef
 	ID            int64
 	Private       bool
+	OwnerType     string // Organization or User
+	Visibility    string // public, private or internal
 	DefaultBranch string
 }
 

@@ -4,6 +4,18 @@
 **Parent**: internal/github/ (GitHub integration, publishes its children)
 **Submodules**: none (leaf)
 
+## Setup read-back
+
+`Rulesets` exposes `BranchPolicy`, `ListRulesets`, `GetRuleset` and `AppIntegrationID`.
+The list/detail requests include `includes_parents=true`; effective branch rules preserve required review
+counts and each status check's `integration_id`. A missing `bypass_actors` field is nil (unreadable), not
+an empty list. `Repo` also reports `OwnerType` and `Visibility` for push-ruleset applicability.
+
+`PublicTagCommit(ctx, fullName, tag)` reads a public tag without credentials, peels at most five tag
+objects, and returns only a valid full commit SHA. Missing tags, malformed objects, non-commit targets and
+cycles fail; there is no branch fallback. `rulesets_test.go` covers inherited reads, producer identity,
+anonymous tag resolution and its failure paths.
+
 ## Purpose
 
 `api` is the App's only GitHub REST client. It offers small role interfaces (repositories, pull requests,
