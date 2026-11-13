@@ -9,7 +9,7 @@
   import Admin from './pages/Admin.svelte';
   import DataSharing from './pages/DataSharing.svelte';
   import Landing from './pages/Landing.svelte';
-  import Overview from './pages/Overview.svelte';
+  import Home from './pages/Home.svelte';
   import Passkeys from './pages/Passkeys.svelte';
   import Pull from './pages/Pull.svelte';
   import Policy from './pages/Policy.svelte';
@@ -76,7 +76,7 @@
   {session}
   {repo}
   tab={route.kind === 'repo'
-    ? 'overview'
+    ? 'home'
     : route.kind === 'graph' || route.kind === 'policy'
       ? route.kind
       : ''}
@@ -101,7 +101,7 @@
   {:else if route.kind === 'admin'}
     <Admin {session} {here} />
   {:else if route.kind === 'repo'}
-    <Overview {route} {session} {here} />
+    <Home {route} {here} />
   {:else if route.kind === 'policy'}
     <Policy {route} {here} />
   {:else if route.kind === 'request'}

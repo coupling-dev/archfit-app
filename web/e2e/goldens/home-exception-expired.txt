@@ -1,0 +1,29 @@
+●
+1 exception expired
+
+Home
+
+acme/app
+
+Needs you
+1 exception expired
+The map
+cmd
+core
+No layer
+Exception · 2026-11-09
+Allowed dependency
+app
+Volatility: high
+util
+Volatility: low
+other
+Volatility: high
+An allowed dependency
+A requested one (with its #431)
+One a rule denies
+An exception (with its date)
+Drift
+Show the map as a list
+
+A dependency that is not drawn needs a request.

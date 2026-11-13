@@ -5,7 +5,7 @@ import { view, repoGraph, pullGraph, open, expectClean } from './fixtures';
 test('graph: the canvas, the inspector and the matrix', async ({ page }) => {
   await open(page, '/r/acme/app/graph');
   await expect(page.getByRole('heading', { name: 'Architecture', level: 1 })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Architecture' })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('navigation', { name: 'Repository' }).getByRole('link')).toHaveText(['Home', 'Policy']);
   await expect(page.locator('.g-node')).toHaveCount(4);
   await expect(page.locator('.g-edge')).toHaveCount(5);
   // width is integration strength; a dependency with no measured strength is dashed
