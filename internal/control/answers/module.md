@@ -26,7 +26,7 @@ pages. YAML edits are owned by the gate's policy proposal path.
 
 ## Owner actions outside requests
 
-`NewOwners(gate.OwnerActions, passkey.Passkeys) Owners` exposes `OwnerDigest` and `OwnerAct`.
+`NewOwners(gate.OwnerActions, passkey.Passkeys) Owners` exposes read-only `OwnerView`, `OwnerDigest` and `OwnerAct`.
 `OwnerAction` holds the kind (`first`, `workflow`, `confirm`, `revert`), optional PR, seen digest,
 merge-later choice and step-up token. `OwnerAct` takes an authenticated `gate.OwnerUser`; its `Admin`
 authority must come from the caller's repository authorization, never the request body.

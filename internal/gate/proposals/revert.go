@@ -102,15 +102,9 @@ func (s *Service) revert(ctx context.Context, r api.Repo, in RevertInput) (Outco
 	if err != nil {
 		return Outcome{}, err
 	}
-	file, kept, voided := approvedFile, []approved(nil), []approved(nil)
-	if cur != nil {
-		cur.base = approvedFile
-		if file, kept, voided, err = apply(tipFile, cur); err != nil {
-			return Outcome{}, err
-		}
-		if len(kept) >= records.MaxApprovals {
-			return Outcome{}, ErrFull
-		}
+	file, kept, voided, err := revertPolicy(approvedFile, tipFile, cur)
+	if err != nil {
+		return Outcome{}, err
 	}
 	if bytes.Equal(file, tipFile) {
 		return Outcome{}, ErrNothingToRevert

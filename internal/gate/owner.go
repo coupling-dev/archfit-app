@@ -27,6 +27,7 @@ import (
 // the first approval of an onboarding pull request or of the policy already on the default branch, the approval of a
 // changed workflow file, and the confirm or revert of a policy changed outside the flow. *Gate implements it.
 type OwnerActions interface {
+	OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerView, error)
 	// OwnerDigest is the change digest of action a now: the owner's passkey step-up is bound to it, with the action's
 	// kind as its action.
 	OwnerDigest(ctx context.Context, t Target, a OwnerAction) (string, error)

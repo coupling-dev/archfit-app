@@ -1,0 +1,50 @@
+{
+  "kind": "revert",
+  "pull_request": 0,
+  "status": "unknown: the policy changed outside the flow.",
+  "note": "This restores the approved policy. It keeps the approved answers in #12.",
+  "main_action": "Revert the policy",
+  "action_digest": "sha256:000000000000000000000000000000000000005b",
+  "digest": "sha256:000000000000000000000000000000000000005a",
+  "head": "",
+  "base": "",
+  "tip": "000000000000000000000000000000000000000a",
+  "approved": "0000000000000000000000000000000000000008",
+  "files": [
+    {
+      "role": "current",
+      "ref": "000000000000000000000000000000000000000a",
+      "path": ".archfit.yaml",
+      "digest": "sha256:2bd1008f0c36e371955aeb7929fae4e977798ee08f1d1794cb7fc73afdb85366",
+      "text": "version: 3\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n",
+      "missing": false
+    }
+  ],
+  "diffs": [
+    {
+      "title": "The policy to restore",
+      "path": ".archfit.yaml",
+      "text": "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -3,3 +3,3 @@\n modules:\n   app:\n-    paths: [cmd/**]\n+    paths: [cmd/**, pkg/**]\n"
+    },
+    {
+      "title": "Approved answers kept on the approved policy",
+      "path": ".archfit.yaml",
+      "text": "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -3,3 +3,5 @@\n modules:\n   app:\n     paths: [cmd/**]\n+    depends_on:\n+      - util  # request #431\n"
+    }
+  ],
+  "proposals": [
+    {
+      "id": "p1",
+      "pull_request": 12,
+      "head": "000000000000000000000000000000000000000d",
+      "digest": "sha256:000000000000000000000000000000000000005c",
+      "approvals": [
+        {
+          "id": "a1",
+          "request": 431,
+          "digest": "sha256:000000000000000000000000000000000000005d"
+        }
+      ]
+    }
+  ]
+}

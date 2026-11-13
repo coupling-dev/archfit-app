@@ -28,6 +28,7 @@ type fakeOwners struct {
 	users   []gate.OwnerUser
 	actions []answers.OwnerAction
 	err     error
+	view    gate.OwnerView
 }
 
 func (f *fakeOwners) OwnerDigest(_ context.Context, r api.Repo, a answers.OwnerAction) (string, error) {
@@ -203,4 +204,10 @@ func TestOwnerAPIRejectsInvalidActionsBeforeCallingGate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (f *fakeOwners) OwnerView(_ context.Context, r api.Repo, a answers.OwnerAction) (gate.OwnerView, error) {
+	f.repos = append(f.repos, r)
+	f.actions = append(f.actions, a)
+	return f.view, f.err
 }

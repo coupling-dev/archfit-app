@@ -19,6 +19,7 @@ type OwnerAction struct {
 
 // Owners binds owner actions to the signed-in user's passkey.
 type Owners interface {
+	OwnerView(context.Context, api.Repo, OwnerAction) (gate.OwnerView, error)
 	OwnerDigest(context.Context, api.Repo, OwnerAction) (string, error)
 	OwnerAct(context.Context, api.Repo, gate.OwnerUser, OwnerAction) (gate.OwnerOutcome, error)
 }
@@ -43,4 +44,8 @@ func (s *owners) OwnerAct(ctx context.Context, r api.Repo, u gate.OwnerUser, a O
 			return s.passkeys.Redeem(ctx, r, u.ID, a.Token, passkey.Purpose{Action: a.Kind, Digest: digest})
 		},
 	})
+}
+
+func (s *owners) OwnerView(ctx context.Context, r api.Repo, a OwnerAction) (gate.OwnerView, error) {
+	return s.gate.OwnerView(ctx, gate.Target{Repo: r}, gate.OwnerAction{Kind: a.Kind, Pull: a.Pull})
 }

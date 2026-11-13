@@ -73,3 +73,8 @@ handler. JSON goldens live in `testdata/home/`; generate deliberately with
 The same tests call `wording.NotUsedIn` and cover the UTC date window, failures and authorization.
 
 If the outside-flow policy is missing or invalid, Home omits the map and confirm action but retains the revert link.
+
+`GET /api/repos/{o}/{n}/owner/{first|workflow|confirm|revert}/view` returns the read-only owner
+view through repository-read authorization and admission. `?pull=n` is required for workflow,
+optional for first approval, and not allowed for confirm or revert. It returns actual file
+bytes, immutable refs, SHA-256s, rendered diffs, the M2 action digest and the separate view digest.

@@ -1,0 +1,36 @@
+{
+  "kind": "workflow",
+  "pull_request": 7,
+  "status": "unknown: the workflow changed.",
+  "note": "This approves the policy and workflow at this pull request's head.",
+  "main_action": "Approve the workflow change",
+  "action_digest": "sha256:000000000000000000000000000000000000005b",
+  "digest": "sha256:000000000000000000000000000000000000005a",
+  "head": "000000000000000000000000000000000000000b",
+  "base": "0000000000000000000000000000000000000009",
+  "tip": "000000000000000000000000000000000000000a",
+  "approved": "0000000000000000000000000000000000000008",
+  "files": [
+    {
+      "role": "current",
+      "ref": "000000000000000000000000000000000000000a",
+      "path": ".archfit.yaml",
+      "digest": "sha256:2bd1008f0c36e371955aeb7929fae4e977798ee08f1d1794cb7fc73afdb85366",
+      "text": "version: 3\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n",
+      "missing": false
+    }
+  ],
+  "diffs": [
+    {
+      "title": "The workflow change",
+      "path": ".github/workflows/archfit.yaml",
+      "text": "--- a/.github/workflows/archfit.yaml\n+++ b/.github/workflows/archfit.yaml\n@@ -1,1 +1,1 @@\n-name: old\n+name: archfit\n"
+    },
+    {
+      "title": "The policy change",
+      "path": ".archfit.yaml",
+      "text": "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -3,3 +3,3 @@\n modules:\n   app:\n-    paths: [cmd/**]\n+    paths: [cmd/**, pkg/**]\n"
+    }
+  ],
+  "proposals": []
+}

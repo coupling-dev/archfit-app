@@ -86,3 +86,8 @@ func TestOwnerActionsPreserveGateAndPasskeyRefusals(t *testing.T) {
 		t.Errorf("OwnerAct = %v, want token refusal", err)
 	}
 }
+
+func (g *ownerGate) OwnerView(_ context.Context, target gate.Target, a gate.OwnerAction) (gate.OwnerView, error) {
+	g.target, g.action = target, a
+	return gate.OwnerView{}, g.err
+}
