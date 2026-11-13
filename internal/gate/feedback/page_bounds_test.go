@@ -68,3 +68,31 @@ func TestWaitStepsBeyondTheNamedRequestsStayVisible(t *testing.T) {
 		t.Errorf("author line = %q", page.Author)
 	}
 }
+
+func TestFixStepIsHiddenOnlyWhenTheAuthorLineNamesIt(t *testing.T) {
+	for _, tc := range []struct {
+		text, note string
+		show       bool
+	}{
+		{"fix the code", "", false},
+		{"fix the code, or ask an owner to extend the exception", "", true},
+		{"fix the code", "then check again", true},
+		{"repair the code", "", true},
+	} {
+		t.Run(tc.text+"/"+tc.note, func(t *testing.T) {
+			r := engineResult(t, "deny")
+			r.Errors[0].Next = result.Next{Kind: "fix", Text: tc.text, Note: tc.note}
+			v := newView(r)
+			if got := v.page().Records[0].ShowNext; got != tc.show {
+				t.Errorf("ShowNext = %v, want %v", got, tc.show)
+			}
+			step := "- next: " + tc.text
+			if tc.note != "" {
+				step += " (" + tc.note + ")"
+			}
+			if got := strings.Contains(v.comment(maxBody), step+"\n"); got != tc.show {
+				t.Errorf("comment includes %q = %v, want %v", step, got, tc.show)
+			}
+		})
+	}
+}

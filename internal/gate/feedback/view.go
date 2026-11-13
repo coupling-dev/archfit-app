@@ -115,13 +115,15 @@ func (v view) says(n result.Next) bool {
 		return false
 	}
 	switch n.Kind {
+	case nextFix:
+		return n.Text == "fix the code" && n.Note == ""
 	case nextCommand:
 		return strings.HasPrefix(n.Text, requestCommand+" ")
 	case nextWait:
 		id := request(n)
 		return id > 0 && slices.Contains(v.requests[:min(len(v.requests), requestCap)], id)
 	}
-	return true
+	return false
 }
 
 // requestList is "#431", "#431 and #432", or "#431, #432 and #433"; after requestCap requests, "#1, …, #10 and 5

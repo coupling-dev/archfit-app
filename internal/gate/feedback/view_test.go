@@ -148,7 +148,12 @@ func viewFixtures(t *testing.T) []viewFixture {
 			Status: result.StatusUnknown, Summary: "archfit: unknown, no verdict", Unknown: []result.Unknown{tc.u},
 		}, false})
 	}
-	fixtures = append(fixtures, viewFixture{"waiting-twelve", twelveWaitingRequests(t), false})
+	expired := engineResult(t, "expired_exception")
+	expired.Errors[0].Next = result.Next{Kind: nextFix, Text: "fix the code, or ask an owner to extend the exception"}
+	fixtures = append(fixtures,
+		viewFixture{"waiting-twelve", twelveWaitingRequests(t), false},
+		viewFixture{"expired-no-request", expired, false},
+	)
 	return fixtures
 }
 
