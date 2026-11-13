@@ -1,0 +1,34 @@
+{
+  "record": {
+    "schema": "archfit-app.pull.v1",
+    "head_sha": "0000000000000000000000000000000000000004",
+    "run_id": 42,
+    "run_attempt": 1,
+    "payload_digest": "sha256:83063ad79151993e43ea1f51d1f63a30ab23bf0405bcd7583106d4044a8eb2cd",
+    "policy_digest": "accepted",
+    "status": "unknown"
+  },
+  "head_sha": "0000000000000000000000000000000000000004",
+  "run_id": 42,
+  "run_attempt": 1,
+  "status": "unknown",
+  "waiting": [],
+  "view": {
+    "status": "unknown",
+    "status_line": "Archfit: unknown, no verdict",
+    "records": [
+      {
+        "path": ".archfit.yaml",
+        "rule": "policy",
+        "what": "differs from origin/main",
+        "why": "only owners change the policy",
+        "next": {
+          "kind": "restore",
+          "text": "git checkout origin/main -- .archfit.yaml"
+        },
+        "show_next": true
+      }
+    ],
+    "author": "do the `next` step of each record."
+  }
+}

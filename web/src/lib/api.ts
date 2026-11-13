@@ -201,15 +201,6 @@ export interface Findings {
   task_count: number;
 }
 
-// ScreenLine is one line of the comment's first screen, as plain text.
-export interface ScreenLine {
-  kind: 'headline' | 'heading' | 'text' | 'item';
-  text: string;
-}
-
-export type Pull = PullHead &
-  Findings & { first_screen?: ScreenLine[] };
-
 // RepoFindings is the latest report of the default branch, for the overview.
 export type RepoFindings = Findings & {
   unavailable: string;

@@ -1,0 +1,17 @@
+{
+  "record": {
+    "schema": "archfit-app.pull.v1",
+    "head_sha": "0000000000000000000000000000000000000004",
+    "run_id": 42,
+    "run_attempt": 1,
+    "payload_digest": "sha256:9d6f965ac832e40a5df6c06afe983e3b449c07b843ff51ce76204de05c690d11",
+    "policy_digest": "accepted",
+    "status": "pass"
+  },
+  "head_sha": "0000000000000000000000000000000000000004",
+  "run_id": 42,
+  "run_attempt": 1,
+  "status": "pass",
+  "waiting": [],
+  "message": "The stored result cannot be trusted."
+}

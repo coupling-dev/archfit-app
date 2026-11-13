@@ -672,7 +672,7 @@ func isRecord(key string) bool {
 
 // isV4Record is a pull record or a request of Archfit 4, or their index.
 func isV4Record(key string) bool {
-	prefixes := []string{pullRecordKeyPrefix, pullIndexKeyPrefix, requestKeyPrefix, requestIndexKeyPrefix}
+	prefixes := []string{"v4/publication/", pullRecordKeyPrefix, pullIndexKeyPrefix, requestKeyPrefix, requestIndexKeyPrefix}
 	prefixes = append(prefixes, strings.Fields(answerKeyPrefixes)...)
 	for _, prefix := range append(prefixes, strings.Fields(pushKeyPrefixes)...) {
 		if strings.HasPrefix(key, prefix) {

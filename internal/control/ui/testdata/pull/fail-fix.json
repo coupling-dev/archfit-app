@@ -1,0 +1,36 @@
+{
+  "record": {
+    "schema": "archfit-app.pull.v1",
+    "head_sha": "0000000000000000000000000000000000000004",
+    "run_id": 42,
+    "run_attempt": 1,
+    "payload_digest": "sha256:1b6a2f6af80687697520cd8380e7c8782d86087db34f1838cfe5c53d636f5e14",
+    "policy_digest": "accepted",
+    "status": "fail"
+  },
+  "head_sha": "0000000000000000000000000000000000000004",
+  "run_id": 42,
+  "run_attempt": 1,
+  "status": "fail",
+  "waiting": [],
+  "view": {
+    "status": "fail",
+    "status_line": "Archfit: fail, 1 error",
+    "records": [
+      {
+        "path": "pkg/chaos/netem/netem.go",
+        "line": 8,
+        "rule": "no-chaos-to-runtime",
+        "what": "pkg_chaos must not depend on pkg_runtime",
+        "why": "A direct import ties a chaos action to one runtime.",
+        "instead": "Add a method to container.Client.",
+        "next": {
+          "kind": "fix",
+          "text": "fix the code"
+        },
+        "show_next": false
+      }
+    ],
+    "author": "fix the code and push."
+  }
+}

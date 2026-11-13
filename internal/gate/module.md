@@ -67,3 +67,12 @@ Read failures are returned, not turned into a clean answer. The setup state stil
 and `control/onboarding`; Home does not implement onboarding again.
 
 A missing or invalid target policy with recorded outside-flow state is returned without a map, so the owner can revert it. Proposed policy files are read at pull head only for workflow-action eligibility.
+
+## Pull read façade
+
+`NewPullViews` reads a pull record, live request index and check state for the authorized repository. A current
+App-generated publication receipt takes precedence over the artifact; pending, omitted or corrupt receipts
+never produce a verdict. Otherwise the run artifact is fetched with a bound and its exact bytes are checked
+against the stored digest before decoding. Missing artifacts, digest mismatches and publication pending
+states remain distinct. `BuildPullView` is the only result-to-page form; waiting engine results are covered
+from the live request index first. The pull head must match the stored record.

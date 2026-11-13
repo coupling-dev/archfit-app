@@ -1,0 +1,36 @@
+{
+  "record": {
+    "schema": "archfit-app.pull.v1",
+    "head_sha": "0000000000000000000000000000000000000004",
+    "run_id": 42,
+    "run_attempt": 1,
+    "payload_digest": "sha256:a4307515264ceb2db41d95946fa30ede1c4371ae188f215f8efdcd97413a5bda",
+    "policy_digest": "accepted",
+    "status": "fail"
+  },
+  "head_sha": "0000000000000000000000000000000000000004",
+  "run_id": 42,
+  "run_attempt": 1,
+  "status": "fail",
+  "waiting": [],
+  "view": {
+    "status": "fail",
+    "status_line": "Archfit: fail, 1 error (not from this change)",
+    "records": [
+      {
+        "path": ".archfit.yaml",
+        "rule": "exception",
+        "what": "duplication pkg_tc -\u003e pkg_util expired on 2026-11-19",
+        "why": "an exception with a date fails every change after that date",
+        "next": {
+          "kind": "wait",
+          "text": "wait for an owner: #431"
+        },
+        "show_next": false,
+        "request": 431
+      }
+    ],
+    "author": "nothing to do. This check runs again when #431 is answered.",
+    "owner": "answer #431."
+  }
+}

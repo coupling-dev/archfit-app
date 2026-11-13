@@ -27,7 +27,7 @@ The gate facade supplies policy/request views, answers and owner actions; UI imp
 ## Legacy input removal
 
 All existing page shells stay mounted, including repository, pull, graph and Data sharing pages.
-The legacy-only overview/findings/graph/pull-data APIs and onboarding/discovery POST APIs remain mounted,
+The legacy-only overview/findings/graph/pull-graph APIs and onboarding/discovery POST APIs remain mounted,
 authorized and CSRF-protected, but return an explicit 409 instead of reading deleted contracts or dispatching
 discovery. Invalid/missing pull numbers still return 404. The v2 policy schema URL returns 404.
 
@@ -73,3 +73,10 @@ handler. JSON goldens live in `testdata/home/`; generate deliberately with
 The same tests call `wording.NotUsedIn` and cover the UTC date window, failures and authorization.
 
 If the outside-flow policy is missing or invalid, Home omits the map and confirm action but retains the revert link.
+
+## Pull API (M3 task 3)
+
+`GET /api/repos/{o}/{n}/pulls/{number}` authorizes repository read and admission before calling the gate pull
+read façade. It returns the current pull record, check state, waiting requests and shared feedback page form,
+or a single no-result, untrusted-result or pending-publication line. The browser uses only text and constructs
+request links from the current route and request numbers; the pull graph endpoint remains unchanged.

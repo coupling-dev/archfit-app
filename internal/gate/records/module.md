@@ -311,3 +311,13 @@ outside-flow state and notification bookkeeping. Drift issue close/update helper
 Firestore emulator (when `FIRESTORE_EMULATOR_HOST` is set), plus clean/partial and canceled writes.
 
 `StoreDrift` deduplicates map triples and fits the complete record within the Store limit. If entries do not fit, it keeps a prefix and marks the evidence unread. A failed CAS is returned for retry.
+
+## Publication receipts
+
+`PublicationKey(fullName, pull, head)` names a schema-tagged `Publication`. A pending marker contains no
+result; upload stores it atomically with the pull record and index. Under the head's publication lease,
+feedback replaces it with a receipt only after GitHub accepts both check and comment. The receipt records
+the head, run/attempt, source, time, SHA-256 and the exact JSON bytes of an App-generated result. Ordinary
+engine results remain in the run artifact; their successful publication clears the marker. The Store's
+64 KiB limit applies to the entire encoded value: a receipt whose body cannot fit records the digest and
+`omitted` instead. A unique pending token prevents an older writer from confirming a newer marker.

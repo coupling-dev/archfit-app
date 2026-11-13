@@ -449,6 +449,7 @@ func (s *Service) republish(ctx context.Context, r api.Repo, pull int) error {
 		}
 		err = s.publisher.Publish4(ctx, feedback.Publication4{
 			Target:     inputs.Target{Repo: r, PullRequest: pull, HeadSHA: rec.HeadSHA, BaseRef: r.DefaultBranch},
+			Source:     "upload",
 			RunID:      rec.RunID,
 			RunAttempt: rec.RunAttempt,
 			Digest:     rec.PayloadDigest,

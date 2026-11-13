@@ -229,6 +229,7 @@ func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip stri
 	}
 	current := g.currentSweep4(r, pl, tip, state, rec)
 	pub := feedback.Publication4{Target: inputs.Target{Repo: r, PullRequest: pl.Number, HeadSHA: pl.HeadSHA, BaseRef: r.DefaultBranch},
+		Source: "sweep", Generated: true,
 		RunID: rec.RunID, RunAttempt: rec.RunAttempt, Digest: rec.PayloadDigest, Advisory: advisory, Current: current}
 	var reasons []reason4
 	add := func(code string, u result.Unknown) { reasons = append(reasons, reason4{Code: code, Record: u}) }
@@ -328,7 +329,7 @@ func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip stri
 		}
 		return err
 	}
-	pub.Result, pub.Fresh = res, true
+	pub.Result, pub.Fresh, pub.Generated = res, true, false
 	pub.Current = func(ctx context.Context) (bool, error) {
 		ok, err := current(ctx)
 		if err != nil || !ok {
@@ -479,6 +480,7 @@ func (g *Gate) missingUpload4(ctx context.Context, r api.Repo, pl api.Pull, rec 
 	if since.IsZero() || g.now().Sub(since) <= missingUpload4After {
 		return false, nil
 	}
+	pub.Source = "missing_upload"
 	pub.Result = unknownSweep4("the check finished without an uploaded result", "run the Archfit check again")
 	if pub.RunID == 0 {
 		err = g.v4.publisher.Withdraw4(ctx, pub)

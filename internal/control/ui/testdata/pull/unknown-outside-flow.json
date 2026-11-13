@@ -1,0 +1,34 @@
+{
+  "record": {
+    "schema": "archfit-app.pull.v1",
+    "head_sha": "0000000000000000000000000000000000000004",
+    "run_id": 42,
+    "run_attempt": 1,
+    "payload_digest": "sha256:fe3a27acb90a6aaf6e653fbf785c2fd8e344c0760b2c939b810b2e637699dc37",
+    "policy_digest": "accepted",
+    "status": "unknown"
+  },
+  "head_sha": "0000000000000000000000000000000000000004",
+  "run_id": 42,
+  "run_attempt": 1,
+  "status": "unknown",
+  "waiting": [],
+  "view": {
+    "status": "unknown",
+    "status_line": "Archfit: unknown, no verdict",
+    "records": [
+      {
+        "path": ".archfit.yaml",
+        "rule": "policy",
+        "what": "changed on main with no recorded approval",
+        "why": "only owners change the policy",
+        "next": {
+          "kind": "wait",
+          "text": "an owner confirms or reverts it in the App: #433"
+        },
+        "show_next": true
+      }
+    ],
+    "author": "do the `next` step of each record."
+  }
+}

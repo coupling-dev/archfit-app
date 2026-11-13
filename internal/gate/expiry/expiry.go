@@ -349,7 +349,8 @@ type Failure struct {
 func (s *Service) Fail(ctx context.Context, p feedback.Publisher4, f Failure) error {
 	r, rec := f.Repo, f.Record
 	return p.Publish4(ctx, feedback.Publication4{
-		Target:     inputs.Target{Repo: r, PullRequest: f.Pull, HeadSHA: rec.HeadSHA, BaseRef: r.DefaultBranch},
+		Target: inputs.Target{Repo: r, PullRequest: f.Pull, HeadSHA: rec.HeadSHA, BaseRef: r.DefaultBranch},
+		Source: "sweep", Generated: true,
 		RunID:      rec.RunID,
 		RunAttempt: rec.RunAttempt,
 		Digest:     rec.PayloadDigest,

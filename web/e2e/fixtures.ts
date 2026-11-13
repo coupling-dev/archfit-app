@@ -549,28 +549,6 @@ export const installations = {
 };
 
 
-// The first screen of the PR comment for a blocked pull request, as the server words it.
-export const firstScreen = [
-  { kind: 'headline', text: 'Architecture gate failing' },
-  {
-    kind: 'text',
-    text: 'Assessment: 1 active finding, 0 advisories, 0 accepted findings. Checked with engine v3.4.0 and policy digest 1d44a1486570.',
-  },
-  { kind: 'text', text: 'PR impact: unknown — no comparable Git-base finding-origin evidence.' },
-  { kind: 'text', text: 'Cause: Blocking findings.' },
-  {
-    kind: 'item',
-    text: 'active finding pkg/a/a.go:3 no_direct_b_dependency: a → b. Why: Import from pkg/a/ to pkg/b is explicitly forbidden. Fix: Remove the dependency or move the code',
-  },
-  { kind: 'heading', text: 'Policy change' },
-  { kind: 'text', text: 'This pull request loosens the policy (1 change).' },
-  { kind: 'item', text: 'Allowlist widened: a depends_on: none → [b]' },
-  { kind: 'text', text: 'A loosening is never approved by an agent.' },
-  { kind: 'text', text: 'Next: PR author/coding agent: review the reported constraints.' },
-  { kind: 'text', text: 'HEAD ' + 'a'.repeat(40) + ' · Run 88 · attempt 1 · archfit/state check 9' },
-];
-
-
 export interface Mock {
   signedIn?: boolean;
   operator?: boolean; // the signed-in user approves installations

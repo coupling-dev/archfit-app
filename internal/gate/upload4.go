@@ -493,24 +493,52 @@ func (v *upload4) storePull(ctx context.Context, u ingest.Upload4, d decision4) 
 		}
 	}
 	name, entry := b.Repo.FullName, records.PullEntry(b.PullRequest)
-	return records.Indexed(ctx, v.store, store.Tenant(b.Repo.InstallationID), records.PullKey(name, b.PullRequest),
-		records.PullIndexKey(name), records.SchemaPullIndex, func(cur []byte, x *records.Index) ([]byte, error) {
-			if cur != nil {
-				var old records.Pull
-				if err := records.Decode(cur, &old); err != nil {
-					return nil, err
-				}
-				if old.RunID > rec.RunID || old.RunID == rec.RunID && old.RunAttempt > rec.RunAttempt {
-					return cur, nil
-				}
-				rec.Rechecks = old.Rechecks // the re-checks after an answer mark the pull request, not a run (M2 task 21)
-			}
-			x.Remove(entry)
-			if err := x.Add(entry, b.HeadSHA); err != nil {
+	keys := []string{records.PullKey(name, b.PullRequest), records.PullIndexKey(name), records.PublicationKey(name, b.PullRequest, b.HeadSHA)}
+	return store.Update(ctx, v.store, store.Tenant(b.Repo.InstallationID), keys, func(cur [][]byte) ([][]byte, error) {
+		if cur[0] != nil {
+			var old records.Pull
+			if err := records.Decode(cur[0], &old); err != nil {
 				return nil, err
 			}
-			return records.Encode(&rec)
-		})
+			if old.RunID > rec.RunID || old.RunID == rec.RunID && old.RunAttempt > rec.RunAttempt {
+				return cur, nil
+			}
+			rec.Rechecks = old.Rechecks
+		}
+		if cur[2] != nil {
+			var prior records.Publication
+			if err := records.Decode(cur[2], &prior); err != nil {
+				return nil, err
+			}
+			if prior.RunID > rec.RunID || prior.RunID == rec.RunID && prior.RunAttempt > rec.RunAttempt {
+				return cur, nil
+			}
+		}
+		index := records.Index{Schema: records.SchemaPullIndex}
+		if cur[1] != nil {
+			if err := records.Decode(cur[1], &index); err != nil {
+				return nil, err
+			}
+		}
+		index.Remove(entry)
+		if err := index.Add(entry, b.HeadSHA); err != nil {
+			return nil, err
+		}
+		pull, err := records.Encode(&rec)
+		if err != nil {
+			return nil, err
+		}
+		idx, err := records.Encode(&index)
+		if err != nil {
+			return nil, err
+		}
+		pending, err := records.Encode(&records.Publication{HeadSHA: b.HeadSHA, RunID: b.RunID, RunAttempt: b.RunAttempt, Pending: true, Source: "upload"})
+		if err != nil {
+			return nil, err
+		}
+		return [][]byte{pull, idx, pending}, nil
+	})
+
 }
 
 // publishes reports whether the upload writes the head's check and comment. Only an upload bound to the default
@@ -554,7 +582,8 @@ func (d decision4) shown(r *result.Result) result.Result {
 func (v *upload4) publish(ctx context.Context, u ingest.Upload4, d decision4) error {
 	b := u.Binding
 	return v.publisher.Publish4(ctx, feedback.Publication4{
-		Target:     inputs.Target{Repo: b.Repo, PullRequest: b.PullRequest, HeadSHA: b.HeadSHA, BaseRef: b.Repo.DefaultBranch},
+		Target: inputs.Target{Repo: b.Repo, PullRequest: b.PullRequest, HeadSHA: b.HeadSHA, BaseRef: b.Repo.DefaultBranch},
+		Source: "upload", Generated: len(d.Reasons) > 0 || u.Result == nil,
 		RunID:      b.RunID,
 		RunAttempt: b.RunAttempt,
 		Digest:     u.Envelope.PayloadDigest,

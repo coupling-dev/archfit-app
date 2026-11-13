@@ -1,139 +1,60 @@
 <script lang="ts">
-  import FindingGroups from '../components/FindingGroups.svelte';
-  import FirstScreen from '../components/FirstScreen.svelte';
-  import DecisionLine from '../components/DecisionLine.svelte';
-  import PullHead from '../components/PullHead.svelte';
-  import { basisText, resultWord } from '../lib/evidence';
   import Skeleton from '../components/Skeleton.svelte';
-  import { explainLoad, repoAPI, type ApiError, type Pull } from '../lib/api';
+  import { explainLoad, repoAPI, type ApiError } from '../lib/api';
   import { firstJSON } from '../lib/early';
   import { repoPage, type Repo } from '../lib/route';
-  import { trustSentence } from '../lib/feedback';
+
+  interface RecordLine {
+    path?: string; line?: number; rule: string; what: string; why?: string; instead?: string;
+    balance?: { value: number; min: number }; next: { kind: string; text: string; note?: string }; show_next: boolean;
+  }
+  interface PullPage {
+    message?: string;
+    view?: { status: string; status_line: string; records: RecordLine[]; author?: string; owner?: string };
+  }
 
   let { route, here }: { route: Repo & { number: number }; here: string } = $props();
-
-  let body = $state<Pull | null>(null);
+  let body = $state<PullPage | null>(null);
   let failure = $state('');
-  let copied = $state('');
-
   function load() {
-    firstJSON<Pull>(repoAPI(route.owner, route.name, `pulls/${route.number}`)).then(
-      (b) => (body = b),
-      (e: ApiError) => (failure = explainLoad(e, here)),
+    firstJSON<PullPage>(repoAPI(route.owner, route.name, `pulls/${route.number}`)).then(
+      (b) => (body = b), (e: ApiError) => (failure = explainLoad(e, here)),
     );
   }
   load();
-
-  async function copyTasks() {
-    if (!body) return;
-    try {
-      await navigator.clipboard.writeText(body.tasks);
-      copied = `Copied ${body.task_count} ${body.task_count === 1 ? 'task' : 'tasks'}.`;
-    } catch {
-      copied = 'The browser did not allow copying. Select the text below instead.';
-    }
-  }
-
+  const pieces = (s: string) => s.replaceAll('`', '').split(/(#[1-9][0-9]*)/g);
 </script>
 
+{#snippet linked(s: string)}
+  {#each pieces(s) as part, i (i)}
+    {#if /^#[1-9][0-9]*$/.test(part)}<a href={repoPage(route.fullName, `/requests/${part.slice(1)}`)}>{part}</a>{:else}{part}{/if}
+  {/each}
+{/snippet}
+
 {#if failure}
-  <p class="flash error" role="alert">{failure}</p>
+  <h1 class="flash error" role="alert">{failure}</h1>
 {:else if !body}
   <Skeleton rows={2} box={false} />
-  <Skeleton rows={5} />
-{:else}
-  {@const first = body.first_screen ?? []}
-  <PullHead head={body} fullName={route.fullName} current="findings">
-    {#snippet screen()}{#if first.length}<FirstScreen lines={first} />{/if}{/snippet}
-  </PullHead>
-  <DecisionLine decision={body.decision} />
-  {#if !first.length && !body.unavailable && body.required && body.result !== 'action required' && body.decision?.hard_gates === 'pass' && body.decision.blockers === 0 && !body.decision.unevaluated.length && body.violation_count === 0}
-    <p class="flash success">No required architecture change requested in the evaluated scope.{body.accepted_count ? ' Accepted debt remains.' : ''}</p>
-  {/if}
-
-  {#if body.unavailable}
-    <section class="box" aria-labelledby="findings-unavailable">
-      <div class="box-head"><h2 id="findings-unavailable">Findings unavailable</h2></div>
-      <div class="box-body stack-sm">
-        <p>{body.unavailable}</p>
-        <p>No findings, counts or agent tasks from this report are admitted for display. This is not a clean result.</p>
-        <p>Follow the next step in PR analysis above. A usable result follows when the workflow reports on the commit.</p>
+{:else if body.view}
+  <section aria-label="Pull request">
+    <h1>{@render linked(body.view.status_line)}</h1>
+    {#each body.view.records as record, i (i)}
+      <div class="pull-record">
+        <div>{record.path ? record.path + (record.line ? `:${record.line}` : '') + ' ' : ''}{record.rule}{record.what ? ` ${record.what}` : ''}</div>
+        {#if record.why}<div>why: {record.why}</div>{/if}
+        {#if record.instead}<div>instead: {record.instead}</div>{/if}
+        {#if record.balance}<div>balance: {record.balance.value}/10 (min {record.balance.min})</div>{/if}
+        {#if record.show_next}<div>next: {@render linked(record.next.text)}{#if record.next.note} ({record.next.note}){/if}</div>{/if}
       </div>
-    </section>
-  {:else}
-    {#if body.decision?.hard_gates === 'unmeasured' || body.decision?.unevaluated.length || body.dimensions?.some((d) => d.status !== 'measured')}
-      <p class="flash warn">Partial evidence: findings cover only what was measured. Missing evidence is not a pass; read the required-rule gaps and Evidence below.</p>
-    {/if}
-    {#if body.no_baseline || !body.compared}
-      <p class="muted small">
-        {#if body.no_baseline}Without a baseline every finding counts as new, including older debt.{/if}
-        {#if body.compared}An introduced finding is a new finding identity against the Git base; it does not establish a new module pair or that each listed source site was added.{:else}This run did
-          not compare against the base branch, so the page does not say what this pull request added.{/if}
-        {trustSentence}
-      </p>
-    {/if}
-
-    <FindingGroups f={body} compared={body.compared} gatesFail={body.decision?.hard_gates === 'fail'} graphPage={repoPage(route.fullName, `/pull/${route.number}/graph`)} />
-
-    {#if body.tasks}
-      <section class="box" aria-labelledby="tasks">
-        <div class="box-head">
-          <h2 id="tasks">For coding agents <span class="counter">{body.task_count}</span></h2>
-          <button class="btn sm" type="button" onclick={copyTasks}>
-            Copy {body.task_count}
-            {body.task_count === 1 ? 'task' : 'tasks'}
-          </button>
-        </div>
-        <div class="box-body stack-sm">
-          {#if copied}<p class="small" role="status">{copied}</p>{/if}
-          <details class="disclosure">
-            <summary>The exact <code>agent_tasks</code> of this run</summary>
-            <pre>{body.tasks}</pre>
-          </details>
-        </div>
-      </section>
-    {:else}
-      <p class="muted small">No automated source-repair task supplied. Review any recovery or owner action above; no task is invented from an empty array.</p>
-    {/if}
-
-    {#if body.dimensions?.length}
-      <section class="box" aria-labelledby="evidence">
-        <div class="box-head"><h2 id="evidence">Evidence</h2></div>
-        <div class="table-wrap">
-          <table class="data cards">
-            <thead>
-              <tr>
-                <th scope="col">Dimension</th>
-                <th scope="col">Status</th>
-                <th scope="col">Measured</th>
-                <th scope="col">Confidence</th>
-                <th scope="col">Result</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each body.dimensions as d (d.key)}
-                <tr>
-                  <td><strong title={d.key}>{d.name}</strong></td>
-                  <td data-label="Status">{d.status}</td>
-                  <td data-label="Measured">{basisText(d)}</td>
-                  <td data-label="Confidence">{d.confidence}</td>
-                  <td data-label="Result" class="result-{d.gate}">{resultWord(d.gate)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-        {#if body.unknowns?.length}
-          <details class="disclosure box-body" id="measure-more">
-            <summary>To measure more <span class="counter">{body.unknowns.length}</span></summary>
-            <ul class="details-body">
-              {#each body.unknowns as u, i (i)}
-                <li><strong>{u.dimension}:</strong> {u.fact} <span class="muted">— {u.reason}</span></li>
-              {/each}
-            </ul>
-          </details>
-        {/if}
-      </section>
-    {/if}
-  {/if}
+    {/each}
+    {#if body.view.author}<p>Author: {@render linked(body.view.author)}</p>{/if}
+    {#if body.view.owner}<p>Owner: {@render linked(body.view.owner)}</p>{/if}
+  </section>
+{:else}
+  <h1>{body.message}</h1>
 {/if}
+
+<style>
+  a { text-decoration: underline; }
+  .pull-record { margin-block: 1rem; overflow-wrap: anywhere; }
+</style>

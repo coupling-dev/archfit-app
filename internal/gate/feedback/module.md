@@ -44,3 +44,13 @@ fail fixture. `page_test.go` and `page_bounds_test.go` check request binding, ne
 text bounds and isolation from the source result. `publish4_test.go` and
 `withdraw4_test.go` cover status mapping, ordering, batching and authority races.
 `lease_test.go` exercises the retained lease failures, cancellation, takeover and release behavior through v4.
+
+## Publication receipts
+
+For a pull request, publication invalidates its old receipt with a pending marker inside the head lease.
+A confirmed receipt is written only after both GitHub writes succeed and neither was skipped. It contains
+only an App-generated result; successful engine results clear the marker and remain in the artifact. A
+receipt failure is logged, leaving the marker pending rather than retrying GitHub. Run/attempt ordering and
+a pending token prevent older or superseded writers from confirming another publication. Oversize result
+bodies are omitted, not truncated. Upload also stages a pending marker atomically with the pull record,
+so lease acquisition failure cannot expose a result that was not published.
