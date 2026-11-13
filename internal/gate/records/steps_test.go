@@ -604,6 +604,14 @@ func TestArchfit3KeysAreNeitherReadNorWritten(t *testing.T) {
 			&records.Pin{Proposal: "p2", PullRequest: 51, HeadSHA: "h3", Digest: "d3"}),
 		func() error { _, _, err := records.Void(ctx, s, tenant, repoName, "a2"); return err }(),
 		records.VoidProposal(ctx, s, tenant, repoName, "p2"),
+		func() error { _, err := records.DriftOpened(ctx, s, tenant, repoName, 11, "c9"); return err }(),
+		records.DriftUpdated(ctx, s, tenant, repoName, 11, "c10"),
+		records.DriftClosed(ctx, s, tenant, repoName, 11),
+		func() error {
+			_, err := records.ExpiryOpened(ctx, s, tenant, repoName, "exception graph a b 2026-11-19", 12)
+			return err
+		}(),
+		records.ExpiryClosed(ctx, s, tenant, repoName, "exception graph a b 2026-11-19", 12),
 		records.ApproveCurrent(ctx, s, tenant, repoName, "a5", ownerApproval(records.KindFirst), "c1", "d2"),
 		func() error {
 			_, _, err := records.Outside(ctx, s, tenant, repoName, records.Push{After: "c9"}, "d9")
