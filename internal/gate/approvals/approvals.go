@@ -195,11 +195,27 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error) {
 // outside records the push as a policy changed outside the flow and makes sure the state has its one issue: opened to
 // the owners when none is recorded, else noted when this push changed the policy again.
 func (s *Service) outside(ctx context.Context, p Push, digest string) (Outcome, error) {
-	t, ref := tenant(p.Repo), p.Repo.RepoRef
+	t := tenant(p.Repo)
 	r, marked, err := records.Outside(ctx, s.store, t, p.Repo.FullName, records.Push{Before: p.Before, After: p.After}, digest)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("approvals: record the policy changed outside the flow: %w", err)
 	}
+	return s.finishOutside(ctx, p, r, marked)
+}
+
+func (s *Service) outsideIf(ctx context.Context, p Push, digest string, expected records.Repo) (Outcome, error) {
+	r, marked, err := records.OutsideIf(ctx, s.store, tenant(p.Repo), p.Repo.FullName, records.Push{Before: p.Before, After: p.After}, digest, expected)
+	if errors.Is(err, records.ErrMoved) {
+		return Outcome{}, nil
+	}
+	if err != nil {
+		return Outcome{}, err
+	}
+	return s.finishOutside(ctx, p, r, marked)
+}
+
+func (s *Service) finishOutside(ctx context.Context, p Push, r records.Repo, marked bool) (Outcome, error) {
+	t, ref := tenant(p.Repo), p.Repo.RepoRef
 	// A revert made for another change no longer holds, and its head must not merge on its success (review H2). Also on
 	// a delivery again: Retire repeats safely, and a failure is retried with the delivery.
 	if err := s.retireStaleReverts(ctx, p.Repo); err != nil {

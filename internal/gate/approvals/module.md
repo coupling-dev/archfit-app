@@ -118,6 +118,14 @@ Follow-up 3 is partially satisfied: ambiguous lost pushes remain `policy_unappro
 Owner action through the approval flow, or a new delivered push followed by confirm, is needed. An intermediate
 policy blob never authorizes the tip.
 
+`Recovered(ctx, push)` is the gate's narrow dispatch before `Pushed`: a delayed real webhook whose complete linear
+range includes an immutable recovered merge and leaves that merge's policy digest is recorded under its actual
+before/after key and returns the already-consumed outcome. The proof is written in the consume swap under
+`v4/recovered-push/<repo>/<merge>`, so code-only commits before or after the merge do not break redelivery identity.
+It changes no approval or repository authority. Unrecognized deliveries use `Pushed` with its unchanged contract.
+Sweep outside-flow writes use `records.OutsideIf`, which checks the approved commit/digest and outside state in the
+transaction: a concurrent owner confirmation wins rather than being undone by a stale sweep.
+
 ## Subdomain Classification
 
 Core: the one-use step of design 9.2 and the state of design 7.1, and the owner actions that start change control or

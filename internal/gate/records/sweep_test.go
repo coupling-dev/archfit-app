@@ -1,9 +1,10 @@
 package records_test
 
 import (
+	"testing"
+
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/store"
-	"testing"
 )
 
 func TestRecoveredConsumeKeepsItsHandoffUntilFinished(t *testing.T) {
@@ -16,6 +17,17 @@ func TestRecoveredConsumeKeepsItsHandoffUntilFinished(t *testing.T) {
 		m.Recheck = true
 		if err := records.Consume(t.Context(), s, tenant, repoName, m); err != nil {
 			t.Fatal(err)
+		}
+		proof := load[records.PolicyPush](t, s, records.RecoveredPushKey(repoName, "c1"))
+		if proof.Proposal != "p1" || proof.Digest != "after" {
+			t.Fatalf("recovered proof = %+v", proof)
+		}
+		actual := records.Push{Before: "code-only", After: "c1"}
+		if err := records.RecoveredDelivery(t.Context(), s, tenant, repoName, "c1", actual, proof); err != nil {
+			t.Fatal(err)
+		}
+		if delivered := load[records.PolicyPush](t, s, records.PolicyPushKey(repoName, actual)); delivered != proof {
+			t.Errorf("actual delivery = %+v, want %+v", delivered, proof)
 		}
 		r := load[records.Repo](t, s, records.RepoKey(repoName))
 		if r.SweepRecheck != "p1" || r.ApprovedDigest != "after" {

@@ -360,7 +360,9 @@ func TestSweepProvesASingleLostProposalMergeAndHandsOff(t *testing.T) {
 	w.gh.pulls[pullKey(shopName, 30)] = api.Pull{Number: 30, State: "closed", Merged: true, MergeCommitSHA: merge}
 	w.setFile(w.shop, merge, policyPath, []byte(nextPolicy))
 	tip := w.sha()
-	w.tip4(nextPolicy, api.Commit{SHA: merge, Parents: []string{old}}, api.Commit{SHA: tip, Parents: []string{merge}})
+	before := w.sha()
+	w.setFile(w.shop, before, policyPath, []byte(policyAsk))
+	w.tip4(nextPolicy, api.Commit{SHA: before, Parents: []string{old}}, api.Commit{SHA: merge, Parents: []string{before}}, api.Commit{SHA: tip, Parents: []string{merge}})
 	// Proof follows parents, not the order returned by Compare.
 	c := w.gh.compares[shopName+"|"+old+"|"+tip]
 	slices.Reverse(c.Commits)
@@ -384,10 +386,28 @@ func TestSweepProvesASingleLostProposalMergeAndHandsOff(t *testing.T) {
 	if len(rec.Rechecks) != 1 || rec.Rechecks[0].Path != sweep.PathRerun {
 		t.Errorf("rechecks = %+v", rec.Rechecks)
 	}
+	for _, after := range []string{merge, tip} {
+		history := []api.Commit{{SHA: merge, Parents: []string{before}}}
+		if after == tip {
+			history = append(history, api.Commit{SHA: tip, Parents: []string{merge}})
+		}
+		w.gh.compares[shopName+"|"+before+"|"+after] = api.Comparison{Status: "ahead", Paths: []string{policyPath}, Commits: history, TotalCommits: len(history)}
+		for range 2 {
+			if err := w.gate.policyPushed(t.Context(), w.policyPush(before, after)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if r := w.repo4(); r.OutsideFlow != nil || r.ApprovedDigest != pin.Digest {
+			t.Fatalf("delayed actual delivery undid recovery: %+v", r)
+		}
+	}
+	if len(w.gh.reruns) != 1 {
+		t.Errorf("delayed deliveries repeated the handoff: %v", w.gh.reruns)
+	}
 }
 
 func TestSweepAmbiguousRangeNeverVoidsOrApproves(t *testing.T) {
-	for _, mode := range []string{"two changes", "nonlinear", "unreadable", "index mismatch", "incomplete", "second index"} {
+	for _, mode := range []string{"two changes", "nonlinear", "unreadable", "index mismatch", "incomplete", "second index", "earlier policy change"} {
 		t.Run(mode, func(t *testing.T) {
 			w := newAskWorld(t)
 			w.guarded4(policyAsk)
@@ -411,6 +431,9 @@ func TestSweepAmbiguousRangeNeverVoidsOrApproves(t *testing.T) {
 				w.setFile(w.shop, merge, policyPath, []byte(expected))
 				actual = expected + "# direct push\n"
 				nodes = append(nodes, api.Commit{SHA: last, Parents: []string{merge}})
+			case "earlier policy change":
+				w.setFile(w.shop, last, policyPath, []byte(policyAsk+"# unapproved earlier\n"))
+				nodes = []api.Commit{{SHA: last, Parents: []string{old}}, {SHA: merge, Parents: []string{last}}}
 			case "nonlinear":
 				nodes[0].Parents = append(nodes[0].Parents, w.sha())
 			case "index mismatch":

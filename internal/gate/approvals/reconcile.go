@@ -7,7 +7,6 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/proposals"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
 )
 
 // JudgedAmbiguous leaves the range unknown without consuming or voiding any approval.
@@ -43,7 +42,7 @@ func (s *Service) Reconcile(ctx context.Context, r api.Repo, tip string) (Outcom
 	ambiguous := Outcome{Judged: JudgedAmbiguous}
 	if rec.OutsideFlow != nil {
 		if rec.OutsideFlow.Digest == digest {
-			return s.outside(ctx, Push{Repo: r, Before: rec.ApprovedCommit, After: tip}, digest)
+			return s.outsideIf(ctx, Push{Repo: r, Before: rec.ApprovedCommit, After: tip}, digest, rec)
 		}
 		return ambiguous, nil
 	}
@@ -88,7 +87,7 @@ func (s *Service) Reconcile(ctx context.Context, r api.Repo, tip string) (Outcom
 	}
 	push := records.Push{Before: rec.ApprovedCommit, After: tip}
 	if match == nil {
-		return s.outside(ctx, Push{Repo: r, Before: push.Before, After: tip}, digest)
+		return s.outsideIf(ctx, Push{Repo: r, Before: push.Before, After: tip}, digest, rec)
 	}
 	if err := s.retire(ctx, r, match, proposals.RetiredUsed); err != nil {
 		return Outcome{}, err
@@ -125,30 +124,8 @@ func (s *Service) singleChange(ctx context.Context, r api.Repo, rec records.Repo
 		}
 		return "", nil
 	}
-	if c.Status != compareAhead || c.TotalCommits == 0 || len(c.Commits) != c.TotalCommits || c.Truncated {
-		return "", nil
-	}
-	nodes := map[string]api.Commit{}
-	for _, n := range c.Commits {
-		if n.SHA == "" || len(n.Parents) != 1 || nodes[n.SHA].SHA != "" {
-			return "", nil
-		}
-		nodes[n.SHA] = n
-	}
-	var reverse []string
-	head := tip
-	for range len(nodes) {
-		n, ok := nodes[head]
-		if !ok {
-			return "", nil
-		}
-		reverse = append(reverse, head)
-		head = n.Parents[0]
-		if head == rec.ApprovedCommit {
-			break
-		}
-	}
-	if head != rec.ApprovedCommit || len(reverse) != len(nodes) {
+	reverse := linearRange(c, rec.ApprovedCommit, tip)
+	if len(reverse) == 0 {
 		return "", nil
 	}
 	previous, changed := rec.ApprovedDigest, ""
@@ -160,7 +137,7 @@ func (s *Service) singleChange(ctx context.Context, r api.Repo, rec records.Repo
 			}
 			return "", nil
 		}
-		next := policy3.Digest(raw)
+		next := digestOf(raw)
 		if next != previous {
 			if changed != "" {
 				return "", nil

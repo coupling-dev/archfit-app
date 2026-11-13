@@ -91,11 +91,13 @@ graph. A rate limit stops the pass with `Summary.RateLimited`; other failed unit
   satisfied: multiple policy changes, non-linear/cut/unreadable history, or unmatched proposals require owner action.
 - `expiry.Approved` reads authority independently of `Warn`: a warning failure never prevents expiry enforcement.
   From the UTC day after `expires`, a result judged on or before that date is re-run under the 10.5 guard, or receives
-  the expired-exception failure when refused. While a fresh run is pending, the check is unknown, never an old pass.
+  the expired-exception failure when refused. The old success is withdrawn before any re-run read/request, so a failed re-run call also leaves unknown,
+  never a stale pass. The expired-exception failure is published only when the guard refuses.
 - A stale accepted policy digest, or an unambiguous `policy_changed` upload with a matching `running` after-answer
   marker, is re-run under the same guard once completed. A refusal asks for a branch update. No new webhook is used.
 - A missing result for the live head becomes unknown after the latest relevant completed run's last status update
-  is more than 60 minutes old; without a run, the pull request's update time is used. In-flight runs are left alone.
+  is more than 60 minutes old; this includes a newer run or attempt missing its upload after an older result.
+  Without a run, the pull request's update time is used. In-flight runs are left alone.
 - A ten-day waiting check is replaced with a fresh check, after reading the artifact, matching its payload digest,
   strict decoding and head/policy binding, and covering its errors again against current requests. Unverifiable
   artifacts become unknown; transient reads are retried, never treated as clean. The head lease rechecks the live

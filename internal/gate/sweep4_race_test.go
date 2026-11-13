@@ -1,9 +1,10 @@
 package gate
 
 import (
-	"github.com/alexei-led/archfit-app/internal/github/api"
 	"testing"
 	"time"
+
+	"github.com/alexei-led/archfit-app/internal/github/api"
 )
 
 func TestWaitingRefreshDoesNotOverwriteANewerUploadInsideTheLease(t *testing.T) {

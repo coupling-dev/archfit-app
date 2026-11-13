@@ -21,6 +21,7 @@ func TestKeyLayout(t *testing.T) {
 		{records.ProposalLeaseKey(repoName), "v4/proposal-lease/acme/shop"},
 		{records.PolicyPushKey(repoName, records.Push{Before: "be", After: "af"}), "v4/policy-push/acme/shop/be..af"},
 		{records.PolicyPushKey(repoName, records.Push{After: "af"}), "v4/policy-push/acme/shop/" + strings.Repeat("0", 40) + "..af"},
+		{records.RecoveredPushKey(repoName, "merge"), "v4/recovered-push/acme/shop/merge"},
 		{records.PullKey(repoName, 7), "v4/pull/acme/shop/7"},
 		{records.PullIndexKey(repoName), "v4/pull-index/acme/shop"},
 		{records.ReposKey, "v4/repos"},

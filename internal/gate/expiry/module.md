@@ -41,7 +41,8 @@ the next day.
 `gate/sweep4.go` runs `Approved` per repository and `Warn` as a separate notification step whose failure never
 blocks enforcement. For each open pull request with `Due` exceptions it first attempts a re-run under the guard of
 design 10.5 (`sweep.Rerun`); `Fail` runs only where the guard refuses. A requested or in-flight re-run shows unknown
-until its fresh upload arrives, so an expired exception never keeps an old success.
+until its fresh upload arrives. The old success is withdrawn before any re-run read/request, so even a failed
+re-run call never keeps a known-expired success.
 
 Not provided: the re-run (`gate/sweep`), the drift issue (`gate/drift`), the engine's judgement of the date.
 

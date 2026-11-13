@@ -242,14 +242,30 @@ func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip stri
 		pub.Result = (decision4{Reasons: reasons}).shown(nil)
 		return g.v4.publisher.Publish4(ctx, pub)
 	}
-	if rec.RunID == 0 {
-		return g.missingUpload4(ctx, r, pl, pub, sum)
-	}
 	accepted := rec.PolicyDigest != "" && slices.Contains([]string{"pass", "fail", "waiting"}, rec.Status)
 	running := rec.Reason == reasonPolicyChanged && slices.ContainsFunc(rec.Rechecks, func(rc records.Recheck) bool {
 		return rc.HeadSHA == pl.HeadSHA && rc.Path == sweep.PathRunning
 	})
-	if accepted && rec.PolicyDigest != state.ApprovedDigest || running {
+	stale := accepted && rec.PolicyDigest != state.ApprovedDigest || running
+	var due []expiry.Exception
+	if accepted && a != nil {
+		due = expiry.Due(a.Exceptions, rec, g.now())
+	}
+	if stale || len(due) > 0 {
+		what, next := "an exception passed its date since this run", "wait for the check running with the current date"
+		if stale {
+			what, next = "the policy changed since this run", "wait for the check running with the current policy"
+		}
+		pub.Result = unknownSweep4(what, next)
+		if err := g.v4.publisher.Publish4(ctx, pub); err != nil {
+			return err
+		}
+	}
+	missing, err := g.missingUpload4(ctx, r, pl, rec, pub, sum)
+	if err != nil || missing || rec.RunID == 0 {
+		return err
+	}
+	if stale {
 		res, err := g.rerun4(ctx, r, pl, tip, rec, accepted || running)
 		if err != nil {
 			return err
@@ -258,28 +274,23 @@ func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip stri
 			sum.Rerun++
 		}
 		if res != sweep.RerunImpossible {
-			pub.Result = unknownSweep4("the policy changed since this run", "wait for the check running with the current policy")
-			return g.v4.publisher.Publish4(ctx, pub)
+			return nil
 		}
 		pub.Result = unknownSweep4("the policy changed since this run", "update the branch so its check reads the current policy")
 		return g.v4.publisher.Publish4(ctx, pub)
 	}
-	if accepted && a != nil {
-		due := expiry.Due(a.Exceptions, rec, g.now())
-		if len(due) > 0 {
-			res, err := g.rerun4(ctx, r, pl, tip, rec, true)
-			if err != nil {
-				return err
-			}
-			if res == sweep.RerunRequested {
-				sum.Rerun++
-			}
-			if res != sweep.RerunImpossible {
-				pub.Result = unknownSweep4("an exception passed its date since this run", "wait for the check running with the current date")
-				return g.v4.publisher.Publish4(ctx, pub)
-			}
-			return g.expiry.Fail(ctx, g.v4.publisher, expiry.Failure{Repo: r, Pull: pl.Number, Tip: tip, Record: rec, Expired: due, Advisory: advisory, Current: current})
+	if len(due) > 0 {
+		res, err := g.rerun4(ctx, r, pl, tip, rec, true)
+		if err != nil {
+			return err
 		}
+		if res == sweep.RerunRequested {
+			sum.Rerun++
+		}
+		if res != sweep.RerunImpossible {
+			return nil
+		}
+		return g.expiry.Fail(ctx, g.v4.publisher, expiry.Failure{Repo: r, Pull: pl.Number, Tip: tip, Record: rec, Expired: due, Advisory: advisory, Current: current})
 	}
 	if rec.Status != "waiting" || !accepted {
 		return nil
@@ -428,10 +439,10 @@ func (g *Gate) sweepNote4(ctx context.Context, r api.Repo, n int, rec records.Pu
 	})
 }
 
-func (g *Gate) missingUpload4(ctx context.Context, r api.Repo, pl api.Pull, pub feedback.Publication4, sum *Summary) error {
+func (g *Gate) missingUpload4(ctx context.Context, r api.Repo, pl api.Pull, rec records.Pull, pub feedback.Publication4, sum *Summary) (bool, error) {
 	runs, err := g.recheckGH.HeadRuns(ctx, r.RepoRef, ingest.WorkflowPath, pl.HeadSHA)
 	if err != nil {
-		return err
+		return false, err
 	}
 	var latest api.WorkflowRun
 	for _, run := range runs {
@@ -442,21 +453,24 @@ func (g *Gate) missingUpload4(ctx context.Context, r api.Repo, pl api.Pull, pub 
 			latest = run
 		}
 	}
+	if rec.RunID != 0 && (latest.ID < rec.RunID || latest.ID == rec.RunID && latest.Attempt <= rec.RunAttempt) {
+		return false, nil
+	}
 	since := pl.UpdatedAt
 	if latest.ID != 0 {
 		if latest.Status != "completed" {
-			return nil
+			return false, nil
 		}
 		since = latest.UpdatedAt
 		pub.RunID, pub.RunAttempt = latest.ID, latest.Attempt
 	}
 	if since.IsZero() || g.now().Sub(since) <= missingUpload4After {
-		return nil
+		return false, nil
 	}
 	pub.Result = unknownSweep4("the check finished without an uploaded result", "run the Archfit check again")
 	if err := g.v4.publisher.Publish4(ctx, pub); err != nil {
-		return err
+		return false, err
 	}
 	sum.TimedOut++
-	return nil
+	return true, nil
 }
