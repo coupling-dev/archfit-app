@@ -98,3 +98,12 @@ and Markdown injection.
 In `internal/gate` (`drift_test.go`), through the upload path: `TestAPushRunWithDriftOpensTheDriftIssue` (the retry
 writes nothing), `TestOnlyAnAcceptedPushRunAtTheTipCountsForDrift` (a late older push, App records, a pull request, a
 merge group), `TestAFailedDriftIssueFailsTheUpload` (503, then the retry opens it).
+
+## Home evidence
+
+`Pushed` stores `records.DriftState` through `records.StoreDrift` after a successful push-result handoff,
+including a notification GitHub permanently refuses. A transient notification failure returns an error and
+leaves the previous snapshot for the retry. A nil repository block changes nothing. Every non-nil block
+replaces the snapshot with its head, repository state, rule/from/to errors and whether places were unread.
+A partial result is distinct from a fully read clean result. Closing or forgetting the notification does
+not discard this evidence. `home_test.go` covers drift, partial, clean, nil and permanent notification refusal.

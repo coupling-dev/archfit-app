@@ -658,3 +658,9 @@ a fake `Sandbox`, and a fixed clock.
 - **Test name**: `TestControlFailureNeverReachesTheGate`
   **Scenario**: every `control` entry point fails (Store down, GitHub down).
   **Expected behavior**: errors return to `app` only; no check run, comment or `entitlement` value changes.
+
+## Home composition
+
+`New` passes `HomeViews: gate.NewHome(d.GitHub, d.Store, d.Admissions)` to `ui.New`.
+The read-only Home façade owns all access to gate records and uses only the already-wired dependencies;
+`control.Deps` needs no new App wiring. See [the UI Home contract](ui/module.md#home-api-m3-task-4).

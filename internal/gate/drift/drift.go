@@ -75,7 +75,21 @@ type Run struct {
 // GitHub first and recorded after. A GitHub refusal that will not change (issues turned off, an issue deleted or
 // transferred) is logged, and a recorded issue that is gone is forgotten, so the next drift opens a new one: a
 // notification never fails every later upload. Any other failed read or write is returned; the caller retries.
-func (s *Service) Pushed(ctx context.Context, run Run) (string, error) {
+func (s *Service) Pushed(ctx context.Context, run Run) (out string, err error) {
+	// Store the result even when GitHub permanently refuses a notification. A transient failure retries both.
+	defer func() {
+		if err != nil || run.State == nil {
+			return
+		}
+		snapshot := records.DriftState{Head: run.Head, State: string(run.State.State),
+			Errors: []records.DriftError{}, Unread: len(run.State.Unread) > 0}
+		for _, e := range run.State.Drift {
+			snapshot.Errors = append(snapshot.Errors, records.DriftError{Rule: e.Rule, From: e.From, To: e.To})
+		}
+		if saveErr := records.StoreDrift(ctx, s.store, store.Tenant(run.Repo.InstallationID), run.Repo.FullName, snapshot); saveErr != nil {
+			err = fmt.Errorf("drift: store the repository result: %w", saveErr)
+		}
+	}()
 	if run.State == nil {
 		return None, nil
 	}

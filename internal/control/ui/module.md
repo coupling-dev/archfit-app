@@ -1668,3 +1668,29 @@ gate's and tested there. The clock is injected.
   `/api/session`, its skeleton up until both answer; every page keeps its content and footer at most 1280px wide and centred, and has no sideways scroll at 390px; on a phone a two-module cycle stacks its modules in a column and its labels render at 11px or more (a longer cycle keeps its size and scrolls in its box); at 390px the findings and evidence tables show one block per row, every cell labelled, with no table scrolling sideways and no row taller than its cells; a graph page with no banner renders no empty block in the page's flow; the agents fold draws no rule when it is first in its box; a dimension that warns or fails stands out; the pull request page states the engine verdict, the known issues accepted earlier with their coupling and no suggested move, and the known issues fixed; every page has no
   `securitypolicyviolation` event and no axe violation in light and in dark; the onboarding write carries the CSRF
   header and a JSON body.
+
+## Home API (M3 task 4)
+
+`GET /api/repos/{o}/{n}/home` uses the existing `apiRepo(permRead, ...)` authorization and admission chain.
+`Deps.HomeViews` is `gate.HomeViews`; `control` imports no gate child. The constructor receives it from
+`control.New`, which calls `gate.NewHome`. The handler reuses `Setups.Setup` through the existing setup API.
+Before first approval it returns `status` and `setup` (the missing steps, first pull and ruleset settings),
+without loading Home data or a map.
+
+For an approved repository the response has `status`, optional `needs_you` rows, and `map`. Each row has
+`kind`, `text`, `href`, and the applicable request, pull, rule, modules, expiry date, days left or request record.
+Requests link to `/r/{o}/{n}/requests/{number}`. Drift and expiry link to their GitHub issue, falling back to
+Policy before the sweep opens one. Owner actions link to `/r/{o}/{n}/owner/{workflow|confirm|revert}`;
+workflow links include `?pull={number}`. These links do not authorize an action; the owner API does that again.
+
+The map has `layers` (outer first, an empty-string band last for modules without a layer), `modules`
+(name, layer, effective volatility), and `lines` (kind, from, to, optional rule, request or expiry date).
+It carries no layout positions. Kinds are `allowed`, `requested`, `deny`, `exception`, `drift`.
+A deny rule is visible only when a request or current stored error touches its module pair.
+Dates use the injected clock's UTC day. Exceptions enter Needs you at seven days, stay there on their last
+day, and are expired the next day. An absent, stale or partial repository result is never called clean.
+
+`home_test.go` runs the real façade over memory storage and GitHub fakes through the authenticated HTTP
+handler. JSON goldens live in `testdata/home/`; generate deliberately with
+`UPDATE_GOLDEN=1 go test ./internal/control/ui -run '^TestHomeAPIGoldens$'` from the repository root.
+The same tests call `wording.NotUsedIn` and cover the UTC date window, failures and authorization.

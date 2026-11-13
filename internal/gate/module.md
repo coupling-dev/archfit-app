@@ -1889,3 +1889,18 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed`
   **Scenario**: a request answered with "merge later"; a second pull request fails on the same key and asks again; the policy pull request merges and its push arrives; a third pull request fails on the key.
   **Expected behavior**: the second waits on the answered request, no second issue opens, both pull requests are in its `Waiting`; the push consumes the proposal; the third is `fail`: the key is free.
+
+## Home read façade
+
+`home.go` publishes `HomeViews.Home(context.Context, api.Repo) (HomeState, error)` and
+`NewHome(gh, store, admissions) HomeViews`. It checks admission before reading repository data, reads the
+default-branch tip and policy at that immutable commit, and compares its digest with the recorded approval.
+A recorded outside-flow change or an unmatched digest is exposed as outside-flow state, never verified policy.
+
+`HomeState` carries the target policy, open requests and their records, the latest stored drift's rule/module
+pairs, evidence completeness, drift and expiry issue numbers, touched deny-rule pairs, and workflow pull numbers.
+It does not publish storage keys. Requests come from the v4 request index, not labels. Pull errors count only
+for a currently open, same-repository pull into the default branch whose head matches its stored result.
+Workflow changes are read from those same open pulls; a workflow already approved at that head is omitted.
+Read failures are returned, not turned into a clean answer. The setup state still belongs to `SetupViews`
+and `control/onboarding`; Home does not implement onboarding again.

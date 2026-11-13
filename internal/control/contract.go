@@ -93,6 +93,8 @@ func New(d Deps) (*Control, error) {
 		OAuth: d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
 		Account: acct, Consents: consents, Onboarding: onb,
 		Admissions: d.Admissions, PolicyViews: d.PolicyViews, RequestViews: d.RequestViews, Passkeys: passkeys, Operators: d.Operators, Now: d.Now,
+
+		HomeViews: gate.NewHome(d.GitHub, d.Store, d.Admissions),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("control: ui: %w", err)

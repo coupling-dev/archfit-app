@@ -1,0 +1,53 @@
+{
+  "status": "1 request waits",
+  "needs_you": [
+    {
+      "kind": "request",
+      "text": "Request #431 waits.",
+      "href": "/r/acme/app/requests/431",
+      "request": 431,
+      "rule": "graph",
+      "from": "app",
+      "to": "other",
+      "record": "cmd/run.go:12: graph: app -\u003e other is not an allowed dependency\n  balance: 9/10 (min 7)\n"
+    }
+  ],
+  "map": {
+    "layers": [
+      "cmd",
+      "core",
+      ""
+    ],
+    "modules": [
+      {
+        "name": "app",
+        "layer": "cmd",
+        "volatility": "high"
+      },
+      {
+        "name": "util",
+        "layer": "core",
+        "volatility": "low"
+      },
+      {
+        "name": "other",
+        "layer": "",
+        "volatility": "high"
+      }
+    ],
+    "lines": [
+      {
+        "kind": "requested",
+        "from": "app",
+        "to": "other",
+        "rule": "graph",
+        "request": 431
+      },
+      {
+        "kind": "allowed",
+        "from": "app",
+        "to": "util"
+      }
+    ]
+  }
+}
