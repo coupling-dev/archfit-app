@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/gate/records"
+	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/envelope"
 )
 
@@ -134,5 +135,39 @@ func TestNewPendingMarkerCannotBeConfirmedByOldWriter(t *testing.T) {
 	got := publication(t, h)
 	if !got.Pending || len(got.Result) != 0 {
 		t.Fatalf("newer pending marker overwritten: %+v", got)
+	}
+}
+
+type receiptWriteFailure struct{ store.Store }
+
+func (s receiptWriteFailure) CompareAndSwapAll(ctx context.Context, tenant store.Tenant, swaps []store.Swap) (bool, error) {
+	for _, swap := range swaps {
+		if !strings.HasPrefix(swap.Key, "v4/publication/") || swap.Value == nil {
+			continue
+		}
+		var pub records.Publication
+		if err := records.Decode(swap.Value, &pub); err != nil {
+			return false, err
+		}
+		if !pub.Pending {
+			return false, errors.New("receipt write unavailable")
+		}
+	}
+	return s.Store.CompareAndSwapAll(ctx, tenant, swaps)
+}
+
+func TestReceiptWriteFailureDoesNotRetryGitHub(t *testing.T) {
+	h := newHarness(headB)
+	h.pub = New4(h.checks, h.comments, h.pulls, receiptWriteFailure{h.store}, appURL, h.clock.now)
+	p := pub4(prTarget(headB), 7, 1, engineResult(t, "policy_differs"))
+	p.Generated = true
+	p.Source = "upload"
+	h.publish4(t, p)
+	got := publication(t, h)
+	if !got.Pending || len(got.Result) != 0 {
+		t.Fatalf("receipt %+v", got)
+	}
+	if len(h.checks.named(headB, gateCheck)) != 1 || len(h.comments.all()) != 1 {
+		t.Fatal("GitHub write was retried or missing")
 	}
 }

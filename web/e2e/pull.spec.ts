@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { expectClean, expectPageText, open } from './support';
 
-const states = ['pass', 'fail-fix', 'fail-ask', 'fail-copy', 'fail-expired-exception', 'unknown', 'unknown-workflow', 'unknown-outside-flow', 'unknown-missing-evidence', 'waiting', 'no-result', 'missing-artifact', 'mismatch', 'pending'];
+const states = ['pass', 'fail-advisory', 'fail-fix', 'fail-ask', 'fail-copy', 'fail-expired-exception', 'unknown', 'unknown-workflow', 'unknown-outside-flow', 'unknown-missing-evidence', 'waiting', 'no-result', 'missing-artifact', 'mismatch', 'pending'];
 for (const state of states) {
   test(`pull request: ${state}`, async ({ page }) => {
     const body = JSON.parse(readFileSync(new URL(`../../internal/control/ui/testdata/pull/${state}.json`, import.meta.url), 'utf8')) as object;
@@ -11,6 +11,7 @@ for (const state of states) {
     await expectPageText(page, `pull-${state}`);
     await expectClean(page);
     if (state === 'waiting') await expect(page.getByRole('link', { name: '#431' }).first()).toHaveAttribute('href', '/r/acme/app/requests/431');
+    if (state === 'unknown-outside-flow') await expect(page.locator('main a[href*="/requests/"]')).toHaveCount(0);
   });
 }
 
@@ -26,4 +27,13 @@ test('pull page and comment use the same lines', async ({ page }) => {
     line.replace(/^## /, '').replace(/^- /, '').replaceAll('**', '').replaceAll('`', '').replaceAll('&lt;', '<'),
   );
   expect(lines).toEqual(expected);
+});
+
+test('pull request: API failure is not a result', async ({ page }) => {
+  const body = JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/pull/infrastructure-error.json', import.meta.url), 'utf8')) as object;
+  await open(page, '/r/acme/app/pull/4', { 'GET /api/repos/acme/app/pulls/4': () => [502, body] });
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.locator('section[aria-label="Pull request"]')).toHaveCount(0);
+  await expectPageText(page, 'pull-infrastructure-error');
+  await expectClean(page);
 });

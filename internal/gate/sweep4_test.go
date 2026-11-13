@@ -15,6 +15,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
+	"github.com/alexei-led/archfit-app/internal/wire/result"
 )
 
 func (w *world4) wantSweepGate(p *pull, status, conclusion string) api.CheckRun {
@@ -182,6 +183,9 @@ func TestSweepMissingUploadUsesTheCompletedRunUpdateTime(t *testing.T) {
 			if found != tc.want {
 				t.Fatalf("check exists=%v, want %v: %+v", found, tc.want, check)
 			}
+			if tc.want {
+				w.wantPublication(p, "missing_upload", result.StatusUnknown)
+			}
 			if tc.want && check.Conclusion != "action_required" {
 				t.Errorf("missing upload check = %+v", check)
 			}
@@ -236,6 +240,7 @@ func TestSweepStalePolicyRerunsOnlyUnderTheGuard(t *testing.T) {
 				t.Fatalf("reruns = %v", w.gh.reruns)
 			}
 			w.wantSweepGate(p, "completed", "action_required")
+			w.wantPublication(p, "sweep", result.StatusUnknown)
 			if !strings.Contains(w.comment(p), "the policy changed since this run") {
 				t.Error(w.comment(p))
 			}
@@ -277,6 +282,11 @@ func TestSweepExpiryRerunsOrFailsAfterTheLastUTCDate(t *testing.T) {
 				conclusion = "action_required"
 			}
 			w.wantSweepGate(p, "completed", conclusion)
+			if tc.fail {
+				w.wantPublication(p, "sweep", result.StatusFail)
+			} else if tc.rerun {
+				w.wantPublication(p, "sweep", result.StatusUnknown)
+			}
 			if tc.fail && !strings.Contains(w.comment(p), "duplication app -> app expired on 2026-11-19") {
 				t.Error(w.comment(p))
 			}

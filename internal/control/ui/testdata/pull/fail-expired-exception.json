@@ -12,6 +12,8 @@
   "run_id": 42,
   "run_attempt": 1,
   "status": "fail",
+  "check_status": "completed",
+  "check_conclusion": "failure",
   "waiting": [],
   "view": {
     "status": "fail",

@@ -10,13 +10,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/envelope"
 	"github.com/alexei-led/archfit-app/internal/wire/result"
+	"github.com/alexei-led/archfit-app/internal/wire/wording"
 )
 
 func TestPullAPIGoldens(t *testing.T) {
 	cases := []struct{ name, source, status string }{
-		{"pass", "pass", "pass"}, {"fail-fix", "deny", "fail"}, {"fail-ask", "graph", "fail"},
+		{"pass", "pass", "pass"}, {"fail-advisory", "deny", "fail"}, {"fail-fix", "deny", "fail"}, {"fail-ask", "graph", "fail"},
 		{"fail-copy", "duplication", "fail"}, {"fail-expired-exception", "expired_exception", "fail"},
 		{"unknown", "policy_differs", "unknown"}, {"waiting", "graph", "waiting"},
 		{"unknown-workflow", "pass", "unknown"}, {"unknown-outside-flow", "pass", "unknown"}, {"unknown-missing-evidence", "pass", "unknown"}, {"no-result", "", ""}, {"missing-artifact", "pass", "pass"}, {"mismatch", "pass", "pass"}, {"pending", "pass", "pass"},
@@ -60,11 +63,36 @@ func TestPullAPIGoldens(t *testing.T) {
 				}
 				homePut(t, e, "publication/4/"+sha(4), map[string]any{"schema": "archfit-app.publication.v1", "head_sha": sha(4), "run_id": 42, "run_attempt": 1, "result": body, "digest": envelope.PayloadDigest(body), "source": "sweep"})
 			}
+			if tc.name == "unknown-missing-evidence" {
+				if err := e.store.Delete(t.Context(), store.Tenant(installA), "v4/pull/"+repoName+"/4"); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if tc.name == "pending" {
 				homePut(t, e, "publication/4/"+sha(4), map[string]any{"schema": "archfit-app.publication.v1", "head_sha": sha(4), "run_id": 42, "run_attempt": 1, "pending": true})
 			}
+			if tc.status != "" {
+				check := api.CheckRun{ID: 7, Name: "archfit/gate", HeadSHA: sha(4), Status: "completed"}
+				switch tc.status {
+				case "pass":
+					check.Conclusion = "success"
+				case "fail":
+					check.Conclusion = "failure"
+				case "waiting":
+					check.Status = "in_progress"
+				case "unknown":
+					check.Conclusion = "action_required"
+				}
+				if tc.name == "fail-advisory" {
+					check.Conclusion = "neutral"
+				}
+				e.gh.checks[repoName+"@"+sha(4)+"#archfit/gate"] = []api.CheckRun{check}
+			}
 			res := e.as("alice", permRead).get("/api/repos/" + repoName + "/pulls/4")
 			wantStatus(t, res, http.StatusOK)
+			if words := wording.NotUsedIn(res.Body.String()); len(words) > 0 {
+				t.Fatalf("pull uses %v", words)
+			}
 			var pretty bytes.Buffer
 			if err := json.Indent(&pretty, res.Body.Bytes(), "", "  "); err != nil {
 				t.Fatal(err)
@@ -97,5 +125,23 @@ func TestPullAPIArtifactFailure(t *testing.T) {
 	res := e.as("alice", permRead).get("/api/repos/" + repoName + "/pulls/4")
 	if res.Code < 500 {
 		t.Fatalf("status = %d, want error", res.Code)
+	}
+	path := filepath.Join("testdata", "pull", "infrastructure-error.json")
+	var pretty bytes.Buffer
+	if err := json.Indent(&pretty, res.Body.Bytes(), "", "  "); err != nil {
+		t.Fatal(err)
+	}
+	pretty.WriteByte('\n')
+	if os.Getenv("UPDATE_GOLDEN") == "1" {
+		if err := os.WriteFile(path, pretty.Bytes(), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(pretty.Bytes(), want) {
+		t.Fatalf("%s differs:\n%s", path, pretty.String())
 	}
 }

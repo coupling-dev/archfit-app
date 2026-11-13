@@ -6,7 +6,7 @@
 
   interface RecordLine {
     path?: string; line?: number; rule: string; what: string; why?: string; instead?: string;
-    balance?: { value: number; min: number }; next: { kind: string; text: string; note?: string }; show_next: boolean;
+    balance?: { value: number; min: number }; next: { kind: string; text: string; note?: string }; show_next: boolean; request?: number;
   }
   interface PullPage {
     message?: string;
@@ -22,22 +22,23 @@
     );
   }
   load();
+  const requestNumbers = $derived(new Set(body?.view?.records.map((record) => record.request).filter((n) => n !== undefined)));
   const pieces = (s: string) => s.replaceAll('`', '').split(/(#[1-9][0-9]*)/g);
 </script>
 
 {#snippet linked(s: string)}
   {#each pieces(s) as part, i (i)}
-    {#if /^#[1-9][0-9]*$/.test(part)}<a href={repoPage(route.fullName, `/requests/${part.slice(1)}`)}>{part}</a>{:else}{part}{/if}
+    {#if /^#[1-9][0-9]*$/.test(part) && requestNumbers.has(Number(part.slice(1)))}<a href={repoPage(route.fullName, `/requests/${part.slice(1)}`)}>{part}</a>{:else}{part}{/if}
   {/each}
 {/snippet}
 
 {#if failure}
-  <h1 class="flash error" role="alert">{failure}</h1>
+  <div class="flash error" role="alert"><h1>{failure}</h1></div>
 {:else if !body}
   <Skeleton rows={2} box={false} />
 {:else if body.view}
   <section aria-label="Pull request">
-    <h1>{@render linked(body.view.status_line)}</h1>
+    <h1 data-status={body.view.status}>{@render linked(body.view.status_line)}</h1>
     {#each body.view.records as record, i (i)}
       <div class="pull-record">
         <div>{record.path ? record.path + (record.line ? `:${record.line}` : '') + ' ' : ''}{record.rule}{record.what ? ` ${record.what}` : ''}</div>
@@ -55,6 +56,10 @@
 {/if}
 
 <style>
-  a { text-decoration: underline; }
+a { text-decoration: underline; }
+  h1[data-status]::before { content: ''; display: inline-block; inline-size: .5em; block-size: .5em; border-radius: 50%; background: currentColor; margin-inline-end: .5em; }
+  h1[data-status='pass'] { color: var(--success); }
+  h1[data-status='fail'] { color: var(--danger); }
+  h1[data-status='waiting'] { color: var(--attention); }
   .pull-record { margin-block: 1rem; overflow-wrap: anywhere; }
 </style>

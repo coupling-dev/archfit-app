@@ -12,6 +12,7 @@
   "run_id": 42,
   "run_attempt": 1,
   "status": "waiting",
+  "check_status": "in_progress",
   "waiting": [
     431
   ],

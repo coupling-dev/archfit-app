@@ -77,3 +77,18 @@ func TestOlderUploadCannotInvalidateNewerPublication(t *testing.T) {
 		t.Fatalf("newer publication changed: %s", got)
 	}
 }
+
+func (w *world4) wantPublication(p *pull, source string, status result.Status) {
+	w.t.Helper()
+	var pub records.Publication
+	if err := records.Load(w.t.Context(), w.mem, store.Tenant(shopInstallation), records.PublicationKey(shopName, p.number, p.head), &pub); err != nil {
+		w.t.Fatal(err)
+	}
+	var got result.Result
+	if err := json.Unmarshal(pub.Result, &got); err != nil {
+		w.t.Fatal(err)
+	}
+	if pub.Pending || pub.Omitted || pub.HeadSHA != p.head || pub.Source != source || pub.Digest != envelope.PayloadDigest(pub.Result) || got.Status != status {
+		w.t.Fatalf("publication %+v; status %s", pub, got.Status)
+	}
+}
