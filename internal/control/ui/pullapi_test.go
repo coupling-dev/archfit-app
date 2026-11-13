@@ -20,9 +20,9 @@ import (
 func TestPullAPIGoldens(t *testing.T) {
 	cases := []struct{ name, source, status string }{
 		{"pass", "pass", "pass"}, {"fail-advisory", "deny", "fail"}, {"fail-advisory-request", "graph", "fail"}, {"required-request", "graph", "fail"}, {"fail-fix", "deny", "fail"}, {"fail-ask", "graph", "fail"},
-		{"fail-copy", "duplication", "fail"}, {"fail-expired-exception", "expired_exception", "fail"},
+		{"fail-copy", "duplication", "fail"}, {"next-backticks", "deny", "fail"}, {"fail-expired-exception", "expired_exception", "fail"},
 		{"unknown", "policy_differs", "unknown"}, {"waiting", "graph", "waiting"},
-		{"unknown-workflow", "pass", "unknown"}, {"unknown-outside-flow", "pass", "unknown"}, {"unknown-missing-evidence", "pass", "unknown"}, {"unpublished", "pass", "pass"}, {"no-result", "", ""}, {"missing-artifact", "pass", "pass"}, {"mismatch", "pass", "pass"}, {"pending", "pass", "pass"},
+		{"unknown-workflow", "pass", "unknown"}, {"unknown-outside-flow", "pass", "unknown"}, {"unknown-missing-evidence", "pass", "unknown"}, {"unpublished", "pass", "pass"}, {"superseded", "pass", "pass"}, {"no-result", "", ""}, {"missing-artifact", "pass", "pass"}, {"mismatch", "pass", "pass"}, {"pending", "pass", "pass"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -32,6 +32,17 @@ func TestPullAPIGoldens(t *testing.T) {
 				raw, err := os.ReadFile(filepath.Join("..", "..", "wire", "result", "testdata", "result", tc.source+".json"))
 				if err != nil {
 					t.Fatal(err)
+				}
+				if tc.name == "next-backticks" {
+					res, err := result.Decode(raw)
+					if err != nil {
+						t.Fatal(err)
+					}
+					res.Errors[0].Next = result.Next{Kind: "command", Text: "git show `git rev-parse HEAD`"}
+					raw, err = json.Marshal(res)
+					if err != nil {
+						t.Fatal(err)
+					}
 				}
 				digest := envelope.PayloadDigest(raw)
 				if tc.name == "mismatch" {
@@ -70,6 +81,9 @@ func TestPullAPIGoldens(t *testing.T) {
 			}
 			if tc.name == "unpublished" {
 				homePut(t, e, "publication/4/"+sha(4), map[string]any{"schema": "archfit-app.publication.v1", "head_sha": sha(4), "run_id": 42, "run_attempt": 1, "unpublished": true})
+			}
+			if tc.name == "superseded" {
+				homePut(t, e, "publication/4/"+sha(4), map[string]any{"schema": "archfit-app.publication.v1", "head_sha": sha(4), "run_id": 42, "run_attempt": 1, "superseded": true})
 			}
 			if tc.name == "pending" {
 				homePut(t, e, "publication/4/"+sha(4), map[string]any{"schema": "archfit-app.publication.v1", "head_sha": sha(4), "run_id": 42, "run_attempt": 1, "pending": true})

@@ -542,3 +542,29 @@ func TestAClosedPullRequestLeavesThePullIndex(t *testing.T) {
 		t.Error("the closed pull request is still in the pull index")
 	}
 }
+
+func TestRequestCannotReplaceOutsideFlowWithdrawal(t *testing.T) {
+	w := newAskWorld(t)
+	p := w.pullBy(7)
+	w.uploadAsk(p, "graph", "fail")
+	repo := w.repo4()
+	repo.OutsideFlow = &records.OutsideFlow{Digest: "sha256:changed", Issue: 433}
+	w.put4(records.RepoKey(shopName), &repo)
+	w.sweep4()
+	check := w.wantSweepGate(p, "completed", "action_required")
+	if !strings.Contains(w.comment(p), "changed on main with no recorded approval") {
+		t.Fatalf("comment %s", w.comment(p))
+	}
+	w.ask(p, workerLogin, "/archfit request tc needs it")
+	after := w.wantSweepGate(p, "completed", "action_required")
+	if after.ID != check.ID || !strings.Contains(w.comment(p), "changed on main with no recorded approval") {
+		t.Fatalf("withdrawal changed: check %+v, comment %s", after, w.comment(p))
+	}
+	got, err := NewPullViews(pullSummaryGitHub{w.gh}, w.mem).PullPage(t.Context(), w.shop, p.number)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.View == nil || got.View.Status != "unknown" {
+		t.Fatalf("page %+v", got)
+	}
+}

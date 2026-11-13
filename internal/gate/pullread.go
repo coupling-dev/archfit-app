@@ -138,6 +138,10 @@ func (v *pullViews) PullPage(ctx context.Context, r api.Repo, number int) (PullP
 	}
 	newer := pub.RunID > rec.RunID || pub.RunID == rec.RunID && pub.RunAttempt >= rec.RunAttempt
 	if err == nil && pub.HeadSHA == pl.HeadSHA && newer {
+		if pub.Superseded {
+			out.Message = "A newer check is shown for this commit."
+			return out, nil
+		}
 		if pub.Unpublished {
 			out.Message = "No result yet."
 			return out, nil

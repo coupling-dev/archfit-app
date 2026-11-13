@@ -3,6 +3,7 @@ package gate
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -96,9 +97,10 @@ type decision4 struct {
 	Tip      string    // the default branch's head every rule read; the decision holds while it is the head
 	// Coverable is a fail of a pull request in required mode that the App accepted as it is: open requests decide
 	// whether it is waiting. Covered are those requests; Waiting is the result shown then.
-	Coverable bool
-	Covered   []int
-	Waiting   *result.Result
+	Coverable   bool
+	StagedToken string
+	Covered     []int
+	Waiting     *result.Result
 }
 
 // reason4 is one record the App adds, with its stable code.
@@ -139,6 +141,7 @@ func (g *Gate) serveUpload4(w http.ResponseWriter, req *http.Request) {
 		publish = !own
 	}
 	if err == nil {
+		d.StagedToken = rand.Text()
 		err = g.v4.storePull(ctx, u, d, publish)
 	}
 	if err == nil && publish {
@@ -535,7 +538,7 @@ func (v *upload4) storePull(ctx context.Context, u ingest.Upload4, d decision4, 
 		if err != nil {
 			return nil, err
 		}
-		pending, err := records.Encode(&records.Publication{HeadSHA: b.HeadSHA, RunID: b.RunID, RunAttempt: b.RunAttempt, Pending: publish, Unpublished: !publish, Source: "upload"})
+		pending, err := records.Encode(&records.Publication{HeadSHA: b.HeadSHA, RunID: b.RunID, RunAttempt: b.RunAttempt, Pending: publish, Staged: publish, Unpublished: !publish, Source: "upload", Token: d.StagedToken})
 		if err != nil {
 			return nil, err
 		}
@@ -586,7 +589,7 @@ func (v *upload4) publish(ctx context.Context, u ingest.Upload4, d decision4) er
 	b := u.Binding
 	return v.publisher.Publish4(ctx, feedback.Publication4{
 		Target: inputs.Target{Repo: b.Repo, PullRequest: b.PullRequest, HeadSHA: b.HeadSHA, BaseRef: b.Repo.DefaultBranch},
-		Source: "upload", Generated: len(d.Reasons) > 0 || u.Result == nil,
+		Source: "upload", Generated: len(d.Reasons) > 0 || u.Result == nil, StagedToken: d.StagedToken,
 		RunID:      b.RunID,
 		RunAttempt: b.RunAttempt,
 		Digest:     u.Envelope.PayloadDigest,

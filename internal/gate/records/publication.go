@@ -22,8 +22,10 @@ type Publication struct {
 	Digest      string    `json:"digest,omitempty"`
 	PublishedAt time.Time `json:"published_at,omitempty"`
 	Source      string    `json:"source,omitempty"`
+	Staged      bool      `json:"staged,omitempty"`
 	Pending     bool      `json:"pending,omitempty"`
 	Token       string    `json:"token,omitempty"`
+	Superseded  bool      `json:"superseded,omitempty"`
 	Unpublished bool      `json:"unpublished,omitempty"`
 	Omitted     bool      `json:"omitted,omitempty"`
 }

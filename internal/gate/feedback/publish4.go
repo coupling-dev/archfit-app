@@ -111,20 +111,23 @@ func (s *serialized) current4(ctx context.Context, p Publication4, withdraw bool
 			return nil
 		}
 		if err := s.markPending(ctx, p); err != nil {
+			if errors.Is(err, errPublicationChanged) {
+				return ErrStaleInputs
+			}
 			return fmt.Errorf("feedback: mark publication pending: %w: %w", errUnwritten, err)
 		}
 	}
-	written, err := s.next.publish4(ctx, p)
-	if err != nil || !written || p.Target.PullRequest == 0 {
+	written, superseded, err := s.next.publish4(ctx, p)
+	if err != nil || (!written && !superseded) || p.Target.PullRequest == 0 {
 		return err
 	}
-	if err := s.finishPublication(ctx, p); err != nil {
+	if err := s.finishPublication(ctx, p, superseded); err != nil {
 		slog.Default().WarnContext(ctx, "feedback publication receipt not saved", "repo_id", p.Target.Repo.ID, "pull", p.Target.PullRequest, "failed", true)
 	}
 	return nil
 }
 
-func (s *publisher) publish4(ctx context.Context, p Publication4) (written bool, err error) {
+func (s *publisher) publish4(ctx context.Context, p Publication4) (written, superseded bool, err error) {
 	start := s.now()
 	gate, comment := actionNone, actionNone
 	status, conclusion := checkState(p.Result.Status, p.Advisory)
@@ -150,10 +153,11 @@ func (s *publisher) publish4(ctx context.Context, p Publication4) (written bool,
 		StartedAt:   start,
 	}
 	if gate, err = s.writeCheck4(ctx, p, run); err != nil || p.Target.PullRequest == 0 {
-		return false, err
+		return false, false, err
 	}
 	comment, err = s.writeComment4(ctx, p, v)
-	return err == nil && gate != actionSkippedNewer && comment != actionSkippedNewer && comment != actionSkippedOldHead, err
+	superseded = gate == actionSkippedNewer || comment == actionSkippedNewer || comment == actionSkippedOldHead
+	return err == nil && !superseded, err == nil && superseded, err
 }
 
 // writeCheck4 updates the latest archfit/gate run in place when reusable4 allows it, else creates a run with the

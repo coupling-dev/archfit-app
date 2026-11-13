@@ -23,11 +23,11 @@
   }
   load();
   const requestNumbers = $derived(new Set(body?.view?.records.map((record) => record.request).filter((n) => n !== undefined)));
-  const pieces = (s: string) => s.replaceAll('`', '').split(/(#[1-9][0-9]*)/g);
+  const pieces = (s: string, authored: boolean) => (authored ? s.replaceAll('`', '') : s).split(/(#[1-9][0-9]*)/g);
 </script>
 
-{#snippet linked(s: string)}
-  {#each pieces(s) as part, i (i)}
+{#snippet linked(s: string, authored = false)}
+  {#each pieces(s, authored) as part, i (i)}
     {#if /^#[1-9][0-9]*$/.test(part) && requestNumbers.has(Number(part.slice(1)))}<a href={repoPage(route.fullName, `/requests/${part.slice(1)}`)}>{part}</a>{:else}{part}{/if}
   {/each}
 {/snippet}
@@ -48,8 +48,8 @@
         {#if record.show_next}<div>next: {@render linked(record.next.text)}{#if record.next.note} ({record.next.note}){/if}</div>{/if}
       </div>
     {/each}
-    {#if body.view.author}<p>Author: {@render linked(body.view.author)}</p>{/if}
-    {#if body.view.owner}<p>Owner: {@render linked(body.view.owner)}</p>{/if}
+    {#if body.view.author}<p>Author: {@render linked(body.view.author, true)}</p>{/if}
+    {#if body.view.owner}<p>Owner: {@render linked(body.view.owner, true)}</p>{/if}
   </section>
 {:else}
   <h1>{body.message}</h1>

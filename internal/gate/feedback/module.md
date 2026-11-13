@@ -57,3 +57,8 @@ so lease acquisition failure cannot expose a result that was not published.
 
 An upload deliberately excluded from publication (such as the App's policy proposal or an unsupported
 event) records an `unpublished` marker instead of a pending marker; its engine result never becomes a verdict.
+
+An upload's pending marker has a token made before the atomic pull-record swap. Its publisher must claim that
+exact token; a queued writer cannot replace another upload staged for the same run and attempt. A non-upload
+publication cannot claim an upload-staged marker. When the shared-head check or pull comment is intentionally
+skipped because a newer publication exists, feedback records a superseded marker, not a perpetual pending state.

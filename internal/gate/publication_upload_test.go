@@ -161,3 +161,37 @@ func TestUploadStagesPendingBeforeLeaseFailure(t *testing.T) {
 		t.Fatalf("page %+v", page)
 	}
 }
+
+func TestQueuedUploadCannotConfirmNewerSameRunPayload(t *testing.T) {
+	w := newWorld4(t)
+	p := w.openPull(w.shop, 7)
+	older := w.spec4(p, "deny")
+	w.require(older)
+	newer := w.spec4(p, "pass")
+	w.require(newer)
+	body, err := json.Marshal(newer.result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := result.Decode(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.store.beforeLease = func() {
+		u := ingest.Upload4{Binding: ingest.Binding4{Repo: w.shop, PullRequest: p.number, HeadSHA: p.head, RunID: p.runID, RunAttempt: 1}, Envelope: envelope.EnvelopeV2{PayloadDigest: envelope.PayloadDigest(body), PolicyDigest: newer.env.PolicyDigest}, Result: &res}
+		if err := w.gate.v4.storePull(context.Background(), u, decision4{Status: result.StatusPass, StagedToken: "newer"}, true); err != nil {
+			t.Fatal(err)
+		}
+		w.gh.artifacts[p.runID] = body
+	}
+	if answer := w.send4(older); answer.status < 500 {
+		t.Fatalf("superseded upload status %d", answer.status)
+	}
+	got, err := NewPullViews(pullSummaryGitHub{w.gh}, w.mem).PullPage(t.Context(), w.shop, p.number)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.View != nil || got.Message != "The App has not published this result yet." {
+		t.Fatalf("page %+v", got)
+	}
+}

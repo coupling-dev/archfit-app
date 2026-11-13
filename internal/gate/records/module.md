@@ -325,3 +325,6 @@ engine results remain in the run artifact; their successful publication clears t
 A pull's optional `coverable` bit records that the App accepted a required-policy fail that can wait
 on requests. Old records lack the bit; an already-waiting record still re-covers its live requests. A
 deliberately unpublished upload stages an `unpublished` marker, not a pending one; it carries no verdict.
+
+A staged upload marker carries the upload's unique token; publication must claim that token before writing
+GitHub. An intentionally skipped newer-check publication becomes `superseded`, not a verdict or pending state.

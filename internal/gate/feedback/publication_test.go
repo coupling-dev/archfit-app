@@ -171,3 +171,48 @@ func TestReceiptWriteFailureDoesNotRetryGitHub(t *testing.T) {
 		t.Fatal("GitHub write was retried or missing")
 	}
 }
+
+func TestSupersededUploadCannotClaimAnotherPendingMarker(t *testing.T) {
+	h := newHarness(headB)
+	key := records.PublicationKey("acme/shop", 7, headB)
+	newer := records.Publication{HeadSHA: headB, RunID: 7, RunAttempt: 1, Pending: true, Staged: true, Source: "upload", Token: "newer"}
+	raw, err := records.Encode(&newer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = h.store.Put(t.Context(), 1, key, raw); err != nil {
+		t.Fatal(err)
+	}
+	p := pub4(prTarget(headB), 7, 1, engineResult(t, "pass"))
+	p.StagedToken = "older"
+	p.Source = "upload"
+	if err = h.pub.Publish4(t.Context(), p); err == nil {
+		t.Fatal("superseded upload was published")
+	}
+	got := publication(t, h)
+	if !got.Pending || got.Token != "newer" || len(h.checks.named(headB, gateCheck)) != 0 {
+		t.Fatalf("newer marker changed: %+v", got)
+	}
+}
+
+func TestRepublishCannotClaimStagedUpload(t *testing.T) {
+	h := newHarness(headB)
+	key := records.PublicationKey("acme/shop", 7, headB)
+	marker := records.Publication{HeadSHA: headB, RunID: 7, RunAttempt: 1, Pending: true, Staged: true, Source: "upload", Token: "new-upload"}
+	raw, err := records.Encode(&marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = h.store.Put(t.Context(), 1, key, raw); err != nil {
+		t.Fatal(err)
+	}
+	p := pub4(prTarget(headB), 7, 1, engineResult(t, "waiting"))
+	p.Source = "upload"
+	if err = h.pub.Publish4(t.Context(), p); !errors.Is(err, ErrStaleInputs) {
+		t.Fatalf("publication error %v", err)
+	}
+	got := publication(t, h)
+	if !got.Staged || got.Token != "new-upload" || len(h.checks.named(headB, gateCheck)) != 0 {
+		t.Fatalf("staged upload changed: %+v", got)
+	}
+}

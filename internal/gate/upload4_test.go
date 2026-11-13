@@ -685,6 +685,13 @@ func TestUpload4SharedHead(t *testing.T) {
 		if body := w.comments(p)[0].Body; !strings.Contains(body, fmt.Sprintf("run %d.2 -->", p.runID)) || !strings.Contains(body, "\n## Archfit: fail, 1 error\n") {
 			t.Errorf("comment of #7:\n%s", body)
 		}
+		page, err := NewPullViews(pullSummaryGitHub{w.gh}, w.mem).PullPage(t.Context(), w.shop, p.number)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if page.View != nil || page.Message != "A newer check is shown for this commit." {
+			t.Fatalf("superseded page %+v", page)
+		}
 		if body := w.comments(q)[0].Body; !strings.HasSuffix(body, "\n## Archfit: pass\n") {
 			t.Errorf("comment of #9:\n%s", body)
 		}

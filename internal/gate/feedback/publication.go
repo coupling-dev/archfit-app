@@ -25,17 +25,32 @@ func (s *serialized) markPending(ctx context.Context, p Publication4) error {
 			if err := records.Decode(cur[0], &old); err != nil {
 				return nil, err
 			}
+			if p.StagedToken == "" && old.Pending && old.Staged {
+				return nil, errPublicationChanged
+			}
+			if p.StagedToken != "" && (!old.Pending || old.Token != p.StagedToken) {
+				return nil, errPublicationChanged
+			}
 			if old.RunID > p.RunID || old.RunID == p.RunID && old.RunAttempt > p.RunAttempt {
 				return nil, errPublicationChanged
 			}
+		} else if p.StagedToken != "" {
+			return nil, errPublicationChanged
 		}
 		return [][]byte{raw}, nil
 	})
 }
 
-func (s *serialized) finishPublication(ctx context.Context, p Publication4) error {
+func (s *serialized) finishPublication(ctx context.Context, p Publication4, superseded bool) error {
 	var raw []byte
-	if p.Generated {
+	if superseded {
+		rec := records.Publication{HeadSHA: p.Target.HeadSHA, RunID: p.RunID, RunAttempt: p.RunAttempt, Superseded: true, Source: p.Source, PublishedAt: s.now()}
+		var err error
+		raw, err = records.Encode(&rec)
+		if err != nil {
+			return err
+		}
+	} else if p.Generated {
 		body, err := json.Marshal(p.Result)
 		if err != nil {
 			return err
