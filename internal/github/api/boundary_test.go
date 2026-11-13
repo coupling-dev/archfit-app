@@ -96,7 +96,7 @@ func TestRevokedAccessAndRemovedRepository(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		etagJSON(w, r, `"policy-v1"`, map[string]any{"type": "file", "encoding": "base64", "content": "c2VjcmV0", "sha": "blob"})
+		etagJSON(w, r, `"policy-v1"`, map[string]any{"type": "file", "encoding": "base64", "content": "c2VjcmV0", "sha": "b10b5ea1b10b5ea1b10b5ea1b10b5ea1b10b5ea1"})
 	}))
 
 	for range 2 {

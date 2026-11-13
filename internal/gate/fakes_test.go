@@ -57,6 +57,7 @@ type fakeGitHub struct {
 	commentOps  int            // comments created or updated
 	issueEdits  int            // issue bodies updated
 	reruns      []int64
+	noBlobIDs   bool // File returns no blob id
 	// beforeCheckWrite runs once, unlocked, at the start of the next check run create or update: what it does
 	// happens after that publisher's reads and before its first write.
 	beforeCheckWrite func()
@@ -173,6 +174,9 @@ func (f *fakeGitHub) File(_ context.Context, r api.RepoRef, ref, path string) ([
 	}
 	if !ok {
 		return nil, "", api.ErrNotFound
+	}
+	if f.noBlobIDs {
+		return slices.Clone(raw), "", nil // a client that lost the blob id
 	}
 	sum := sha256.Sum256(raw) // the same bytes give the same blob, as in git
 	return slices.Clone(raw), hex.EncodeToString(sum[:20]), nil

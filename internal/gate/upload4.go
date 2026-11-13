@@ -381,7 +381,8 @@ func (v *upload4) checkWorkflow(ctx context.Context, ref api.RepoRef, branch, ti
 		if err != nil {
 			return err
 		}
-		same = runFound && tipFound && (runBlob == tipBlob || v.refOnly(run, target)) ||
+		// Equal blob ids prove equal files only when there are ids: an empty one proves nothing (M2 review M1).
+		same = runFound && tipFound && (runBlob != "" && runBlob == tipBlob || v.refOnly(run, target)) ||
 			runFound && approval != nil && approval.WorkflowDigest == records.FileDigest(run)
 	}
 	if !same {

@@ -421,6 +421,15 @@ func TestUpload4WorkflowFile(t *testing.T) {
 		w.setFile(w.shop, testBranch, ingest.WorkflowPath, workflow4(actionBumped, " # v4.0.1"))
 		w.wantStatus(w.send4(s), "pass", "")
 	})
+	t.Run("two files read without blob ids are not the same file", func(t *testing.T) {
+		w := newWorld4(t)
+		p := w.openPull(w.shop, 7)
+		s := w.spec4(p, "pass")
+		w.setFile(w.shop, s.claims.SHA, ingest.WorkflowPath, workflow4(actionPinned, " # v4.0.0",
+			"      - run: curl -X POST https://app.archfit.test/v1/reports --data @pass.json\n"))
+		w.gh.noBlobIDs = true
+		w.wantStatus(w.send4(s), "unknown", reasonWorkflowChanged)
+	})
 	t.Run("the workflow record says to update the branch", func(t *testing.T) {
 		w := newWorld4(t)
 		p := w.openPull(w.shop, 7)

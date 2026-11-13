@@ -58,7 +58,7 @@ func TestReposContract(t *testing.T) {
 			case "cfg/archfit.yaml":
 				encoded := base64.StdEncoding.EncodeToString([]byte("version: 1\nmode: gate\n"))
 				writeJSON(w, http.StatusOK, map[string]any{"type": "file", "encoding": "base64", "size": 22,
-					"content": encoded[:10] + "\n" + encoded[10:] + "\n", "sha": "blob-sha-1"})
+					"content": encoded[:10] + "\n" + encoded[10:] + "\n", "sha": "b10b5ea1b10b5ea1b10b5ea1b10b5ea1b10b5ea1"})
 			case "dir":
 				writeJSON(w, http.StatusOK, []map[string]any{{"type": "file", "name": "a"}})
 			case "link":
@@ -108,7 +108,7 @@ func TestReposContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(content) != "version: 1\nmode: gate\n" || blobSHA != "blob-sha-1" {
+	if string(content) != "version: 1\nmode: gate\n" || blobSHA != "b10b5ea1b10b5ea1b10b5ea1b10b5ea1b10b5ea1" {
 		t.Errorf("File = %q, %q", content, blobSHA)
 	}
 	_, _, err = env.c.File(ctx, ref, "trunk", "missing.yaml")
