@@ -149,6 +149,9 @@ func (g *Gate) serveUpload4(w http.ResponseWriter, req *http.Request) {
 			err = g.v4.publish(ctx, u, d)
 		}
 	}
+	if err == nil {
+		err = g.driftPushed(ctx, u, d)
+	}
 
 	status, body := http.StatusOK, any(nil)
 	var rejection *Rejection

@@ -538,7 +538,7 @@ change of the workflow on `T` reads `unknown` until its branch is updated.
    result's date and error keys only when no rule failed. A record of a newer run, or a newer attempt of the same run, is never
    replaced: run ids grow, so a late upload of an older head cannot win. A newer record keeps the old one's `rechecks`
    markers (the re-check after an answer, M2 task 21). Push and merge group uploads store nothing
-   here (task 22 owns push results).
+   here; a push's repository block goes to the drift issue (step 6).
 5. The check and the comment (`feedback.Publisher4`, M2 task 15; see `gate/feedback`, "Archfit 4 publication"):
    `archfit/gate` on the head and, for a pull request, its one comment. The result shown is the engine's with the
    App's status, or, when a rule failed, only the App's records under `archfit: unknown, no verdict`, so a forged
@@ -560,7 +560,10 @@ change of the workflow on `T` reads `unknown` until its branch is updated.
 
    Two pull requests into the default branch on one commit share the check: it shows the newest run, and each keeps
    its own comment. No `archfit/state` check is written.
-6. The answer.
+6. The drift issue (M2 task 22, `gate/drift`, façade file `drift.go`): a `push` run of the default branch (the event
+   GitHub states) with no App record, at the tip the decision read, hands its `repository` block to `drift.Pushed`. No
+   block is no state: nothing changes. A failed write answers 503, and the Action's retry finishes it.
+7. The answer.
 
 | Situation | Status | Body |
 | --- | --- | --- |
@@ -1064,6 +1067,17 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 - **Shared knowledge**: `Service` (`Pushed`), built with the gate's GitHub client and Store; `Push`, `Outcome` and the
   judgements. The façade file `approvals.go` calls it on `DefaultBranchPush` and logs the outcome with identifiers
   only (`gate policy push`) and hands a consume to `sweep.AfterAnswer`. `upload4.go` reads the state it records (`records.Repo`).
+
+### gate/drift (child)
+
+- **Counterpart**: internal/gate/drift
+- **Direction**: gate depends on drift
+- **Strength**: functional (composition)
+- **LCA / Rank / Distance**: gate / 1 / 1
+- **Volatility**: low
+- **Balanced?**: yes
+- **Shared knowledge**: `Service` (`Pushed`), built with the gate's GitHub client and Store; `Run`. The façade file
+  `drift.go` calls it from the envelope 2 upload and logs the outcome with identifiers only (`gate drift issue`).
 
 ### wire/manifest
 
@@ -2049,7 +2063,7 @@ are driven only as far as they go without GitHub. Child internals are tested in 
   **Expected behavior**: `ErrNotOwner` for the writer; `ErrDecisionStale` for the owner with `stale (base branch changed)`; `CanDecide` false for both.
 - **Test name**: `TestUpload4AcceptsAPullRequest`, `TestUpload4AcceptsAPushAndAMergeGroup`
   **Scenario**: envelope 2 of the engine goldens `pass` and `deny` on a pull request; a push to the default branch; a merge group.
-  **Expected behavior**: 200 with the result's status; the pull record (run, attempt, payload digest, status, error keys) and its index entry for the pull request only; no check or comment write.
+  **Expected behavior**: 200 with the result's status; the pull record (run, attempt, payload digest, status, the result's date, error keys) and its index entry for the pull request only; no check or comment write.
 - **Test name**: `TestUpload4GivesUnknown`, `TestUpload4FirstPolicy`, `TestUpload4KeepsNoErrorKeysOfAResultItOverrides`
   **Scenario**: a wrong policy digest; a policy from the head; a policy that changed since the run; `target_sha` off the default branch or unknown to GitHub; an unknown engine, and the shipped manifest 4; an envelope that disagrees with GitHub; a base other than the default branch; an unreadable result; no policy or a version 2 policy on the default branch, also with the workflow added; a `fail` from an edited workflow.
   **Expected behavior**: 200 `unknown` with the rule's reason code first; the pull record stored `unknown` with no error keys; the first policy keeps the run and payload digest.
@@ -2071,6 +2085,9 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestADirectPushPutsEveryUploadOutsideTheFlow`
   **Scenario**: a default-branch push that changes the policy with no recorded approval, delivered twice; then an upload of a `pass`.
   **Expected behavior**: one open issue, assigned to the owners, naming the commit; the upload `unknown` `outside_flow`, its record naming the issue. `gate/approvals` tests the judgement.
+- **Test name**: `TestAPushRunWithDriftOpensTheDriftIssue`, `TestOnlyAnAcceptedPushRunAtTheTipCountsForDrift`, `TestAFailedDriftIssueFailsTheUpload`
+  **Scenario**: a push run of the tip with the engine's `repository_drift` result, then the same upload again; a late older push, a result with an App record, a pull request and a merge group, each with a drift block; a push run whose issue GitHub fails to open, then its retry.
+  **Expected behavior**: one drift issue with the drift record, recorded with the head, and no write on the retry; nothing for the others; 503, then the retry opens it. `gate/drift` tests the issue's rows.
 - **Test name**: `TestAnUploadBeforeItsPushIsJudgedGivesNoVerdict`
   **Scenario**: the default branch's policy changed and no push event was handled yet; then the push arrives.
   **Expected behavior**: `unknown` `policy_unapproved`; after the push, `unknown` `outside_flow`.
