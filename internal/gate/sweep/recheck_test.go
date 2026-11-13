@@ -269,7 +269,7 @@ func TestAfterAnswerPaths(t *testing.T) {
 				head = answerHead
 			}
 			want := records.Recheck{Proposal: answerProp, Path: tc.path, Unmet: tc.unmet, HeadSHA: head}
-			if got := w.pullRecord(t, 12).Recheck; got == nil || *got != want {
+			if got := w.pullRecord(t, 12).Rechecks; len(got) != 1 || got[0] != want {
 				t.Errorf("recorded %+v, want %+v", got, want)
 			}
 		})
@@ -295,6 +295,33 @@ func TestAfterAnswerAgainDoesNothing(t *testing.T) {
 	}
 	if len(w.gh.updates) != 2 || len(w.gh.comments[answerIssue]) != 1 {
 		t.Errorf("updates %v, comments %d", w.gh.updates, len(w.gh.comments[answerIssue]))
+	}
+}
+
+// A pull request waits on two requests answered in two proposals; the first proposal's push is delivered again after
+// the second consumed: it finds its own marker and does nothing.
+func TestAfterAnswerAgainAfterALaterProposal(t *testing.T) {
+	w := newAnswerWorld(t)
+	w.gh.compares[answerBase+".."+answerTip] = api.Comparison{Status: "ahead", Paths: []string{"pkg/a.go"}}
+	if err := w.recheck(); err != nil {
+		t.Fatal(err)
+	}
+	later := Consumed{Proposal: "prop2", Requests: []int{answerIssue}, Pulls: []int{12}}
+	if err := AfterAnswer(context.Background(), w.gh, w.store, answerRepo, later, w.now); err != nil {
+		t.Fatal(err)
+	}
+	updates, notes := len(w.gh.updates), len(w.gh.comments[answerIssue])
+
+	if err := w.recheck(); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(w.gh.updates) != updates || len(w.gh.comments[answerIssue]) != notes || len(w.gh.rerunCalls) != 0 {
+		t.Errorf("the first proposal again: updates %v, %d comments (want %d)", w.gh.updates, len(w.gh.comments[answerIssue]), notes)
+	}
+	got := w.pullRecord(t, 12).Rechecks
+	if len(got) != 2 || got[0].Proposal != answerProp || got[1].Proposal != "prop2" {
+		t.Errorf("rechecks = %+v, want both proposals, the latest last", got)
 	}
 }
 
@@ -331,7 +358,7 @@ func TestAfterAnswerFailureIsRetried(t *testing.T) {
 	if err := w.recheck(); err == nil {
 		t.Fatal("a failed update was not returned")
 	}
-	if got := w.pullRecord(t, 12).Recheck; got != nil || len(w.gh.comments) != 0 {
+	if got := w.pullRecord(t, 12).Rechecks; got != nil || len(w.gh.comments) != 0 {
 		t.Fatalf("recorded %+v, comments %v after a failure", got, w.gh.comments)
 	}
 
@@ -339,7 +366,7 @@ func TestAfterAnswerFailureIsRetried(t *testing.T) {
 	if err := w.recheck(); err != nil {
 		t.Fatal(err)
 	}
-	if got := w.pullRecord(t, 12).Recheck; got == nil || got.Path != PathUpdated || len(w.gh.updates) != 2 {
+	if got := w.pullRecord(t, 12).Rechecks; len(got) != 1 || got[0].Path != PathUpdated || len(w.gh.updates) != 2 {
 		t.Errorf("recorded %+v, updates %v; want the retry to update", got, w.gh.updates)
 	}
 }

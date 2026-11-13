@@ -158,7 +158,7 @@ type Consumed struct {
 // AfterAnswer is the re-check after an answer (design 10.5, M2 task 21; section "Re-check after an answer").
 func AfterAnswer(ctx context.Context, gh AnswerGitHub, s Store, r Repo, c Consumed, now time.Time) error
 
-// The paths it records in records.Pull.Recheck.Path.
+// The paths it records in records.Pull.Rechecks[i].Path.
 const (
     PathRerun      = "rerun"       // the latest run of the head runs again and reads the new policy
     PathRunning    = "running"     // a run of the head is queued or in progress: its upload decides
@@ -516,7 +516,7 @@ Termination: what changes in GitHub state after each re-run site, so the next pa
 | Rules 7a, 7b                 | a successful `Rerun` advances the run's attempt, so the guard blocks; an upload then replaces the reason; no upload → the next pass publishes `missing_upload`, which no rule re-runs |
 | Rule 7c                      | guard only: it fires while the run is still completed at the receipt's attempt (the earlier `Rerun` failed) and stops once the attempt advances                                       |
 | `HandleEvent(ReviewChanged)` | the same `Rerun` function, called by `gate`; a redelivered event finds the run queued, in progress, or at a newer attempt                                                             |
-| `AfterAnswer`                | the pull record names the consumed proposal (`Recheck.Proposal`), and uploads keep that field, so a redelivered push skips it, also after the re-run's own upload |
+| `AfterAnswer`                | the pull record names the consumed proposal (`Pull.Rechecked`), and uploads keep its markers, so a redelivered push skips it, also after the re-run's own upload and after later proposals |
 
 A `Rerun` call that keeps failing (for example a revoked `actions: write` permission) is retried once per pass and
 counted in `Summary.Errors`; it costs one API call and no CI minutes.
@@ -527,7 +527,7 @@ counted in `Summary.Errors`; it costs one API call and no CI minutes.
 (`gate/approvals`: the App merged it, or an owner merged it later). Every pull request waiting on one of its requests
 must get a fresh result without an action by its author (design 10.5). For each pull request, in number order:
 
-1. Its pull record (`records.PullKey`) already names this proposal in `Recheck`: skip it (a redelivered push).
+1. Its pull record (`records.PullKey`) already names this proposal in `Rechecks`: skip it (a redelivered push).
 2. `Pulls.Pull`. Gone, closed, or into another base: skip it.
 3. A fork: path `fork`. The App token cannot push to a fork, so it is never updated; the author updates the branch.
 4. The re-run guard with the inputs of the table above. `RerunRequested` → `rerun`. `RerunInFlight` → `running`: a run
@@ -541,9 +541,10 @@ must get a fresh result without an action by its author (design 10.5). For each 
      branch. One call, never retried.
    - `ErrNotFound`: skip it. Any other error is returned.
 
-The path, the unmet condition and the head acted on go into the pull record (`records.Rechecked`, whatever run it
-names now). The marker belongs to the pull request, not to a run: an upload keeps it (gate's `storePull`), so a
-delivery of the same push again skips the pull request also after the re-run's own upload. Then each request issue of the proposal gets one comment that lists
+The proposal, the path, the unmet condition and the head acted on are appended to the pull record's `Rechecks`
+(`records.Rechecked`, whatever run it names now; the latest 16). The markers belong to the pull request, not to a run:
+an upload keeps them (gate's `storePull`), so a delivery of a consuming push again skips the pull request also after
+the re-run's own upload and after later proposals. Then each request issue of the proposal gets one comment that lists
 its waiting pull requests this call acted on and their path, with the unmet condition in words for an update. A
 failed comment is logged, not returned. The default branch's head is read once per call.
 
@@ -1082,7 +1083,7 @@ type Actions interface {
 - **Counterpart**: internal/gate/records
 - **Direction**: sweep depends on gate/records (`AfterAnswer` only)
 - **Strength**: contract
-- **Shared knowledge**: the pull record (`Pull`, `PullKey`) and its `Recheck` field, written by `Rechecked`; the
+- **Shared knowledge**: the pull record (`Pull`, `PullKey`) and its `Rechecks`, written by `Rechecked` and read with `Pull.Rechecked`; the
   request record (`Request.Waiting`, `RequestKey`). The Archfit 3 rules read no record.
 
 ### Consumers (inbound)
@@ -1186,9 +1187,9 @@ calls and serves `State` from what was published; injectable errors. Time is the
 - **Test name**: `TestAfterAnswerPaths`
   **Scenario**: one waiting pull request of a consumed proposal, all four conditions true, then: a run in progress; an `unknown` pull record; a newer completed run; a run 30 days old; a target that changed in code too; no pull record; a head that moved before the re-check; a fork; an update refused with 422 and 403 (real `api` errors); a head that moved between the read and the update.
   **Expected behavior**: `rerun`, `running`, then `updated` with each unmet condition and one `UpdateBranch` with the head read; `fork` with no update and no re-run; `not_updated` with exactly one `UpdateBranch`; `head_moved`. After an accepted update nothing reads the runs or the pull request. The pull record holds the proposal, path, unmet condition and head; the request issue gets one comment that says it.
-- **Test name**: `TestAfterAnswerAgainDoesNothing`, `TestAfterAnswerTellsEachRequestItsPulls`, `TestAfterAnswerFailureIsRetried`
-  **Scenario**: the same consume delivered twice; two requests with different waiting pull requests, one closed; a transient update error, then a retry.
-  **Expected behavior**: the second delivery makes no re-run, update or comment; each request lists only its own pull requests, never the closed one, and each open one is re-run once; the failure is returned with nothing recorded or told, and the retry updates and records.
+- **Test name**: `TestAfterAnswerAgainDoesNothing`, `TestAfterAnswerAgainAfterALaterProposal`, `TestAfterAnswerTellsEachRequestItsPulls`, `TestAfterAnswerFailureIsRetried`
+  **Scenario**: the same consume delivered twice; the first of two proposals delivered again after the second; two requests with different waiting pull requests, one closed; a transient update error, then a retry.
+  **Expected behavior**: the second delivery, and the first proposal again, make no re-run, update or comment, and the record keeps both markers; each request lists only its own pull requests, never the closed one, and each open one is re-run once; the failure is returned with nothing recorded or told, and the retry updates and records.
 - **Test name**: `TestWithoutReceipt`
   **Scenario**: build the publication for each `Without` code with and without a previous receipt.
   **Expected behavior**: run identity copied; digests and expiry from `Trusted`, and every digest passes `inputs.Accepts` for its list; conclusion `action_required`; `Report` nil; the outcome is `verdict.Without(code)`, and for `ReasonSuspended` with an `Entitlement.Reason` it is `verdict.Suspended(Entitlement)`, whose `Next` is that reason.

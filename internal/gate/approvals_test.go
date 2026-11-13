@@ -142,8 +142,8 @@ func TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed(t *testing.T) {
 		if err := records.Load(ctx, w.mem, store.Tenant(shopInstallation), records.PullKey(shopName, n), &rec); err != nil {
 			t.Fatal(err)
 		}
-		if rec.Recheck == nil || rec.Recheck.Proposal != "p1" || rec.Recheck.Path != "rerun" {
-			t.Errorf("#%d recheck = %+v, want a re-run for p1", n, rec.Recheck)
+		if len(rec.Rechecks) != 1 || rec.Rechecks[0].Proposal != "p1" || rec.Rechecks[0].Path != "rerun" {
+			t.Errorf("#%d rechecks = %+v, want a re-run for p1", n, rec.Rechecks)
 		}
 	}
 	if len(w.gh.reruns) != 2 {

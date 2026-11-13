@@ -3,13 +3,15 @@ package records
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/alexei-led/archfit-app/internal/store"
 )
 
-// Rechecked writes rc into the pull record of pull request pr, whatever run the record names now, and reports whether it
-// wrote. The marker belongs to the pull request, not to a run: uploads keep it (gate's storePull), so a delivery of the
-// same push again finds it after the re-run's own upload. No record is left as it is (false).
+// Rechecked appends rc to the pull record of pull request pr, whatever run the record names now, and reports whether it
+// wrote. It keeps the latest MaxRechecks. The markers belong to the pull request, not to a run: uploads keep them
+// (gate's storePull), so a delivery of a consuming push again finds its proposal after the re-run's own upload and
+// after later proposals. No record is left as it is (false).
 func Rechecked(ctx context.Context, s store.Store, t store.Tenant, fullName string, pr int, rc Recheck) (bool, error) {
 	if rc.Proposal == "" || rc.Path == "" {
 		return false, errors.New("records: recheck: an empty proposal or path")
@@ -24,7 +26,10 @@ func Rechecked(ctx context.Context, s store.Store, t store.Tenant, fullName stri
 		if err := Decode(cur[0], &now); err != nil {
 			return nil, err
 		}
-		now.Recheck = &rc
+		now.Rechecks = append(now.Rechecks, rc)
+		if extra := len(now.Rechecks) - MaxRechecks; extra > 0 {
+			now.Rechecks = now.Rechecks[extra:]
+		}
 		raw, err := Encode(&now)
 		if err != nil {
 			return nil, err
@@ -33,4 +38,9 @@ func Rechecked(ctx context.Context, s store.Store, t store.Tenant, fullName stri
 		return [][]byte{raw}, nil
 	})
 	return written, err
+}
+
+// Rechecked reports whether the pull record names a re-check after the answers of proposal.
+func (v *Pull) Rechecked(proposal string) bool {
+	return slices.ContainsFunc(v.Rechecks, func(r Recheck) bool { return r.Proposal == proposal })
 }

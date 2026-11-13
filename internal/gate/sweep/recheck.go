@@ -96,7 +96,7 @@ func (a *answer) pull(ctx context.Context, n int) (records.Recheck, error) {
 	if err != nil && !errors.Is(err, records.ErrNoRecord) {
 		return records.Recheck{}, err
 	}
-	if rec.Recheck != nil && rec.Recheck.Proposal == a.proposal {
+	if rec.Rechecked(a.proposal) {
 		return records.Recheck{}, nil
 	}
 	pl, err := a.gh.Pull(ctx, a.repo.RepoRef, n)

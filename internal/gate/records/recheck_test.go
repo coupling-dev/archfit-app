@@ -2,6 +2,8 @@ package records_test
 
 import (
 	"context"
+	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/gate/records"
@@ -9,15 +11,18 @@ import (
 )
 
 func TestRechecked(t *testing.T) {
+	earlier := records.Recheck{Proposal: "prop0", Path: "rerun", HeadSHA: "head0"}
 	rc := records.Recheck{Proposal: "prop1", Path: "updated", Unmet: "base_changed", HeadSHA: "head1"}
 	tests := []struct {
 		name    string
 		current *records.Pull // nil: no record
+		want    []records.Recheck
 	}{
-		{"the record of the run the re-check read", &records.Pull{HeadSHA: "head1", RunID: 9, RunAttempt: 1, Status: "waiting", Errors: []string{"e1"}, RequestKeys: []string{"k1"}}},
-		{"a newer attempt uploaded meanwhile", &records.Pull{HeadSHA: "head1", RunID: 9, RunAttempt: 2, Status: "pass"}},
-		{"a newer head uploaded meanwhile", &records.Pull{HeadSHA: "head2", RunID: 10, RunAttempt: 1, Status: "fail"}},
-		{"no record", nil},
+		{"the record of the run read", &records.Pull{HeadSHA: "head1", RunID: 9, RunAttempt: 1, Status: "waiting", Errors: []string{"e1"}, RequestKeys: []string{"k1"}}, []records.Recheck{rc}},
+		{"a newer attempt uploaded meanwhile", &records.Pull{HeadSHA: "head1", RunID: 9, RunAttempt: 2, Status: "pass"}, []records.Recheck{rc}},
+		{"a newer head uploaded meanwhile", &records.Pull{HeadSHA: "head2", RunID: 10, RunAttempt: 1, Status: "fail"}, []records.Recheck{rc}},
+		{"an earlier proposal's marker is kept", &records.Pull{HeadSHA: "head1", RunID: 9, RunAttempt: 1, Status: "waiting", Rechecks: []records.Recheck{earlier}}, []records.Recheck{earlier, rc}},
+		{"no record", nil, nil},
 	}
 	for _, b := range backends() {
 		for _, tc := range tests {
@@ -26,13 +31,7 @@ func TestRechecked(t *testing.T) {
 				s := b.clients(t, 1)[0]
 				key := records.PullKey(repoName, 12)
 				if tc.current != nil {
-					raw, err := records.Encode(tc.current)
-					if err != nil {
-						t.Fatal(err)
-					}
-					if err := s.Put(ctx, tenant, key, raw); err != nil {
-						t.Fatal(err)
-					}
+					put(t, s, key, tc.current)
 				}
 
 				ok, err := records.Rechecked(ctx, s, tenant, repoName, 12, rc)
@@ -50,15 +49,34 @@ func TestRechecked(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				want := *tc.current
-				want.Schema, want.Recheck = records.SchemaPull, &rc
-				if got.Recheck == nil || *got.Recheck != rc || got.HeadSHA != want.HeadSHA || got.RunAttempt != want.RunAttempt ||
-					got.Status != want.Status || len(got.Errors) != len(want.Errors) {
-					t.Errorf("record = %+v, want %+v with the recheck", got, want)
+				if !slices.Equal(got.Rechecks, tc.want) || got.HeadSHA != tc.current.HeadSHA || got.RunAttempt != tc.current.RunAttempt ||
+					got.Status != tc.current.Status || len(got.Errors) != len(tc.current.Errors) {
+					t.Errorf("record = %+v, want %+v with rechecks %+v", got, tc.current, tc.want)
+				}
+				if !got.Rechecked(rc.Proposal) || got.Rechecked("other") {
+					t.Errorf("Rechecked(%q) = %v, Rechecked(other) = %v", rc.Proposal, got.Rechecked(rc.Proposal), got.Rechecked("other"))
 				}
 			})
 		}
 	}
+	t.Run("the oldest marker goes first past the bound", func(t *testing.T) {
+		ctx := context.Background()
+		s := store.NewMemory()
+		key := records.PullKey(repoName, 12)
+		put(t, s, key, &records.Pull{HeadSHA: "head1", RunID: 9, RunAttempt: 1, Status: "waiting"})
+		for i := range records.MaxRechecks + 1 {
+			if _, err := records.Rechecked(ctx, s, tenant, repoName, 12, records.Recheck{Proposal: "p" + strconv.Itoa(i), Path: "rerun"}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var got records.Pull
+		if err := records.Load(ctx, s, tenant, key, &got); err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Rechecks) != records.MaxRechecks || got.Rechecked("p0") || !got.Rechecked("p1") || !got.Rechecked("p"+strconv.Itoa(records.MaxRechecks)) {
+			t.Errorf("rechecks = %+v, want the latest %d", got.Rechecks, records.MaxRechecks)
+		}
+	})
 	t.Run("an empty recheck is refused", func(t *testing.T) {
 		if _, err := records.Rechecked(context.Background(), store.NewMemory(), tenant, repoName, 12, records.Recheck{}); err == nil {
 			t.Error("written")

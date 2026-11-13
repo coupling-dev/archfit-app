@@ -167,10 +167,15 @@ type Pull struct {
 	// none. The engine's keys are compared, never parsed, so the preview of an answer reads these to know which errors
 	// the answer clears.
 	RequestKeys []string `json:"request_keys,omitempty"`
-	// Recheck is how the App last got this pull request a fresh result after an answer it waited on (M2 task 21). An
-	// upload keeps it, so a delivery of the same push again finds it.
-	Recheck *Recheck `json:"recheck,omitempty"`
+	// Rechecks are how the App got this pull request a fresh result after the answers it waited on (M2 task 21), the
+	// latest last, at most MaxRechecks. An upload keeps them, so a delivery of a consuming push again, late or after
+	// later ones, finds its proposal here.
+	Rechecks []Recheck `json:"rechecks,omitempty"`
 }
+
+// MaxRechecks bounds Pull.Rechecks; the oldest goes first. A pull request waits on few answers, and a delivery of a
+// push again comes within hours, so the oldest marker is never the one a redelivery needs.
+const MaxRechecks = 16
 
 // Recheck records the re-check after an answer: the consumed proposal, the path that ran, the condition of design
 // 10.5 that kept a re-run from running ("" when none did), and the head the App acted on.
