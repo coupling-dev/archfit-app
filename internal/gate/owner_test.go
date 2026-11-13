@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
+	"github.com/alexei-led/archfit-app/internal/gate/proposals"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/webhook"
@@ -346,7 +347,7 @@ func TestAConfirmLeavesTheCheckOfAPullRequestItCannotRerun(t *testing.T) {
 func (w *world4) proposalSuccess(head, id string) {
 	w.t.Helper()
 	_, err := w.gh.CreateCheckRun(context.Background(), w.shop.RepoRef, api.CheckRun{Name: gateCheckName, HeadSHA: head,
-		ExternalID: "proposal:" + id, Status: "completed", Conclusion: "success"})
+		ExternalID: proposals.ExternalID(id), Status: "completed", Conclusion: "success"})
 	if err != nil {
 		w.t.Fatal(err)
 	}
@@ -409,5 +410,34 @@ func TestAPullRequestAtAProposalsHeadTakesBackItsSuccess(t *testing.T) {
 	run, ok := w.latestGate(head)
 	if !ok || run.Conclusion == "success" || run.ExternalID != "proposal:p9:retired" {
 		t.Errorf("archfit/gate = %+v, want the success taken back", run)
+	}
+}
+
+// TestAPullRequestAtAnOpenProposalsHeadLeavesItsSuccess: the proposal's approval is not used yet and its own pull
+// request relies on that success; taking it back would block that pull request for good.
+func TestAPullRequestAtAnOpenProposalsHeadLeavesItsSuccess(t *testing.T) {
+	w := newWorld4(t)
+	ctx, tn := context.Background(), store.Tenant(w.shop.InstallationID)
+	head := w.sha()
+	err := records.Indexed(ctx, w.mem, tn, records.RequestKey(shopName, 431), records.RequestIndexKey(shopName),
+		records.SchemaRequestIndex, func(_ []byte, x *records.Index) ([]byte, error) {
+			if err := x.Add("graph a b", "431"); err != nil {
+				return nil, err
+			}
+			return records.Encode(&records.Request{Key: "graph a b", Reason: "why", State: records.StateOpen})
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := records.Approval{Kind: records.KindApprove, Request: 431, Change: json.RawMessage(`{}`), Owner: 1, Login: "olivia"}
+	if err := records.Answer(ctx, w.mem, tn, shopName, "a1", a,
+		&records.Pin{Proposal: "p1", PullRequest: 21, HeadSHA: head, Digest: "sha256:x"}); err != nil {
+		t.Fatal(err)
+	}
+	w.proposalSuccess(head, "p1")
+
+	w.openAt(8, head) // another pull request at the same commit
+	if run, ok := w.latestGate(head); !ok || run.Conclusion != "success" {
+		t.Errorf("archfit/gate = %+v, want the open proposal's success kept", run)
 	}
 }

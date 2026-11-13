@@ -61,9 +61,15 @@ direct push to the policy is the new rule with no owner's word.
   policy or is outside the flow (another onboarding pull request started change control), and one holding a revert
   that no longer holds (`records.Revert.Holds`: the changed policy and the approved one it was made against), as after
   a confirm, or a later change, even when the same change is pushed again.
-- After a consume, and after a void, the proposal's head is retired (`proposals.Retire`, M2 review H2): its success is
-  taken back, so another pull request at that commit merges on nothing. A failure is logged; `gate` retires it again
-  when such a pull request opens.
+- Before a consume (also of a workflow proposal) and before a void, the proposal's head is retired (`proposals.Retire`,
+  M2 review H2): its success is taken back, so another pull request at that commit merges on nothing. It comes first
+  and a failure is returned, so the delivery is retried with nothing changed, and `Retire` repeats safely.
+- An open policy proposal whose revert no longer holds (a confirm, or a later change outside the flow, ended the state
+  it was made in) has its head retired too (`retireStaleReverts`, on a confirm and on every outside judgement, also on
+  a delivery again): its success would restore the old policy over the new one. The proposal stays open; the next
+  answer voids the revert (`gate/proposals`).
+- **Stated limit**: a pull request retargeted to the default branch sends no event; the head of an ended proposal is
+  retired again only when the next pull request opens at that commit (a sweep rule for it is task 22's).
 - After a consume whose proposal holds a revert (M2 task 23, `gate/proposals`) ended the state, the issue of the state
   gets a note and is closed (a notification: a failure is logged, a delivery again does not repeat it).
 - `WorkflowPushed` judges a default-branch push for the workflow approval it uses (M2 task 23): the open `workflow`

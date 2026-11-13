@@ -62,9 +62,10 @@ notes the answer on the request issue. Without it an answer is a record nobody a
 - A head whose verdict no longer stands is retired (`Retire`, review H2): a newer, completed `archfit/gate` run on it,
   `action_required`, external id `proposal:<id>:retired`, saying why. GitHub ties the check to the commit and the App
   squash-merges, so another pull request at that commit would otherwise merge on the old success. Here: the old head
-  when the App writes a newer one for the proposal, and the head of a proposal voided because its pull request closed
-  or none of its answers applies any more. A failure is logged; `gate` retires it again when another pull request
-  opens at that commit.
+  when the App writes a newer one for the proposal (a failure is logged: the answer stands), and the head of a proposal
+  voided because its pull request closed or none of its answers applies any more (retired before the void; a failure
+  is returned and the next answer repeats it). `Retire` is safe to repeat: a head whose latest run already is this
+  proposal's retirement is left alone. `ExternalID` names the run `check` sets, and `ProposalOf` reads it.
 - The merge: wait at most 10 s for the pull request to show the head (GitHub moves it after the ref), then
   `MergePull(number, head)` (squash, expected head, no bypass actor: design appendix D.2). On any refusal (405, 409,
   422) read the pull request: merged anyway (an owner, an earlier attempt; unmeasured) is `merged`, else it stays open

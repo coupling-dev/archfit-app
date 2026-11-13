@@ -144,8 +144,9 @@ const ownerAfterTimeout = 25 * time.Second
 // recheckPull gets pull request pull its verdict after an owner action, on head: the approved head of a first or
 // workflow approval, or "" for the head its pull record names. The re-run guard (sweep.Rerun, design 10.5) re-runs the
 // newest stored run of the head when every condition holds; a run of the head still running uploads by itself, and so
-// does the first run of a head with no stored run. Otherwise the check stays unknown and the App says on it which
-// condition kept the re-run back and what to do (manager, 2026-11-13). The run's workflow is taken as reading the
+// does the first run of a head with no stored run. Otherwise the check stays unknown. On an approved head the App says
+// on it which condition kept the re-run back and what to do (manager, 2026-11-13); on another pull request's head it
+// says nothing, since its unknown may have a reason of its own. The run's workflow is taken as reading the
 // policy from the target tip: it is the workflow of the default branch or the one an owner approved for this head, and
 // the upload of the re-run is decided by every rule again.
 func (g *Gate) recheckPull(ctx context.Context, r api.Repo, pull int, head string) string {
@@ -288,10 +289,12 @@ func logOwner(ctx context.Context, r api.Repo, step string, err error) {
 		"repository_id", r.ID, "step", step, "status", api.Status(err), "rate_limited", errors.Is(err, api.ErrRateLimited))
 }
 
-// retireForeignProposal takes back the verdict of a proposal's head from pull request t when t is not that proposal's
-// own open pull request (M2 review H2): GitHub ties archfit/gate to the commit, so a pull request opened at a proposal's
-// head would otherwise merge on a success the App set for another pull request. The pull request then gets its verdict
-// from its own run. A failed read or write is returned, so the delivery is retried.
+// retireForeignProposal takes back the verdict a proposal left on its head, when a pull request opens at that commit
+// (M2 review H2): GitHub ties archfit/gate to the commit, so a pull request opened at the head of a proposal that
+// ended (used, void, superseded, or gone) would otherwise merge on a success the App set for another pull request. The
+// pull request then gets its verdict from its own run. A proposal still open keeps its success: see below. A failed
+// read or write is returned, so the delivery is retried. Stated limit: a pull request retargeted to the default branch
+// opens no event, so the head of an ended proposal is retired again only by the next pull request opened there.
 func (g *Gate) retireForeignProposal(ctx context.Context, t inputs.Target) error {
 	if g.checks == nil || t.PullRequest == 0 || t.HeadSHA == "" {
 		return nil
@@ -311,14 +314,15 @@ func (g *Gate) retireForeignProposal(ctx context.Context, t inputs.Target) error
 	var p records.Proposal
 	err = records.Load(ctx, g.v4.store, store.Tenant(t.Repo.InstallationID), records.ProposalKey(t.Repo.FullName, id), &p)
 	switch {
-	case err == nil && p.State == records.StateOpen && p.PullRequest == t.PullRequest:
-		return nil // the proposal's own pull request
+	case err == nil && p.State == records.StateOpen:
+		// Its approval is not used yet, and its own pull request relies on this success. A pull request at the same
+		// head carries the same approved change; if it merges first, that push is outside the flow (it consumes
+		// nothing) and an owner confirms or reverts it. Taking the success back here would block the proposal's own
+		// pull request for good, so it waits for the proposal to end.
+		return nil
 	case err != nil && !errors.Is(err, records.ErrNoRecord):
 		return fmt.Errorf("gate: read proposal %s: %w", id, err)
 	}
-	pull := p.PullRequest
-	if pull == 0 {
-		pull = t.PullRequest
-	}
+	pull := p.PullRequest // 0 when the record is gone
 	return proposals.Retire(ctx, g.checks, t.Repo, t.HeadSHA, pull, id, proposals.RetiredForeign, g.now())
 }

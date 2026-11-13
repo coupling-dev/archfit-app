@@ -62,6 +62,7 @@ type GitHub interface {
 	ReopenIssue(ctx context.Context, r api.RepoRef, number int) error
 	SetAssigneesAndLabels(ctx context.Context, r api.RepoRef, number int, assignees, labels []string) ([]string, []string, error)
 	CreateCheckRun(ctx context.Context, r api.RepoRef, c api.CheckRun) (api.CheckRun, error)
+	CheckRuns(ctx context.Context, r api.RepoRef, headSHA, name string) ([]api.CheckRun, error)
 }
 
 // Service judges the pushes of the repositories of one App.
@@ -154,10 +155,13 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error) {
 			}
 		}
 		if admits {
+			// The head's verdict first, so a failure is retried with the delivery before the approvals are used.
+			if err := s.retire(ctx, p.Repo, merged, proposals.RetiredUsed); err != nil {
+				return Outcome{}, err
+			}
 			if err := s.consume(ctx, p.Repo, merged, push, digest); err != nil {
 				return Outcome{}, err
 			}
-			s.retire(ctx, p.Repo, merged, proposals.RetiredUsed)
 			s.closeReverted(ctx, p.Repo, merged)
 			return s.consumed(ctx, p.Repo, merged.id)
 		}
@@ -195,6 +199,11 @@ func (s *Service) outside(ctx context.Context, p Push, digest string) (Outcome, 
 	r, marked, err := records.Outside(ctx, s.store, t, p.Repo.FullName, records.Push{Before: p.Before, After: p.After}, digest)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("approvals: record the policy changed outside the flow: %w", err)
+	}
+	// A revert made for another change no longer holds, and its head must not merge on its success (review H2). Also on
+	// a delivery again: Retire repeats safely, and a failure is retried with the delivery.
+	if err := s.retireStaleReverts(ctx, p.Repo); err != nil {
+		return Outcome{}, err
 	}
 	out := Outcome{Judged: JudgedOutside}
 	if r.OutsideFlow == nil {
@@ -420,6 +429,9 @@ func (s *Service) tipDigest(ctx context.Context, r api.Repo) (string, error) {
 // joined p meanwhile (records.ErrApprovalsLeft) is read and voided too.
 func (s *Service) void(ctx context.Context, r api.Repo, p *proposal) error {
 	t := tenant(r)
+	if err := s.retire(ctx, r, p, proposals.RetiredVoid); err != nil {
+		return err
+	}
 	for range voidRounds {
 		for _, id := range p.rec.Approvals {
 			request, reopened, err := records.Void(ctx, s.store, t, r.FullName, id)
@@ -438,7 +450,6 @@ func (s *Service) void(ctx context.Context, r api.Repo, p *proposal) error {
 			if err != nil {
 				return fmt.Errorf("approvals: void proposal %s: %w", p.id, err)
 			}
-			s.retire(ctx, r, p, proposals.RetiredVoid)
 			return nil
 		}
 		if err := records.Load(ctx, s.store, t, records.ProposalKey(r.FullName, p.id), &p.rec); err != nil {

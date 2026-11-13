@@ -30,22 +30,48 @@ const conclusionNoVerdict = "action_required"
 
 // CheckWriter is the role Retire needs of GitHub.
 type CheckWriter interface {
+	CheckRuns(ctx context.Context, r api.RepoRef, headSHA, name string) ([]api.CheckRun, error)
 	CreateCheckRun(ctx context.Context, r api.RepoRef, c api.CheckRun) (api.CheckRun, error)
 }
+
+// ExternalID is the external id of the archfit/gate run the App sets on the head of proposal id: ProposalOf reads it.
+func ExternalID(proposalID string) string { return externalPrefix + proposalID }
 
 // Retire takes back the verdict a proposal's head carries (M2 review H2): a newer, completed archfit/gate run on head
 // with no success, which is the run the ruleset reads. GitHub ties a check to the commit, not to the pull request, and
 // the App squash-merges, so without it another pull request at the same commit would merge on the old success after
-// the approval was used. pull is the proposal's pull request, for the link; why is one of the Retired values.
+// the approval was used. pull is the pull request the proposal was made for, 0 when unknown; why is one of the Retired
+// values. It is safe to repeat: a head whose latest run already is this proposal's retirement is left alone, so a step
+// that retires first and then changes state can be retried.
 func Retire(ctx context.Context, gh CheckWriter, r api.Repo, head string, pull int, proposalID, why string, now time.Time) error {
 	if head == "" {
 		return nil
 	}
-	_, err := gh.CreateCheckRun(ctx, r.RepoRef, api.CheckRun{
+	external := ExternalID(proposalID) + ":retired"
+	runs, err := gh.CheckRuns(ctx, r.RepoRef, head, gateCheck)
+	if err != nil {
+		return fmt.Errorf("proposals: read the check of %s: %w", head, err)
+	}
+	if len(runs) > 0 {
+		latest := runs[0]
+		for _, run := range runs[1:] {
+			if run.ID > latest.ID {
+				latest = run
+			}
+		}
+		if latest.ExternalID == external && latest.Conclusion != conclusionSuccess {
+			return nil
+		}
+	}
+	details := ""
+	if pull > 0 {
+		details = "https://github.com/" + r.FullName + "/pull/" + strconv.Itoa(pull)
+	}
+	_, err = gh.CreateCheckRun(ctx, r.RepoRef, api.CheckRun{
 		Name:       gateCheck,
 		HeadSHA:    head,
-		ExternalID: externalPrefix + proposalID + ":retired",
-		DetailsURL: "https://github.com/" + r.FullName + "/pull/" + strconv.Itoa(pull),
+		ExternalID: external,
+		DetailsURL: details,
 		Status:     statusCompleted,
 		Conclusion: conclusionNoVerdict,
 		Title:      retiredTitle,

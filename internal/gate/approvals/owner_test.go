@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit-app/internal/gate/proposals"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
@@ -497,6 +498,92 @@ func TestAUsedOrVoidProposalTakesBackItsHeadsVerdict(t *testing.T) {
 			if retired == nil || retired.Name != "archfit/gate" || retired.Status != "completed" ||
 				retired.Conclusion == "success" || !strings.Contains(retired.Summary, tc.why) {
 				t.Errorf("the head's check = %+v, want a completed archfit/gate without success saying %q", retired, tc.why)
+			}
+		})
+	}
+}
+
+// failChecks makes the hub refuse to write checks until fixed.
+func (h *hub) failChecks(err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.checkErr = err
+}
+
+// TestAFailedRetireIsRetriedWithTheDeliveryBeforeAnythingChanges: the head's verdict is taken back before the
+// approvals are used, so a failure is returned, nothing is consumed, and the delivery again finishes it, once.
+func TestAFailedRetireIsRetriedWithTheDeliveryBeforeAnythingChanges(t *testing.T) {
+	w := newWorld(t)
+	w.approved(digestV(0))
+	w.gh.commit("c0", policyV(0))
+	w.answered(431, "graph a b", "p1", 21, digestV(1))
+	w.merge(21, "c1", 1)
+	w.gh.failChecks(errors.New("github: 502"))
+
+	if _, err := w.svc.Pushed(context.Background(), Push{Repo: testRepo, Before: "c0", After: "c1"}); err == nil {
+		t.Fatal("Pushed = nil, want the failed retire returned")
+	}
+	if p := w.proposal("p1"); p.State != records.StateOpen {
+		t.Errorf("proposal %q after a failed retire, want still open", p.State)
+	}
+	w.gh.failChecks(nil)
+	for range 2 {
+		if out := w.push("c0", "c1"); out.Judged != JudgedConsumed {
+			t.Fatalf("the delivery again = %+v, want consumed", out)
+		}
+	}
+	retired := 0
+	for _, c := range w.gh.checks {
+		if c.HeadSHA == "head-"+digestV(1) {
+			retired++
+		}
+	}
+	if retired != 1 {
+		t.Errorf("%d checks on the head, want one retirement", retired)
+	}
+}
+
+// TestAStaleRevertsHeadLosesItsSuccess: after a confirm, or a later change, the open revert's head would
+// otherwise restore the old policy over the new one under a green check.
+func TestAStaleRevertsHeadLosesItsSuccess(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		end  func(w *world)
+	}{
+		{"a confirm", func(w *world) {
+			if _, err := w.act(member, Action{Kind: records.KindConfirm}); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"a later direct push", func(w *world) {
+			w.gh.commit("c2", policyV(2))
+			w.push("c1", "c2")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld(t)
+			w.gh.commit("c0", policyV(0))
+			w.approvedAt(digestV(0), "c0")
+			w.gh.commit("c1", policyV(1))
+			pushed := w.push("c0", "c1")
+			rev := records.Revert{Commit: "c0", Digest: digestV(0), Outside: digestV(1), Issue: pushed.Issue}
+			err := records.RevertTo(context.Background(), w.mem, w.tenant(), testRepo.FullName, "r1",
+				records.Approval{Owner: 2, Login: "oscar", Credential: passkeyID}, rev,
+				records.Pin{Proposal: "p9", PullRequest: 40, HeadSHA: "head-revert", Digest: digestV(0)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.gh.pulls[40] = api.Pull{Number: 40, State: "open"}
+			w.gh.checks = append(w.gh.checks, api.CheckRun{Name: "archfit/gate", HeadSHA: "head-revert",
+				ExternalID: proposals.ExternalID("p9"), Status: "completed", Conclusion: "success"})
+
+			tc.end(w)
+			latest := w.gh.checks[len(w.gh.checks)-1]
+			if latest.HeadSHA != "head-revert" || latest.Conclusion == "success" {
+				t.Errorf("latest check %+v, want the revert's head without success", latest)
+			}
+			if p := w.proposal("p9"); p.State != records.StateOpen {
+				t.Errorf("proposal %q, want it left open for the next answer to void", p.State)
 			}
 		})
 	}

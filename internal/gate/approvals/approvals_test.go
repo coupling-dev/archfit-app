@@ -38,6 +38,7 @@ type hub struct {
 	comments  map[int][]string
 	assignees map[int][]string
 	checks    []api.CheckRun
+	checkErr  error // CreateCheckRun refuses with it
 	next      int
 	fail      map[string]error
 }
@@ -141,9 +142,25 @@ func (h *hub) SetAssigneesAndLabels(_ context.Context, _ api.RepoRef, number int
 	return assignees, labels, nil
 }
 
+func (h *hub) CheckRuns(_ context.Context, _ api.RepoRef, headSHA, name string) ([]api.CheckRun, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []api.CheckRun
+	for i, c := range h.checks {
+		if c.HeadSHA == headSHA && c.Name == name {
+			c.ID = int64(i + 1)
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
 func (h *hub) CreateCheckRun(_ context.Context, _ api.RepoRef, c api.CheckRun) (api.CheckRun, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.checkErr != nil {
+		return api.CheckRun{}, h.checkErr
+	}
 	h.checks = append(h.checks, c)
 	return c, nil
 }

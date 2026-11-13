@@ -120,12 +120,15 @@ const retiredTitle = "archfit: no verdict, this approval is spent"
 
 func retiredSummary(pull int, why string) string {
 	what := map[string]string{
-		RetiredUsed:       "its approvals were used when it merged",
-		RetiredVoid:       "its approvals were not used: it closed, merged another policy, or no longer applied",
+		RetiredUsed:       "its approvals were used",
+		RetiredVoid:       "its approvals were not used, and no longer apply",
 		RetiredSuperseded: "the App wrote a newer head for it",
 		RetiredForeign:    "another pull request has this commit as its head",
 	}[why]
-	return "This commit was the head of the App's policy pull request #" + strconv.Itoa(pull) + ", and " + what +
-		". It carries no verdict now: an approval is valid once, for its own pull request. A pull request at this commit " +
-		"gets its verdict from its own run.\n"
+	of := "an approved change"
+	if pull > 0 {
+		of = "the approved change of pull request #" + strconv.Itoa(pull)
+	}
+	return "This commit carried the verdict of " + of + ", and " + what + ". It carries no verdict now: an approval is " +
+		"valid once, for its own pull request. A pull request at this commit gets its verdict from its own run.\n"
 }

@@ -76,6 +76,7 @@ type GitHub interface {
 	MarkReady(ctx context.Context, r api.RepoRef, number int) error
 	MergePull(ctx context.Context, r api.RepoRef, number int, headSHA string) (mergeSHA string, err error)
 	CreateCheckRun(ctx context.Context, r api.RepoRef, c api.CheckRun) (api.CheckRun, error)
+	CheckRuns(ctx context.Context, r api.RepoRef, headSHA, name string) ([]api.CheckRun, error)
 	CreateComment(ctx context.Context, r api.RepoRef, number int, body string) (api.Comment, error)
 	CloseIssue(ctx context.Context, r api.RepoRef, number int) error
 	ReopenIssue(ctx context.Context, r api.RepoRef, number int) error
@@ -403,10 +404,13 @@ func (s *Service) current(ctx context.Context, r api.Repo) (*proposal, error) {
 			if err := s.voidAndNote(ctx, r, p.rec.PullRequest, append(p.approvals, p.stale...), true); err != nil {
 				return nil, err
 			}
+			// The head's verdict first: a failure is returned and the next answer repeats the cleanup (Retire repeats).
+			if err := Retire(ctx, s.gh, r, p.rec.HeadSHA, p.rec.PullRequest, p.id, RetiredVoid, s.now()); err != nil {
+				return nil, err
+			}
 			if err := records.VoidProposal(ctx, s.store, t, r.FullName, p.id); err != nil {
 				return nil, fmt.Errorf("proposals: void proposal %s: %w", p.id, err)
 			}
-			s.retire(ctx, r, p.rec.HeadSHA, p.rec.PullRequest, p.id, RetiredVoid)
 			continue
 		case open != nil:
 			return nil, fmt.Errorf("proposals: two open proposals, %s and %s", open.id, p.id)
@@ -546,11 +550,14 @@ func (s *Service) resync(ctx context.Context, r api.Repo, cur *proposal, tip str
 		return nil
 	}
 	if len(kept) == 0 {
-		if err := records.VoidProposal(ctx, s.store, t, r.FullName, cur.id); err != nil {
-			logFailure(ctx, r, "void the proposal", err)
+		// The head's verdict first; a failure leaves the proposal in the index, and the next answer finishes it.
+		if err := Retire(ctx, s.gh, r, cur.rec.HeadSHA, cur.rec.PullRequest, cur.id, RetiredVoid, s.now()); err != nil {
+			logFailure(ctx, r, "retire the proposal's head", err)
 			return nil
 		}
-		s.retire(ctx, r, cur.rec.HeadSHA, cur.rec.PullRequest, cur.id, RetiredVoid)
+		if err := records.VoidProposal(ctx, s.store, t, r.FullName, cur.id); err != nil {
+			logFailure(ctx, r, "void the proposal", err)
+		}
 		return nil
 	}
 	pin := records.Pin{Proposal: cur.id, PullRequest: cur.rec.PullRequest, HeadSHA: head, Digest: policy3.Digest(file)}

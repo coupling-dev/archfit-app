@@ -70,7 +70,7 @@ func (s *Service) check(ctx context.Context, r api.Repo, tip string, pin records
 	_, err = s.gh.CreateCheckRun(ctx, ref, api.CheckRun{
 		Name:       gateCheck,
 		HeadSHA:    head,
-		ExternalID: "proposal:" + pin.Proposal,
+		ExternalID: ExternalID(pin.Proposal),
 		Status:     statusCompleted,
 		Conclusion: conclusionSuccess,
 		Title:      checkTitle,

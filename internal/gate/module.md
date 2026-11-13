@@ -52,10 +52,12 @@ separate, testable steps. Without this module a report is a self-reported file a
   `sweep.AfterAnswer`): a re-run when the four conditions hold, else a branch update with the App token; the path is
   recorded in the pull record and on each request issue. Its failure is returned, so the delivery is retried. The same push is then judged for the
   workflow approval it uses (`approvals.WorkflowPushed`, façade file `owner.go`).
-- When a pull request into the default branch opens or moves to a head whose latest `archfit/gate` is a proposal's
-  success (external id `proposal:<id>`) and it is not that proposal's own open pull request, take that success back
-  first (`proposals.Retire`, M2 review H2, façade file `owner.go`): an approval is valid once, for its own pull request.
-  A failed read or write is returned, so the delivery is retried.
+- When a pull request into the default branch opens or moves to a head whose latest `archfit/gate` is the success of a
+  proposal that ended (used, void or gone; external id `proposal:<id>`), take that success back first
+  (`proposals.Retire`, M2 review H2, façade file `owner.go`): an approval is valid once, for its own pull request. A
+  proposal still open keeps its success: its own pull request relies on it, and a pull request at the same head carries
+  the same approved change (if that merges first, the push is outside the flow). A failed read or write is returned,
+  so the delivery is retried.
 - Take the owner actions outside requests (M2 task 23, façade file `owner.go`, `OwnerActions`): the first approval of an
   onboarding pull request or of the policy already on the default branch, a workflow approval (`gate/approvals`), and
   the confirm or revert of a policy changed outside the flow (confirm `gate/approvals`, revert `gate/proposals`).

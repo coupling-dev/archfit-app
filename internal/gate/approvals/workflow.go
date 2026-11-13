@@ -38,10 +38,12 @@ func (s *Service) WorkflowPushed(ctx context.Context, p Push) (Outcome, error) {
 		}
 		return Outcome{Judged: JudgedNone, Voided: merged.id}, nil
 	}
+	if err := s.retire(ctx, p.Repo, merged, proposals.RetiredUsed); err != nil {
+		return Outcome{}, err
+	}
 	if err := records.ConsumeWorkflow(ctx, s.store, tenant(p.Repo), p.Repo.FullName, merged.id, merged.commit); err != nil {
 		return Outcome{}, fmt.Errorf("approvals: consume workflow proposal %s: %w", merged.id, err)
 	}
-	s.retire(ctx, p.Repo, merged, proposals.RetiredUsed)
 	return Outcome{Judged: JudgedConsumed, Proposal: merged.id}, nil
 }
 
@@ -125,12 +127,49 @@ func (s *Service) stillApplies(ctx context.Context, r api.Repo, repo records.Rep
 	return true, nil
 }
 
-// retire takes back the verdict on p's head once p is used or void (M2 review H2): the App squash-merges, so that commit
-// is not on the default branch, and another pull request at it would otherwise merge on its old success. It is a
-// notification of a step that stands: a failure is logged, and a pull request opened at that commit is retired when it
-// opens (gate, owner.go).
-func (s *Service) retire(ctx context.Context, r api.Repo, p *proposal, why string) {
-	if err := proposals.Retire(ctx, s.gh, r, p.rec.HeadSHA, p.rec.PullRequest, p.id, why, s.now()); err != nil {
-		logFailure(ctx, r, "retire a proposal head's check", err)
+// retire takes back the verdict on p's head once p is used or void (M2 review H2): the App squash-merges its policy pull
+// request, so that commit is not on the default branch, and another pull request at it would otherwise merge on its
+// old success. It comes before the state change, and Retire repeats safely, so a failure is returned and the delivery
+// retried with nothing changed. A pull request opened at that commit is retired when it opens (gate, owner.go).
+func (s *Service) retire(ctx context.Context, r api.Repo, p *proposal, why string) error {
+	return proposals.Retire(ctx, s.gh, r, p.rec.HeadSHA, p.rec.PullRequest, p.id, why, s.now())
+}
+
+// retireStaleReverts takes back the verdict of an open policy proposal whose revert no longer holds (a confirm, or a
+// later change, ended the state it was made in): its head keeps a success that would restore the old policy over the
+// new one. The proposal stays open; the next answer voids its revert (gate/proposals). A failure is returned.
+func (s *Service) retireStaleReverts(ctx context.Context, r api.Repo) error {
+	t := tenant(r)
+	var repo records.Repo
+	if err := records.Load(ctx, s.store, t, records.RepoKey(r.FullName), &repo); err != nil && !errors.Is(err, records.ErrNoRecord) {
+		return fmt.Errorf("approvals: read the repository: %w", err)
 	}
+	index := records.Index{Schema: records.SchemaProposalIndex}
+	if err := records.Load(ctx, s.store, t, records.ProposalIndexKey(r.FullName), &index); err != nil && !errors.Is(err, records.ErrNoRecord) {
+		return fmt.Errorf("approvals: read the proposal index: %w", err)
+	}
+	for _, e := range index.Entries {
+		p := &proposal{id: e.ID}
+		if err := records.Load(ctx, s.store, t, records.ProposalKey(r.FullName, e.ID), &p.rec); err != nil {
+			return fmt.Errorf("approvals: read proposal %s: %w", e.ID, err)
+		}
+		if p.rec.State != records.StateOpen || p.rec.Kind != "" {
+			continue
+		}
+		for _, id := range p.rec.Approvals {
+			var a records.Approval
+			if err := records.Load(ctx, s.store, t, records.ApprovalKey(r.FullName, id), &a); err != nil {
+				return fmt.Errorf("approvals: read approval %s: %w", id, err)
+			}
+			var rev records.Revert
+			if a.Kind != records.KindRevert || a.State != records.StateOpen || json.Unmarshal(a.Change, &rev) != nil || rev.Holds(repo) {
+				continue
+			}
+			if err := s.retire(ctx, r, p, proposals.RetiredVoid); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	return nil
 }

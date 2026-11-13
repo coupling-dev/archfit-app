@@ -217,6 +217,12 @@ func (s *Service) Act(ctx context.Context, r api.Repo, in Input) (Done, error) {
 	if done.Issue, err = s.record(ctx, r, done.Approval, a, c); err != nil {
 		return Done{}, err
 	}
+	if c.Kind == records.KindConfirm {
+		// The confirm ended the state an open revert was made in: its head must not restore the old policy over it.
+		if err := s.retireStaleReverts(ctx, r); err != nil {
+			logFailure(ctx, r, "retire a stale revert's head", err)
+		}
+	}
 	s.noteDone(ctx, r, &done, in.Owner.Login, owners)
 	slog.Default().InfoContext(ctx, "approvals owner action", "installation_id", r.InstallationID, "repository_id", r.ID,
 		"kind", c.Kind, "pull", c.Pull, "approval", done.Approval)
