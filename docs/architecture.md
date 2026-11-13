@@ -26,9 +26,10 @@ base shares: the upload and the sweep (rule 5d, also started by the event of suc
 
 A merge group of the default branch's merge queue is decided on its own commit, which holds the default branch and
 every queued pull request up to it. The App reads the group's members from GitHub's merge queue API and the protected
-files at two immutable commits: the default-branch head and the group commit. A protected file the group changes
-needs exactly one queued pull request that changes it, holds an owner approval of its own head, and has exactly that
-file; every member that changes a protected file needs its own approval. See [Merge queue](design/merge-queue.md).
+files at two immutable commits: the default-branch head and the group commit. A member that changes a protected path
+in its own pull request blocks the group (`owner_approval_missing`), and so does a protected file of the group commit
+that differs from the default branch while no queued pull request changes it (`merge_group_conflict`). See
+[Merge queue](design/merge-queue.md).
 
 ## System context
 
@@ -121,7 +122,7 @@ The shared group contains `wire`, `github`, and `store`.
 | `app`      | Loads environment settings, builds packages, and registers routes              | none                                                                         |
 | `gate`     | Verifies uploads, decides outcomes, publishes feedback, and runs the sweep     | `ingest`, `inputs`, `verdict`, `feedback`, `sweep`                           |
 | `control`  | Serves the UI and manages onboarding, proposals, and entitlements              | `account`, `onboarding`, `proposal`, `ui`                                    |
-| `wire`     | Defines versioned file and message formats                                     | `decision`, `envelope`, `manifest`, `policy`, `report`, `result`, `settings` |
+| `wire`     | Defines versioned file and message formats                                     | `envelope`, `manifest`, `policy`, `report`, `result`, `settings` |
 | `github`   | Holds GitHub API, authentication, webhook, and OIDC knowledge                  | `api`, `auth`, `oidc`, `webhook`                                             |
 | `store`    | Defines the tenant key-value interface and the memory driver                   | `firestore`                                                                  |
 | `gcptoken` | Reads the service-account access token from the Cloud Run metadata server      | none                                                                         |
@@ -174,7 +175,7 @@ After authentication, defects become gate reasons and appear in GitHub feedback.
 
 `gate/ingest` verifies the token, envelope, payload digest, report format, run, pull request, and revision.
 It reads the report with the key set of the engine release that the envelope claims.
-`gate/inputs` reads the protected-ref files and owner approval. `gate/verdict` performs no I/O and no AI call.
+`gate/inputs` reads the protected-ref files and the paths a pull request changes. `gate/verdict` performs no I/O and no AI call.
 The upload handler has a 55-second deadline. The target is feedback within 60 seconds.
 
 The upload body is at most 5 MiB. A larger body gets `413 payload_too_large`, and the App publishes nothing.
@@ -186,12 +187,12 @@ GitHub reports a conflict the head is measured alone, `analyzed_sha` is `head_sh
 The App holds the claim to what GitHub says about the pull request, never to the envelope: a conflict claim needs GitHub
 to say `mergeable` is false, a merged claim needs the commit to be GitHub's test merge commit, and while GitHub has not
 computed the merge no claim matches. A mismatch ends `action_required` with `envelope_mismatch`; re-running the workflow
-measures the current merge. Approval of a protected change stays bound to `head_sha`, not to the merge commit.
+measures the current merge.
 
 ## Baseline upload
 
-The baseline is a file on the protected ref. It changes only through a pull request that an architecture owner
-approves. The App never commits it to the default branch.
+The baseline is a file on the protected ref. It changes only through a pull request. That pull request changes a
+protected path, so its check is `owner_approval_missing`. The App never commits it to the default branch.
 
 ```mermaid
 flowchart LR
@@ -200,7 +201,7 @@ flowchart LR
     OK{"Approved run at the main head,<br/>approved identity, protected<br/>policy and labels?"}
     REJECT["HTTP error<br/>nothing written"]
     PR["Pull request from<br/>archfit/baseline"]
-    OWNER["Owner approves<br/>the exact head"]
+    OWNER["Owner merges<br/>the pull request"]
     MAIN["Protected ref"]
 
     ACTION -->|"POST /v1/baselines"| ONB
@@ -239,7 +240,8 @@ A file equal to the protected baseline opens nothing. Otherwise the App opens a 
 `archfit/baseline` into the default branch that changes only `.archfit-baseline.json`, with the uploaded bytes. A new
 upload updates the same branch and pull request and rewrites its body. The body counts the accepted findings added
 and removed, lists them by rule ID and finding ID, names the run, engine identity and digests, and states that an
-architecture owner must approve the exact head commit. The gate's protected-path rule then governs the merge.
+architecture owner must approve the exact head commit. The gate's protected-path rule keeps the check at
+`owner_approval_missing`.
 
 Today the Action captures with plain `archfit baseline`, which accepts all current eligible debt. The added count in
 the body is what keeps that visible to the owner. After an engine or profile change, the Action runs
@@ -364,10 +366,8 @@ The arrows show recovery flow. The sweep does not compute a new report because t
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
 | New pull request head                                    | Set a pending required check or refuse a fork                                                                                                                                | None                                  |
 | Push to the default branch that changes a protected path | Sweep that repository                                                                                                                                                        | None                                  |
-| Push to any branch                                       | Record who pushed the head. Then re-evaluate the open pull request on that head, as for a review change                                                                      | None                                  |
 | Merge group requested (`merge_group`, `checks_requested`) | Set a pending required check on the group commit                                                                                                                               | None                                  |
 | Merge group destroyed, not merged                        | Set `action_required` `merge_group_unverified` on a pending or decided group check                                                                                              | None                                  |
-| Review change                                            | Set `owner_approval_missing` when a `success` or `failure` check lost its owner approval; rerun when the last reason was `owner_approval_missing` and no approval is missing. Re-check the merge groups that hold the pull request | None                                  |
 | Installation added or removed                            | None                                                                                                                                                                         | Start the trial or delete tenant data |
 
 Webhook intake verifies the signature and queues two tasks: the gate half, then the control half. Each task carries
@@ -393,20 +393,14 @@ The sweep inspects open pull requests for these conditions:
 
 - A pending required check is missing.
 - No report arrived within 60 minutes.
-- An owner grant is gone or an unoverridden owner objection now blocks the candidate.
+- A pull request now changes a protected path (the settings came to protect it, or its base moved) after a decided result.
 - The policy, baseline, or labels changed on the protected ref.
 - A waiver expires within seven days or has expired.
 - The subscription changed.
 - The default branch moved after a `success` check, and the report of its new tip and the report of the pull request
   together close a module cycle that neither holds alone (`target_moved`; see [Merge safety](user-guide.md#merge-safety-when-the-target-moves)).
 
-An owner grant can end without a new commit when the approver leaves the protected owner set or agent rules change. A current owner request for changes creates an objection that blocks ordinary approval. An explicit, reasoned App override can cover exact App or native GitHub objection IDs for the exact head, protected settings SHA and digests. The App never dismisses the native review; GitHub may still block merge under its own review and branch-protection rules. A new head or protected-settings snapshot cannot reuse the old grant or override, and prior objections remain visible across a push.
-
-App decisions live in a bounded per-installation, per-PR CAS ledger. Request-changes, withdrawal and override reasons are mirrored as App-authored PR comments; comments are audit/display only and never input authority. Legacy unchanged-head `approval/` grants remain readable; current-candidate withdrawal also suppresses the native approval version(s) then present for that owner in Archfit only, without changing the GitHub review. An older App image does not understand the new decision ledger, so rollback requires a merge pause on protected-path PRs until a decision-aware version is restored or forward-fixed.
-
-Review events and App decisions read the check and inputs, decide, and write inside the head's publication lease. They re-evaluate affected merge groups, including groups that already have a successful check. A saved approval/override never turns a check green; a new workflow report is still required. Required and advisory `archfit/state` feedback are refreshed. Without the Store nothing is written; a mirror/check refresh failure leaves the authenticated decision saved and offers a separate retry instead of asking for duplicate approval.
-
-The sweep reruns the customer workflow after stale inputs, an expired waiver, late owner approval, or restored
+The sweep reruns the customer workflow after stale inputs, an expired waiver, a protected change that went away, or restored
 subscription, unless the default branch moved since the result was measured: a re-run measures the old merge
 commit, so the check says `target_moved` and asks the author to update the branch. A missing upload becomes `action_required`. A fresh report is required for a new `success` result.
 
@@ -416,14 +410,14 @@ These invariants keep repository authors from weakening the gate:
 
 - Read policy, baseline, labels, settings, owners, and workflow from the protected ref.
 - Verify the policy digest against the report.
-- Accept a head policy only when an architecture owner approved the exact head SHA.
-- Accept a merge group's changed protected file only when it is exactly the file of one queued pull request whose own
-  head an owner approved. Never approve the group commit itself.
+- Never accept a head policy, baseline or labels file: no approval makes one trusted.
+- Block a merge group whose member changes a protected path, or whose protected file differs from the default branch
+  with no queued pull request that changes it. Never approve the group commit itself.
 - Treat missing, incompatible, or unverifiable evidence as not successful.
 - Describe report provenance as `customer-attested`, never as `verified`.
 - Keep LLM output, billing, and UI code off the gate path.
 - Resolve tenant identity from a verified webhook, OIDC claim, or OAuth session.
-- Never commit to the protected ref. A captured baseline arrives only as a pull request that an owner approves.
+- Never commit to the protected ref. A captured baseline arrives only as a pull request.
 - Log IDs, digests, outcomes, and timings only.
 
 The protected paths are:
@@ -434,7 +428,7 @@ The protected paths are:
 - `.archfit-app.yaml`
 - The workflow file named by `.archfit-app.yaml`
 
-A change to a protected path needs approval from an architecture owner on the exact head SHA.
+A pull request that changes a protected path is `owner_approval_missing`; nothing approves it. Only the App's policy pull request changes the policy.
 
 ## HTTP routes
 

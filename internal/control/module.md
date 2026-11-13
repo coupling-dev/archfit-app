@@ -396,7 +396,6 @@ const (
     PullOpened         EventKind = "pull_opened"         // opened, reopened, ready_for_review
     PullSynchronized   EventKind = "pull_synchronized"   // new head SHA
     PullClosed         EventKind = "pull_closed"
-    ReviewChanged      EventKind = "review_changed"      // submitted, edited, dismissed
     DefaultBranchPush  EventKind = "default_branch_push"
     InstallationAdded  EventKind = "installation_added"  // created, or repositories added
     InstallationRemoved EventKind = "installation_removed" // deleted

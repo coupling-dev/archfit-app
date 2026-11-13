@@ -26,9 +26,9 @@ repository), which replaces those three records. Choices made without an owner a
 - Decide the gate outcome with no LLM, billing call, or UI on the path; always conclude
   `success`, `failure`, or `action_required`; never `neutral` or `skipped`.
 - Publish `archfit/state`, `archfit/gate` (when `gate: required`) and one PR comment, idempotently.
-- Enforce architecture-owner approval on the exact head SHA for policy, baseline, settings and
-  workflow changes, including atomic code-and-policy PRs. An owner approves by a review on GitHub or by answering the
-  request in the App; a push never approves, and an agent identity listed in the settings never approves.
+- Block a pull request that changes a protected path (policy, baseline, settings, workflow): its check stays
+  `owner_approval_missing`, including a code-and-policy pull request. Nothing approves it, neither a push, a review nor
+  the App; the policy changes only through the App's policy pull request, asked for with a request.
 - Recover from missed events with one periodic sweep; schedule around waiver expiry and base policy changes
   by re-running the customer's workflow.
 - Onboard repositories in customer-executed mode (two PRs) and managed mode (sandbox job after consent).
@@ -102,7 +102,7 @@ marker `<!-- archfit:comment -->`; branches under `archfit/`; workflow artifact 
 holding the no-source report **[default]**, read only by the graph view.
 
 GitHub App permissions: `checks: write`, `pull_requests: write`, `contents: write`, `actions: write` (re-run and
-dispatch), `members: read` (team owners), `metadata: read`. No `workflows` permission **[decided]**: it would let the App
+dispatch), `metadata: read`. No `workflows` permission **[decided]**: it would let the App
 change any CI of the repository, so the owner adds the Archfit workflow by hand once. The reasons per permission, for
 customers: [user guide](../docs/user-guide.md#github-app-permissions).
 
@@ -157,7 +157,6 @@ internal/                         Archfit App (root)
 ├── app/                          composition root: config, roles, wiring, routes, webhook intake and processing, operator endpoints
 ├── wire/                         published language (versioned contracts, no domain logic)
 │   ├── envelope/                 report-envelope v1: schema, strict decode, payload digest
-│   ├── decision/                 decision-request v1: the comment block an unattended agent files, strict decode, status marker
 │   ├── report/                   engine state v1 as no-source allowlist transport
 │   ├── settings/                 .archfit-app.yaml: owners, gate mode, workflow path, data mode
 │   ├── policy/                   engine file paths, raw-byte digest, waiver reader, config schema
@@ -174,10 +173,9 @@ internal/                         Archfit App (root)
 │   └── cloudtasks/               Cloud Tasks implementation over REST
 ├── gate/                         the gate path (core)
 │   ├── ingest/                   authenticate and bind one upload
-│   ├── inputs/                   trusted inputs from the protected ref; owner approval; entitlement read
+│   ├── inputs/                   trusted inputs from the protected ref; protected changes; entitlement read
 │   ├── verdict/                  pure decision: facts → conclusion and reasons
 │   ├── feedback/                 check runs, the PR comment, receipts, idempotency
-│   ├── decisions/                decision requests of unattended agents: records, status comments, stale rules
 │   ├── records/                  Archfit 4 state under v4/: keys, values, indexes, join and consume
 │   └── sweep/                    reconciliation of open PRs
 └── control/                      control plane (never on the gate path)
@@ -223,15 +221,14 @@ form of "keep LLM output off the gate path" and of decisions.md §2 gate indepen
 
 ### Key flows
 
-**Merge group report**: the same upload with event `merge_group`. `gate/ingest` binds the run's commit to an entry of the default branch's merge queue (GraphQL) or answers 409 `stale_group`; `gate/inputs` takes the queued pull requests up to that entry as members, reads every protected file at the default-branch head and at the group commit, and accepts a changed file only as exactly one owner-approved member's; `gate/feedback` writes `archfit/gate` on the group commit, with no comment. Contract: `docs/design/merge-queue.md`.
+**Merge group report**: the same upload with event `merge_group`. `gate/ingest` binds the run's commit to an entry of the default branch's merge queue (GraphQL) or answers 409 `stale_group`; `gate/inputs` takes the queued pull requests up to that entry as members, reads every protected file at the default-branch head and at the group commit, and accepts a changed protected file only when no queued member changes a protected path in its own pull request; `gate/feedback` writes `archfit/gate` on the group commit, with no comment. Contract: `docs/design/merge-queue.md`.
 
 **Report upload** (`POST /v1/reports`): `gate/ingest` enforces the size cap, strictly decodes the envelope,
 verifies the OIDC token, resolves repository, installation, run, PR, head, base and merge-base from the GitHub
 API, compares them with the envelope, checks the payload digest and decodes the no-source report. A request
 whose tenant cannot be authenticated, or that is stale, is rejected with an HTTP status and nothing is
 published. After authentication every defect becomes a `Problem`, not a rejection. `gate/inputs` reads
-settings, policy, baseline and labels from the protected ref, computes digests, finds changed protected paths and the
-owner approval on the exact head SHA, and reads the cached `Entitlement`. `gate` checks the manifest identity
+settings, policy, baseline and labels from the protected ref, computes digests, finds changed protected paths, and reads the cached `Entitlement`. `gate` checks the manifest identity
 and the workflow path. `gate/verdict` maps the facts to an outcome. `gate/feedback` publishes. All in the request.
 
 **Webhook**: intake in `app` verifies the signature, parses the event, and queues two tasks, the gate half first:
@@ -239,7 +236,7 @@ GitHub's own headers and body, named after the delivery ID, so a repeated delive
 that the queue refuses runs inline. The worker verifies the signature again and hands the event to
 `gate.HandleEvent` or `control.HandleEvent`. The halves are separate tasks: a `control` error never blocks or repeats
 gate work. A transient error is retried by the queue; a permanent one is logged and dropped. New head → pending gate check (required
-mode) or fork refusal. A pull request opened or pushed into another base → the pull requests into the default branch on the same head are checked in the request (`shared_head` over a success or a pending check; only a failure of those units is retried). A default-branch push that changes a protected path → a one-repository sweep, in the request; any other default-branch push → the target-moved recheck of the open pull requests (sweep rule 5c), in the request. Review change → re-run the workflow if the last receipt was `owner_approval_missing`, and re-check the queued merge groups that hold the pull request. `merge_group` `checks_requested` → pending gate check on the group commit (required mode); `destroyed` for a reason other than `merged` → a pending or decided group check becomes `action_required` `merge_group_unverified`.
+mode) or fork refusal. A pull request opened or pushed into another base → the pull requests into the default branch on the same head are checked in the request (`shared_head` over a success or a pending check; only a failure of those units is retried). A default-branch push that changes a protected path → a one-repository sweep, in the request; any other default-branch push → the target-moved recheck of the open pull requests (sweep rule 5c), in the request. `merge_group` `checks_requested` → pending gate check on the group commit (required mode); `destroyed` for a reason other than `merged` → a pending or decided group check becomes `action_required` `merge_group_unverified`.
 Installation events → trial start, uninstall cleanup.
 
 **Sweep** (`POST /internal/sweep`, hourly **[default]**): `control.Sweep` refreshes entitlement records and forgets Store tenants whose installation is gone, then
@@ -255,7 +252,7 @@ entries). The UI hands out the workflow, and the owner commits it to PR 1's bran
 `archfit baseline` in the pinned image and uploads the file to `POST /v1/baselines`. `onboarding` pins the run to the
 default-branch head, checks the approved identity and that the capture ran under the protected policy and labels, then
 opens or updates one pull request on `archfit/baseline` that changes only `.archfit-baseline.json`. It never commits to
-the default branch; the gate's protected-path rule requires an owner approval of the exact head before that PR merges.
+the default branch; the baseline pull request changes a protected path, so its check is `owner_approval_missing`.
 
 **Managed onboarding**: consent recorded in KV → onboarding PR opened with a "discovery running" body → `Sandbox.Discover`
 → policy commit pushed to the same PR. No LLM runs inside the sandbox **[default]**.
@@ -267,9 +264,7 @@ Distance scale and thresholds are those of the Fractal Design skill. Depths: roo
 
 | Integration                                                                 | Strength                          | LCA            | Rank | Distance | Volatility | Balanced? | Action                                           |
 | --------------------------------------------------------------------------- | --------------------------------- | -------------- | ---- | -------- | ---------- | --------- | ------------------------------------------------ |
-| gate → gate/{ingest,inputs,verdict,feedback,sweep,decisions}                | Functional (composition)          | gate           | 1    | 1        | High       | Yes       | —                                                |
-| gate/sweep → gate/decisions (`Revalidate`); gate/decisions → gate/inputs    | Contract                          | gate           | 1    | 1        | High       | Yes       | —                                                |
-| gate/decisions → wire/decision, wire/policy, github/api, store              | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
+| gate → gate/{ingest,inputs,verdict,feedback,sweep}                          | Functional (composition)          | gate           | 1    | 1        | High       | Yes       | —                                                |
 | gate/records → store (`Get`, `Update`)                                      | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | gate/verdict → gate/ingest (`Problem`), gate/inputs (`Trusted`)             | Model                             | gate           | 1    | 1        | High       | Yes       | —                                                |
 | gate/feedback → gate/verdict (`Outcome`), gate/inputs (`Target`, `Trusted`) | Model                             | gate           | 1    | 1        | High       | Yes       | —                                                |
@@ -326,7 +321,7 @@ and child (distance 1). Everything that crosses the root is contract coupling, w
 3. **Problems versus rejections.** Before the tenant is authenticated the only answer is an HTTP status.
    After it, every defect is published as `action_required` with a reason, so a broken producer is visible on the PR.
 4. **Re-run is the single re-evaluation mechanism.** The App stores no report, so expiry, base policy change,
-   owner approval arriving late, and restored entitlement all re-run the customer's workflow
+   a reverted protected change, and restored entitlement all re-run the customer's workflow
    (`actions: write`, their CI minutes) and show `action_required` until the new report arrives.
 5. **The check is its own receipt.** Run ID, attempt, report digest, policy and baseline digests and the earliest
    waiver expiry live in the check run; the sweep compares them with the protected ref. No second copy can drift.
@@ -334,7 +329,7 @@ and child (distance 1). Everything that crosses the root is contract coupling, w
    because both branches use it. Platform implementations are separate packages chosen in `app`.
 7. **Four upload routes, one provenance path.** `/v1/discoveries`, `/v1/baselines` and `/v1/reanchors` reuse the gate's `Receiver`,
    so neither can weaken or fork the authentication rules. Discovery and baseline output never satisfy the gate; a
-   baseline becomes trusted input only when an owner-approved pull request merges it.
+   baseline becomes trusted input only when its pull request merges it into the protected ref.
 8. **Advisory mode publishes no `archfit/gate` check [default].** If a ruleset requires the check while settings
    say `advisory`, the PR stays blocked as "expected": closed, never green.
 9. **No LLM in the sandbox [default].** The App has no LLM call site, and source never
@@ -351,14 +346,14 @@ and child (distance 1). Everything that crosses the root is contract coupling, w
 
 Beyond the **[default]** rows of decisions.md: file path `.archfit-app.yaml`;
 envelope in the `X-Archfit-Envelope` header; operator bearer token for `/internal/*`; artifact name
-`archfit-report`; head baseline and head labels accepted under the same owner-approval rule as head policy;
+`archfit-report`; head baseline and head labels never trusted, as head policy;
 baseline and labels integrity through producer-stated envelope digests (below); session
 permission cache of 60 seconds.
 
 Readings of decisions.md adopted here, to be confirmed by the owner: §3 "Supported triggers" governs report
 uploads; discovery uploads (§5) and baseline uploads (§4) also accept `workflow_dispatch`. §4 "The App never
 commits it" means never to the protected ref: the App commits a captured baseline only to `archfit/baseline`, and it
-reaches the protected ref only by an owner-approved merge. §4 "created `in_progress` on PR open or push" means a push
+reaches the protected ref only by a merge. §4 "created `in_progress` on PR open or push" means a push
 to the PR branch (a new head SHA); a default-branch push gets `archfit/state` only. §7 "suggestion" means a
 commit on the draft PR, not a GitHub review suggestion. Supported languages are whatever engine v2.5.0 supports;
 the App has no language-specific logic, so no module owns that list. "Checked by Archfit on this repository"
@@ -400,8 +395,7 @@ draft are gone. What the real engine changed in this design:
 ## Constraints and Invariants
 
 - Never trust head-tree config, labels, baselines, owners, or CODEOWNERS. Gate inputs come from the protected
-  ref and are verified by digest. The only exception is a head policy or baseline digest for a PR whose exact
-  head SHA a base-version owner approved.
+  ref and are verified by digest. There is no exception: no approval makes a head file trusted.
 - Fail closed. The gate concludes `success`, `failure`, or `action_required`. Missing, ineligible, or
   incompatible evidence is never `success`.
 - Provenance is necessary, not sufficient. Feedback says "customer-attested"; nothing prints "verified".
@@ -468,7 +462,7 @@ draft are gone. What the real engine changed in this design:
   **Scenario**: paired healthy and blocked fixtures for each claimed erosion scenario.
   **Expected behavior**: `success` and `failure` respectively; the failure feedback carries rule, modules, locations and the validation commands of its agent tasks (a healthy report has no task and therefore no command).
 - **Test name**: `TestTamperingNeverYieldsSuccess`
-  **Scenario**: head-edited policy, baseline, settings, workflow, CODEOWNERS; stale approval after re-push; unknown image; missing profile; fork PR; `workflow_run` upload.
+  **Scenario**: head-edited policy, baseline, settings, workflow, CODEOWNERS; a push or a review on a protected change; unknown image; missing profile; fork PR; `workflow_run` upload.
   **Expected behavior**: each ends `action_required` with its own reason; none is `success`, `neutral`, or `skipped`.
 - **Test name**: `TestGateSurvivesControlPlaneFailure`
   **Scenario**: UI handler panicking, control sweep failing; separately the Store failing together with the control sweep.

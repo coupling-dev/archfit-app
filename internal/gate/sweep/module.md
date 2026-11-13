@@ -18,8 +18,9 @@ and a changed base policy, an expired waiver or a restored subscription would ne
 - In required mode: ensure fork PRs show `fork_unsupported` and suspended repositories show
   `subscription_suspended`. In advisory mode only the waiver warning runs.
 - Create the missing pending gate check; turn a pending check into `missing_upload` after `MissingUploadAfter` (60 minutes).
-- Detect `success` and `failure` receipts whose owner approval is gone (dismissed, followed by a request for changes,
-  the approver no longer an owner, a protected path newly changed); publish `owner_approval_missing`, with no re-run.
+- Detect decided receipts (`success`, `failure`, or a report-derived `action_required`) of a pull request that now changes
+  a protected path, which nothing approves (a base that moved, a new base branch, settings that came to protect another
+  path); publish `owner_approval_missing`, with no re-run.
 - Detect receipts whose policy, baseline or labels digest no longer matches the protected ref; publish
   `stale_inputs` and re-run the customer's workflow.
 - Warn 7 days before the earliest waiver expiry; after expiry publish `waiver_expired` and re-run.
@@ -27,7 +28,7 @@ and a changed base policy, an expired waiver or a restored subscription would ne
   request's report together close a module cycle that neither holds alone (rule 5c). No re-run.
 - Publish `shared_head` over a `success` receipt while another open pull request into a base other than the default
   branch has the same head commit (rule 5d). No re-run.
-- Re-run after a restored entitlement or a late owner approval.
+- Re-run after a restored entitlement or when `owner_approval_missing` no longer holds (the pull request changes no protected path any more).
 - Re-run only under the four conditions of design 10.5 (the re-run guard), for every caller.
 - After an answer is merged (`AfterAnswer`): get each pull request waiting on its requests a fresh result without its
   author, by a re-run or a branch update, and record the path in the pull record and on the request issue.
@@ -93,12 +94,7 @@ type Admitter interface {
     Admitted(ctx context.Context, installationID int64, owner string) (bool, error)
 }
 
-func New(repos Repos, pulls Pulls, actions Runs, r Resolver, p Publisher, admit Admitter, d Decisions, c Config) Sweeper
-
-// Decisions is rule 8's one dependency; gate/decisions implements it.
-type Decisions interface {
-    Revalidate(ctx context.Context, t Target, tr Trusted, now time.Time) error
-}
+func New(repos Repos, pulls Pulls, actions Runs, r Resolver, p Publisher, admit Admitter, c Config) Sweeper
 ```
 
 Zero `Config` durations are replaced by 60 minutes and 7 days **[default]**.
@@ -176,21 +172,22 @@ const (
 // current digests of tr.
 func Without(code ReasonCode, t Target, tr Trusted, rc Receipt) Publication
 
-// Withdrawn reports whether rc concluded without asking for action although tr now lacks the owner approval that
-// verdict.Decide demands. Success, failure and an action_required whose reason is report-derived and itself asks for action (missing required coverage, a baseline that is not comparable, a policy defect: see `Decided`) match, because the report is shown under them; any other receipt never does.
+// Withdrawn reports whether rc is Decided although tr now changes a protected path, which nothing approves: the
+// protected settings came to protect a path the pull request changes. Success, failure and an action_required whose reason is report-derived and itself asks for action (missing required coverage, a baseline that is not comparable, a policy defect: see `Decided`) match, because the report is shown under them; any other receipt never does.
 func Withdrawn(rc Receipt, tr Trusted) bool
 
 // Withdrawal is rule 5a, decided inside the head's publication lease (Publisher.Reconcile) from the gate check
-// current there and inputs tr resolved there: Without(ReasonOwnerApprovalMissing) over the current receipt when the
+// current there and inputs tr resolved there: Without(ReasonOwnerApprovalMissing) over the current receipt when a
 // check exists and its receipt is Withdrawn, in either gate mode, else nil.
 func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 
 // GroupWithdrawal corrects a merge group's required check, decided inside the group commit's publication lease from
 // the check current there and the inputs tr resolved there. It is nil unless tr.Settings.Gate is required and the
 // check exists and is pending or decided (`Decided`); a check that already asks for action stays. Otherwise, when
-// verdict.GroupBlocked(tr) holds (a fork member, an unverified or destroyed group, conflicting protected files, a
-// member without its owner approval), it is that outcome over the current receipt. It never writes a success. The
-// hourly pass does not scan merge groups; only the gate's merge_group and review events call this.
+// verdict.GroupBlocked(tr) holds (a fork member, an unverified or destroyed group, a protected file of the group
+// that no queued pull request changes, a member that changes a protected path), it is that outcome over the current
+// receipt. It never writes a success. The hourly pass does not scan merge groups; only the gate's `merge_group`
+// `destroyed` event calls this.
 func GroupWithdrawal(t Target, current CheckState, tr Trusted) *Publication
 ```
 
@@ -229,7 +226,7 @@ The first rule whose condition holds ends the evaluation of that pull, whether o
 | 2   | `Trusted.Suspended`                                                             | unless `rc.Reason == subscription_suspended`: publish `Without(ReasonSuspended)`                       | `Suspended` |
 | 3   | `!state.Exists`                                                                 | `Publisher.Pending(target)`                                                                            | `Pended`    |
 | 4   | `state.Pending`                                                                 | if `now − state.StartedAt ≥ MissingUploadAfter`: publish `Without(ReasonMissingUpload)`                | `TimedOut`  |
-| 5a  | `Withdrawn(rc, Trusted)`: the approval a decided receipt relied on is gone      | `Publisher.Reconcile` with `Withdrawal` decided inside the lease (below); no re-run                    | —           |
+| 5a  | `Withdrawn(rc, Trusted)`: a decided receipt over a protected change             | `Publisher.Reconcile` with `Withdrawal` decided inside the lease (below); no re-run                    | —           |
 | 5b  | has receipt and it is stale (below)                                             | base behind (below): publish `target_moved`, no re-run. Else publish `Without(ReasonStaleInputs)`, then re-run | `Rerun`     |
 | 5c  | required mode, `rc.Conclusion == success`, `Settings.Recheck() == overlap`, and `rc.BaseSHA` is `""` or not the default-branch tip: the tip's and the pull request's reports close a cycle neither holds alone, or the pull request's report cannot be proved, or the tip has had no report for `MissingUploadAfter` | publish `Without(ReasonTargetMoved)` carrying the cycle and the commit range, inside `Publisher.Reconcile`; no re-run | — |
 | 5d  | required mode, `rc.Conclusion == success`, and an open pull request other than this one has this head and a base that is not the default branch (evaluated before 5c, which it excludes while it holds) | `Publisher.Reconcile`: inside the lease the open pull requests are listed again, and `verdict.SharedHead` over the current receipt is published only if the receipt, the inputs and a shared head still hold (below); no re-run | —           |
@@ -238,13 +235,6 @@ The first rule whose condition holds ends the evaluation of that pull, whether o
 | 7a  | `rc.Reason == subscription_suspended` and `!Trusted.Suspended`                  | base behind: publish `target_moved`, no re-run. Else re-run; if none is possible publish `Without(ReasonMissingUpload)` | `Rerun`     |
 | 7b  | `rc.Reason == owner_approval_missing` and `!verdict.Unapproved(Trusted)`        | base behind: publish `target_moved`, no re-run. Else re-run; if none is possible publish `Without(ReasonMissingUpload)` | `Rerun`     |
 | 7c  | `rc.Reason` is `stale_inputs` or `waiver_expired` (never `target_moved`: only a new head measures the merge) | base behind: publish `target_moved`, no re-run. Else re-run (retries a re-run request that failed in an earlier pass; the guard makes it a no-op otherwise) | `Rerun`     |
-| 8   | every onboarded pull (`SettingsFound`), after the rules above, whatever they did | `Decisions.Revalidate(target, trusted)`: each pending decision request of the pull whose head is not the pull request's live head (read again by `Revalidate` when there is a request to look at, and once more for each request that looks stale before it is settled) becomes `stale (head moved)`, and each whose policy digest `Trusted.PolicyDigests` no longer accepts becomes `stale (policy changed)` and its status comment is edited; any request of the pull whose stored status is not yet in the thread (a failed earlier write) gets its comment written | — |
-
-Rule 8 does not take part in the "first rule wins" order: it runs after the check rules and neither skips nor depends
-on them. A failure of rule 8 and a failure of the check rules are both returned (`errors.Join`) and counted once in
-`Errors`. It reads the records `gate/decisions` keeps in the Store through that module only; the sweep keeps no state.
-A pull request that closed without its event is not visited (the sweep walks open pulls): its pending requests stay
-until a later event; this is a stated limit.
 
 Definitions:
 
@@ -256,28 +246,26 @@ Definitions:
   as rules 1 and 2 come before rule 5b in required mode: a re-run can only refuse again. Rule 6a runs after rules
   0b and 0c in every case.
   Nothing else of the required rules applies: no pending check, no `missing_upload`, no fork or suspension
-  publication, no approval withdrawal, because advisory feedback never blocks and has no gate check to keep honest.
-- Withdrawn receipt: `Decided(rc)` (`rc.Conclusion` is `success` or `failure`, or `action_required` with a report-derived reason that asks for action), and `verdict.Unapproved(Trusted)` holds, the
-  condition of step 5 of `Decide`. `Decide` cannot reach any of these conclusions with such inputs (step 5 comes first), so the receipt was
-  decided under an owner approval that is gone: the review was dismissed or followed by a request for changes, the
-  approver is no longer in the protected settings' `owners`, or the pull now changes a protected path (a base that
-  moved or a new base branch). Edits of the settings file and the workflow file change no receipt digest, so only
-  this rule sees them. Rule 5a comes before rule 5b: a withdrawal that also left a digest stale is still
-  `owner_approval_missing`, because no re-run can pass until an owner approves again. That approval then re-runs
-  through `HandleEvent(ReviewChanged)` or rule 7b. A pending, zero or unreadable receipt, and every receipt that
-  already asks for action, never match.
+  publication, no protected-change withdrawal, because advisory feedback never blocks and has no gate check to keep honest.
+- Withdrawn receipt: `Decided(rc)` (`rc.Conclusion` is `success` or `failure`, or `action_required` with a report-derived reason that asks for action), and `verdict.Unapproved(Trusted)` holds: the pull request changes a protected path
+  (`len(Trusted.ProtectedPaths) > 0`), which nothing approves. `Decide` cannot reach any of these conclusions with such
+  inputs (step 5 comes first), so the receipt was decided before the protected settings came to protect a path the pull
+  request changes, or before the pull request changed it (a base that moved, a new base branch, a settings or workflow
+  file that is now protected). Edits of the settings file and the workflow file change no receipt digest, so only this
+  rule sees them. Rule 5a comes before rule 5b: a withdrawal that also left a digest stale is still
+  `owner_approval_missing`, because no run can pass while the pull request changes a protected path. Rule 7b re-runs
+  once it does not. A pending, zero or unreadable receipt, and every receipt that already asks for action, never match.
 - Rule 5a is decided twice. The pass finds `Withdrawn` from the `State` and `Trusted` it read outside the lease; then
   `Publisher.Reconcile` holds the head's lease, reads the gate check again, and the decision resolves the inputs
   again at the pass's `now`, both inside the lease, and returns `Withdrawal(target, current, trusted)`. That is
   `Without(ReasonOwnerApprovalMissing, ...)` over the current receipt, whose outcome is
   `verdict.ApprovalMissing(Trusted)` (`Detail` names `Trusted.ProtectedPaths`, as `Decide` does), or nil when the
   receipt there is no longer withdrawn. So a newer run attempt that turned green while the pass waited for the lease
-  is the receipt withdrawn, under its own run identity, and an owner who approved again meanwhile leaves the check
-  alone with no write. A later review is handled by its own `ReviewChanged`, which waits for this lease and then
-  reads the written check. A `Resolve` error inside the lease writes nothing and counts the pull in `Summary.Errors`.
-- Rule 7b fires on any approval that no longer misses, `granted` or `not_required`: a retargeted base or a repointed
+  is the receipt withdrawn, under its own run identity, and a protected change that went away meanwhile leaves the
+  check alone with no write. A `Resolve` error inside the lease writes nothing and counts the pull in `Summary.Errors`.
+- Rule 7b fires when the pull request no longer changes a protected path: a retargeted base or a repointed
   settings workflow can drop the protected path from the pull, and the `owner_approval_missing` receipt must not wait
-  for an approval nobody needs. The re-run guard still allows one re-run per attempt.
+  for a change nobody makes. The re-run guard still allows one re-run per attempt.
 - Stale receipt, any of four clauses. The digest clauses are the digest predicate of `gate/inputs`
   (`inputs.Accepts`); the sweep has no comparison of its own:
   - policy: `!Accepts(Trusted.PolicyDigests, rc.PolicyDigest)`;
@@ -315,7 +303,7 @@ receipt (same run identity and current digests, as `Without` does), reason `shar
 runs before 5c and ends the evaluation: both withdraw the same success.
 
 It is decided twice, as rule 5a is. Inside `Publisher.Reconcile` the lease reads the check again; the rule publishes only
-when the receipt is still the one the pass saw, the repository is in required mode, no approval is withdrawn, the inputs
+when the receipt is still the one the pass saw, the repository is in required mode, no protected change withdraws it, the inputs
 are not stale, and a fresh `OpenPulls` listing still names a pull request on the head. A pull request closed meanwhile
 leaves the success; a failed listing is an error of the unit (counted, skipped), never a decision. The `Recheck` pass
 (rule 5c alone) does not run it.
@@ -386,7 +374,7 @@ Steps, in this order, stopping at the first that decides nothing:
 5. Stale: `Publisher.Reconcile` holds the head's lease, and inside it the decision is made again from the check as it is
    and the inputs resolved at the pass's `now`: nothing is written unless the current receipt still equals `rc`, the
    repository is still in required mode with `overlap`, and the receipt is neither `stale` (rule 5b) nor `Withdrawn`
-   (rule 5a). A newer run, a changed policy or a withdrawn approval is left to the rule that owns it. The publication
+   (rule 5a). A newer run, a changed policy or a protected change is left to the rule that owns it. The publication
    is `Without`'s receipt (run identity, `BaseSHA` and report digest of `rc`, the current digests) with the outcome
    `verdict.TargetMoved(cycle, rc.BaseSHA, tip)`: category evidence, `action_required`, not report-derived, so the Pull
    page withholds the report as it does under `stale_inputs`. No re-run: a GitHub re-run reuses the old commit and the
@@ -403,7 +391,7 @@ rule 5c). If it is, the rule requests no re-run and publishes `verdict.TargetMov
 its own reason (`stale_inputs`, `waiver_expired`, `missing_upload`): the range only, and the generic "update the branch"
 recovery. This holds in required mode whatever `integration.recheck` says, and for any conclusion of `rc`; rule 5b
 replaces a green receipt whose inputs went stale as well. The publication goes through `publishMoved`, the path of
-rule 5c: inside `Publisher.Reconcile` the decision is made again, and a newer run, a withdrawn approval or a repository
+rule 5c: inside `Publisher.Reconcile` the decision is made again, and a newer run, a protected change or a repository
 that left required mode is left to the rule that owns it. Rules 6b, 7a, 7b and 7c also leave a receipt that went stale
 meanwhile to rule 5b; rule 5b alone may replace a stale receipt. The receipt is `target_moved` afterwards, so the next
 pass finds nothing to do.
@@ -420,7 +408,7 @@ change, and rules 5a, 7a and 7b never match it. A new upload after the branch up
 push that changes no protected path (a protected push runs `RunRepo`, whose full rule table already includes rule 5c).
 It reads `BranchHead` and returns an empty `Summary` with a nil error unless the head is `tip`: a newer push starts its
 own recheck. Otherwise it walks the repository's open pull requests as `RunRepo` does and runs rule 5c alone on each
-one that no other rule would act on: a fork, a suspended repository, a withdrawn approval, stale inputs and a missing,
+one that no other rule would act on: a fork, a suspended repository, a protected change, stale inputs and a missing,
 pending or unreadable check are left to the full pass (their reason must not be hidden, nor their re-run lost). A rate
 limit is returned as an error that wraps `api.ErrRateLimited`, like `RunRepo`.
 
@@ -463,7 +451,7 @@ de-duplication: the next pass finds the receipt neither stale nor expired.
 
 ### Re-run guard
 
-`Rerun(ctx, gh, repo, in, now)` is exported: the sweep owns the guard, `gate` calls it for `ReviewChanged`, and
+`Rerun(ctx, gh, repo, in, now)` is exported: the sweep owns the guard, and
 `AfterAnswer` calls it after an answer. A re-run replays the run's event: the same commit, the same event base, and
 a fetch of the target tip at run time (design D.2). So it is right only when the code measured is the same and only
 the policy it is judged by is new: the four conditions of design 10.5. There is one behavior for every caller; the
@@ -491,7 +479,6 @@ The callers' inputs:
 | Caller | `Head` | `EventBase` | `Tip` | `ReadsTip` |
 | --- | --- | --- | --- | --- |
 | Rules 0b, 0c, 5b, 6b, 7a, 7b, 7c (Archfit 3 receipts) | the target's head | `rc.BaseSHA`, else the pull request's base SHA from the `OpenPulls` listing | the tip the pass reads once; a failed read is an error (`Errors`, retried next pass) | true: the Archfit 3 Action reads the protected inputs from `origin/<base>` (design D.2, `run.sh` `input_tip`) |
-| `gate` `ReviewChanged` (Archfit 3 receipts) | the event's head | `rc.BaseSHA`, else `Pulls.Pull` base SHA | `BranchHead`; a failed read (of the base too) is returned, so the delivery is retried; a branch or pull request GitHub does not have is unknown | true, as above |
 | `AfterAnswer` (Archfit 4 pull records) | the pull request's head now | its base SHA, which stays at the event's base until the head changes (design D.2) | `BranchHead`, read once per call | the pull record holds `pass`, `fail` or `waiting`: an envelope 2 result of the fixed workflow the App accepted as it is |
 
 The base-behind rule (above) still runs first in rules 5b, 6b, 7a, 7b and 7c, so for them `EventBase` is the tip or
@@ -499,8 +486,7 @@ The base-behind rule (above) still runs first in rules 5b, 6b, 7a, 7b and 7c, so
 as everywhere.
 
 `RerunImpossible` is never an error: nobody can re-run that run, so the caller skips. In the sweep, rules 7a and 7b
-then publish `missing_upload`; the others keep the reason they published, whose recovery names a new run. A
-`ReviewChanged` reaction in `gate` does nothing and leaves that publication to rule 7b of the next pass. `Rerun`
+then publish `missing_upload`; the others keep the reason they published, whose recovery names a new run. `Rerun`
 writes no log and counts nothing; the pass counts `Summary.Rerun` for every `RerunRequested` and logs it with the rule
 number, and logs the unmet condition of a run it did not re-run ("sweep: no re-run"). If a re-run produces no upload, the check keeps its `action_required` reason with the
 recovery text "re-run the Archfit workflow"; the sweep does not loop.
@@ -509,13 +495,12 @@ Termination: what changes in GitHub state after each re-run site, so the next pa
 
 | Site                         | Why it does not fire again                                                                                                                                                            |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rule 5a                      | no re-run; the receipt concludes `action_required` with the current digests, so neither 5a nor 5b holds; rule 7b acts once no approval is missing                                     |
+| Rule 5a                      | no re-run; the receipt concludes `action_required` with the current digests, so neither 5a nor 5b holds; rule 7b acts once no protected change remains                                   |
 | Rules 0b, 0c                 | as rules 5b and 7c: the `Without` receipt on `archfit/state` carries the current digests and `stale_inputs`, and the guard stops 0c once the attempt advances |
 | Rule 5b                      | the `Without` receipt carries the current digests (or `""` for an empty list), so no stale clause holds; the reason is `stale_inputs`, which leaves only rule 7c                      |
 | Rule 6b                      | the publication sets `StartedAt ≥ e`, and the new receipt carries the next unexpired expiry from `Trusted`, so `StartedAt < e ≤ now` is false                                         |
 | Rules 7a, 7b                 | a successful `Rerun` advances the run's attempt, so the guard blocks; an upload then replaces the reason; no upload → the next pass publishes `missing_upload`, which no rule re-runs |
 | Rule 7c                      | guard only: it fires while the run is still completed at the receipt's attempt (the earlier `Rerun` failed) and stops once the attempt advances                                       |
-| `HandleEvent(ReviewChanged)` | the same `Rerun` function, called by `gate`; a redelivered event finds the run queued, in progress, or at a newer attempt                                                             |
 | `AfterAnswer`                | the pull record names the consumed proposal (`Pull.Rechecked`), and uploads keep its markers, so a redelivered push skips it, also after the re-run's own upload and after later proposals |
 
 A `Rerun` call that keeps failing (for example a revoked `actions: write` permission) is retried once per pass and
@@ -579,11 +564,11 @@ Its one repository is the whole pass, so a stop leaves the work undone, and the 
 - **Volatility**: high
 - **Balanced?**: yes
 - **Shared knowledge**: `Resolve` is fork-safe and reads only the protected ref; it returns an error on GitHub
-  failures and on a failed read of an approval record, never on a failed read of the entitlement. `Trusted.EarliestWaiverExpiry` is the earliest expiry not before `now`.
+  failures, never on a failed read of the entitlement. `Trusted.EarliestWaiverExpiry` is the earliest expiry not before `now`.
   `Entitlement` is an opaque part of `Trusted` for this module; `Without` hands it to `verdict.Suspended` unread.
   The stale test calls `Accepts`; `Without` calls `First`. `ProtectedPaths` and `MayBeProtected` are not used here.
 
-<!-- contract: Target, Trusted, Approval — restated from internal/gate/inputs/module.md -->
+<!-- contract: Target, Trusted — restated from internal/gate/inputs/module.md -->
 ```go
 // Target is the pull request (or default-branch push, or merge group) whose trusted inputs are resolved.
 type Target struct {
@@ -595,24 +580,14 @@ type Target struct {
     MergeGroup  bool // HeadSHA is a merge group commit of BaseRef's merge queue
 }
 
-type Approval string
-
-const (
-    ApprovalNotRequired Approval = "not_required" // no protected path changed
-    ApprovalGranted     Approval = "granted"      // a base-version owner, no agent, approved this exact head SHA
-    ApprovalMissing     Approval = "missing"
-)
-
 // Trusted is everything the gate believes, all read from the protected ref or GitHub itself.
 type Trusted struct {
     Settings             Settings
     SettingsFound        bool
-    PolicyDigests        []string // base digest, plus the head digest when Approval == ApprovalGranted
+    PolicyDigests        []string // the protected ref's digest; empty = no policy on the protected ref
     BaselineDigests      []string // same rule; empty = no baseline on the protected ref
     LabelsDigests        []string // same rule; empty = no labels file on the protected ref
-    ProtectedPaths       []string // protected paths this PR changes
-    Approval             Approval
-    ApprovedBy           string
+    ProtectedPaths       []string // protected paths this PR changes; nothing approves such a change
     EarliestWaiverExpiry time.Time // zero = no waivers
     Suspended            bool
     Entitlement          Entitlement
@@ -623,27 +598,13 @@ type Trusted struct {
 <!-- contract: Resolver — restated from internal/gate/inputs/module.md -->
 ```go
 type Resolver interface {
-    // Resolve reads the protected ref and reviews. It never reads policy, settings, baseline,
-    // owners, or CODEOWNERS from the head tree, except to hash an owner-approved candidate.
+    // Resolve reads the protected ref. It never reads policy, settings, baseline, owners, or CODEOWNERS from the head
+    // tree.
     Resolve(ctx context.Context, t Target, now time.Time) (Trusted, error)
-    // RecordPusher adds the login that pushed t's head, from a signed push delivery, to the record of who pushed it.
-    // The record is attribution only: no push approves anything. "" records nothing. Opening a pull request records
-    // nothing.
-    RecordPusher(ctx context.Context, t Target, login string) error
-    // Candidate returns the protected paths the pull request t changes, by the rule of Resolve, and the digest of each
-    // at t.HeadSHA: what an owner approves in the App.
-    Candidate(ctx context.Context, t Target) (Candidate, error)
-    // CanApprove reports whether login may approve t's head in the App now: nil, or ErrNothingToApprove, ErrForkPull,
-    // ErrAgentIdentity or ErrNotOwner, in that order. Owners and agents come from the settings of the protected ref.
-    CanApprove(ctx context.Context, t Target, login string) error
-    // Approve records login's approval of t's head, bound to its SHA, when CanApprove allows it and seen equals the
-    // Candidate digests (else ErrDigestsChanged). A record for that head already, by any owner, is success and stays
-    // as it is.
-    Approve(ctx context.Context, t Target, login string, seen map[string]string, now time.Time) error
 }
 ```
 
-The sweep calls only `Resolve`; `RecordPusher`, `Candidate`, `CanApprove` and `Approve` belong to the façade.
+The sweep calls only `Resolve`, the only method.
 
 <!-- contract: Accepts, First — restated from internal/gate/inputs/module.md -->
 ```go
@@ -704,7 +665,7 @@ type Publication struct {
     Report   *Report // nil when there is no usable report
     Trusted  Trusted
     // Resolve, when set, reads the trusted inputs again inside the head's publication lease, before anything is
-    // written. When the result differs from Trusted in any field (a digest, the owner approval, the settings) or no
+    // written. When the result differs from Trusted in any field (a digest, the protected paths, the settings) or no
     // longer accepts a Receipt digest, the decision was computed from inputs that are no longer current: Publish
     // writes nothing and returns ErrStaleInputs, so it never replaces a publication computed from newer inputs. nil
     // skips the check; sweep corrections, which are never a success, leave it nil.
@@ -838,7 +799,7 @@ type Facts struct {
 }
 
 // Decide is a pure function. It checks, in order: subscription, settings, source and producer eligibility,
-// governance (owner approval), input integrity, evidence completeness, then the engine decision.
+// governance (a protected change, which nothing approves), input integrity, evidence completeness, then the engine decision.
 // The step table of gate/verdict is the normative order.
 func Decide(f Facts) Outcome
 
@@ -868,8 +829,8 @@ func Suspended(e Entitlement) Outcome
 // t.ProtectedPaths, exactly as step 5 of Decide sets it.
 func ApprovalMissing(t Trusted) Outcome
 
-// Unapproved is the condition of step 5: t needs an owner approval that it does not have. Only the two known passing
-// values clear it, so an unknown Approval fails closed.
+// Unapproved is the condition of step 5: t changes a protected path. Nothing approves that change (M2 task 26): only
+// the App's policy pull request changes the policy, and it is not decided here.
 func Unapproved(t Trusted) bool
 ```
 
@@ -960,7 +921,7 @@ func (s Settings) Recheck() RecheckMode
   `Pulls.OpenPulls`, `Actions.Run`, `Actions.Rerun`, `Actions.Artifact` (rule 5c, named `report.ArtifactName`, capped at
   `report.MaxBytes`), `WorkflowRuns.HeadRuns` and `Commits.Compare` (the re-run guard), `Pulls.Pull`,
   `Merges.UpdateBranch` and `Comments.CreateComment` (`AfterAnswer`). `WorkflowRun.CreatedAt` is the creation time a
-  re-run keeps. `UpdateBranch` answers before GitHub updates the branch. `Review` is not used here.
+  re-run keeps. `UpdateBranch` answers before GitHub updates the branch.
 
 <!-- contract: RepoRef, Repo, ErrNotFound, ErrRateLimited — restated from internal/github/api/module.md -->
 ```go
@@ -1006,7 +967,7 @@ type Repos interface {
 }
 ```
 
-<!-- contract: Pulls, Pull, Review — restated from internal/github/api/module.md -->
+<!-- contract: Pulls, Pull — restated from internal/github/api/module.md -->
 ```go
 type Pull struct {
     Number       int
@@ -1026,12 +987,6 @@ type Pull struct {
     UpdatedAt    time.Time
 }
 
-type Review struct {
-    Reviewer  string // login
-    State     string // "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED"
-    CommitSHA string // the head SHA the review was submitted on
-}
-
 type Pulls interface {
     Pull(ctx context.Context, r RepoRef, number int) (Pull, error)
     OpenPulls(ctx context.Context, r RepoRef) ([]Pull, error)
@@ -1040,9 +995,6 @@ type Pulls interface {
     // ChangedFiles lists changed paths; a rename lists both the old and the new path.
     // truncated is true when GitHub's file list was cut off: callers must assume any path changed.
     ChangedFiles(ctx context.Context, r RepoRef, number int) (paths []string, truncated bool, err error)
-    Reviews(ctx context.Context, r RepoRef, number int) ([]Review, error)
-    // TeamMember reports whether login belongs to "org/team-slug".
-    TeamMember(ctx context.Context, r RepoRef, team, login string) (bool, error)
 }
 ```
 
@@ -1091,7 +1043,7 @@ type Actions interface {
 - **internal/gate** (parent): functional, gate / 1 / 1, high, balanced. Constructs the sweeper with `Deps.Sweep` and the `Admissions` as the `Admitter`,
   calls `Run(ctx, Deps.Now())` from `Gate.Sweep` and `RunRepo` from `HandleEvent` on a protected default-branch push,
   calls `Recheck` from `HandleEvent` on a default-branch push that changes no protected path,
-  calls `Rerun` for `ReviewChanged`, `AfterAnswer` when a policy push consumes a proposal, `Without` for the fork refusal of a new head, and `GroupWithdrawal` inside a merge group's lease on `merge_group` `destroyed` and on a review of a queued pull request, re-publishes `Sweeper`, `Summary` and `Config` to `app`.
+  calls `AfterAnswer` when a policy push consumes a proposal, `Without` for the fork refusal of a new head, and `GroupWithdrawal` inside a merge group's lease on `merge_group` `destroyed`, re-publishes `Sweeper`, `Summary` and `Config` to `app`.
 
 ## Change Vectors
 
@@ -1129,21 +1081,21 @@ type Actions interface {
   `RateLimited` and a nil error so the scheduler does not treat it as a failure. `RunRepo` returns the error, so the
   webhook queue retries the push that started it.
 - A failure for one installation, repository or pull never aborts the pass.
-- An installation that is not admitted is skipped whole: no `ListRepos`, no `Resolve`, no write. An approval that
+- An installation that is not admitted is skipped whole: no `ListRepos`, no `Resolve`, no write. An admission that
   cannot be read is an error, not a refusal: the installation is skipped and counted in `Errors`, and a later pass
   tries again.
 - Reconciliation window (stated, not zero): a missed event or an expiry is repaired within one sweep interval
   (hourly **[default]**) plus the customer's CI time. During that window the old check result stands.
   For rule 5c the window is the CI time of the default-branch push run plus the sweep interval: until the tip has a
   report there is nothing to compare with, and a push-time `Recheck` that finds none decides nothing.
-- A Store outage inside `Resolve` means "not suspended"; the sweep never suspends on missing data. A pull whose approval
-  record cannot be read counts as an error and keeps its check, like the lease failure below. The same outage
+- A Store outage inside `Resolve` means "not suspended"; the sweep never suspends on missing data. A pull whose inputs
+  cannot be read counts as an error and keeps its check, like the lease failure below. The same outage
   fails every `Publish`, `Pending`, `Warn` and `Reconcile`, which need `gate/feedback`'s publication lease: each such
   pull counts as an error and its check stays as it was until a pass after the Store is back. The sweep never writes
-  `success`; a check that was green, with an approval withdrawn meanwhile, stays green until that pass.
+  `success`; a check that was green, over a protected change made meanwhile, stays green until that pass.
 - Logs (`log/slog` default logger **[default]**): installation ID, repository ID, PR number, head SHA, rule
-  number, action, digests, timings, and the `Summary`. Never paths, messages, owner or reviewer names.
-- Imports: standard library, `gate/inputs`, `gate/feedback`, `gate/verdict`, `gate/decisions` (rule 8 only), `wire/settings`,
+  number, action, digests, timings, and the `Summary`. Never paths, messages or owner names.
+- Imports: standard library, `gate/inputs`, `gate/feedback`, `gate/verdict`, `wire/settings`,
   `wire/report`, `wire/result`, `github/api`, and `gate/records` with `store` for the Archfit 4 records `AfterAnswer` reads
   and writes. The Archfit 3 rules keep no state. Never `control`, `app`, LLM or UI packages.
 - `now` is a parameter; the sweep never reads the clock.
@@ -1155,17 +1107,13 @@ calls and serves `State` from what was published; injectable errors. Time is the
 
 ### Unit Tests
 
-- **Test name**: `TestDecisionRequestsAreRevalidatedOncePerOnboardedPull`, `TestDecisionRevalidationSkipsPullsThatAreNotOnboarded`, `TestDecisionRevalidationFailureDoesNotSkipTheCheckRules`
-  **Scenario**: three open pulls (one with a second accepted digest, one advisory); a pull without settings; a failing `Revalidate`.
-  **Expected behavior**: `Revalidate` once per onboarded pull with that pull's trusted digests; never for a pull without settings; the check rules still run and the failure counts in `Errors`.
 - **Test name**: `TestStaleReceipt`
-  **Scenario**: table: policy digest equal to base; equal to approved head digest; different; trusted policy list empty with receipt digest `""`; trusted policy list empty with a receipt digest; policy `""` with a trusted policy; baseline `""` with no trusted baseline; baseline `""` with a trusted baseline; baseline set with none trusted; zero receipt (empty reason) with empty trusted lists.
+  **Scenario**: table: policy digest equal to base; equal to a second trusted digest; different; trusted policy list empty with receipt digest `""`; trusted policy list empty with a receipt digest; policy `""` with a trusted policy; baseline `""` with no trusted baseline; baseline `""` with a trusted baseline; baseline set with none trusted; zero receipt (empty reason) with empty trusted lists.
   **Expected behavior**: fresh, fresh, stale, fresh, stale, stale, fresh, stale, stale, stale. For every combination of a trusted list (empty, one, two digests) and a receipt digest (`""`, each entry, an unknown one), in each of the three digest fields, a receipt with a reason is stale exactly when `inputs.Accepts` is false.
 - **Test name**: `TestWithdrawnReceipt`
-  **Scenario**: every receipt conclusion (`success`, `failure`, `action_required`, empty, an unknown value) × every
-  approval (`missing`, empty, an unknown value, `granted`, `not_required`).
-  **Expected behavior**: `Withdrawn` is true exactly for `success` or `failure` with an approval other than
-  `granted` and `not_required`.
+  **Scenario**: every receipt conclusion (`success`, `failure`, `action_required`, empty, an unknown value) × trusted
+  inputs with and without a protected path.
+  **Expected behavior**: `Withdrawn` is true exactly for `success` or `failure` while a protected path is changed.
 - **Test name**: `TestNoPolicyWindowIsQuiet`
   **Scenario**: required mode, no policy on the base, a pull whose receipt is `policy_missing` with `PolicyDigest == ""` from run 9 attempt 1; two passes; then the policy merges (trusted list = one digest) and two more passes; the same start with the policy deleted from the base.
   **Expected behavior**: passes 1 and 2 make no `Publish`, no `Rerun`, and leave the `policy_missing` feedback; pass 3 publishes `stale_inputs` and requests exactly one re-run of run 9; pass 4 is quiet. `RunRepo` from the push trigger gives the same single repair as pass 3.
@@ -1210,7 +1158,7 @@ calls and serves `State` from what was published; injectable errors. Time is the
 ### Integration Contract Tests
 
 - **Test name**: `TestRunRepairsEachRule`
-  **Scenario**: one repository with one pull per rule row (fork, suspended, no check, pending 59 minutes, pending 60 minutes, stale policy, stale baseline, stale labels, waiver in 3 days, waiver expired, restored entitlement, late approval, withdrawn approval) plus a healthy one.
+  **Scenario**: one repository with one pull per rule row (fork, suspended, no check, pending 59 minutes, pending 60 minutes, stale policy, stale baseline, stale labels, waiver in 3 days, waiver expired, restored entitlement, no protected change any more, a protected change over a success) plus a healthy one.
   **Expected behavior**: the action of each row and nothing else; the healthy pull gets no write; `Summary` counters match.
 - **Test name**: `TestSecondPassIsQuiet`
   **Scenario**: run twice with unchanged fakes (the publisher reflects the first pass); every `Rerun` of the first pass succeeded, so those runs are queued or at a newer attempt.
@@ -1278,24 +1226,23 @@ calls and serves `State` from what was published; injectable errors. Time is the
 - **Test name**: `TestRestoredEntitlementNeedsFreshEvidence` (T21)
   **Scenario**: a suspended pull whose receipt came from an upload; the entitlement is restored; then the same for a pull suspended before any upload.
   **Expected behavior**: a re-run is requested and the check stays `action_required` until a new upload; the second becomes `missing_upload`; no old receipt is turned into `success`.
-- **Test name**: `TestLateOwnerApproval` (T14)
-  **Scenario**: receipt `owner_approval_missing`; an owner approves the head but the review webhook was lost; the
-  approval is for an older SHA; no approval is needed any more (`not_required`).
-  **Expected behavior**: one re-run; nothing for the older SHA; one re-run when no approval is needed.
-- **Test name**: `TestWithdrawnApprovalEndsSuccess` (T14)
+- **Test name**: `TestOwnerApprovalMissingClearsWithTheProtectedChange` (T14)
+  **Scenario**: an `owner_approval_missing` receipt while the pull request changes a protected path, and when it changes none any more. Two passes each.
+  **Expected behavior**: no re-run and no publication for the protected change; one re-run of the receipt's run when no protected change remains.
+- **Test name**: `TestAProtectedChangeEndsSuccess` (T14)
   **Scenario**: a `success` receipt, a `failure` receipt, and a `success` receipt whose policy digest is also stale,
-  each while the owner approval is now missing; then a `success` receipt with the approval still granted, an
-  `action_required` receipt with the approval missing, and advisory mode. Two passes each.
+  each while the pull request changes a protected path; then a `success` receipt with no protected change, a
+  `action_required` receipt that already asks for action, and advisory mode. Two passes each.
   **Expected behavior**: the first three publish `owner_approval_missing` once, with the protected paths in
   `Detail`, the run identity of the receipt and the current digests, from inputs resolved a second time inside the
   lease at the pass time, and without `Resolve`; no re-run. The last three publish nothing.
 - **Test name**: `TestWithdrawalDecidesInsideTheLease` (T14)
   **Scenario**: a withdrawn `success` receipt of run 9.1; while the pass waits for the lease nothing lands, attempt
-  9.2 turns green, the owner approves again, or the inputs become unreadable; separately, the lease is unavailable.
-  **Expected behavior**: `owner_approval_missing` over 9.1, then over 9.2; nothing for the new approval; nothing
+  9.2 turns green, the protected change goes away, or the inputs become unreadable; separately, the lease is unavailable.
+  **Expected behavior**: `owner_approval_missing` over 9.1, then over 9.2; nothing once the change is gone; nothing
   and one counted error for the unreadable inputs and for the missing lease.
-- **Test name**: `GroupWithdrawal`, covered through the gate façade by `TestMergeGroupDestroyedInvalidatesItsResult`, `TestMergeGroupMergedKeepsItsResult` and `TestOwnerWithdrawalOnAQueuedPullDowngradesItsGroups`
-  **Scenario**: a pending or decided group check whose queue entry is gone, whose member changed, or whose member lost its owner approval; a check that already asks for action; advisory mode; no check; a merged group.
+- **Test name**: `GroupWithdrawal`, covered through the gate façade by `TestMergeGroupDestroyedInvalidatesItsResult`, `TestMergeGroupMergedKeepsItsResult` and `TestMergeGroupWithUnapprovedProtectedChangeInAnyMember`
+  **Scenario**: a pending or decided group check whose queue entry is gone, whose member changed, or one of whose members changes a protected path; a check that already asks for action; advisory mode; no check; a merged group.
   **Expected behavior**: `merge_group_unverified`, or `owner_approval_missing`, published over the current receipt; nothing for the others; a merged group's result stands.
 - **Test name**: `TestStoreOutageDoesNotSuspend` (T21)
   **Scenario**: the resolver reports `Suspended` false because the Store failed, for a pull with a `success` receipt.
@@ -1317,13 +1264,13 @@ calls and serves `State` from what was published; injectable errors. Time is the
   **Scenario**: three pull requests, then a second pass.
   **Expected behavior**: one `BranchHead`, one tip check read, one artifact read for the tip and one for each pull request; the second pass reads no artifact (the cache).
 - **Test name**: `TestRecheckAfterAPush` (A3)
-  **Scenario**: `Recheck` for the current tip; for an older tip; a missing branch; a rate limit; pull requests with stale inputs, a withdrawn approval, a suspension, a pending check, no check and advisory mode; a fork.
+  **Scenario**: `Recheck` for the current tip; for an older tip; a missing branch; a rate limit; pull requests with stale inputs, a protected change, a suspension, a pending check, no check and advisory mode; a fork.
   **Expected behavior**: the first publishes `target_moved`; the second does nothing, resolves nothing and reads no artifact; the missing branch does nothing; the rate limit is returned wrapping `api.ErrRateLimited` with `Summary.RateLimited`; every other row writes nothing and reads no tip report.
 - **Test name**: `TestTargetMovedIsNotRepairedByOtherRules` (A3)
   **Scenario**: a `target_moved` receipt with a waiver that expired after it was written, and one without a waiver.
   **Expected behavior**: no write and no re-run (rules 6b and 7c).
 - **Test name**: `TestTargetMovedDecidesInsideTheLease` (A3)
-  **Scenario**: while the pass waits for the lease a newer run replaces the receipt, the policy changes, the approval is withdrawn, recheck is switched off, or the inputs cannot be read.
+  **Scenario**: while the pass waits for the lease a newer run replaces the receipt, the policy changes, a protected change appears, recheck is switched off, or the inputs cannot be read.
   **Expected behavior**: nothing is written; the unreadable inputs count one error.
 - **Test name**: `TestTargetMovedFailsClosedOnReadErrors` (A3)
   **Scenario**: a rate limit on `BranchHead`; a failing `Reconcile`.

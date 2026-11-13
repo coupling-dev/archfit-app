@@ -23,8 +23,7 @@ import (
 )
 
 // Deps are the only things the gate path may touch: GitHub, OIDC, the Store and a clock. The Store holds entitlements,
-// admissions, pusher attribution, bounded gate/inputs owner decisions and reviewer-request notifications, gate/decisions
-// agent requests, and gate/feedback publication leases.
+// admissions, the Archfit 4 records (requests, proposals, approvals), and gate/feedback publication leases.
 type Deps struct {
 	GitHub     *api.Client
 	OIDC       oidc.Verifier

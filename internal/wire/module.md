@@ -2,7 +2,7 @@
 
 **Path**: internal/wire/
 **Parent**: internal/ (Archfit App)
-**Submodules**: envelope, decision, report, result, request, settings, policy, policy3, manifest, wording
+**Submodules**: envelope, report, result, request, settings, policy, policy3, manifest, wording
 
 ## Purpose
 
@@ -13,11 +13,10 @@ and the control plane, a version bump would touch domain logic, and nobody could
 
 ## Functional Responsibilities
 
-- Publish ten child packages, each owning one contract: the upload envelope, the decision request an unattended agent
-  files, the no-source state report, the engine's result JSON and text record, the request line and the request issue
+- Publish nine child packages, each owning one contract: the upload envelope, the no-source state report, the engine's result JSON and text record, the request line and the request issue
   (Archfit 4), the App settings file, the App's view of the engine policy files, policy schema 3 (Archfit 4), the approved identity manifest,
   and the words Archfit output never uses (design 5, for tests).
-- State the versioning rule all ten follow.
+- State the versioning rule all nine follow.
 - Hold the shared conformance fixtures in `wire/testdata/` (a transparent folder, not a module) used by the
   children's tests and by consumer tests such as the gate verdict table.
 - The parent package itself has no code except `doc.go`.
@@ -51,7 +50,6 @@ child is normative in the child's own `module.md`; it is not restated here.
 | Package                  | Owns                                                                                                 |
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
 | `internal/wire/envelope` | report-envelope v1: `Envelope`, `Kind`, `Decode`, `PayloadDigest`, `Schema`; upload envelope 2: `EnvelopeV2`, `DecodeV2`, `SchemaV2Document` |
-| `internal/wire/decision` | decision-request v1: `Request`, `Extract`, `Decode`, `Identify`, `Schema`, `StatusMarker`, `StatusLine`  |
 | `internal/wire/report`   | engine state v1 as no-source transport: `Report` and its parts, `Decode`, `EngineVersions`, size cap |
 | `internal/wire/result`   | engine result v1 (Archfit 4): `Result` and its parts, `Status`, `Decode`, `Record`, vendored goldens   |
 | `internal/wire/request`  | the request line and issue (Archfit 4, App-owned): `ParseComment`, `ParseIssue`, `Error.RequestKey`, `Answer.Key`, `Issue`, `Rejection`; goldens the engine vendors |
@@ -64,7 +62,7 @@ child is normative in the child's own `module.md`; it is not restated here.
 ### Versioning rule
 
 - Every contract carries a version identifier: envelope `archfit.report-envelope.v1`, and `archfit.upload-envelope.v2` for
-  Archfit 4 (beside v1 only on the `archfit-4` branch, never at a release); decision request `archfit.decision-request.v1`; report
+  Archfit 4 (beside v1 only on the `archfit-4` branch, never at a release); report
   `archfit.architecture-state.v1`; result `archfit.result.v1` (Archfit 4); settings file `version: 1`; manifest data `version: 1`; policy follows the
   engine release of the manifest's `current` row, v3.4.0 today; policy schema 3 (`policy3`) follows the engine commit in its `SCHEMA_SOURCE`, a tag at the release; the engine baseline file `archfit.baseline.v3`. The request line has none: it is a command people type. It changes only
   with an engine release that vendors its new goldens, and old and new lines are never accepted side by side (design 11.7).
@@ -291,12 +289,11 @@ what keeps it balanced.
 
 ## Internal Design
 
-Ten independent leaves. There is no flow between them and no composition in the parent.
+Nine independent leaves. There is no flow between them and no composition in the parent.
 
 | Child      | Contributes                                                  | Third-party imports |
 | ---------- | ------------------------------------------------------------ | ------------------- |
 | `envelope` | what the producer states about an upload; the payload digest | none                |
-| `decision` | the decision request an unattended agent files (Archfit 3)   | none                |
 | `report`   | the no-source payload boundary                               | none                |
 | `result`   | the engine's result JSON and text record (Archfit 4)         | none                |
 | `settings` | the App-owned file on the protected ref                      | one YAML library    |
@@ -316,7 +313,7 @@ Rules between children:
   `envelope` and `report`; SHA-256 hex formatting exists in `envelope` (prefixed) and `policy` (bare). Each is a few
   lines, and the two digests have different formats and meanings.
 - `doc.go` in the parent states the placement rule and the versioning rule for Go readers.
-- Fan-out is ten, over the 4±1 guidance: the leaves share nothing, so the count adds no coupling.
+- Fan-out is nine, over the 4±1 guidance: the leaves share nothing, so the count adds no coupling.
 
 ## Change Vectors
 
