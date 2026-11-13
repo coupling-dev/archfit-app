@@ -2,8 +2,7 @@
 
 Updated for M2 task 26: no approval exists; a queued member that changes a protected path blocks its group.
 
-Status: contract revision 1, frozen for archfit-action v3.1.1. A change to this contract is a new revision that
-both repositories adopt together.
+Status: contract revision 2 is the Archfit 4.0 contract and Action 4 ships it. Revision 1 (the v1 envelope) is no longer accepted by the App.
 
 This page states how the App gates a GitHub merge queue on the default branch, and what the Action must send for a
 merge group. The [architecture](../architecture.md) and the [user guide](../user-guide.md#merge-queue) describe the
@@ -22,49 +21,31 @@ of its last entry.
 
 ## Wire contract (for the Action)
 
-The envelope schema is unchanged: `archfit.report-envelope.v1`,
-[`internal/wire/envelope/envelope.v1.schema.json`](../../internal/wire/envelope/envelope.v1.schema.json). A merge
-group report uses these values:
+The App accepts [`archfit.upload-envelope.v2`](../../internal/wire/envelope/envelope.v2.schema.json). Every field is self-reported. The body is result JSON v1. Action 4's schema is byte-identical to this App schema; its pin lands with archfit-action PR #16. A merge-group envelope contains:
 
-| Field                                       | Value                                                                 |
-| ------------------------------------------- | --------------------------------------------------------------------- |
-| `kind`                                      | `report`                                                              |
-| `event`                                     | `merge_group`                                                         |
-| `pull_request`                              | `0`                                                                   |
-| `head_sha`                                  | `merge_group.head_sha` of the event, which is `GITHUB_SHA` of the run |
-| `analyzed_sha`                              | the same as `head_sha`: the group commit is the integrated tree       |
-| `base_sha`, `merge_base_sha`, `integration` | `""`                                                                  |
-| `policy_change`                             | absent (the schema refuses it for every event except `pull_request`)  |
-| `run_id`, `run_attempt`                     | the run, as for every event                                           |
-| `baseline_digest`, `labels_digest`          | bare hex SHA-256 of the blobs the engine read, or `""` without a file |
-| engine identity, `payload_digest`           | as for every report                                                   |
+| Field | Value |
+| --- | --- |
+| `schema_version` | `archfit.upload-envelope.v2` |
+| `repository` | GitHub repository `owner/name` |
+| `event`, `pull_request` | `merge_group`, `0` |
+| `head_sha` | The merge group's checked commit |
+| `merge_base_sha` | The merge base of the group head and target tip |
+| `target_ref`, `target_sha` | The target branch ref and fetched tip |
+| `policy_digest` | `sha256:` digest of the policy bytes used |
+| `run_id`, `run_attempt` | GitHub Actions run and attempt numbers |
+| `engine_version`, `image_digest`, `platform` | Engine identity and runner platform |
+| `payload_digest` | `sha256:` digest of the exact result body |
 
-Fixtures: [`merge-group-report.json`](../../internal/wire/testdata/envelope/merge-group-report.json) (valid) and
-[`invalid-merge-group-with-base.json`](../../internal/wire/testdata/envelope/invalid-merge-group-with-base.json)
-(refused: `base_sha` set).
+The App's [merge-group fixture](../../internal/wire/testdata/envelope-v2/merge-group.json) is an example. The v1 fixtures were removed in Archfit 4.
 
 The Action must:
 
-1. Run only on `merge_group` with action `checks_requested`, and only when `merge_group.base_ref` is
-   `refs/heads/<default branch>`.
-2. Analyse exactly the group commit `merge_group.head_sha`.
-3. When an endpoint is set, write `.archfit.yaml`, `.archfit-baseline.json` and `.archfit-labels.yaml` from the git
-   blobs **at the group commit**, and report their digests. A blob that differs from the default branch ends the
-   group (below). Without an endpoint no one checks it, so the files come from `merge_group.base_sha`, a
-   default-branch commit.
-4. Not create a check named `archfit/gate` or `archfit/state`. The App writes them, on the group commit.
-5. Upload to `POST <endpoint>/v1/reports` as for every report.
+1. Run only on `merge_group` with action `checks_requested` and the default branch as `base_ref`.
+2. Check the group head named by the event and verify the checkout and group base.
+3. Select `.archfit.yaml` using the merge base, checked head and target tip. The Action reports its digest; the App independently judges the policy against protected inputs.
+4. Upload the result to `POST <endpoint>/v1/reports` when an endpoint is configured. Without one, the Action fails the job unless the result is `pass`.
 
-Answers that are specific to a merge group:
-
-| Status | Body                                     | Meaning for the Action                                                                                        |
-| ------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 200    | `{"conclusion": "...", "reason": "..."}` | Accepted and published on the group commit. Not "passed"                                                      |
-| 409    | `{"error": "stale_group"}`               | The queue has no entry with this head commit: the group was destroyed, rebuilt or merged. Final: do not retry |
-| 409    | `{"error": "stale_attempt"}`             | A newer attempt of the run exists. Final                                                                      |
-| 503    | `{"error": "unavailable"}`               | The App could not read the queue, the inputs, or wrote nothing because they changed. Retry                    |
-
-All other answers are those of every report upload.
+The App's 200 response contains `status` and, when applicable, `reason`. Accepted does not mean passed.
 
 ## How the App binds the upload
 
