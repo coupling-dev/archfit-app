@@ -100,7 +100,6 @@
     body?.pulls?.filter((p) => p.tone !== 'success' && !waitingStates.includes(p.state)).length ?? 0,
   );
   const actions = $derived(body !== null && body.admin && (body.can_start || body.can_discover));
-  const decisionsPage = $derived(repoPage(route.fullName, '/decisions'));
   const needsYou = $derived(
     body !== null && (body.next !== '' || body.diagnostic !== '' || actions || body.decisions.length > 0),
   );
@@ -179,7 +178,7 @@
         <span class="n">{body.decisions_error ? '–' : body.decisions_pending}</span>
         <span class="t">Decision {!body.decisions_error && body.decisions_pending === 1 ? 'request' : 'requests'} pending</span>
         <span class="s"
-          >{body.decisions_error ? 'could not be read' : 'wait for an owner'} · <a class="inline" href={decisionsPage}>All decisions</a></span
+          >{body.decisions_error ? 'could not be read' : 'wait for an owner'}</span
         >
       </div>
     </div>
@@ -196,7 +195,7 @@
                 >{body.decisions_pending} decision {body.decisions_pending === 1 ? 'request waits' : 'requests wait'} for an
                 owner.</strong
               >
-              An agent cannot approve its own request: an architecture owner decides on the pull request page.
+              An agent cannot approve its own request.
             </p>
             <ul class="plain" aria-label="Decision requests that wait for an owner">
               {#each body.decisions as d (d.href + d.finding + d.created)}
@@ -210,7 +209,7 @@
             </ul>
             {#if body.decisions_pending > body.decisions.length}
               <p class="muted small">
-                {body.decisions_pending - body.decisions.length} more. <a class="inline" href={decisionsPage}>See all decisions</a>.
+                {body.decisions_pending - body.decisions.length} more.
               </p>
             {/if}
           </div>

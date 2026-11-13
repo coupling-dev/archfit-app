@@ -45,28 +45,7 @@ export interface DecisionRow {
   requester: string; // whoever commented; never an approval
   head: string; // short
   created: string; // RFC 3339
-  href: string; // the pull request page, where an owner decides
-}
-
-// PolicyChangeRow is an open pull request that changes the protected policy.
-export interface PolicyChangeRow {
-  number: number;
-  title: string;
-  headline: string; // the policy change card's classification
-  approval: 'granted' | 'missing' | 'not_needed' | 'unknown';
-  by?: string;
-  href: string;
-}
-
-// Inbox is the decisions page: what waits for an owner. Read only.
-export interface Inbox {
-  requests: DecisionRow[];
-  requests_more: number;
-  requests_error: boolean;
-  policy_changes: PolicyChangeRow[];
-  policy_more: number;
-  policy_error: boolean;
-  policy_unread: number; // open pull requests whose check could not be read
+  href: string; // the pull request page
 }
 
 export interface Step {
@@ -293,38 +272,8 @@ export interface ScreenLine {
   text: string;
 }
 
-// DecisionRequest is a request an unattended agent filed on the pull request. Every text in it but the status is the
-// agent's: render it as text only.
-export interface DecisionRequest {
-  finding_id: string;
-  policy_digest: string; // with finding_id, the key of the request; Approve and Decline send it back in the path
-  rule_id: string;
-  from: string;
-  to: string;
-  status: 'pending' | 'approved' | 'declined' | 'stale';
-  reason?: string; // why it is declined or stale
-  requester: string;
-  why: string;
-  alternatives: string[];
-  proposal_pr?: number;
-  proposal_url?: string;
-  can_decide: boolean; // the signed-in user is an owner who did not file it, and it is pending
-}
-
 export type Pull = PullHead &
-  Findings & { approval?: Approval; decisions?: DecisionRequest[]; first_screen?: ScreenLine[] };
-
-// Decided answers the Approve and Decline buttons of a decision request: the requests as they stand now.
-export interface Decided {
-  decisions: DecisionRequest[];
-  notice: string;
-}
-
-// Approved answers the Approve button: the approval read again.
-export interface Approved {
-  approval: Approval | null;
-  notice: string;
-}
+  Findings & { approval?: Approval; first_screen?: ScreenLine[] };
 
 // RepoFindings is the latest report of the default branch, for the overview.
 export type RepoFindings = Findings & {
@@ -365,39 +314,6 @@ export interface DataSharing {
   notice?: string;
 }
 
-// A problem of a policy text. line and column are 1-based; a problem with no single place has neither.
-export interface Diagnostic {
-  line?: number;
-  column?: number;
-  message: string;
-}
-
-export interface Check {
-  name: string;
-  state: string;
-  tone: Tone;
-  reason: string;
-}
-
-export type DraftState = 'none' | 'draft' | 'awaiting_review' | 'published' | 'closed';
-
-export interface PolicyPage {
-  branch: string;
-  head_sha: string; // the open draft's head, '' without one; every write sends it back
-  content: string;
-  draft: DraftState;
-  draft_state: string; // the draft's state in words, '' for none
-  draft_url: string;
-  checks: Check[];
-  diagnostics: Diagnostic[];
-  can_write: boolean;
-  can_ready: boolean;
-  managed: { offer: boolean; off?: string; data_sharing?: string };
-  run?: { state: 'pending' | 'failed' | 'completed' | 'unknown'; url: string };
-  since?: string;
-  notice?: string;
-}
-
 // Installation is one account that installed the App, as the operators' page lists it.
 export interface Installation {
   id: number;
@@ -417,21 +333,93 @@ export interface AdminBody {
   unreadable: number;
 }
 
-export interface Checked {
-  diagnostics: Diagnostic[];
+// The request page (internal/control/ui/requests.go, answers.go): one request, the preview of an answer, the outcome.
+export type AnswerKind = 'approve' | 'approve-until' | 'reject';
+
+export interface RequestModule {
+  name: string;
+  layer?: string;
+  volatility?: string;
+  subdomain?: string;
+  depends_on: string[];
+}
+
+export interface RequestEarlier {
+  kind: 'deny' | 'exception';
+  rule: string;
+  from: string;
+  to?: string;
+  why?: string;
+  instead?: string;
+  expires?: string;
+}
+
+export interface RequestView {
+  number: number;
+  state: 'open' | 'answered' | 'closed';
+  reason: string;
+  rule: string;
+  path?: string;
+  from?: string;
+  to?: string;
+  expires?: string;
+  record: string;
+  verified: boolean; // false: the numbers are as reported by the CLI
+  balance?: { value: number; max: number; min: number };
+  policy: boolean; // false: the default branch has no policy of version 3
+  modules: RequestModule[];
+  allowed: boolean; // the policy already allows from -> to
+  earlier: RequestEarlier[];
+}
+
+export interface PullEffect {
+  number: number;
+  status: string;
+  waits: boolean;
+  clears: number;
+  left: number;
+}
+
+export interface Preview {
+  answer: AnswerKind;
+  until?: string;
+  diff: string; // '' when the answer writes no policy line
+  policy_digest: string;
+  loosens: boolean;
+  pulls: PullEffect[];
+}
+
+export interface Answered {
+  pull_request?: number; // the policy pull request; absent when no policy line changes
+  state?: 'merged' | 'later' | 'refused';
+  merge?: string;
+  notice: string;
+}
+
+// The passkey page (internal/control/ui/passkey.go). A passkey's id is opaque; the user sees its dates.
+export interface Passkey {
+  id: string;
+  created: string;
+  last_used?: string;
+}
+
+export interface Passkeys {
+  passkeys: Passkey[];
+}
+
+export interface Registered {
+  passkey: Passkey;
   notice: string;
 }
 
 import { refused, waiting } from './gate';
 import { signInHref } from './route';
 
-// ApiError is a failed call: the sentence to show, for a refused policy text its problems, and for a repository of an
-// account no operator approved that account.
+// ApiError is a failed call: the sentence to show, and for a repository of an account no operator approved that account.
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
-    readonly diagnostics: Diagnostic[] = [],
     readonly waiting = '',
   ) {
     super(message);
@@ -475,15 +463,10 @@ async function answer<T>(res: Response): Promise<T> {
     throw new ApiError(res.status, unreadable);
   }
   if (!res.ok) {
-    const {
-      error: message,
-      diagnostics,
-      waiting: account,
-    } = (body ?? {}) as { error?: unknown; diagnostics?: unknown; waiting?: unknown };
+    const { error: message, waiting: account } = (body ?? {}) as { error?: unknown; waiting?: unknown };
     throw new ApiError(
       res.status,
       typeof message === 'string' && message ? message : unreadable,
-      Array.isArray(diagnostics) ? (diagnostics as Diagnostic[]) : [],
       typeof account === 'string' ? account : '',
     );
   }
@@ -501,7 +484,7 @@ export function explain(e: ApiError, here: string, go: (url: string) => void = (
 // explainLoad is explain for the read that fills a page. Its 404 (a repository that does not exist or the user cannot
 // see, a pull request that is not one) replaces the whole page, as the server's error page did, and so does the 403 of
 // an account waiting for approval, with the Waiting page. Never for a write: a write's 404 stays a sentence on the
-// page, so a form or the editor keeps what the user typed.
+// page, so a form keeps what the user typed.
 export function explainLoad(e: ApiError, here: string, go?: (url: string) => void): string {
   if (e.waiting) {
     waiting.set(e.waiting);

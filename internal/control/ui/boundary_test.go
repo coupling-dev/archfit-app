@@ -678,6 +678,7 @@ func TestErrorPagesAreTheShell(t *testing.T) {
 		sentence string
 	}{
 		{"a pull request number that is not one", func(*env) {}, "/r/" + repoName + "/pull/0", http.StatusNotFound, "Not found."},
+		{"a request number that is not one", func(*env) {}, "/r/" + repoName + "/requests/0", http.StatusNotFound, "Not found."},
 		{"a path of no page", func(*env) {}, "/static/app.css", http.StatusNotFound, "Not found."},
 		{"a route's path with a method it does not take", func(*env) {}, "/auth/logout", http.StatusNotFound, "Not found."},
 	}

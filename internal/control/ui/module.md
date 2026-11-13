@@ -7,15 +7,16 @@
 ## Purpose
 
 UI is the browser surface of Archfit: sign-in, the organization overview, repository status and
-onboarding actions, the YAML policy editor with drafts as pull requests, the read-only graph, the
-explicit AI request, the Data sharing page and the entitlement banner. It holds no state of its own: every
+onboarding actions, the request page where an owner answers with a passkey, the passkey page, the read-only graph,
+the Data sharing page and the entitlement banner. It holds no state of its own: every
 page is derived from GitHub and the control-plane modules at request time. Without it customers
-could still work GitHub-first, but onboarding, schema-guided editing and consent would have no home.
+could still work GitHub-first, but onboarding, answers to requests and consent would have no home.
 
 ## Functional Responsibilities
 
 - Serve the web app (`web/`, Svelte 5 built by Vite, embedded from `spa/`) for the overview, the repository page,
-  the pull request page, both graph pages, the decisions page, Data sharing and the policy editor, and its JSON API under `/api/`. ui
+  the pull request page, both graph pages, the request page, the passkey page and Data sharing, and its JSON API under
+  `/api/`. ui
   renders no HTML of its own: an error page is the same shell with the error's status and sentence.
 - Authenticate every request through `session` and authorize every repository API call at the needed permission. A
   repository page is the shell, the same for every repository, and needs only a session.
@@ -28,23 +29,21 @@ could still work GitHub-first, but onboarding, schema-guided editing and consent
 - Repository status: onboarding `Progress`, actions to start onboarding or dispatch discovery, entitlement banner; once
   a report came in, a watch line on the default branch, the pull requests that wait for an update after the target moved
   and the decision requests that wait for an owner.
-- Decisions: a read-only inbox of the decision requests of unattended agents and of the pull requests that change the
-  protected policy. The buttons are on the pull request page; nothing here decides.
-- Policy editor: load the policy into a CodeMirror 6 editor (YAML, line numbers, folding, history, search), check it
-  on the server (when loaded, on Check, and before every save) and list its problems by line, above the editor and as
-  marks in it, save as a commit on a draft branch through `proposal` bound to the head SHA that was loaded, show the
-  draft state and its way to the merge (saved → checked → ready → owner approves → merged), mark ready for review.
+- Request page: one request with its record, balance, modules, the preview of each answer and earlier answers
+  (`requests.go`), and the owner's answer with the passkey step-up (`answers.go`, `passkey.go`). The passkey page lists,
+  registers and removes the user's own passkeys.
+- Decisions and the policy editor: their APIs stay until M2 task 26 removes them; no page reads them since M2 task 24
+  removed the Decisions page, the editor, its AI assist and the owner actions of the pull request page.
 - Graph: fetch the latest report artifact, decode it, build the view through `graph`, answer it as JSON, mark it stale.
   The web app draws it.
 - Pull request graph: the same admitted report as the pull request page. Link origin aggregates current finding
   evidence; it does not establish newly added pairs or source sites.
 - Repository findings: the latest default-branch report's findings in the groups and words of the PR comment, for the
   overview's counters and list.
-- Pull request page: the result/report of one head, plus an architecture-decision banner based on the current protected settings and changed paths even when the report is absent. It shows the exact settings source, owners/teams, one-any authority, advisory/required mode, signed-in user's ability/refusal, objections, history and exact-head actions. Request changes, withdrawal and override require reasons that are mirrored on the PR; a GitHub-origin override authorizes Archfit only and leaves native GitHub review/branch requirements independent. The unattended-agent decision-request flow remains separate.
-- Assist: turn the request into an `assist.Request`, show the outcome or the pending customer run.
+- Pull request page: the result/report of one head, plus an architecture-decision banner based on the current protected settings and changed paths even when the report is absent. It shows, read only, the exact settings source, owners/teams, one-any authority, advisory/required mode, objections and history. The page has no owner action since M2 task 24; the action APIs stay until M2 task 26.
 - Data sharing: per managed feature, what leaves the customer's environment, who allowed it and when, and the
   preconditions it still needs; allow and revoke `source_processing` and `managed_llm` consent (repository administrators
-  only). The editor says why managed mode is off and gives an administrator an inline Allow, the same write as this page.
+  only).
 
 ## Subdomain Classification
 
@@ -64,7 +63,7 @@ pilot; product.md leaves usability targets open.
   when it mounts, and a read no page takes is dropped quietly. Until an answer comes, the frame and a grey skeleton of
   each section (`components/Skeleton.svelte`, CSS only, still under reduced motion). A `404` from the read that fills a
   page replaces the page with the error page's "This page cannot be shown" and no repository tabs (`explainLoad`,
-  `lib/gate.ts`); a write's `404` stays a sentence on the page, so a form or the editor keeps what the user typed.
+  `lib/gate.ts`); a write's `404` stays a sentence on the page, so a form keeps what the user typed.
 - The CSRF scheme: `hex(HMAC-SHA256(key = User.Token, "archfit-csrf"))` **[default]**, stateless and per session. The
   web app reads it from `/api/session` and sends it as the `X-CSRF-Token` header; the one form left, Sign out, sends
   it as the `csrf` field.
@@ -138,8 +137,11 @@ as one that does not exist, and the app shows that answer as the error page, wit
 - `GET /r/{o}/{n}/graph` [session] — the shell for the repository graph.
 - `GET /r/{o}/{n}/pull/{number}/graph` [session] — the shell for the pull request graph; the same `404` rule for the number.
 - `GET /r/{o}/{n}/data-sharing` [session] — the shell, for the Data sharing page; its API needs admin.
-- `GET /r/{o}/{n}/policy` [session] — the shell, for the policy editor; the app reads `?branch=` and `?since=` from its
-  own URL and a `#L<n>` hash selects that line.
+- `GET /r/{o}/{n}/requests/{number}` [session] — the shell for the request page; the same `404` rule for the number as
+  the pull request page.
+- `GET /r/{o}/{n}/passkeys` [session] — the shell for the passkey page.
+- `GET /r/{o}/{n}/policy` and `GET /r/{o}/{n}/decisions` [session] — the shell; the app has no page there since M2 task
+  24 (its "Not found"), and M2 task 26 removes the routes.
 - `GET /admin` [session, operator] — the shell, for the admin page; `404` for any signed-in user who is not an operator.
 - `GET /r/{o}/{n}/consent` [session] — `308` to `/r/{o}/{n}/data-sharing`, from the path alone: the same answer for
   every repository, so it confirms nothing.
@@ -195,7 +197,8 @@ package does not know is `422`, so a body cannot name a repository, a user or an
   the PR comment's rule; `added` counts the links whose origin is `added`. `policy_href` is the policy file on GitHub
   at the ref whose text is the report's policy (the head, else the base branch). The same `404` rule.
 - `GET /api/repos/{o}/{n}/graph` [read] — `{unavailable, view, stale_reason, policy_href, branch}`: the latest
-  default-branch report against the policy on that branch. No link carries an origin.
+  default-branch report against the policy on that branch. `policy_href` is the policy file on GitHub at the open
+  draft's head, else the default branch. No link carries an origin.
 - `GET /api/repos/{o}/{n}/findings` [read] — `{unavailable, branch, no_baseline, attention_reason, …}`: the latest
   default-branch report's findings in the pull request page's groups, without origins. `attention_reason`, only for
   the verdict `needs_attention`, follows the engine's rule in its order: active advisories, required rules not
@@ -409,7 +412,7 @@ func New(c Config, o OAuth, u Users, repos Repos, now func() time.Time) (Session
 - **Volatility**: high
 - **Balanced?**: yes — parent and child
 - **Shared knowledge**: ui supplies a decoded `Report` and the policy text, gets a `View`, serializes it as JSON into
-  the page, links each node to `/r/{o}/{n}/policy#L<PolicyLine>` when the line is not 0, shows the stale banner
+  the page, links each node to the policy file on GitHub (`policy_href#L<PolicyLine>`) when the line is not 0, shows the stale banner
   when `Stale`, and the incomplete banner (`id="incomplete"`) when `Incomplete`. The web app uses a link's `Status`
   as its CSS class and prints it, an accepted one with its `Accepted` ("accepted violation", "accepted advisory").
 
@@ -1234,15 +1237,9 @@ type OAuth interface {
   `//go:embed all:spa`. The build is not committed: `spa/` holds only its `.gitignore`, and then the shell answers a
   page that says to run `make web`, so `go build` and `go test` need no Node. The release image builds it
   (`Dockerfile`, stage `web`). Styles are one stylesheet, `web/src/app.css`, the tokens and components of
-  `docs/archive/design/prototypes/archfit.css`; no CSS framework and no runtime style injection (no Svelte transitions), with
-  one exception: the policy editor.
-- The policy editor is CodeMirror 6 (`@codemirror/*`, MIT, pinned exactly in `web/package-lock.json`), the owner's
-  decision of 19 October 2026 over a home-made highlighter: YAML, folding, history, search and lint marks are its
-  stock extensions, and an accessible editor is not small code to keep. It ships in the policy page's lazy chunk
-  (at most 200 KB gzip, `web/scripts/size.mjs`), never on first load. CodeMirror mounts its styles as a `<style>`
-  element; `EditorView.cspNonce` gives it the shell's nonce, and nothing else in the app uses it. Its theme reads the
-  app's tokens, so light and dark need no second set. Tab is not bound: YAML takes no tabs, and Tab must leave the
-  editor for keyboard users.
+  `docs/archive/design/prototypes/archfit.css`; no CSS framework and no runtime style injection (no Svelte transitions).
+- The policy editor (CodeMirror 6) left with M2 task 24. Its `@codemirror/*` packages stay in `web/package.json` for
+  the YAML edit of M3 task 10, and the shell keeps its style nonce for it; nothing in the app reads either today.
 
 ### Handler chain
 
@@ -1608,8 +1605,7 @@ changed; no private gate child or duplicate TypeScript policy is imported.
 - Inherited: control-plane code. The gate never calls ui; a panic or outage here changes no check. Standard library only
   on the Go side. Browser code comes only from `web/`, built at build time from the npm lockfile and served by the App:
   no runtime CDN, which the CSP would block anyway. First load of a page: at most 120 KB gzip of JavaScript and 20 KB
-  of CSS; the graph chunk at most 120 KB gzip, its layout worker at most 480 KB and the editor chunk at most 200 KB
-  **[default]**, checked in CI (`web/scripts/size.mjs`).
+  of CSS; the graph chunk at most 120 KB gzip, and its layout worker at most 480 KB **[default]**, checked in CI (`web/scripts/size.mjs`).
 - Declared restatement: three kinds of link are built from the literal host `https://github.com/`: the assist
   workflow's runs page, the pull-request search and the default-branch commits page. `internal/github` owns the
   knowledge of GitHub hosts and publishes no URL builder; `control/assist` (`RunURL`) and `control/onboarding`
@@ -1802,7 +1798,7 @@ gate's and tested there. The clock is injected.
 - **Test name**: `TestGraphPageBuildsFromArtifact`
   **Scenario**: the blocked wire fixture (`hard_gates: fail`, no baseline) as the `archfit-report` artifact of the latest default-branch run.
   **Expected behavior**: the shell answers `200`; the graph API's `view` equals `graph.Build(report, policy)`;
-  `policy_href` is the editor; not stale; `incomplete`; marker strings placed in fields the decoder drops
+  `policy_href` is the policy file on GitHub at the default branch; not stale; `incomplete`; marker strings placed in fields the decoder drops
   (a `matched_by` key outside `MatchedByKeys`, measurement, task declarations) appear nowhere in the answer.
 - **Test name**: `TestGraphPageShowsTheEngineSeamPolicy`
   **Scenario**: the unmodified capture `real-seam-policy` of the shared wire corpus as the `archfit-report` artifact.
@@ -2055,22 +2051,21 @@ gate's and tested there. The clock is injected.
   names them (a distributed monolith only in a flagged deploy-unit dependency's reason, never in where the distance
   was measured), the flagged dependency's reason and the count line, the decision sentences for `fail` with and
   without blockers, `unmeasured`, `pass` and an unknown value; the age words (`lib/age.ts`: just now, minutes, hours,
-  days, a time that cannot be read, a time ahead of now); the decisions route; the architecture-decision words (`lib/approval.ts`): normal approval is hidden for another active objection, override is offered for exact App/GitHub objections, and saved approval text never implies merge success.
-- `web/src/lib/decisions.ts` (vitest): which requests offer Approve and Decline (only a pending one the server marks
-  decidable), the status word with its reason, the write's path.
-- `web/scripts/size.mjs`: the first-load, graph chunk, layout worker and editor chunk budgets above; no lazy chunk in
-  the first load.
+  days, a time that cannot be read, a time ahead of now); the request and passkey routes; the digest words of the read-only architecture-decision box (`lib/approval.ts`).
+- `web/src/lib/request.ts` and `web/src/lib/webauthn.ts` (vitest): which answers need a passkey, the date and
+  `instead` rules, the status line, balance and preview words; base64url, the passkey options and the credential JSON.
+- `web/scripts/size.mjs`: the first-load, graph chunk and layout worker budgets above; no lazy chunk in the first load.
+- Playwright `web/e2e/request.spec.ts` and `web/e2e/passkey.spec.ts`: the request page and the passkey page with the
+  API mocked and a Chromium virtual authenticator; each answer's writes (digest, step-up, answer with its token; a
+  reject with none), registration with and without a step-up, removal, refusals, axe, phone width and the "Not used"
+  words of `web/e2e/not-used.json`, which must equal `internal/wire/wording/wording.go.txt`.
 - Playwright smoke (`web/e2e/smoke.spec.ts`): the production build behind `vite preview` with `web/csp.txt` as its
   header and `/api` mocked in the browser. Landing, repositories, overview, starting onboarding and discovery, and the
   theme toggle; the overview's watch line, its two counts (a count that could not be read shown as "–" with its reason),
-  the decision requests under Needs you with a link to the decisions page and the pull request that waits for an update
-  with the modules named; the Decisions tab (pending first, policy-change status, no button, empty/failed states, agent text, no foreign links); the pull request page (first screen, cycle and evidence, no report; protected-path banner with exact settings source and links; owner/contributor eligibility; required/advisory mode; exact head/settings/digest actions; required reasons; App/GitHub override with native review retained; saved-but-refresh-failed retry; no controls on closed PRs; bounded audit history; the separate unattended-agent decision request flow); the policy page: CodeMirror's `<style>` element with the
-  nonce, the problems as a list and as marks, a `#L<n>` hash and a problem selecting their line, Check and Save sending
-  the text, the base head and the CSRF header, a refused save keeping the text, a reader offered no write, managed mode
-  off with its reason and the inline Allow, and a customer-mode request following its run; the graph pages, laid out by
+  the decision requests under Needs you and the pull request that waits for an update
+  with the modules named; the pull request page (first screen, cycle and evidence, no report); the graph pages, laid out by
   the worker, the inspector's balance reading of a flagged dependency and the count line, and a worker that fails to load reported instead of a layout that never ends; a server error page (its sentence, no repository tabs) and the footer's licences link; a repository the user cannot see and one
   that does not exist shown the same, as the API's "Not found." with no repository tabs; a page asking its data beside
-  `/api/session`, its skeleton up until both answer; a save's `404` shown on the policy page with the editor's text kept;
-  a long policy scrolls inside the editor (at most 60% of the viewport) and a line link scrolls to its line; every page keeps its content and footer at most 1280px wide and centred, and has no sideways scroll at 390px; on a phone a two-module cycle stacks its modules in a column and its labels render at 11px or more (a longer cycle keeps its size and scrolls in its box); at 390px the findings and evidence tables show one block per row, every cell labelled, with no table scrolling sideways and no row taller than its cells; a graph page with no banner renders no empty block in the page's flow; the agents fold draws no rule when it is first in its box; a dimension that warns or fails stands out; the pull request page states the engine verdict, the known issues accepted earlier with their coupling and no suggested move, and the known issues fixed; policy edits are entered with one input event per string, so key order cannot race CodeMirror's DOM reading; every page has no
+  `/api/session`, its skeleton up until both answer; every page keeps its content and footer at most 1280px wide and centred, and has no sideways scroll at 390px; on a phone a two-module cycle stacks its modules in a column and its labels render at 11px or more (a longer cycle keeps its size and scrolls in its box); at 390px the findings and evidence tables show one block per row, every cell labelled, with no table scrolling sideways and no row taller than its cells; a graph page with no banner renders no empty block in the page's flow; the agents fold draws no rule when it is first in its box; a dimension that warns or fails stands out; the pull request page states the engine verdict, the known issues accepted earlier with their coupling and no suggested move, and the known issues fixed; every page has no
   `securitypolicyviolation` event and no axe violation in light and in dark; the onboarding write carries the CSRF
   header and a JSON body.

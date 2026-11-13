@@ -14,17 +14,22 @@ describe('parseRoute', () => {
     ['/r/acme/app/data-sharing/x', { kind: 'unknown' }],
     ['/r/acme/app/pull/4/data-sharing', { kind: 'unknown' }],
     ['/r/acme/app/graph/data-sharing', { kind: 'unknown' }],
-    ['/r/acme/app/policy', { kind: 'policy', owner: 'acme', name: 'app', fullName: 'acme/app' }],
-    ['/r/acme/app/policy/', { kind: 'policy', owner: 'acme', name: 'app', fullName: 'acme/app' }],
-    ['/r/acme/app/policy/check', { kind: 'unknown' }],
-    ['/r/acme/app/decisions', { kind: 'decisions', owner: 'acme', name: 'app', fullName: 'acme/app' }],
-    ['/r/acme/app/decisions/', { kind: 'decisions', owner: 'acme', name: 'app', fullName: 'acme/app' }],
-    ['/r/acme/app/decisions/4', { kind: 'unknown' }],
-    ['/r/acme/app/pull/4/decisions', { kind: 'unknown' }],
+    ['/r/acme/app/policy', { kind: 'unknown' }],
+    ['/r/acme/app/decisions', { kind: 'unknown' }],
+    ['/r/acme/app/passkeys', { kind: 'passkeys', owner: 'acme', name: 'app', fullName: 'acme/app' }],
+    ['/r/acme/app/passkeys/', { kind: 'passkeys', owner: 'acme', name: 'app', fullName: 'acme/app' }],
+    ['/r/acme/app/passkeys/x', { kind: 'unknown' }],
+    ['/r/acme/app/pull/4/passkeys', { kind: 'unknown' }],
+    ['/r/acme/app/requests/431', { kind: 'request', number: 431, owner: 'acme', name: 'app', fullName: 'acme/app' }],
+    ['/r/acme/app/requests/431/', { kind: 'request', number: 431, owner: 'acme', name: 'app', fullName: 'acme/app' }],
+    ['/r/acme/app/requests/0', { kind: 'unknown' }],
+    ['/r/acme/app/requests/4x', { kind: 'unknown' }],
+    ['/r/acme/app/requests', { kind: 'unknown' }],
+    ['/r/acme/app/requests/431/graph', { kind: 'unknown' }],
+    ['/r/acme/app/pull/4/requests/431', { kind: 'unknown' }],
     ['/r/acme/app/consent', { kind: 'unknown' }],
     ['/r/acme/app/graph', { kind: 'graph', owner: 'acme', name: 'app', fullName: 'acme/app' }],
     ['/r/acme/app/graph/x', { kind: 'unknown' }],
-    ['/r/acme/app/pull/4/policy', { kind: 'unknown' }],
     ['/r/acme/%E0%A4%A', { kind: 'unknown' }],
     ['/r/acme/%2E%2E', { kind: 'unknown' }],
     ['/r/./app', { kind: 'unknown' }],
@@ -41,7 +46,7 @@ describe('parseRoute', () => {
 
 describe('links', () => {
   it('escapes each part of a repository path', () => {
-    expect(repoPage('acme/app', '/policy')).toBe('/r/acme/app/policy');
+    expect(repoPage('acme/app', '/passkeys')).toBe('/r/acme/app/passkeys');
     expect(repoPage('ac me/a?p')).toBe('/r/ac%20me/a%3Fp');
   });
 

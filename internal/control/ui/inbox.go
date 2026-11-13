@@ -37,7 +37,7 @@ type decisionRow struct {
 	Requester string `json:"requester"` // whoever commented; never an approval
 	Head      string `json:"head"`      // the commit the request is about, short
 	Created   string `json:"created"`   // RFC 3339 UTC
-	Href      string `json:"href"`      // the pull request page, where an owner decides
+	Href      string `json:"href"`      // the pull request page
 }
 
 // policyChangeRow is an open pull request that changes the protected policy.

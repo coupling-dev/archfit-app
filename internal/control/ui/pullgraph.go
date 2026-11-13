@@ -48,13 +48,18 @@ func (s *server) apiPullGraph(r *http.Request, sc scope) (any, error) {
 		body.StaleReason = noPolicy
 	}
 	body.View = &view
-	body.PolicyHref = "https://github.com/" + sc.repo.FullName + "/blob/" + escapeRef(ref) + "/" + policy.PolicyPath
+	body.PolicyHref = policyBlob(sc.repo.FullName, ref)
 	for _, l := range view.Links {
 		if l.Origin == report.PairAdded {
 			body.Added++
 		}
 	}
 	return body, nil
+}
+
+// policyBlob is the policy file of repo at ref on GitHub; a module's line is its "#L<line>".
+func policyBlob(repo, ref string) string {
+	return "https://github.com/" + repo + "/blob/" + escapeRef(ref) + "/" + policy.PolicyPath
 }
 
 // escapeRef escapes each segment of a ref for a URL path: a branch name may hold "#" or "?", and "/" separates segments

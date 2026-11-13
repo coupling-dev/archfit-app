@@ -37,7 +37,7 @@ separate, testable steps. Without this module a report is a self-reported file a
   mark pending requests stale when the head moves or the pull request closes. Nothing is granted; an owner decides.
 - For the App's pull-request page only (`Approvals`): read protected owners, source snapshot, active native/App objections, audit history and reviewer-notification status; record approval, request changes, withdrawal or reasoned override; mirror reasons, then re-evaluate state and affected merge groups. A native review remains unchanged by an App override.
 - For the App's pages only (`DecisionQueue`): count the decision requests that wait for an owner and return the records
-  of the first few, from the Store alone, for the overview's counters and the decisions page. It grants nothing.
+  of the first few, from the Store alone, for the overview's counters. It grants nothing.
 - For the App's request page only (`RequestViews`, M2 task 17): read a request (reason, record, balance verified or "as
   reported", the two modules of the policy at the default branch's tip, earlier answers) and preview an answer (the
   policy diff, whether it needs the passkey, the open pull requests it touches by their stored request keys). It writes

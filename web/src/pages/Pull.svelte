@@ -2,28 +2,20 @@
   import FindingGroups from '../components/FindingGroups.svelte';
   import FirstScreen from '../components/FirstScreen.svelte';
   import DecisionLine from '../components/DecisionLine.svelte';
-  import DecisionRequests from '../components/DecisionRequests.svelte';
   import PullHead from '../components/PullHead.svelte';
   import { basisText, resultWord } from '../lib/evidence';
   import Skeleton from '../components/Skeleton.svelte';
-  import { explain, explainLoad, postJSON, repoAPI, type ApiError, type Approved, type Pull, type Session } from '../lib/api';
-  import { digestWord, offersApprove, offersOverride } from '../lib/approval';
+  import { explainLoad, repoAPI, type ApiError, type Pull } from '../lib/api';
+  import { digestWord } from '../lib/approval';
   import { firstJSON } from '../lib/early';
   import { repoPage, type Repo } from '../lib/route';
   import { trustSentence } from '../lib/feedback';
 
-  let { route, session, here }: { route: Repo & { number: number }; session: Session; here: string } = $props();
+  let { route, here }: { route: Repo & { number: number }; here: string } = $props();
 
   let body = $state<Pull | null>(null);
   let failure = $state('');
   let copied = $state('');
-  let approving = $state(false);
-  let approvalNotice = $state('');
-  let approvalError = $state('');
-  let refreshNeeded = $state(false);
-  let changesReason = $state('');
-  let withdrawReason = $state('');
-  let overrideReason = $state('');
 
   function load() {
     firstJSON<Pull>(repoAPI(route.owner, route.name, `pulls/${route.number}`)).then(
@@ -32,72 +24,6 @@
     );
   }
   load();
-
-  async function decide(action: 'approve' | 'request-changes' | 'withdraw' | 'override', reason = '') {
-    const a = body?.approval;
-    if (!body || !a) return;
-    approving = true;
-    approvalNotice = approvalError = '';
-    refreshNeeded = false;
-    try {
-      const path = repoAPI(route.owner, route.name, `pulls/${route.number}/${action}`);
-      const res = await postJSON<Approved>(path, session.csrf, {
-        head_sha: a.head_sha,
-        base_sha: a.base_sha,
-        digests: a.digests,
-        ...(reason ? { reason } : {}),
-        ...(action === 'override'
-          ? { objection_ids: a.objections.map((objection) => objection.id) }
-          : {}),
-      });
-      body.approval = res.approval ?? undefined;
-      approvalNotice = res.notice;
-      if (action === 'request-changes') changesReason = '';
-      if (action === 'withdraw') withdrawReason = '';
-      if (action === 'override') overrideReason = '';
-    } catch (e) {
-      const failure = e as ApiError;
-      approvalError = explain(failure, here);
-      refreshNeeded = failure.status === 502;
-      load();
-    } finally {
-      approving = false;
-    }
-  }
-
-  async function retryDecisionRefresh() {
-    if (!body?.approval) return;
-    approving = true;
-    approvalNotice = approvalError = '';
-    try {
-      const path = repoAPI(route.owner, route.name, `pulls/${route.number}/refresh-decision`);
-      const res = await postJSON<Approved>(path, session.csrf, {});
-      body.approval = res.approval ?? undefined;
-      approvalNotice = res.notice;
-      refreshNeeded = false;
-    } catch (e) {
-      approvalError = explain(e as ApiError, here);
-      refreshNeeded = true;
-      load();
-    } finally {
-      approving = false;
-    }
-  }
-
-  function requestChanges(event: SubmitEvent) {
-    event.preventDefault();
-    void decide('request-changes', changesReason);
-  }
-
-  function withdraw(event: SubmitEvent) {
-    event.preventDefault();
-    void decide('withdraw', withdrawReason);
-  }
-
-  function override(event: SubmitEvent) {
-    event.preventDefault();
-    void decide('override', overrideReason);
-  }
 
   async function copyTasks() {
     if (!body) return;
@@ -129,8 +55,6 @@
     {@const nativeObjections = activeObjections.filter((objection) => objection.source === 'github')}
     {@const overriddenObjections = a.objections.filter((objection) => objection.overridden)}
     {@const overriddenNative = overriddenObjections.filter((objection) => objection.source === 'github')}
-    {@const canApproveNormally = offersApprove(a, session.login)}
-    {@const canOverride = offersOverride(a)}
     {@const openForDecision = body.state === 'open' || body.state === 'draft'}
     <section class="box" aria-labelledby="architecture-decision">
       <div class="box-head">
@@ -166,11 +90,6 @@
           <p class="flash warn">Reviewer requests are not confirmed. Ask the configured owners on GitHub. This does not change who may decide.</p>
         {/if}
         <p class="muted small">A new push invalidates approval. Approval is not a successful check or merge.</p>
-        {#if body.author.toLowerCase() === session.login.toLowerCase() && a.can_decide}
-          <p class="muted small">You opened this PR. You can decide here as an architecture owner; GitHub cannot accept your own review.</p>
-        {:else if !a.can_decide && a.reason}
-          <p class="muted">{a.reason}</p>
-        {/if}
 
         {#if activeObjections.length}
           <section aria-labelledby="active-objections">
@@ -201,16 +120,10 @@
         {#if !openForDecision}
           <p class="flash">This pull request is {body.state}. No new architecture decision is available.</p>
         {/if}
-        {#if openForDecision && canApproveNormally}
-          <button class="btn sm primary" type="button" disabled={approving} onclick={() => decide('approve')}>
-            Approve architecture change
-          </button>
-        {/if}
 
         {#if overriddenObjections.length}
           <section aria-labelledby="earlier-overrides">
             <h3 id="earlier-overrides">Earlier overridden objections</h3>
-            <p class="muted small">A new override must also cover these objections.</p>
             <ul class="plain">
               {#each overriddenObjections as objection (objection.id)}
                 <li><strong>@{objection.login}</strong> · {objection.source === 'github' ? 'GitHub review' : 'Archfit App decision'}<p>{objection.reason}</p></li>
@@ -221,33 +134,6 @@
               <p class="flash warn">The Archfit override did not dismiss the native review. GitHub may still require it to be resolved before merge.</p>
             {/if}
           </section>
-        {/if}
-
-        {#if openForDecision && canOverride}
-          <form class="stack-sm" onsubmit={override}>
-            <label for="override-reason"><strong>Override and approve</strong> — give a reason covering all objections above, including earlier overrides.</label>
-            <textarea id="override-reason" bind:value={overrideReason} required maxlength="1000" rows="3" disabled={approving}></textarea>
-            <p class="muted small">Your reason will be posted to the PR (public for public repositories). GitHub reviews and branch protection remain independent.</p>
-            <button class="btn sm" type="submit" disabled={approving}>Override and approve</button>
-          </form>
-        {/if}
-
-        {#if openForDecision && a.can_decide}
-          <form class="stack-sm" onsubmit={requestChanges}>
-            <label for="changes-reason"><strong>Request changes</strong> with a reason. This does not close the pull request.</label>
-            <textarea id="changes-reason" bind:value={changesReason} required maxlength="1000" rows="3" disabled={approving}></textarea>
-            <p class="muted small">Your reason will be posted to the PR (public for public repositories).</p>
-            <button class="btn sm" type="submit" disabled={approving}>Request changes</button>
-          </form>
-        {/if}
-
-        {#if openForDecision && a.can_withdraw}
-          <form class="stack-sm" onsubmit={withdraw}>
-            <label for="withdraw-reason"><strong>Withdraw my approval</strong> with a reason.</label>
-            <textarea id="withdraw-reason" bind:value={withdrawReason} required maxlength="1000" rows="3" disabled={approving}></textarea>
-            <p class="muted small">Your reason will be posted to the PR (public for public repositories). Archfit will stop counting your approval. Your GitHub review is unchanged; other owners' approvals remain in force.</p>
-            <button class="btn sm" type="submit" disabled={approving}>Withdraw my approval</button>
-          </form>
         {/if}
 
         <p class="muted small">Latest Archfit state: {body.result || body.unavailable || 'no report received for this commit yet'}. A saved decision can still be waiting for evidence or other checks.</p>
@@ -281,22 +167,8 @@
             </ol>
           </details>
         {/if}
-        {#if approvalNotice}<p class="flash success" role="status">{approvalNotice}</p>{/if}
-        {#if approvalError}<p class="flash error" role="alert">{approvalError}</p>{/if}
-        {#if refreshNeeded || (openForDecision && a.can_decide && a.history.length > 0)}<button class="btn sm" type="button" disabled={approving} onclick={retryDecisionRefresh}>Retry check refresh</button>{/if}
       </div>
     </section>
-  {/if}
-  {#if body.decisions?.length}
-    <DecisionRequests
-      requests={body.decisions}
-      number={route.number}
-      fullName={route.fullName}
-      {session}
-      {here}
-      onchange={(list) => (body!.decisions = list)}
-      onfailed={load}
-    />
   {/if}
   {#if !first.length && !body.unavailable && body.required && body.result !== 'action required' && body.decision?.hard_gates === 'pass' && body.decision.blockers === 0 && !body.decision.unevaluated.length && body.violation_count === 0}
     <p class="flash success">No required architecture change requested in the evaluated scope.{body.accepted_count ? ' Accepted debt remains.' : ''}</p>

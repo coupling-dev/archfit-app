@@ -75,6 +75,7 @@ func repoRoutes(fullName string) []route {
 		{http.MethodPost, api + "/passkeys/step-up", permRead, nil, stepUpJSON{Action: "approve", Request: 431}},
 		{http.MethodPost, api + "/passkeys/step-up/finish", permRead, nil, passkeyCredentialJSON{Credential: json.RawMessage(`{"id":"x"}`)}},
 		{http.MethodPost, api + "/passkeys/" + fakePasskeyID + "/remove", permRead, nil, passkeyTokenJSON{Token: fakeToken}},
+		{http.MethodGet, base + "/requests/431", signedInOnly, nil, nil},
 		{http.MethodPost, api + "/requests/431/answer/digest", permRead, nil, answerJSON{Answer: "approve"}},
 		{http.MethodPost, api + "/requests/431/answer", permRead, nil, answerJSON{Answer: "reject", Instead: "Use the port."}},
 	}
@@ -349,7 +350,7 @@ func TestGraphPageBuildsFromArtifact(t *testing.T) {
 	if len(want.Nodes) == 0 || len(want.Links) == 0 || want.Stale {
 		t.Fatalf("fixture gives a useless view: %+v", want)
 	}
-	if got.PolicyHref != "/r/"+repoName+"/policy" || got.Branch != mainBranch || got.Pull != nil || got.Unavailable != "" || got.StaleReason != "" {
+	if got.PolicyHref != "https://github.com/"+repoName+"/blob/"+mainBranch+"/.archfit.yaml" || got.Branch != mainBranch || got.Pull != nil || got.Unavailable != "" || got.StaleReason != "" {
 		t.Errorf("body = %+v", got)
 	}
 	// hard_gates: fail with nothing unevaluated: the violations are the message, so the page does not say incomplete.

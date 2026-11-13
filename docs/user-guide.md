@@ -465,7 +465,7 @@ reason applies. The detail lists the dimensions that are not fully measured and 
 
 | Reason                   | Recovery                                                                                                               |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `owner_approval_missing` | An eligible architecture owner decides on the exact candidate in GitHub or the App. Resolve active objections first, or use a reasoned App override; native GitHub reviews and branch protection remain independent. |
+| `owner_approval_missing` | An eligible architecture owner approves the exact candidate on GitHub. Resolve active objections first; native GitHub reviews and branch protection remain independent. |
 | `settings_missing`       | Merge the onboarding pull request to add `.archfit-app.yaml`.                                                          |
 | `policy_missing`         | Merge the Archfit policy pull request.                                                                                 |
 | `policy_defect`          | Fix the selectors of the listed rules by owner-approved pull request, or mark an intentional guard rule `guard: true`. |
@@ -523,7 +523,7 @@ classification in the upload. Only the v3.4.0 amd64 row is Current for new workf
 - Historical v3.0.0 to v3.2.3 reports remain readable, without an identity, because their state schema matches except for
   the keys v3.3.0 and v3.4.0 added. Reading an old report does not approve its identity. Unknown report releases give
   `report_invalid`.
-- The policy editor uses the v3.4.0 config schema, which adds `target_branch` and `module_review.change_gate`. The
+- `/schema/policy.json` serves the v3.4.0 config schema, which adds `target_branch` and `module_review.change_gate`. The
   engine's check remains the authority for policy semantics.
 - Pull-request origin comes from `--base <merge base>`. It is display evidence, never an exemption from a blocker.
 
@@ -580,29 +580,20 @@ break, and a why over 2 000 characters is too long. Both make the report `report
 
 All policy changes use a pull request. The App never writes to the default branch.
 
-1. Open **Policy** for the repository.
-2. Edit the YAML text. **Check** lists problems without saving.
-3. Select **Save to draft PR**.
-4. Read the Archfit check on the draft pull request.
-5. Select **Ready for review**.
-6. Read the **Architecture decision** banner and have a current owner approve or resolve the objections on the exact candidate (GitHub review or App decision).
-7. Merge the pull request on GitHub.
+An owner changes the policy by answering a request on its page, `/r/<owner>/<repo>/requests/<number>`. The page shows
+the reason, the record with its balance, the two modules, what each answer writes into `.archfit.yaml` and which open
+pull requests it changes, and earlier answers about the same modules. Then:
 
-The editor verifies YAML and policy schema rules. The Archfit check verifies engine rules.
-The merge on GitHub publishes the policy. The **Draft** box shows where the draft is: saved, checked, ready for
-review, architecture decision, merged.
+- **Approve and merge** adds the dependency to `depends_on`, or an exception for another rule.
+- **Approve until a date** adds an exception that ends on the date you choose.
+- **Reject** adds a `deny` rule with what to do instead. It answers later requests for the same thing.
 
-- Problems are listed above the editor and marked in it. Select a problem's line to go there. A link from the graph
-  (`#L12`) opens the policy at that line.
-- The editor has YAML highlighting, line numbers, folding, undo and search (Ctrl+F or Cmd+F). Tab is not an indent:
-  it moves to the next control, as YAML takes no tabs.
-- The editor has a fixed height and scrolls on its own, so the buttons stay close on a long policy.
-- **Save**, **Ready for review** and the AI box need `write` permission. With `read`, the page shows the policy and
-  **Check** only.
-- **Ready for review** needs the edits saved first. Leaving the page with unsaved edits asks first.
+Approve and approve until a date loosen the policy, so your passkey confirms them; reject needs none. Register a
+passkey first on `/r/<owner>/<repo>/passkeys`: only an owner named in the policy can, or a repository administrator
+before the first policy. A second passkey, and each removal, is confirmed with a passkey you already have.
 
-If the draft changed on GitHub after the page loaded, the App refuses the save and keeps your text. Select
-**Discard my edits and load the draft**, then apply the edit again.
+The App writes the answer into its policy pull request and merges it. With **Merge later** the pull request stays open
+and the next answers join it.
 
 ### Policy change card
 
@@ -623,70 +614,16 @@ change": read the diff of `.archfit.yaml` yourself.
 
 A pull request that changes a protected path shows an **Architecture decision** banner on its App page. The App-authored pull-request comment and, in required mode, the pending `archfit/gate` check show the same authority information even when no usable report exists. The App derives the changed paths from GitHub and the protected path set from `.archfit-app.yaml` at the current protected-settings commit. It does not use report claims to name the paths or owners.
 
-The banner links to the exact protected settings commit and lists the configured owners and teams. Any one current eligible owner may decide; the list is not a quorum. A repository writer or administrator is not an architecture owner unless the protected settings name that login or team. Agents never decide. An approving GitHub review and an App decision can both grant Archfit authorization for the exact candidate. GitHub does not accept a pull-request author's own review; an eligible sole owner who opened the PR can use the App.
+The banner links to the exact protected settings commit and lists the configured owners and teams. Any one current eligible owner may decide; the list is not a quorum. A repository writer or administrator is not an architecture owner unless the protected settings name that login or team. Agents never decide. An approving GitHub review grants Archfit authorization for the exact candidate; an App decision saved before M2 still counts. GitHub does not accept a pull-request author's own review, and the App no longer records one, so a sole owner who opened the PR cannot approve it.
 
-Available actions are:
+The banner is read only: the App records no owner decision on a pull request. An owner approves the exact candidate
+with a GitHub review. A policy change goes through a request instead (see [Change the policy](#change-the-policy)).
 
-- **Approve architecture change** records an owner decision for the shown head and protected-file digests.
-- **Request changes** requires a reason. It is an architecture objection, not a command to close the pull request. The contributor or an owner must respond; the separate **Open GitHub PR** link provides GitHub's normal close and merge flow.
-- **Override and approve** requires a reason and identifies the all displayed objection versions, including earlier overrides. A current owner may use it for an App-origin or GitHub-origin objection. It changes Archfit authorization only: it never dismisses a native GitHub review or bypasses GitHub branch protection. GitHub may still require the native review to be resolved before merge.
-- **Withdraw my approval** requires a reason and suppresses this owner's earlier Archfit grants for the exact candidate, including native approval versions that existed when withdrawn. It never changes or dismisses the GitHub review; GitHub may still enforce that review independently. Another owner's grant remains in force, and a newly submitted native approval or App approval can grant Archfit authorization again.
-
-Withdrawn native approval events remain withdrawn after later actions or candidate changes; editing the review text does not restore authorization. An override stops applying if its owner withdraws it, loses authority, or records a newer decision.
-
-Every form is bound to the full pull-request head, the protected settings commit and the digests of the protected files shown. A new push needs a new candidate decision. Previous objections remain visible across a push; an override for an older head or changed settings content cannot apply to the new candidate. Current owner status and team membership are checked again when an action is saved. Ordinary PR comments, including the App's mirrored decision comments, are not decisions. GitHub-native review state and identity come from GitHub; a current owner `CHANGES_REQUESTED` review blocks ordinary approval even if its body is empty. A later dismissal invalidates that native review grant but does not revoke an independent App grant.
-
-Request-change, withdrawal and override reasons are stored with the authenticated App decision under the installation's `owner-decision/<repository>/<pull>` record and mirrored to an App-authored PR comment. The comment records who acted, when, which head and settings snapshot, the reason, and (for an override) the objection versions it covered. The reason is bounded text, not a command or authorization. **The reason is posted to the PR and is public for public repositories.** The App retains at most 64 decision actions per pull request. At that limit it refuses another action rather than dropping audit history. Close an exhausted PR if its approval must be withdrawn; use a replacement PR with the old discussion linked for a fresh owner decision. Do not edit the Store record directly.
-
-Review requests are notifications, not authority. For an unchanged head and protected-settings snapshot Archfit requests only configured direct owners or teams that are not already requested, and it does not remove unrelated requests. It skips the pull-request author, known agent logins, and a team that contains the pull-request author. An eligible sole owner who opened the PR is told to use Archfit App rather than receiving an impossible self-review request. Reviewer-request API or permission failures are shown as notification problems only; they never change who may decide. Requests are deduplicated per pull-request head and protected-settings snapshot with bounded retries. If owners change while the head stays the same, Archfit checks GitHub's current reviewer list and requests only newly missing configured principals. You can also request a reviewer on GitHub.
-
-
-#### Decision refresh and limits
-
-Unrelated merges to the target branch do not revoke an App approval. The approval covers the PR head, protected-file digests and protected settings content; changing those inputs requires a new decision. Current owner/team membership is checked again. A second override must cover all displayed objection versions, including earlier overridden objections, so it does not revive an older objection.
-
-Repeated approval of your already-approved candidate is a no-op, including when your current grant is an explicit override. The audit retains at most 64 distinct decisions. At that limit, no further action is recorded, including withdrawal; the existing authority remains effective. Open a replacement PR for a fresh owner decision, link the old discussion and objections, and close the exhausted PR. Do not delete decision history to reset the counter.
-
-The App refreshes the PR check and queued groups before posting decision-reason comments. A comment-service failure is still reported, but it cannot prevent that authorization refresh. Viewing the PR or inbox never sends review requests; those notifications are sent by the PR event path. App decisions require both current owner authority and repository write access; repository write access alone does not grant authority.
-
-![Architecture decision banner on a protected-path pull request](images/owner-decision-light.png#gh-light-mode-only)
-![Architecture decision banner on a protected-path pull request](images/owner-decision-dark.png#gh-dark-mode-only)
-
-_The banner lists protected paths, owners, the exact settings commit, gate mode and available actions. Sample data._
-
-![Architecture decision banner when an agent opened the pull request](images/owner-decision-agent-pr-light.png#gh-light-mode-only)
-![Architecture decision banner when an agent opened the pull request](images/owner-decision-agent-pr-dark.png#gh-dark-mode-only)
-
-_The page names an agent author and explains why GitHub self-review is not available. Sample data._
+Review requests are notifications, not authority. For an unchanged head and protected-settings snapshot Archfit requests only configured direct owners or teams that are not already requested, and it does not remove unrelated requests. It skips the pull-request author, known agent logins, and a team that contains the pull-request author. An eligible sole owner who opened the PR receives no self-review request. Reviewer-request API or permission failures are shown as notification problems only; they never change who may decide. Requests are deduplicated per pull-request head and protected-settings snapshot with bounded retries. If owners change while the head stays the same, Archfit checks GitHub's current reviewer list and requests only newly missing configured principals. You can also request a reviewer on GitHub.
 
 Required mode says the protected settings require `archfit/gate`; GitHub branch rules determine whether that check blocks merge. Do not assume a branch rule that names only a check is unbypassable. Advisory mode does not prevent merging. In either mode, an App decision is not a successful architecture check, merge, or policy publication. The page shows the latest check separately; a saved decision may be waiting for a workflow report, evidence, or other required checks.
 
 An older deployed App does not understand the new negative decision records. If an operator rolls back to an older image after these records exist, pause merges of protected-path pull requests until the decision-aware App is restored or a forward fix is deployed. Do not claim an older-image rollback is safe: it may ignore a new App objection or withdrawal and reuse an earlier legacy grant. The App preserves valid unchanged-head legacy approvals; it does not silently migrate or delete them.
-
-### Ask AI for a proposal
-
-AI assistance is optional and runs only after an explicit request.
-The proposal arrives as a commit on the draft pull request. Nothing is published automatically.
-
-1. Enter an instruction in **Ask AI for a proposal**. The text in the editor is saved first.
-2. Select a mode.
-3. Select **Propose**.
-
-In `managed` mode the proposal replaces the text in the editor. In `customer` mode the page shows the run in your CI;
-select **Check again** to see whether it finished.
-
-| Mode       | Execution                            | Conditions                                                   |
-| ---------- | ------------------------------------ | ------------------------------------------------------------ |
-| `customer` | A workflow runs in customer CI       | The draft branch contains the assist workflow                |
-| `managed`  | The App calls the Anthropic provider | `data_mode: managed`, Managed AI consent, and a provider key |
-
-Managed AI receives the draft policy text and the instruction. It receives no source code and no report.
-AI output never affects the gate result.
-
-When managed mode is not offered, the form says why: the default branch has no valid settings file, its settings say
-`data_mode: customer`, the App could not read whether Managed AI is allowed, or Managed AI is not allowed for the owner.
-In the last case an administrator also gets **Allow managed AI**, which records the consent as Data sharing does, and
-a link to Data sharing.
 
 ## Decision requests from unattended agents
 
@@ -754,36 +691,8 @@ Ignore a status line from any other author: it grants nothing and means nothing.
 | `stale (base branch changed)`                      | The pull request no longer targets the default branch; an owner's decision is refused for it.   |
 | `stale (pull request closed)`                      | The pull request closed.                                                                            |
 
-**Decide (architecture owners).** Open the pull request on the App's pages. Under **Decision requests** each request
-shows the finding, the rule and edge, who filed it, and the agent's case: its reason and the alternatives it says it
-tried. That text is the agent's, shown as quoted data and not verified. Everyone with access to the repository can read
-the list. An owner sees **Approve and open a proposal pull request** and **Decline** on a pending request.
-
-![The decision requests of a pull request, as an owner sees them: one pending request with its buttons](images/decision-request-light.png#gh-light-mode-only)
-![The decision requests of a pull request, as an owner sees them: one pending request with its buttons](images/decision-request-dark.png#gh-dark-mode-only)
-
-- Who may decide is the rule of the [architecture-decision rules](#architecture-decisions): an owner of the protected settings, no agent
-  identity. The login that filed the request can never decide it, even when it is an owner.
-- Only a pull request into the default branch can be decided. The owners are read from the default branch, never from a branch the pull request was retargeted to; a retargeted pull request goes `stale (base branch changed)` when an owner tries, and the page offers no buttons for it.
-- **Approve** first checks again, against GitHub and the default branch rather than the stored request, that the pull
-  request is open, its head is still the one the request names, and the policy is still the one the finding was measured
-  under. If not, the request goes `stale` and nothing is opened. Otherwise the App opens a **draft** pull request on the
-  branch `archfit/decision-<pull request number>-<random suffix>` (the suffix is made on the first approval, stored with the request and not derivable from anything the agent states, so nobody can create the branch first), changing `.archfit.yaml` to the agent's
-  candidate policy. Its description names the finding, rule, edge, the requester, the link to the pull request and the
-  agent's case, quoted. The request becomes `approved (proposal PR #n)`. Approving again after a failure finds the same
-  pull request; it never opens a second one. Before it records the request as approved, the App refuses a pull request
-  that is not an open draft from that branch into the default branch changing `.archfit.yaml` alone.
-- The proposal is a policy change like any other: only an architecture owner approves it, on its exact head, and its
-  page shows the policy change card. Nothing here merges it, marks it ready or approves it, and nothing reaches the agent
-  that lets it do so.
-- **Decline** records the owner's no. The agent reads `declined (by an owner)`; it holds until the policy on the default
-  branch changes, so asking again for the same finding changes nothing.
-- A request settled once never moves again. If the App cannot write the status comment, the page says the decision was
-  recorded and to reload. The list is found from the App's status comments on the pull request: a settled request
-  whose status comment was deleted, or never written because the thread was full, is not listed.
-
-![The same request after an owner approved it, with the link to the proposal pull request](images/decision-request-approved-light.png#gh-light-mode-only)
-![The same request after an owner approved it, with the link to the proposal pull request](images/decision-request-approved-dark.png#gh-dark-mode-only)
+**Decide (architecture owners).** The App no longer shows these requests or their buttons, and they have no request
+page. A worker who needs a policy change asks with a request instead (see [Change the policy](#change-the-policy)).
 
 Posting the same request for the same head again changes nothing. Posting it for a new head replaces the record and
 sets it back to `pending`; a declined request is not reopened that way.
@@ -797,29 +706,6 @@ the App ignores the request. The App never trusts the block: head, policy digest
 GitHub and the default branch.
 
 A command, `archfit decision request`, that posts the block and reads the answer is planned for a later engine release.
-
-### Decisions page
-
-The **Decisions** tab (`/r/<owner>/<repo>/decisions`) is the owner's inbox. It is read only: it lists, and the buttons
-stay on the pull request page.
-
-- **Decision requests**: each request with its status, the pull request, the finding (its short ID), the rule, the
-  dependency, who requested it, the commit it is about and its age. Pending requests come first, each group newest
-  first. Every row links to its pull request. The page lists up to 50 requests of the App's pending list: those that wait,
-  and those whose new status is not yet in the pull request thread. A request an owner settled and the thread already
-  shows leaves this list.
-- **Policy changes**: the open pull requests (up to 20) whose `archfit/state` check carries the policy change card, with
-  the card's classification and current architecture-decision state: approved by whom, needed, not needed, or "cannot
-  tell" when it could not be read.
-
-With nothing waiting, the page says so. A list that could not be read says that, never "none". Text an agent or a
-repository wrote is shown as text.
-
-![The Decisions page: requests that wait for an owner and the pull requests that change the policy](images/decisions-light.png#gh-light-mode-only)
-![The Decisions page: requests that wait for an owner and the pull requests that change the policy](images/decisions-dark.png#gh-dark-mode-only)
-
-_Two pending requests and one stale one, then a loosening that needs an owner and a tightening an owner approved.
-Sample data._
 
 ## Data sharing
 
@@ -950,7 +836,7 @@ protected file (policy, baseline, labels, settings, workflow) at the default-bra
 
 - A file the group does not change: the default branch's file governs, as for any pull request.
 - A file the group changes: exactly one queued pull request must change it, an owner must have approved that pull
-  request's own head (on GitHub or with **Approve** in the App, under [Architecture decisions](#architecture-decisions)), and the
+  request's own head (on GitHub, under [Architecture decisions](#architecture-decisions)), and the
   group's file must be exactly the file at that head. Then that file governs the group.
 - Every queued pull request that changes a protected file needs its own owner approval, also when the group's file
   ends up equal to the default branch's. A pull request without one ends the group `owner_approval_missing`, naming it.
@@ -1045,8 +931,8 @@ onboarding or discovery, only when that is the step's action. After the first re
   wait for an owner. Each reads "could not be read" rather than zero when the App could not read it. The pending
   requests of a repository are read from the App's own records, only when the repository has an open pull request;
 - under **Needs you**, the first pending decision requests with the pull request, the rule, the dependency, who asked
-  and how long ago, each linking to the pull request page where an owner decides. An agent cannot approve its own
-  request, so nothing on the overview approves or declines;
+  and how long ago, each linking to its pull request page. An agent cannot approve its own request, and nothing on
+  the overview approves or declines;
 - the open pull requests, newest first, each with its result and a link to its page (up to 20). A pull request that
   waits for an update says so under its row and names the modules the pull request and the default branch close a
   cycle through, in the words of the comment;
@@ -1062,8 +948,7 @@ _The watch line under the result, the two counts, and the decision requests unde
 
 _A pull request waiting for an update names the modules of the cycle, as the pull request comment does. Sample data._
 
-The tabs under the header open the graph (Architecture), the decisions page ([Decisions](#decisions-page)) and the
-policy editor (Policy). The header switches between
+The tabs under the header open the overview and the graph (Architecture). The header switches between
 the light and the dark theme, or follows the system (Auto); the choice is kept in this browser. The App needs a
 browser with JavaScript.
 
@@ -1100,7 +985,7 @@ on the pull request links to this page ("Details in Archfit").
 - **Evidence** has one row per dimension: how many the engine measured, then what it counted in its own words, quoted
   as on the comment (`3 of 3 ("classified source files")`), its confidence, and its **Result**: pass, warn or fail.
 - **For coding agents** holds the exact repair tasks of the run; **Copy** puts them on the clipboard.
-- **Architecture decision** appears when the pull request changes a protected file, even without a report: protected paths and digests, the owners and exact settings source, current objections/history, and actions available to the signed-in owner. Approval does not mean the check passed or the pull request merged. See [Architecture decisions](#architecture-decisions).
+- **Architecture decision** appears when the pull request changes a protected file, even without a report: protected paths and digests, the owners and exact settings source, current objections and history, read only. Approval does not mean the check passed or the pull request merged. See [Architecture decisions](#architecture-decisions).
 - The **Graph** tab draws the same report as a graph. See [The graph of a pull request](#the-graph-of-a-pull-request).
 - The page shows a report only when it is the one the check was computed from. Under a result that asks for action it
   shows the report only when every reason the check records comes from the report itself (missing required coverage,
@@ -1297,7 +1182,7 @@ Clear a grant by omitting `until` or sending `null`. A successful request return
 
 ### Build the web app
 
-The App's pages, except the policy editor and the consent page, are a web app in `web/`, built into the binary. The release image builds it
+The App's pages, except the consent page, are a web app in `web/`, built into the binary. The release image builds it
 (`Dockerfile`, stage `web`). For a local binary, build it first with Node 24:
 
 ```sh

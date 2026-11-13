@@ -73,7 +73,12 @@ func (s *server) apiGraph(r *http.Request, sc scope) (any, error) {
 	if body.StaleReason != "" {
 		view.Stale = true
 	}
-	body.View, body.PolicyHref = &view, repoPath(sc, "/policy")
+	// The policy text on GitHub that the view read: the open draft's head, else the default branch.
+	ref := sc.repo.DefaultBranch
+	if isOpen(draft) && body.StaleReason == "" {
+		ref = draft.HeadSHA
+	}
+	body.View, body.PolicyHref = &view, policyBlob(sc.repo.FullName, ref)
 	return body, nil
 }
 
