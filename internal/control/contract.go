@@ -81,7 +81,8 @@ func New(d Deps) (*Control, error) {
 		Account: acct, Consents: consents,
 		Admissions: d.Admissions, PolicyViews: d.PolicyViews, RequestViews: d.RequestViews, Passkeys: passkeys, Operators: d.Operators, Now: d.Now,
 
-		HomeViews: gate.NewHome(d.GitHub, d.Store, d.Admissions), PullViews: gate.NewPullViews(d.GitHub, d.Store),
+		RepoStates: gate.NewRepoStates(d.Store, d.Admissions),
+		HomeViews:  gate.NewHome(d.GitHub, d.Store, d.Admissions), PullViews: gate.NewPullViews(d.GitHub, d.Store),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("control: ui: %w", err)

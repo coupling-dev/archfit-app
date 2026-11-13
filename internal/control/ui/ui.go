@@ -26,6 +26,7 @@ type Deps struct {
 	Consents     account.Consents
 	Admissions   *gate.Admissions // which installations the App serves; the others see the Waiting page
 	Passkeys     passkey.Passkeys // the signed-in user's passkeys and the step-up of an answer
+	RepoStates   gate.RepoStates  // repositories read their stored state through the gate façade
 	HomeViews    gate.HomeViews   // Home reads gate data through its read-only façade
 	PullViews    gate.PullViews
 	PolicyViews  gate.PolicyViews  // policy page change-control state
@@ -43,9 +44,6 @@ type (
 		File(ctx context.Context, r api.RepoRef, ref, path string) (content []byte, blobSHA string, err error)
 		BranchHead(ctx context.Context, r api.RepoRef, branch string) (string, error)
 	}
-	checkReader interface {
-		CheckRuns(ctx context.Context, r api.RepoRef, headSHA, name string) ([]api.CheckRun, error)
-	}
 	pullReader interface {
 		PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error)
 		OpenPulls(ctx context.Context, r api.RepoRef) ([]api.Pull, error)
@@ -62,7 +60,6 @@ type (
 
 type github struct {
 	files    fileReader
-	checks   checkReader
 	pulls    pullReader
 	users    repoLister
 	installs installLister
@@ -75,6 +72,7 @@ type server struct {
 	consents   account.Consents
 	admissions *gate.Admissions
 	passkeys   passkey.Passkeys
+	repoStates gate.RepoStates
 	home       gate.HomeViews
 	pullViews  gate.PullViews
 	policy     gate.PolicyViews
@@ -94,7 +92,7 @@ func New(d Deps) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	gh := github{files: d.GitHub, checks: d.GitHub, pulls: d.GitHub, users: d.GitHub, installs: d.GitHub}
+	gh := github{files: d.GitHub, pulls: d.GitHub, users: d.GitHub, installs: d.GitHub}
 	return newHandler(d, gh, sessions, builtWeb()), nil
 }
 
@@ -107,6 +105,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		consents:   d.Consents,
 		admissions: d.Admissions,
 		passkeys:   d.Passkeys,
+		repoStates: d.RepoStates,
 		home:       d.HomeViews,
 		pullViews:  d.PullViews,
 		policy:     d.PolicyViews,

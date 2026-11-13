@@ -97,3 +97,10 @@ before admitting an artifact; split reads cannot pair an unpublished result with
 The sweep recovers an upload-staged marker only after both its grace period and the completed workflow's
 grace period, publishing unknown while atomically claiming that marker's token. A force-push-back withdrawal
 reconciles a newer pending identity with the live check under the head lease instead of preserving an old pass.
+
+## Repository state for pages
+
+`NewRepoStates(store, admissions)` supplies the read-only `RepoStates` façade. `RepoState(ctx, repo)` checks
+admission, then reads only `v4/repo` for that installation and repository. It returns the page state, not storage
+types. No approval takes precedence over outside-flow; otherwise a complete stored state supplies expired, drift
+or clean. Missing or partial evidence returns unknown, never clean; storage errors remain errors.

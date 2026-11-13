@@ -1,0 +1,34 @@
+{
+  "repos": [
+    {
+      "full_name": "acme/clean",
+      "state": "clean"
+    },
+    {
+      "full_name": "acme/drift",
+      "state": "drift"
+    },
+    {
+      "full_name": "acme/expired",
+      "state": "expired"
+    },
+    {
+      "full_name": "acme/not-set-up",
+      "state": "not set up"
+    },
+    {
+      "full_name": "acme/outside-flow",
+      "state": "policy changed outside the flow"
+    },
+    {
+      "full_name": "acme/unknown",
+      "state": "unknown"
+    },
+    {
+      "full_name": "octo/tool",
+      "waiting": true,
+      "state": "waiting for approval"
+    }
+  ],
+  "truncated": false
+}

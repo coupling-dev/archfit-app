@@ -15,8 +15,6 @@ export interface RepoRow {
   full_name: string;
   waiting?: boolean; // no operator approved its account yet
   state: string;
-  tone: Tone;
-  reason: string;
 }
 
 export interface Repos {
