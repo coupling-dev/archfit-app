@@ -48,7 +48,7 @@ type view struct {
 	author   string        // "" when the author has nothing to do
 	owner    string        // "" when the owner has nothing to do
 	requests []int         // the requests the wait steps of the errors name, in record order, once each
-	covered  string        // the next kind the author line names; a record of that kind shows no next in the comment
+	covered  string        // candidate next kind; says checks whether the author line covers each individual step
 }
 
 // newView builds the view of r, whose Status is the status the App gave it.
