@@ -144,9 +144,9 @@ func renderDecisionBanner(t inputs.Target, trusted inputs.Trusted, appLink strin
 	} else {
 		b.WriteString("\n**Gate mode: advisory.** This architecture decision does not prevent merging.\n")
 	}
-	b.WriteString("\nGitHub does not accept a pull request author's own review. An eligible sole owner who opened the PR can decide in Archfit App.\n")
+	b.WriteString("\nAn eligible owner approves this exact commit with a GitHub review. GitHub does not accept a pull request author's own review, so another eligible owner approves a PR an owner opened.\n")
 	if appLink != "" {
-		b.WriteString("\n[Review changes and decide in this exact Archfit PR page](")
+		b.WriteString("\n[See this pull request in Archfit](")
 		b.WriteString(appLink)
 		b.WriteString(")\n")
 	}

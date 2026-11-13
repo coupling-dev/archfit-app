@@ -18,13 +18,13 @@ func TestPullOpenedPublishesOwnerDecisionBannerBeforeAnyReport(t *testing.T) {
 	comments := w.comments(p)
 	if len(comments) != 1 || !strings.Contains(comments[0].Body, "Architecture decision needed") ||
 		!strings.Contains(comments[0].Body, ownerLogin) || !strings.Contains(comments[0].Body, p.repo.FullName) ||
-		!strings.Contains(comments[0].Body, p.head) || !strings.Contains(comments[0].Body, "Review changes and decide") ||
+		!strings.Contains(comments[0].Body, p.head) || !strings.Contains(comments[0].Body, "See this pull request in Archfit") ||
 		!strings.Contains(comments[0].Body, "baseline") {
 		t.Fatalf("owner decision comment = %+v", comments)
 	}
 	check, ok := w.check(p, p.head, gateCheckName)
 	if !ok || check.Status != runInProgress || !strings.Contains(check.Summary, "Architecture decision needed") ||
-		!strings.Contains(check.Summary, ownerLogin) || !strings.Contains(check.Summary, "Review changes and decide") {
+		!strings.Contains(check.Summary, ownerLogin) || !strings.Contains(check.Summary, "See this pull request in Archfit") {
 		t.Fatalf("pending gate check = %+v, exists=%v; want owner banner before report", check, ok)
 	}
 }

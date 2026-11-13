@@ -31,10 +31,16 @@ func TestDecisionBannerAppearsBeforeReportsAndIsIdempotent(t *testing.T) {
 	for _, want := range []string{
 		"Architecture decision needed", "Why:", "`.archfit.yaml`", "`.archfit-app.yaml`", "alice",
 		"any one current eligible", "not everyone listed", headB, "Gate mode: required", "GitHub's branch rules",
-		"Review changes and decide", "/r/acme/shop/pull/7",
+		"approves this exact commit with a GitHub review", "See this pull request in Archfit", "/r/acme/shop/pull/7",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("decision banner lacks %q: %s", want, body)
+		}
+	}
+	// The App page has no owner action since M2 task 24: the banner must not send an owner there to decide.
+	for _, gone := range []string{"decide in Archfit App", "decide in this exact Archfit PR page"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("decision banner still says %q: %s", gone, body)
 		}
 	}
 	if len(h.checks.runs) != 1 || h.checks.runs[0].Name != gateCheck || h.checks.runs[0].Status != statusInProgress ||
