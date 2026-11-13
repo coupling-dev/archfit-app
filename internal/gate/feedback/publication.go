@@ -13,7 +13,7 @@ import (
 var errPublicationChanged = errors.New("feedback: publication changed")
 
 func (s *serialized) markPending(ctx context.Context, p Publication4) error {
-	rec := records.Publication{HeadSHA: p.Target.HeadSHA, RunID: p.RunID, RunAttempt: p.RunAttempt, Pending: true, Source: p.Source, Token: p.token}
+	rec := records.Publication{HeadSHA: p.Target.HeadSHA, RunID: p.RunID, RunAttempt: p.RunAttempt, Pending: true, Source: p.Source, Token: p.token, Digest: p.Digest}
 	raw, err := records.Encode(&rec)
 	if err != nil {
 		return err
@@ -25,7 +25,7 @@ func (s *serialized) markPending(ctx context.Context, p Publication4) error {
 			if err := records.Decode(cur[0], &old); err != nil {
 				return nil, err
 			}
-			if p.StagedToken == "" && old.Pending && old.Staged {
+			if !p.Generated && p.StagedToken == "" && old.Pending && old.Staged {
 				return nil, errPublicationChanged
 			}
 			if p.StagedToken != "" && (!old.Pending || old.Token != p.StagedToken) {

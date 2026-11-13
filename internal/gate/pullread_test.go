@@ -213,3 +213,27 @@ func TestAdvisoryFailureDoesNotWaitForOpenRequest(t *testing.T) {
 		t.Fatalf("advisory result became waiting: %+v", got.View)
 	}
 }
+
+func TestPullPageNeverShowsPreviousHeadsPass(t *testing.T) {
+	body, err := os.ReadFile("../wire/result/testdata/result/pass.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem := store.NewMemory()
+	r := api.Repo{RepoRef: api.RepoRef{InstallationID: 1, FullName: "acme/app"}}
+	record := records.Pull{HeadSHA: "old-head", RunID: 42, RunAttempt: 1, Status: "pass", PolicyDigest: "approved", PayloadDigest: envelope.PayloadDigest(body)}
+	raw, err := records.Encode(&record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = mem.Put(t.Context(), 1, records.PullKey(r.FullName, 4), raw); err != nil {
+		t.Fatal(err)
+	}
+	got, err := NewPullViews(&pullReadGitHub{pull: api.Pull{HeadSHA: "new-head"}, artifact: body}, mem).PullPage(t.Context(), r, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.View != nil || got.Record != nil || got.Message != "No result yet." {
+		t.Fatalf("previous head displayed: %+v", got)
+	}
+}

@@ -32,7 +32,7 @@ type Publication4 struct {
 	Fresh       bool   // create a fresh check instead of updating a reusable one
 	StagedToken string // upload's pending marker, bound before publication
 	Generated   bool   // result is made by the App, not the uploaded engine
-	Source      string // upload, sweep, missing_upload or owner
+	Source      string // upload, request, sweep, missing_upload or owner
 	token       string
 	Result      result.Result // Status is the status the App gave; the status line and the records are shown as given
 	// Current, when set, is called inside the head's publication lease before anything is written. false means the

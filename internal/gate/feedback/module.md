@@ -62,3 +62,6 @@ An upload's pending marker has a token made before the atomic pull-record swap. 
 exact token; a queued writer cannot replace another upload staged for the same run and attempt. A non-upload
 publication cannot claim an upload-staged marker. When the shared-head check or pull comment is intentionally
 skipped because a newer publication exists, feedback records a superseded marker, not a perpetual pending state.
+
+Pending request publications retain source `request` and their payload digest. A matching request retry may
+resume that pending write after its authority check; it cannot resume a withdrawal or an upload-staged marker.

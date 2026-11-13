@@ -451,7 +451,7 @@ func (s *Service) republish(ctx context.Context, r api.Repo, pull int) error {
 		}
 		err = s.publisher.Publish4(ctx, feedback.Publication4{
 			Target:     inputs.Target{Repo: r, PullRequest: pull, HeadSHA: rec.HeadSHA, BaseRef: r.DefaultBranch},
-			Source:     "upload",
+			Source:     "request",
 			RunID:      rec.RunID,
 			RunAttempt: rec.RunAttempt,
 			Digest:     rec.PayloadDigest,
@@ -491,7 +491,10 @@ func (s *Service) same(ctx context.Context, r api.Repo, pull int, rec records.Pu
 	if err != nil {
 		return false, err
 	}
-	// A withdrawal or in-flight publication for this or a newer run owns the view.
+	if published.RunID == rec.RunID && published.RunAttempt == rec.RunAttempt && published.Pending && !published.Staged && published.Source == "request" && published.Digest == rec.PayloadDigest {
+		return true, nil
+	}
+	// A withdrawal or another publication for this or a newer run owns the view.
 	if published.RunID > rec.RunID || published.RunID == rec.RunID && published.RunAttempt >= rec.RunAttempt {
 		return false, errWithdrawn
 	}

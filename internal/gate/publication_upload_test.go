@@ -195,3 +195,25 @@ func TestQueuedUploadCannotConfirmNewerSameRunPayload(t *testing.T) {
 		t.Fatalf("page %+v", got)
 	}
 }
+
+func TestSweepWithdrawsAfterAbandonedStagedUpload(t *testing.T) {
+	w := newWorld4(t)
+	p := w.openPull(w.shop, 7)
+	spec := w.spec4(p, "pass")
+	w.wantStatus(w.send4(spec), "pass", "")
+	staged := records.Publication{HeadSHA: p.head, RunID: p.runID, RunAttempt: 1, Pending: true, Staged: true, Source: "upload", Token: "abandoned"}
+	w.put4(records.PublicationKey(shopName, p.number, p.head), &staged)
+	repo := w.repo4()
+	repo.OutsideFlow = &records.OutsideFlow{Digest: "sha256:changed", Issue: 433}
+	w.put4(records.RepoKey(shopName), &repo)
+	w.sweep4()
+	w.wantSweepGate(p, "completed", "action_required")
+	w.wantPublication(p, "sweep", result.StatusUnknown)
+	got, err := NewPullViews(pullSummaryGitHub{w.gh}, w.mem).PullPage(t.Context(), w.shop, p.number)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.View == nil || got.View.Status != result.StatusUnknown {
+		t.Fatalf("page %+v", got)
+	}
+}

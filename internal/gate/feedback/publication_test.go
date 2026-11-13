@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -214,5 +215,34 @@ func TestRepublishCannotClaimStagedUpload(t *testing.T) {
 	got := publication(t, h)
 	if !got.Staged || got.Token != "new-upload" || len(h.checks.named(headB, gateCheck)) != 0 {
 		t.Fatalf("staged upload changed: %+v", got)
+	}
+}
+
+func TestOnlyGeneratedWithdrawalCanSupersedeStagedUpload(t *testing.T) {
+	for _, generated := range []bool{false, true} {
+		t.Run(fmt.Sprint(generated), func(t *testing.T) {
+			h := newHarness(headB)
+			key := records.PublicationKey("acme/shop", 7, headB)
+			marker := records.Publication{HeadSHA: headB, RunID: 7, RunAttempt: 1, Pending: true, Staged: true, Token: "upload", Source: "upload"}
+			raw, err := records.Encode(&marker)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = h.store.Put(t.Context(), 1, key, raw); err != nil {
+				t.Fatal(err)
+			}
+			p := pub4(prTarget(headB), 7, 1, engineResult(t, "policy_differs"))
+			p.Generated = generated
+			p.Source = "sweep"
+			err = h.pub.Publish4(t.Context(), p)
+			got := publication(t, h)
+			if generated {
+				if err != nil || got.Pending || len(got.Result) == 0 {
+					t.Fatalf("generated withdrawal %+v: %v", got, err)
+				}
+			} else if !errors.Is(err, ErrStaleInputs) || !got.Staged || got.Token != "upload" {
+				t.Fatalf("ordinary publication claimed staged upload: %+v: %v", got, err)
+			}
+		})
 	}
 }

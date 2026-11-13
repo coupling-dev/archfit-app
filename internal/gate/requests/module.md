@@ -190,3 +190,6 @@ without a second note; a reply may be posted again.
 A waiting republication rechecks the pull record and publication marker inside the feedback lease. A pending,
 superseded or App-generated publication for that run or a newer one prevents the old artifact from replacing
 it; a request may still be filed, but the existing withdrawal stays authoritative until a new upload.
+
+A pending request republication of the same head, run/attempt and payload is retryable. Its source is
+`request`; upload-staged or generated-withdrawal markers are not treated as request retries.
