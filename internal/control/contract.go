@@ -35,6 +35,7 @@ type Deps struct {
 	Admissions *gate.Admissions
 	// RequestViews reads a request and the preview of each answer for the request page: the gate façade. It reads only.
 	RequestViews gate.RequestViews
+	PolicyViews  gate.PolicyViews
 	// Answers records an owner's answer and carries it to the default branch: the gate façade. control/answers adds
 	// the passkey.
 	OwnerActions gate.OwnerActions
@@ -91,7 +92,7 @@ func New(d Deps) (*Control, error) {
 		Owners:  answers.NewOwners(d.OwnerActions, passkeys), Setups: onboarding.NewSetup(d.GitHub, d.SetupViews),
 		OAuth: d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
 		Account: acct, Consents: consents, Onboarding: onb,
-		Admissions: d.Admissions, RequestViews: d.RequestViews, Passkeys: passkeys, Operators: d.Operators, Now: d.Now,
+		Admissions: d.Admissions, PolicyViews: d.PolicyViews, RequestViews: d.RequestViews, Passkeys: passkeys, Operators: d.Operators, Now: d.Now,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("control: ui: %w", err)
@@ -142,6 +143,8 @@ func (d Deps) validate() error {
 		return errors.New("control: nil Receiver")
 	case d.Admissions == nil:
 		return errors.New("control: nil Admissions")
+	case d.PolicyViews == nil:
+		return errors.New("control: nil PolicyViews")
 	case d.RequestViews == nil:
 		return errors.New("control: nil RequestViews")
 	case d.Answers == nil:
