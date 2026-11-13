@@ -24,7 +24,6 @@ type Deps struct {
 	GitHub       *api.Client
 	Account      account.Account
 	Consents     account.Consents
-	Onboarding   onboarding.Onboarding
 	Admissions   *gate.Admissions  // which installations the App serves; the others see the Waiting page
 	Passkeys     passkey.Passkeys  // the signed-in user's passkeys and the step-up of an answer
 	PolicyViews  gate.PolicyViews  // policy page change-control state
@@ -45,12 +44,6 @@ type (
 	checkReader interface {
 		CheckRuns(ctx context.Context, r api.RepoRef, headSHA, name string) ([]api.CheckRun, error)
 	}
-	workflows interface {
-		Dispatch(ctx context.Context, r api.RepoRef, workflowPath, ref string, inputs map[string]string) error
-		LatestRun(ctx context.Context, r api.RepoRef, workflowPath string, f api.RunFilter) (api.WorkflowRun, error)
-		ArtifactID(ctx context.Context, r api.RepoRef, runID int64, name string) (int64, error)
-		ArtifactByID(ctx context.Context, r api.RepoRef, id int64, maxBytes int64) ([]byte, error)
-	}
 	pullReader interface {
 		PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error)
 		OpenPulls(ctx context.Context, r api.RepoRef) ([]api.Pull, error)
@@ -68,7 +61,6 @@ type (
 type github struct {
 	files    fileReader
 	checks   checkReader
-	actions  workflows
 	pulls    pullReader
 	users    repoLister
 	installs installLister
@@ -79,7 +71,6 @@ type server struct {
 	sessions   session.Sessions
 	account    account.Account
 	consents   account.Consents
-	onboarding onboarding.Onboarding
 	admissions *gate.Admissions
 	passkeys   passkey.Passkeys
 	policy     gate.PolicyViews
@@ -91,8 +82,6 @@ type server struct {
 	now        func() time.Time
 	baseURL    string
 	shell      shellPage
-	reports    *reportCache
-	hints      *hints
 }
 
 // New returns the UI mounted at "/". It serves the web app's build from the binary.
@@ -101,7 +90,7 @@ func New(d Deps) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	gh := github{files: d.GitHub, checks: d.GitHub, actions: d.GitHub, pulls: d.GitHub, users: d.GitHub, installs: d.GitHub}
+	gh := github{files: d.GitHub, checks: d.GitHub, pulls: d.GitHub, users: d.GitHub, installs: d.GitHub}
 	return newHandler(d, gh, sessions, builtWeb()), nil
 }
 
@@ -112,7 +101,6 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		sessions:   sessions,
 		account:    d.Account,
 		consents:   d.Consents,
-		onboarding: d.Onboarding,
 		admissions: d.Admissions,
 		passkeys:   d.Passkeys,
 		policy:     d.PolicyViews,
@@ -122,8 +110,6 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		now:       d.Now,
 		baseURL:   d.BaseURL,
 		shell:     newShell(web),
-		reports:   newReportCache(reportCacheBytes),
-		hints:     newHints(),
 	}
 
 	mux := http.NewServeMux()
@@ -181,14 +167,14 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("GET /api/repos/{o}/{n}/setup", s.apiRepo(permRead, s.apiSetup))
 	mux.Handle("POST /api/repos/{o}/{n}/owner/{action}/digest", s.apiRepo(permRead, s.apiOwnerDigest))
 	mux.Handle("POST /api/repos/{o}/{n}/owner/{action}", s.apiRepo(permRead, s.apiOwnerAct))
-	mux.Handle("GET /api/repos/{o}/{n}/overview", s.apiRepo(permRead, s.apiStatus))
-	mux.Handle("GET /api/repos/{o}/{n}/findings", s.apiRepo(permRead, s.apiFindings))
+	mux.Handle("GET /api/repos/{o}/{n}/overview", s.apiRepo(permRead, s.apiLegacyUnavailable))
+	mux.Handle("GET /api/repos/{o}/{n}/findings", s.apiRepo(permRead, s.apiLegacyUnavailable))
 	mux.Handle("GET /api/repos/{o}/{n}/policy", s.apiRepo(permRead, s.apiPolicy))
-	mux.Handle("GET /api/repos/{o}/{n}/graph", s.apiRepo(permRead, s.apiGraph))
-	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}", s.apiRepo(permRead, s.apiPull))
-	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}/graph", s.apiRepo(permRead, s.apiPullGraph))
-	mux.Handle("POST /api/repos/{o}/{n}/onboarding", s.apiRepo(permAdmin, s.apiStartOnboarding))
-	mux.Handle("POST /api/repos/{o}/{n}/discover", s.apiRepo(permAdmin, s.apiDiscover))
+	mux.Handle("GET /api/repos/{o}/{n}/graph", s.apiRepo(permRead, s.apiLegacyUnavailable))
+	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}", s.apiRepo(permRead, s.apiLegacyUnavailable))
+	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}/graph", s.apiRepo(permRead, s.apiLegacyUnavailable))
+	mux.Handle("POST /api/repos/{o}/{n}/onboarding", s.apiRepo(permAdmin, s.apiLegacyUnavailable))
+	mux.Handle("POST /api/repos/{o}/{n}/discover", s.apiRepo(permAdmin, s.apiLegacyUnavailable))
 	mux.Handle("GET /api/repos/{o}/{n}/data-sharing", s.apiRepo(permAdmin, s.apiDataSharing))
 	mux.Handle("POST /api/repos/{o}/{n}/data-sharing", s.apiRepo(permAdmin, s.apiShareData))
 	mux.Handle("GET /api/repos/{o}/{n}/requests/{number}", s.apiRepo(permRead, s.apiRequest))

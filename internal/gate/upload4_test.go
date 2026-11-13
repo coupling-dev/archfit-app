@@ -604,7 +604,7 @@ func TestUpload4SharedHead(t *testing.T) {
 	befores := []before{
 		{"no check", func(*world4, *pull) {}, "", ""},
 		{"a pending check", func(w *world4, p *pull) {
-			if err := w.gate.publisher.Pending(context.Background(), w.target(p)); err != nil {
+			if _, err := w.gh.CreateCheckRun(context.Background(), p.repo.RepoRef, api.CheckRun{Name: gateCheck4, HeadSHA: p.head, Status: "in_progress"}); err != nil {
 				w.t.Fatal(err)
 			}
 		}, "in_progress", ""},
@@ -759,9 +759,28 @@ func TestUpload4KeepsTheNewestRecord(t *testing.T) {
 func TestUploadHandlerRejectsEnvelope1(t *testing.T) {
 	w := newWorld4(t)
 	p := w.openPull(w.shop, 7)
-	a := w.upload(p, fixtureHealthy)
-	if a.status != http.StatusBadRequest {
-		t.Errorf("answer = %d %s, want rejection of envelope 1", a.status, a.raw)
+	body := []byte(`{}`)
+	run := w.gh.runs[p.runID]
+	pull := w.gh.pulls[pullKey(p.repo.FullName, p.number)]
+	raw, err := json.Marshal(map[string]any{
+		"schema_version": "archfit.report-envelope.v1", "kind": "report", "repository": p.repo.FullName,
+		"event": "pull_request", "pull_request": p.number, "head_sha": p.head, "base_sha": pull.BaseSHA,
+		"merge_base_sha": pull.MergeBaseSHA, "analyzed_sha": pull.MergeCommitSHA, "integration": "merged",
+		"run_id": p.runID, "run_attempt": run.Attempt, "engine_version": "v3.4.0", "image_digest": image4,
+		"platform": "linux/amd64", "payload_digest": envelope.PayloadDigest(body), "baseline_digest": "", "labels_digest": "",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := w.spec(p, body)
+	s.rawEnvelope, s.token = raw, ""
+	before := w.gh.writes()
+	a := w.send(s)
+	if a.status != http.StatusBadRequest || a.Error != "envelope_invalid" {
+		t.Fatalf("answer = %d %s, want envelope_invalid before authentication", a.status, a.raw)
+	}
+	if w.gh.writes() != before {
+		t.Fatal("legacy envelope caused a GitHub write")
 	}
 }
 

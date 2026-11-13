@@ -15,7 +15,6 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
-	"github.com/alexei-led/archfit-app/internal/wire/settings"
 )
 
 func (w *world4) wantSweepGate(p *pull, status, conclusion string) api.CheckRun {
@@ -500,7 +499,6 @@ func TestSweepRepairsAProvenDirectPushOutsideFlow(t *testing.T) {
 func TestGateSweepRunsV4AndStopsOnARateLimit(t *testing.T) {
 	w := newWorld4(t)
 	p := w.openPull(w.shop, 7)
-	w.removeFile(w.shop, testBranch, settings.Path)
 	w.editRun(p, func(run *api.WorkflowRun) { run.UpdatedAt = w.now.Add(-2 * time.Hour) })
 	sum, err := w.gate.Sweep(t.Context())
 	if err != nil || sum.Errors != 0 {

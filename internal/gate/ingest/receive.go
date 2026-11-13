@@ -7,13 +7,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/oidc"
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
-	"github.com/alexei-led/archfit-app/internal/wire/manifest"
-	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
 
 const (
@@ -23,11 +19,11 @@ const (
 
 // Rejection codes of the step table.
 const (
-	codeMethodNotAllowed   = "method_not_allowed"
-	codePayloadTooLarge    = "payload_too_large"
-	codeEnvelopeMissing    = "envelope_missing"
-	codeEnvelopeInvalid    = "envelope_invalid"
-	codeKindMismatch       = "kind_mismatch"
+	codeMethodNotAllowed = "method_not_allowed"
+	codePayloadTooLarge  = "payload_too_large"
+	codeEnvelopeMissing  = "envelope_missing"
+	codeEnvelopeInvalid  = "envelope_invalid"
+
 	codeTokenMissing       = "token_missing"
 	codeTokenInvalid       = "token_invalid"
 	codeOIDCUnavailable    = "oidc_unavailable"
@@ -40,8 +36,8 @@ const (
 	codeStaleAttempt       = "stale_attempt"
 	codeStaleHead          = "stale_head"
 	codeStaleGroup         = "stale_group"
-	codeDigestMismatch     = "digest_mismatch"
-	codeRateLimited        = "rate_limited"
+
+	codeRateLimited = "rate_limited"
 )
 
 type receiver struct {
@@ -71,82 +67,9 @@ func apiFailure(err error, notFoundCode string) error {
 	return fmt.Errorf("ingest: github api: %w", err)
 }
 
-func (r *receiver) Receive(ctx context.Context, req *http.Request, kind envelope.Kind) (Upload, error) {
-	start := time.Now()
-	var f facts
-	up, err := r.receive(ctx, req, kind, &f)
-	f.log(ctx, kind, up.Problems, err, time.Since(start))
-	return up, err
-}
-
-// receive runs the step table in order. Every error return carries the zero Upload.
-func (r *receiver) receive(ctx context.Context, req *http.Request, kind envelope.Kind, f *facts) (Upload, error) {
-	if req.Method != http.MethodPost {
-		return Upload{}, reject(http.StatusBadRequest, codeMethodNotAllowed)
-	}
-	body, err := readBody(req)
-	if err != nil {
-		return Upload{}, err
-	}
-	env, err := decodeEnvelope(req, kind)
-	if err != nil {
-		return Upload{}, err
-	}
-	claims, err := r.verify(ctx, req)
-	if err != nil {
-		return Upload{}, err
-	}
-	f.repositoryID, f.runID, f.runAttempt = claims.RepositoryID, claims.RunID, claims.RunAttempt
-	f.runnerEnvironment = claims.RunnerEnvironment
-
-	repo, run, err := r.tenant(ctx, env.Repository, claims)
-	if err != nil {
-		return Upload{}, err
-	}
-	f.installationID = repo.InstallationID
-
-	binding, problems, err := r.bind(ctx, kind, env, claims, repo, run)
-	if err != nil {
-		return Upload{}, err
-	}
-	digest := envelope.PayloadDigest(body)
-	f.digest = digest
-	if digest != env.PayloadDigest {
-		return Upload{}, reject(http.StatusBadRequest, codeDigestMismatch)
-	}
-
-	up := Upload{
-		Binding:        binding,
-		Identity:       manifest.Identity{EngineVersion: env.EngineVersion, ImageDigest: env.ImageDigest, Platform: env.Platform},
-		Digest:         digest,
-		BaselineDigest: env.BaselineDigest,
-		LabelsDigest:   env.LabelsDigest,
-		Payload:        body,
-	}
-	if kind == envelope.KindReport {
-		// The key set is the one of the engine release the envelope claims; a release the decoder does not read
-		// is an invalid report. The decode error may quote payload content; only the fact is kept.
-		if rep, err := report.Decode(body, env.EngineVersion); err != nil {
-			problems.add(ProblemReportInvalid)
-		} else {
-			up.Report = &rep
-		}
-	}
-	if len(env.PolicyChange) > 0 {
-		// A card that cannot be read is no card: it decides nothing, so it is logged and never a Problem.
-		if pc, err := report.DecodePolicyChange(env.PolicyChange); err != nil {
-			f.policyChangeUnread = true
-		} else {
-			up.PolicyChange = &pc
-		}
-	}
-	up.Problems = problems.list()
-	return up, nil
-}
-
-// readBody reads the body once, capped at report.MaxBytes for both kinds.
+// readBody reads the body once, capped at maxPayloadBytes for the result.
 func readBody(req *http.Request) ([]byte, error) {
-	body, err := io.ReadAll(http.MaxBytesReader(nil, req.Body, report.MaxBytes))
+	body, err := io.ReadAll(http.MaxBytesReader(nil, req.Body, maxPayloadBytes))
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
@@ -155,21 +78,6 @@ func readBody(req *http.Request) ([]byte, error) {
 		return nil, fmt.Errorf("ingest: read body: %w", err)
 	}
 	return body, nil
-}
-
-func decodeEnvelope(req *http.Request, kind envelope.Kind) (envelope.Envelope, error) {
-	raw := req.Header.Get(envelopeHeader)
-	if raw == "" {
-		return envelope.Envelope{}, reject(http.StatusBadRequest, codeEnvelopeMissing)
-	}
-	env, err := envelope.Decode([]byte(raw))
-	if err != nil {
-		return envelope.Envelope{}, reject(http.StatusBadRequest, codeEnvelopeInvalid)
-	}
-	if env.Kind != kind {
-		return envelope.Envelope{}, reject(http.StatusBadRequest, codeKindMismatch)
-	}
-	return env, nil
 }
 
 func (r *receiver) verify(ctx context.Context, req *http.Request) (oidc.Claims, error) {
@@ -226,3 +134,6 @@ func (r *receiver) tenant(ctx context.Context, repository string, claims oidc.Cl
 	}
 	return repo, run, nil
 }
+
+// maxPayloadBytes caps an uploaded result at 5 MiB.
+const maxPayloadBytes = 5 << 20

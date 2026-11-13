@@ -28,7 +28,7 @@ The App imports two third-party modules:
 
 | Module                                    | Used in                                                         | Purpose                                                                                         |
 | ----------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `go.yaml.in/yaml/v3` v3.0.x               | `wire/settings`, `wire/policy`, `wire/policy3`, `wire/workflow` | Strict policy/settings decoding; policy edits by node position; job/step Action call extraction |
+| `go.yaml.in/yaml/v3` v3.0.x               | `wire/policy3`, `wire/workflow` | Strict policy decoding; policy edits by node position; job/step Action call extraction |
 | `github.com/go-webauthn/webauthn` v0.18.2 | `control/passkey` only                                          | WebAuthn registration and assertion for the passkey of an answer (M2 D9)                        |
 
 go-webauthn, because a hand-written WebAuthn, CBOR and COSE verifier would be security code the App owns forever
@@ -57,7 +57,7 @@ The tests use the standard `testing` package and table-driven cases with `t.Run`
 | Fixtures        | `internal/wire/testdata/` with `.expect.json` files                                                                           |
 | Import rules    | Root tests run `go list -deps` against the allowed import matrix                                                              |
 | Passkey         | A software authenticator on go-webauthn's CBOR and COSE encoders, and the W3C WebAuthn level 3 test vectors; never a real key |
-| Fuzzing         | `testing.F` covers strict `envelope`, `report`, `settings`, and `policy` decoders **[default]**                               |
+| Fuzzing         | `testing.F` covers envelope 2 and request parsing                               |
 
 ## Frontend
 
@@ -78,21 +78,20 @@ no other origin. The one exception is the shell's per-response nonce in `style-s
 
 ## Platform seams
 
-The design isolates platform-dependent code behind two interfaces.
+Store and Queue isolate platform-dependent persistence and delivery.
 
 | Seam      | Current driver                                             | Later choice                                                                                                         |
 | --------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `Store`   | `memory` (default), or `firestore`: Firestore over REST    | None. `CompareAndSwapAll` covers the multi-key transaction of the [cloud design](design/cloud/architecture.md#state) |
-| `Sandbox` | `none`. Managed discovery reports that it is not available | Add an ephemeral container-job driver under `internal/control/onboarding/<driver>/`                                  |
 | Host      | Cloud Run, two services in `europe-west1`                  | Deployed. See [cloud design](design/cloud/architecture.md)                                                           |
 | Scheduler | Any external scheduler calls `POST /internal/sweep`        | Chosen, not built: Cloud Scheduler and Cloud Tasks. See [cloud design](design/cloud/architecture.md#flows)           |
 
-The cloud design adds a `Queue` seam. The sandbox choice is still open.
+The v3 Sandbox seam and ARCHFIT_SANDBOX setting have been removed.
 The [hosting research](archive/research/20260918-hosting.md) is dated research, not a deployment decision.
 
 ## Conventions
 
-- Import a module by its full path, such as `.../internal/wire/report`.
+- Import a module by its full path, such as `.../internal/wire/result`.
 - Import only the packages listed under Integrations in the module specification.
 - Run `go test -race ./internal/<module path>/` and `golangci-lint run ./internal/<module path>/` for one module.
 - Use sentinel errors with `errors.Is` and `errors.As`. Wrap errors with `%w`. Do not panic outside `main`.

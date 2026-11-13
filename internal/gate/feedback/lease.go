@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"reflect"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
@@ -37,78 +36,13 @@ type lease struct {
 	Expires time.Time `json:"expires"`
 }
 
-// serialized is the Publisher New returns: every write method runs inside the head's lease. State only reads.
+// serialized is the Publisher4 New4 returns: every write runs inside the head's lease.
 type serialized struct {
 	next  *publisher
 	store store.Store
 	now   func() time.Time
 	// wait pauses between polls of a held lease. Tests replace it to observe contention.
 	wait func(context.Context) error
-}
-
-func (s *serialized) Publish(ctx context.Context, p Publication) error {
-	return s.hold(ctx, p.Target, func(ctx context.Context) error { return s.publishFresh(ctx, p) })
-}
-
-// publishFresh publishes p unless p.Resolve shows that its inputs moved. The caller holds the lease.
-func (s *serialized) publishFresh(ctx context.Context, p Publication) error {
-	if p.Resolve != nil {
-		fresh, err := p.Resolve(ctx)
-		if err != nil {
-			return fmt.Errorf("feedback: resolve inputs again: %w: %w", errUnwritten, err)
-		}
-		if !decidedFrom(p, fresh) {
-			return ErrStaleInputs
-		}
-	}
-	return s.next.Publish(ctx, p)
-}
-
-// Reconcile is State, decide and Publish under one hold of the lease. A failed read or decision wrote no check, so it
-// releases the lease at once; decide may have called GitHub (a re-run request), but never a check or comment write.
-func (s *serialized) Reconcile(ctx context.Context, t inputs.Target, decide Decision) error {
-	return s.hold(ctx, t, func(ctx context.Context) error {
-		current, err := s.next.State(ctx, t)
-		if err != nil {
-			return fmt.Errorf("feedback: read the gate check: %w (%w)", err, errUnwritten)
-		}
-		p, err := decide(ctx, current)
-		if err != nil {
-			return fmt.Errorf("%w (%w)", err, errUnwritten)
-		}
-		if p == nil {
-			return nil
-		}
-		return s.publishFresh(ctx, *p)
-	})
-}
-
-// decidedFrom reports whether p was decided from the trusted inputs t read now. Every field of t must equal
-// p.Trusted: the decision, the receipt and the rendering all read it, so a change of any field, digests or not (an
-// owner approval dismissed, settings edited, a subscription suspended), makes p stale. Whole-value equality cannot fall
-// behind a field that verdict.Decide starts to read. The digest checks are the sweep's stale_inputs condition, negated,
-// so that no publication the sweep would at once call stale is ever written, whatever p.Trusted holds.
-func decidedFrom(p Publication, t inputs.Trusted) bool {
-	return reflect.DeepEqual(p.Trusted, t) &&
-		inputs.Accepts(t.PolicyDigests, p.Receipt.PolicyDigest) &&
-		inputs.Accepts(t.BaselineDigests, p.Receipt.BaselineDigest) &&
-		inputs.Accepts(t.LabelsDigests, p.Receipt.LabelsDigest)
-}
-
-func (s *serialized) Pending(ctx context.Context, t inputs.Target) error {
-	return s.hold(ctx, t, func(ctx context.Context) error { return s.next.Pending(ctx, t) })
-}
-
-func (s *serialized) State(ctx context.Context, t inputs.Target) (CheckState, error) {
-	return s.next.State(ctx, t)
-}
-
-func (s *serialized) AdvisoryState(ctx context.Context, t inputs.Target) (CheckState, error) {
-	return s.next.AdvisoryState(ctx, t)
-}
-
-func (s *serialized) Warn(ctx context.Context, t inputs.Target, expiry time.Time) error {
-	return s.hold(ctx, t, func(ctx context.Context) error { return s.next.Warn(ctx, t, expiry) })
 }
 
 // hold runs fn while holding the lease of t's head. Any Store error fails the call before GitHub is written.

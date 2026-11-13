@@ -1,5 +1,14 @@
 # Architecture
 
+> **Archfit 4 contract.** POST /v1/reports accepts only upload envelope 2 with engine result v1.
+> Policies use schema 3 and identities use manifest 4. Envelope 1, policy schema 2 readers,
+> .archfit-app.yaml, baseline/reanchor and discovery flows have been removed. Their upload URLs
+> and /schema/policy.json return 404. Legacy-only page-data APIs return an explicit 409; page shells
+> remain mounted. Provenance does not independently verify report content.
+> Current contracts are in the [module specifications](../internal/module.md).
+> Sections below describing Archfit 3 flows are historical, not current operating instructions.
+
+
 This page explains the App boundary, the main request flows, and the Go package structure.
 Read the [module specifications](../internal/module.md) for package contracts and test specifications.
 

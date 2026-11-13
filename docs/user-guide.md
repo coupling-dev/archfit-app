@@ -1,5 +1,14 @@
 # User guide
 
+> **Archfit 4 contract.** POST /v1/reports accepts only upload envelope 2 with engine result v1.
+> Policies use schema 3 and identities use manifest 4. Envelope 1, policy schema 2 readers,
+> .archfit-app.yaml, baseline/reanchor and discovery flows have been removed. Their upload URLs
+> and /schema/policy.json return 404. Legacy-only page-data APIs return an explicit 409; page shells
+> remain mounted. Provenance does not independently verify report content.
+> Current contracts are in the [module specifications](../internal/module.md).
+> Sections below describing Archfit 3 flows are historical, not current operating instructions.
+
+
 This guide explains the App flows for repository admins, policy owners, developers, and operators.
 Read [Architecture](architecture.md) for the service boundary, routes, and package structure.
 

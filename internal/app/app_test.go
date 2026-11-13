@@ -30,12 +30,12 @@ func startRun(t *testing.T, c Config, log *slog.Logger) (base string, network *n
 func TestOptionalDependenciesAreOptional(t *testing.T) {
 	c := validConfig(t)
 
-	st, sandbox, err := platform(c, http.DefaultClient)
+	st, err := platform(c, http.DefaultClient)
 	if err != nil {
 		t.Fatalf("platform: %v", err)
 	}
-	if st == nil || sandbox != nil {
-		t.Errorf("platform = (%v, %v), want a store and a nil sandbox", st, sandbox)
+	if st == nil {
+		t.Error("platform returned no Store")
 	}
 
 	base, network, stop := startRun(t, c, slog.New(slog.DiscardHandler))
@@ -57,7 +57,7 @@ func TestOptionalDependenciesAreOptional(t *testing.T) {
 	t.Run("firestore starts without contacting Google", func(t *testing.T) {
 		c := validConfig(t)
 		c.StoreDriver, c.FirestoreProject = storeFirestore, "coupling-dev-510710"
-		st, _, err := platform(c, http.DefaultClient)
+		st, err := platform(c, http.DefaultClient)
 		if err != nil || st == nil {
 			t.Fatalf("platform = %v, %v, want a Firestore store", st, err)
 		}
@@ -115,7 +115,6 @@ func TestRequiredDependenciesFailStartup(t *testing.T) {
 		{"missing base URL", func(_ *testing.T, c *Config) { c.BaseURL = "" }, envBaseURL},
 		{"missing app ID", func(_ *testing.T, c *Config) { c.AppID = 0 }, envAppID},
 		{"unknown store driver", func(_ *testing.T, c *Config) { c.StoreDriver = "redis" }, envStore},
-		{"unknown sandbox driver", func(_ *testing.T, c *Config) { c.SandboxDriver = "docker" }, envSandbox},
 		{"firestore without a project", func(_ *testing.T, c *Config) { c.StoreDriver = storeFirestore }, envFirestoreProject},
 		{"firestore with an invalid project", func(_ *testing.T, c *Config) {
 			c.StoreDriver, c.FirestoreProject = storeFirestore, "MARKER/project"
@@ -144,8 +143,8 @@ func TestRequiredDependenciesFailStartup(t *testing.T) {
 	}
 
 	t.Run("unknown drivers are refused by platform too", func(t *testing.T) {
-		for _, c := range []Config{{StoreDriver: "redis", SandboxDriver: sandboxNone}, {StoreDriver: storeMemory, SandboxDriver: "docker"}} {
-			if _, _, err := platform(c, http.DefaultClient); err == nil {
+		for _, c := range []Config{{StoreDriver: "redis"}} {
+			if _, err := platform(c, http.DefaultClient); err == nil {
 				t.Errorf("platform(%+v) = nil error", c)
 			}
 		}

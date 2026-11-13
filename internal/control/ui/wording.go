@@ -6,20 +6,15 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alexei-led/archfit-app/internal/control/proposal"
-
 	"github.com/alexei-led/archfit-app/internal/control/account"
-	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/passkey"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
 
 const (
 	retryAfterSeconds = "60"
-	dateLayout        = "2 January 2006"
 
 	stateNone       = "no state yet"
 	stateUnknown    = "unknown"
@@ -89,11 +84,6 @@ var sentinels = []struct {
 		"The policy pull request holds the most answers it can. Merge it first, then answer. Your answer was not recorded."},
 	{account.ErrNoConsent, http.StatusConflict, "no_consent",
 		"Managed discovery needs the recorded consent of a repository administrator."},
-	{onboarding.ErrNoSandbox, http.StatusConflict, "no_sandbox", "Managed discovery is not available."},
-	{onboarding.ErrAlreadyOnboarded, http.StatusConflict, "already_onboarded",
-		"This repository is already onboarded. Reload the page to see its state."},
-	{onboarding.ErrBusy, http.StatusConflict, "onboarding_busy",
-		"Managed discovery is busy with other repositories. Try again in a few minutes."},
 	{api.ErrRateLimited, http.StatusServiceUnavailable, "rate_limited", "GitHub is rate limiting Archfit. Try again in a minute."},
 	{passkey.ErrNotOwner, http.StatusForbidden, "not_owner",
 		"Only an owner named in the policy, or a repository administrator before the first policy, can register a passkey here."},
@@ -135,13 +125,6 @@ func explain(err error) (status int, outcome, sentence string) {
 	return http.StatusBadGateway, "upstream", "GitHub or an Archfit service failed. Nothing was changed. Try again."
 }
 
-var draftWords = map[proposal.DraftState]string{
-	proposal.DraftOpen:     "draft",
-	proposal.DraftInReview: "awaiting review",
-	proposal.DraftMerged:   "published",
-	proposal.DraftClosed:   "closed",
-}
-
 var conclusionWords = map[string]string{
 	"":                "in progress",
 	"success":         "healthy",
@@ -175,7 +158,7 @@ func toneOf(word string) string {
 // neutral, so its headline decides: "violations found", never "attention" over the engine's blocked verdict.
 func stateWord(conclusion, title string) string {
 	if conclusion == "neutral" &&
-		(strings.HasPrefix(title, report.HeadlineViolations) || strings.HasPrefix(title, report.HeadlineGateFailing)) {
+		(strings.HasPrefix(title, "Architecture violations found") || strings.HasPrefix(title, "Architecture gate failing")) {
 		return stateViolations
 	}
 	return conclusionWord(conclusion)
@@ -186,32 +169,4 @@ func conclusionWord(c string) string {
 		return w
 	}
 	return stateUnknown
-}
-
-var stageWords = map[onboarding.Stage]string{
-	onboarding.StageInstalled:      "App installed",
-	onboarding.StageWorkflowMerged: "Workflow merged",
-	onboarding.StageReportReceived: "First report received",
-	onboarding.StagePolicyMerged:   "Policy merged",
-	onboarding.StageAdvisory:       "Gate is advisory",
-	onboarding.StageRequired:       "Gate is required",
-}
-
-// banner is the entitlement sentence; public and granted installations get none.
-func banner(st account.Status) string {
-	switch st.Plan {
-	case account.PlanTrial:
-		return "Trial: private repositories are checked until " + st.TrialEnds.UTC().Format(dateLayout) + "."
-	case account.PlanGrace:
-		return "The trial has ended. Checks on private repositories stop on " + st.SuspendAfter.UTC().Format(dateLayout) + "."
-	case account.PlanSuspended:
-		return "Archfit is suspended for this installation and publishes no checks on private repositories. " +
-			"Ask the Archfit team for a grant to restore them."
-	}
-	return ""
-}
-
-var notices = map[string]string{
-	"onboarding": "The onboarding pull request is open. Next: add the workflow file to it.",
-	"discover":   "Discovery was dispatched. The policy proposal arrives as a pull request.",
 }

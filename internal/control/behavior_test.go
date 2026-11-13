@@ -1,8 +1,6 @@
 package control
 
 import (
-	"errors"
-	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -13,12 +11,6 @@ import (
 	"github.com/alexei-led/archfit-app/internal/store"
 )
 
-const (
-	onboardingBranch = "archfit/onboarding"
-	workflowPath     = ".github/workflows/archfit.yaml"
-	policyPath       = ".archfit.yaml"
-)
-
 func (h *harness) rawEntitlement(id int64) string {
 	h.t.Helper()
 	raw, err := h.store.Store.Get(ctx, store.Tenant(id), gate.EntitlementKey)
@@ -26,12 +18,6 @@ func (h *harness) rawEntitlement(id int64) string {
 		h.t.Fatalf("entitlement of %d: %v", id, err)
 	}
 	return string(raw)
-}
-
-func (h *harness) discoveryUpload(r gate.Binding) int {
-	h.t.Helper()
-	h.receiver.answer(gate.Upload{Binding: r, Payload: []byte(policyDraft)}, nil)
-	return h.upload("{}").Code
 }
 
 func TestTrialLifecycleThroughTheFacade(t *testing.T) {
@@ -103,90 +89,6 @@ func TestStoreOutageIsNotNonPayment(t *testing.T) {
 	}
 }
 
-func TestBothOnboardingModesThroughTheFacade(t *testing.T) {
-	owners := []string{"org7/owners"}
-	t.Run("customer mode opens exactly two pull requests", func(t *testing.T) {
-		h := newHarness(t)
-		r := repo(7, "org7/app", true)
-		h.gh.install(7, ghr(70, r.FullName, true))
-		binding := gate.Binding{Repo: r, Event: "workflow_dispatch", BaseRef: "main", WorkflowPath: workflowPath}
-
-		for range 2 { // a retry never opens a second pull request
-			if _, err := h.c.onboarding.StartCustomer(ctx, r, owners); err != nil {
-				t.Fatalf("StartCustomer: %v", err)
-			}
-		}
-		if got := len(h.gh.pulls(r.FullName)); got != 1 {
-			t.Fatalf("%d pull requests after start and retry, want 1", got)
-		}
-		h.gh.merge(r.FullName, onboardingBranch)
-		for range 2 {
-			if code := h.discoveryUpload(binding); code >= 300 {
-				t.Fatalf("discovery upload = %d", code)
-			}
-		}
-		pulls := h.gh.pulls(r.FullName)
-		if len(pulls) != 2 || !pulls[1].Draft {
-			t.Fatalf("pull requests = %+v, want PR 1 and one draft PR 2", pulls)
-		}
-		if got, _ := h.gh.file(r.FullName, pulls[1].Head, policyPath); got != policyDraft {
-			t.Errorf("PR 2 policy = %q, want the uploaded discovery", got)
-		}
-		h.gh.merge(r.FullName, pulls[1].Head)
-		if got := len(h.gh.pulls(r.FullName)); got != 2 {
-			t.Errorf("%d pull requests, want exactly 2", got)
-		}
-		if h.sandbox.count() != 0 {
-			t.Error("customer mode ran a sandbox job")
-		}
-	})
-	t.Run("managed mode without consent runs no job", func(t *testing.T) {
-		h := newHarness(t)
-		r := repo(7, "org7/app", true)
-		h.gh.install(7, ghr(70, r.FullName, true))
-
-		_, err := h.c.onboarding.StartManaged(ctx, r, owners)
-
-		if !errors.Is(err, account.ErrNoConsent) {
-			t.Errorf("StartManaged = %v, want ErrNoConsent", err)
-		}
-		if h.sandbox.count() != 0 || h.gh.writeCount() != 0 {
-			t.Errorf("sandbox jobs = %d, GitHub writes = %d; want none", h.sandbox.count(), h.gh.writeCount())
-		}
-	})
-	t.Run("managed mode puts the policy on the onboarding pull request", func(t *testing.T) {
-		h := newHarness(t)
-		r := repo(7, "org7/app", true)
-		h.gh.install(7, ghr(70, r.FullName, true))
-		h.consent(7, account.ConsentSourceProcessing)
-		h.sandbox.result = DiscoveryResult{DraftPolicy: []byte(policyDraft), Notes: []string{"two modules found"}}
-
-		if _, err := h.c.onboarding.StartManaged(ctx, r, owners); err != nil {
-			t.Fatalf("StartManaged: %v", err)
-		}
-
-		if got := h.gh.awaitManagedJob(r.FullName, onboardingBranch, policyPath); got != policyDraft {
-			t.Errorf("policy = %q, want the sandbox draft", got)
-		}
-		if got := len(h.gh.pulls(r.FullName)); got != 1 {
-			t.Errorf("%d pull requests, want the onboarding pull request only", got)
-		}
-		if h.sandbox.count() != 1 || h.sandbox.jobs[0].Token != "read-7" {
-			t.Errorf("sandbox jobs = %+v, want one job with the repository read token", h.sandbox.jobs)
-		}
-	})
-	t.Run("managed mode without a sandbox is not available", func(t *testing.T) {
-		h := newHarness(t, withoutSandbox)
-		r := repo(7, "org7/app", true)
-		h.gh.install(7, ghr(70, r.FullName, true))
-		h.consent(7, account.ConsentSourceProcessing)
-
-		if _, err := h.c.onboarding.StartManaged(ctx, r, owners); !errors.Is(err, ErrNoSandbox) {
-			t.Errorf("StartManaged = %v, want ErrNoSandbox", err)
-		}
-	})
-}
-
 func TestControlFailureNeverReachesTheGate(t *testing.T) {
 	h := newHarness(t)
 	r := repo(7, "org7/app", true)
@@ -200,7 +102,6 @@ func TestControlFailureNeverReachesTheGate(t *testing.T) {
 
 	h.store.set(func(s *flakyStore) { s.failAll = true })
 	h.gh.set(func(g *fakeGitHub) { g.down = true })
-	h.receiver.answer(gate.Upload{}, &gate.Rejection{Status: http.StatusServiceUnavailable, Code: "github_unavailable"})
 	h.clock.Add(time.Hour)
 
 	for _, kind := range []webhook.EventKind{webhook.InstallationAdded, webhook.ReposRemoved, webhook.InstallationRemoved} {
@@ -216,9 +117,6 @@ func TestControlFailureNeverReachesTheGate(t *testing.T) {
 	}
 	if rec := b.get("/api/repos/org7/app/overview"); rec.Code < 400 {
 		t.Errorf("UI overview = %d, want an error", rec.Code)
-	}
-	if rec := h.upload("{}"); rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("discovery upload = %d, want 503", rec.Code)
 	}
 
 	if got := h.rawEntitlement(7); got != lastGood {

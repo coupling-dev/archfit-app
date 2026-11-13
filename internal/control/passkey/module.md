@@ -62,11 +62,9 @@ changes no stored value, because the stored passkey is the App's own type.
   removal read, verify, open their issue, then write once with `CompareAndSwapAll` from the bytes read: a key that
   moved in between fails the step. So a response is never applied twice.
 - The token: 32 random bytes in base64url. Only its SHA-256 is stored; the comparison is constant-time.
-- Before the first policy: no `.archfit.yaml` on the default branch, or an Archfit 3 (version 2) one, which the
-  onboarding pull request converts. Archfit 3 means a text `policy.Diagnose` accepts in full, its schema's
-  `version: 2` included; `policy.Validate` checks only key names and would take a schema 3 file without `owners`. A
-  file that is neither schema 3 nor Archfit 3 is `ErrPolicy`. The Archfit 3 check goes with `wire/policy` (M2 task
-  25).
+- Before the first policy: no .archfit.yaml on the default branch, or policy3.Decode returning
+  policy3.ErrVersion2. This is version detection only: it does not validate or accept the schema 2 contract.
+  A schema 3 policy supplies the owners; any other decoder failure is ErrPolicy.
 
 ## Public Contract
 
@@ -162,7 +160,7 @@ func NewIssues(issues issueCreator, triage api.IssueTriage) Issues // api.Issues
 ### internal/store, internal/github/api, internal/wire/policy3, internal/wire/policy
 
 - **Direction**: passkey depends on them: the Store and `Update`; `Repo`, `RepoRef`, `File`, `CreateIssue`,
-  `IssueTriage`; `policy3.Decode` for the owners; `policy.Diagnose` to recognise an Archfit 3 policy.
+  `IssueTriage`; `policy3.Decode` for owners and `policy3.ErrVersion2` for the pre-schema-3 migration state.
 - **Strength**: contract. **LCA / Rank / Distance**: root / 2 / 2. **Balanced?**: yes, contract coupling tolerates the
   distance.
 

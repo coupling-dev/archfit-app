@@ -21,9 +21,9 @@ const (
 
 func (r *receiver) ReceiveV2(ctx context.Context, req *http.Request) (Upload4, error) {
 	start := time.Now()
-	f := facts{v2: true}
+	var f facts
 	up, err := r.receiveV2(ctx, req, &f)
-	f.log(ctx, envelope.KindReport, up.Problems, err, time.Since(start))
+	f.log(ctx, "report", up.Problems, err, time.Since(start))
 	return up, err
 }
 

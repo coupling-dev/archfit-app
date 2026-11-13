@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
-	"github.com/alexei-led/archfit-app/internal/gate/verdict"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/result"
 )
@@ -16,7 +15,7 @@ import (
 const digest4 = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
 
 func (h *harness) pub4() Publisher4 {
-	return New4(h.checks, h.comments, h.pulls, h.store, appURL, h.clock.now)
+	return h.pub
 }
 
 func pub4(t inputs.Target, runID int64, attempt int, r result.Result) Publication4 {
@@ -176,7 +175,7 @@ func TestPublish4FreshWaitingReplacesTheOldRun(t *testing.T) {
 
 func TestPublish4CompletesAPendingCheckInPlace(t *testing.T) {
 	h := newHarness(headB)
-	h.checks.add(api.CheckRun{Name: gateCheck, HeadSHA: headB, Status: statusInProgress, Title: pendingTitle})
+	h.checks.add(api.CheckRun{Name: gateCheck, HeadSHA: headB, Status: statusInProgress, Title: "Waiting for report"})
 	h.publish4(t, pub4(prTarget(headB), 7, 1, engineResult(t, "pass")))
 	runs := h.checks.named(headB, gateCheck)
 	if len(runs) != 1 || runs[0].Status != statusCompleted || runs[0].Conclusion != conclusionSuccess {
@@ -266,49 +265,6 @@ func TestPublish4WritesNothingFromInputsThatMoved(t *testing.T) {
 		h.publish4(t, p)
 		if run := h.checks.latest(t, headB, gateCheck); run.Conclusion != conclusionSuccess {
 			t.Errorf("check %+v", run)
-		}
-	})
-}
-
-// The v1 path and the Archfit 4 path share archfit/gate on a head. Each reads the other's run from external_id, so
-// neither writes over a newer run of the other, and v1 never keeps Archfit 4 annotations under its own conclusion.
-func TestV1AndArchfit4ShareTheGateCheck(t *testing.T) {
-	t.Run("v1 leaves a newer Archfit 4 check", func(t *testing.T) {
-		h := newHarness(headB)
-		h.publish4(t, pub4(prTarget(headB), 9, 1, engineResult(t, "graph")))
-		if err := h.pub.Publish(context.Background(), blockedPublication(t, headB, 7, 1)); err != nil {
-			t.Fatal(err)
-		}
-		if run := h.checks.latest(t, headB, gateCheck); run.ExternalID != "v2:9:1:"+digest4 || run.Title != "fail, 1 error" {
-			t.Errorf("v1 wrote over the newer Archfit 4 check: %+v", run)
-		}
-	})
-	t.Run("a sweep correction leaves a waiting Archfit 4 check", func(t *testing.T) {
-		h := newHarness(headB)
-		h.publish4(t, pub4(prTarget(headB), 9, 1, engineResult(t, "waiting")))
-		err := h.pub.Reconcile(context.Background(), prTarget(headB), func(_ context.Context, current CheckState) (*Publication, error) {
-			p := blockedPublication(t, headB, 0, 0)
-			p.Outcome = outcome(verdict.ActionRequired, reasonInvalid)
-			p.Receipt = current.Receipt // the zero receipt v1 reads from an Archfit 4 run
-			return &p, nil
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if run := h.checks.latest(t, headB, gateCheck); run.Status != statusInProgress || run.ExternalID != "v2:9:1:"+digest4 {
-			t.Errorf("the sweep replaced the waiting check: %+v", run)
-		}
-	})
-	t.Run("a newer v1 run makes a new run, without the Archfit 4 annotations", func(t *testing.T) {
-		h := newHarness(headB)
-		h.publish4(t, pub4(prTarget(headB), 7, 1, engineResult(t, "graph")))
-		if err := h.pub.Publish(context.Background(), blockedPublication(t, headB, 9, 1)); err != nil {
-			t.Fatal(err)
-		}
-		runs := h.checks.named(headB, gateCheck)
-		latest := h.checks.latest(t, headB, gateCheck)
-		if len(runs) != 2 || len(latest.Annotations) != 0 || !strings.HasPrefix(latest.ExternalID, "v1:9:1:") {
-			t.Errorf("runs %d, latest %s with %d annotations", len(runs), latest.ExternalID, len(latest.Annotations))
 		}
 	})
 }

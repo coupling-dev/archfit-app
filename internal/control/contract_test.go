@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -143,7 +142,7 @@ func TestSweepStopsWhenInstallationsUnavailable(t *testing.T) {
 	st := &flakyStore{Store: store.NewMemory()}
 	acct, _ := account.New(st)
 	repos := &fakeRepos{installErr: api.ErrRateLimited}
-	c := newControl(acct, repos, st, admitAll{}, okHandler, okHandler, newClock().Now)
+	c := newControl(acct, repos, st, admitAll{}, okHandler, newClock().Now)
 
 	err := c.Sweep(ctx)
 
@@ -183,54 +182,5 @@ func TestGrantRewritesEntitlement(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(logs.String()[logged:]), "\n")
 	if len(lines) != 1 || !strings.Contains(lines[0], ":7") {
 		t.Errorf("audit log = %q, want one line with the installation ID", lines)
-	}
-}
-
-func TestHandlersAreMounted(t *testing.T) {
-	h := newHarness(t)
-	h.receiver.answer(gate.Upload{}, &gate.Rejection{Status: http.StatusUnauthorized, Code: "oidc_invalid"})
-
-	t.Run("UI asks an anonymous visitor to sign in", func(t *testing.T) {
-		rec := httptest.NewRecorder()
-		h.c.UIHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/r/org7/app", nil))
-		if rec.Code != http.StatusSeeOther || !strings.HasPrefix(rec.Header().Get("Location"), "/auth/login") {
-			t.Errorf("GET /r/org7/app = %d to %q, want 303 to /auth/login", rec.Code, rec.Header().Get("Location"))
-		}
-		rec = httptest.NewRecorder()
-		h.c.UIHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
-		if rec.Code != http.StatusOK {
-			t.Errorf("GET / = %d, want the web app's shell", rec.Code)
-		}
-		rec = httptest.NewRecorder()
-		h.c.UIHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/session", nil))
-		if rec.Code != http.StatusUnauthorized {
-			t.Errorf("GET /api/session = %d, want 401, which the shell shows as the landing page", rec.Code)
-		}
-	})
-	t.Run("discovery answers the Receiver's rejection", func(t *testing.T) {
-		rec := httptest.NewRecorder()
-		h.c.DiscoveryHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/discoveries", strings.NewReader("{}")))
-		if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "oidc_invalid") {
-			t.Errorf("POST /v1/discoveries = %d %q, want 401 with oidc_invalid", rec.Code, rec.Body.String())
-		}
-		if h.receiver.calls != 1 {
-			t.Errorf("Receiver calls = %d, want 1", h.receiver.calls)
-		}
-	})
-}
-
-func TestSeamsDefaultToNotAvailable(t *testing.T) {
-	h := newHarness(t, withoutSandbox)
-	h.gh.install(7, ghr(70, "org7/app", true))
-	r := repo(7, "org7/app", true)
-	if err := h.c.consents.Record(ctx, 7, account.Consent{Kind: account.ConsentSourceProcessing, By: "alice", ByID: 1, At: h.clock.Now()}); err != nil {
-		t.Fatalf("Record: %v", err)
-	}
-
-	if _, err := h.c.onboarding.StartManaged(ctx, r, []string{"@org7/owners"}); !errors.Is(err, ErrNoSandbox) {
-		t.Errorf("StartManaged = %v, want ErrNoSandbox", err)
-	}
-	if n := h.gh.writeCount(); n != 0 {
-		t.Errorf("%d GitHub writes, want no PR", n)
 	}
 }
