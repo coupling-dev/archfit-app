@@ -148,7 +148,23 @@ func viewFixtures(t *testing.T) []viewFixture {
 			Status: result.StatusUnknown, Summary: "archfit: unknown, no verdict", Unknown: []result.Unknown{tc.u},
 		}, false})
 	}
+	fixtures = append(fixtures, viewFixture{"waiting-twelve", twelveWaitingRequests(t), false})
 	return fixtures
+}
+
+func twelveWaitingRequests(t *testing.T) result.Result {
+	t.Helper()
+	r := engineResult(t, "waiting")
+	first := r.Errors[0]
+	r.Errors = nil
+	for i := range 12 {
+		e := first
+		e.Path = fmt.Sprintf("pkg/tc/netem%d.go", i+1)
+		e.Next.Text = fmt.Sprintf("wait for an owner: #%d", 431+i)
+		r.Errors = append(r.Errors, e)
+	}
+	r.Summary = "archfit: waiting, requests #431, #432, #433, #434, #435, #436, #437, #438, #439, #440 and 2 more"
+	return r
 }
 
 // checkText is a check run as a reader sees it: its state, title, summary and annotations.

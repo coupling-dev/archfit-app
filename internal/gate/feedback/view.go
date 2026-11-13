@@ -118,7 +118,8 @@ func (v view) says(n result.Next) bool {
 	case nextCommand:
 		return strings.HasPrefix(n.Text, requestCommand+" ")
 	case nextWait:
-		return request(n) > 0
+		id := request(n)
+		return id > 0 && slices.Contains(v.requests[:min(len(v.requests), requestCap)], id)
 	}
 	return true
 }

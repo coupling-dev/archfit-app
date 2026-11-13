@@ -1,6 +1,7 @@
 package feedback
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -42,5 +43,28 @@ func TestPageBoundsProducerTextWithoutChangingTheSource(t *testing.T) {
 	}
 	if r.Errors[0].What != long {
 		t.Error("bounding changed the source")
+	}
+}
+
+func TestWaitStepsBeyondTheNamedRequestsStayVisible(t *testing.T) {
+	r := twelveWaitingRequests(t)
+	r.Errors = append(r.Errors, r.Errors[0], r.Errors[10])
+	v := newView(r)
+	page := v.page()
+	for i, record := range page.Records {
+		want := i >= 10 && i != 12
+		if record.ShowNext != want {
+			t.Errorf("request #%d at record %d: ShowNext = %v, want %v", record.Request, i, record.ShowNext, want)
+		}
+	}
+	body := v.comment(maxBody)
+	for _, id := range []int{441, 442} {
+		step := fmt.Sprintf("- next: wait for an owner: #%d\n", id)
+		if !strings.Contains(body, step) {
+			t.Errorf("comment hides %q", step)
+		}
+	}
+	if !strings.Contains(page.Author, "#440 and 2 more") {
+		t.Errorf("author line = %q", page.Author)
 	}
 }

@@ -25,6 +25,7 @@ Producer text is bounded and made inert for Markdown/annotations.
 The shared result model also supplies `BuildPage(result.Result) Page`: status, status line,
 ordered `Record` values, author and owner lines. The comment renders those same page records.
 Each record retains its next step; `ShowNext` is false when the author line already names it.
+The author line names at most ten requests. Later requests keep their next-step lines.
 `Request` binds an error's wait step to its issue number, including an expired exception.
 Records omit upload-only metadata. Page strings remain untrusted text, not HTML.
 The builder renders the App's judged result; it does not verify evidence or grant authority.
