@@ -93,12 +93,11 @@ func (v *pullViews) PullPage(ctx context.Context, r api.Repo, number int) (PullP
 	}
 	out.CheckStatus, out.CheckConclusion = check.Status, check.Conclusion
 	tenant := store.Tenant(r.InstallationID)
-	var rec records.Pull
-	err = records.Load(ctx, v.store, tenant, records.PullKey(r.FullName, number), &rec)
-	if err != nil && !errors.Is(err, records.ErrNoRecord) {
+	rec, pub, published, err := v.snapshot(ctx, r, number, pl.HeadSHA)
+	if err != nil {
 		return out, err
 	}
-	if errors.Is(err, records.ErrNoRecord) || rec.HeadSHA != pl.HeadSHA {
+	if rec.HeadSHA != pl.HeadSHA {
 		rec = records.Pull{}
 	}
 	if rec.RunID != 0 {
@@ -131,13 +130,8 @@ func (v *pullViews) PullPage(ctx context.Context, r api.Repo, number int) (PullP
 		}
 	}
 	slices.Sort(out.Waiting)
-	var pub records.Publication
-	err = records.Load(ctx, v.store, tenant, records.PublicationKey(r.FullName, number, pl.HeadSHA), &pub)
-	if err != nil && !errors.Is(err, records.ErrNoRecord) {
-		return out, err
-	}
 	newer := pub.RunID > rec.RunID || pub.RunID == rec.RunID && pub.RunAttempt >= rec.RunAttempt
-	if err == nil && pub.HeadSHA == pl.HeadSHA && newer {
+	if published && pub.HeadSHA == pl.HeadSHA && newer {
 		if pub.Superseded {
 			out.Message = "A newer check is shown for this commit."
 			return out, nil
@@ -207,4 +201,28 @@ func (v *pullViews) PullPage(ctx context.Context, r api.Repo, number int) (PullP
 	view := BuildPullView(res)
 	out.View = &view
 	return out, nil
+}
+
+// snapshot validates both captured values in one no-change swap; separate reads
+// could pair an unpublished upload with a later publication's cleared marker.
+func (v *pullViews) snapshot(ctx context.Context, r api.Repo, number int, head string) (records.Pull, records.Publication, bool, error) {
+	var pull records.Pull
+	var publication records.Publication
+	var published bool
+	keys := []string{records.PullKey(r.FullName, number), records.PublicationKey(r.FullName, number, head)}
+	err := store.Update(ctx, v.store, store.Tenant(r.InstallationID), keys, func(cur [][]byte) ([][]byte, error) {
+		pull, publication, published = records.Pull{}, records.Publication{}, cur[1] != nil
+		if cur[0] != nil {
+			if err := records.Decode(cur[0], &pull); err != nil {
+				return nil, err
+			}
+		}
+		if cur[1] != nil {
+			if err := records.Decode(cur[1], &publication); err != nil {
+				return nil, err
+			}
+		}
+		return cur, nil
+	})
+	return pull, publication, published, err
 }

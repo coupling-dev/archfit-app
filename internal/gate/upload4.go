@@ -99,6 +99,7 @@ type decision4 struct {
 	// whether it is waiting. Covered are those requests; Waiting is the result shown then.
 	Coverable   bool
 	StagedToken string
+	StagedAt    time.Time
 	Covered     []int
 	Waiting     *result.Result
 }
@@ -142,6 +143,7 @@ func (g *Gate) serveUpload4(w http.ResponseWriter, req *http.Request) {
 	}
 	if err == nil {
 		d.StagedToken = rand.Text()
+		d.StagedAt = g.now()
 		err = g.v4.storePull(ctx, u, d, publish)
 	}
 	if err == nil && publish {
@@ -538,7 +540,7 @@ func (v *upload4) storePull(ctx context.Context, u ingest.Upload4, d decision4, 
 		if err != nil {
 			return nil, err
 		}
-		pending, err := records.Encode(&records.Publication{HeadSHA: b.HeadSHA, RunID: b.RunID, RunAttempt: b.RunAttempt, Pending: publish, Staged: publish, Unpublished: !publish, Source: "upload", Token: d.StagedToken})
+		pending, err := records.Encode(&records.Publication{HeadSHA: b.HeadSHA, RunID: b.RunID, RunAttempt: b.RunAttempt, Pending: publish, Staged: publish, Unpublished: !publish, Source: "upload", Token: d.StagedToken, StagedAt: d.StagedAt, Digest: u.Envelope.PayloadDigest})
 		if err != nil {
 			return nil, err
 		}

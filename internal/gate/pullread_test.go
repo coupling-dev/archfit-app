@@ -18,12 +18,16 @@ type pullReadGitHub struct {
 	pull        api.Pull
 	artifact    []byte
 	artifactErr error
+	artifacts   map[int64][]byte
 }
 
 func (g *pullReadGitHub) PullSummary(context.Context, api.RepoRef, int) (api.Pull, error) {
 	return g.pull, nil
 }
-func (g *pullReadGitHub) Artifact(context.Context, api.RepoRef, int64, string, int64) ([]byte, error) {
+func (g *pullReadGitHub) Artifact(_ context.Context, _ api.RepoRef, run int64, _ string, _ int64) ([]byte, error) {
+	if g.artifacts != nil {
+		return g.artifacts[run], nil
+	}
 	return g.artifact, g.artifactErr
 }
 func (*pullReadGitHub) CheckRuns(context.Context, api.RepoRef, string, string) ([]api.CheckRun, error) {
@@ -235,5 +239,60 @@ func TestPullPageNeverShowsPreviousHeadsPass(t *testing.T) {
 	}
 	if got.View != nil || got.Record != nil || got.Message != "No result yet." {
 		t.Fatalf("previous head displayed: %+v", got)
+	}
+}
+
+type changeAfterRecordRead struct {
+	store.Store
+	key    string
+	change func()
+}
+
+func (s *changeAfterRecordRead) Get(ctx context.Context, tenant store.Tenant, key string) ([]byte, error) {
+	raw, err := s.Store.Get(ctx, tenant, key)
+	if key == s.key && s.change != nil {
+		change := s.change
+		s.change = nil
+		change()
+	}
+	return raw, err
+}
+
+func TestPullPageRequiresConsistentRecordAndPublicationSnapshot(t *testing.T) {
+	pass, err := os.ReadFile("../wire/result/testdata/result/pass.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fail, err := os.ReadFile("../wire/result/testdata/result/deny.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem := store.NewMemory()
+	r := api.Repo{RepoRef: api.RepoRef{InstallationID: 1, FullName: "acme/app"}}
+	put := func(key string, value records.Value) {
+		raw, err := records.Encode(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = mem.Put(t.Context(), 1, key, raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recordKey, pubKey := records.PullKey(r.FullName, 4), records.PublicationKey(r.FullName, 4, "head")
+	put(recordKey, &records.Pull{HeadSHA: "head", RunID: 42, RunAttempt: 1, Status: "pass", PolicyDigest: "approved", PayloadDigest: envelope.PayloadDigest(pass)})
+	put(pubKey, &records.Publication{HeadSHA: "head", RunID: 42, RunAttempt: 1, Pending: true, Staged: true, Token: "B"})
+	changing := &changeAfterRecordRead{Store: mem, key: recordKey, change: func() {
+		put(recordKey, &records.Pull{HeadSHA: "head", RunID: 43, RunAttempt: 1, Status: "fail", PolicyDigest: "approved", PayloadDigest: envelope.PayloadDigest(fail)})
+		if err := mem.Delete(t.Context(), 1, pubKey); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	gh := &pullReadGitHub{pull: api.Pull{HeadSHA: "head"}, artifacts: map[int64][]byte{42: pass, 43: fail}}
+	got, err := NewPullViews(gh, changing).PullPage(t.Context(), r, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.View == nil || got.View.Status != result.StatusFail || got.Record.RunID != 43 {
+		t.Fatalf("inconsistent snapshot admitted: %+v", got)
 	}
 }

@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/result"
 )
 
@@ -99,6 +101,17 @@ func (s *serialized) current4(ctx context.Context, p Publication4, withdraw bool
 		if _, run, attempt, ok := externalRun(existing.ExternalID); found && ok {
 			p.RunID, p.RunAttempt = run, attempt
 			p.Digest = strings.SplitN(existing.ExternalID, ":", 4)[3]
+		}
+		var marker records.Publication
+		err = records.Load(ctx, s.store, store.Tenant(p.Target.Repo.InstallationID), records.PublicationKey(p.Target.Repo.FullName, p.Target.PullRequest, p.Target.HeadSHA), &marker)
+		if err != nil && !errors.Is(err, records.ErrNoRecord) {
+			return err
+		}
+		if err == nil && marker.Pending && (marker.RunID > p.RunID || marker.RunID == p.RunID && marker.RunAttempt >= p.RunAttempt) {
+			p.RunID, p.RunAttempt, p.StagedToken = marker.RunID, marker.RunAttempt, marker.Token
+			if marker.Digest != "" {
+				p.Digest = marker.Digest
+			}
 		}
 	}
 	if p.Target.PullRequest != 0 {

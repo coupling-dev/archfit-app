@@ -66,3 +66,7 @@ skipped because a newer publication exists, feedback records a superseded marker
 
 Pending request publications retain source `request` and their payload digest. A matching request retry may
 resume that pending write after its authority check; it cannot resume a withdrawal or an upload-staged marker.
+
+A withdrawal without a matching pull record adopts a newer pending marker's identity and exact token under
+the lease. This lets it withdraw an old success after a force-push back without claiming a concurrently
+replaced upload. Upload staging carries a fixed-clock timestamp for the sweep's bounded abandoned-write recovery.

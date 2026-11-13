@@ -82,3 +82,9 @@ issues are plain text, not request links; only the shared model's explicit reque
 ## Request page view
 
 `RequestView` reads the request and exposes declared volatility, layers outer-first and structured deny/exception dependencies from one target-policy snapshot. When an answered request has an approval pointer, the facade reads the recorded answer; older records without it provide no answer detail. The view includes the request issue link, which remains the source for the owner and passkey.
+
+The pull reader validates the pull record and publication marker together with a no-change multi-key CAS
+before admitting an artifact; split reads cannot pair an unpublished result with a later cleared marker.
+The sweep recovers an upload-staged marker only after both its grace period and the completed workflow's
+grace period, publishing unknown while atomically claiming that marker's token. A force-push-back withdrawal
+reconciles a newer pending identity with the live check under the head lease instead of preserving an old pass.

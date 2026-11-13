@@ -521,3 +521,41 @@ func TestGateSweepRunsV4AndStopsOnARateLimit(t *testing.T) {
 		t.Fatalf("rate limited Sweep = %+v,%v", sum, err)
 	}
 }
+
+func TestSweepRecoversAbandonedWaitingUploadOnlyAfterGrace(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		stageAge, runAge time.Duration
+		running, recover bool
+	}{
+		{name: "active upload", stageAge: time.Minute, runAge: 2 * time.Hour},
+		{name: "abandoned completed upload", stageAge: 61 * time.Minute, runAge: 2 * time.Hour, recover: true},
+		{name: "workflow still running", stageAge: 61 * time.Minute, runAge: 2 * time.Hour, running: true},
+		{name: "workflow recently finished", stageAge: 61 * time.Minute, runAge: time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newAskWorld(t)
+			p := w.pullBy(7)
+			w.uploadAsk(p, "graph", "fail")
+			w.ask(p, workerLogin, "/archfit request tc needs it")
+			for i := range w.gh.checks[shopName] {
+				w.gh.checks[shopName][i].StartedAt = w.now.Add(-11 * 24 * time.Hour)
+			}
+			w.editRun(p, func(run *api.WorkflowRun) {
+				run.Status = "completed"
+				run.UpdatedAt = w.now.Add(-tc.runAge)
+				if tc.running {
+					run.Status = "in_progress"
+				}
+			})
+			w.put4(records.PublicationKey(shopName, p.number, p.head), &records.Publication{HeadSHA: p.head, RunID: p.runID, RunAttempt: 1, Pending: true, Staged: true, Token: "abandoned", Source: "upload", StagedAt: w.now.Add(-tc.stageAge)})
+			w.sweep4()
+			if tc.recover {
+				w.wantSweepGate(p, "completed", "action_required")
+				w.wantPublication(p, "missing_upload", result.StatusUnknown)
+			} else {
+				w.wantSweepGate(p, "in_progress", "")
+			}
+		})
+	}
+}
