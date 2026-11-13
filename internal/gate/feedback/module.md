@@ -59,8 +59,9 @@ An upload deliberately excluded from publication (such as the App's policy propo
 event) records an `unpublished` marker instead of a pending marker; its engine result never becomes a verdict.
 
 An upload's pending marker has a token made before the atomic pull-record swap. Its publisher must claim that
-exact token; a queued writer cannot replace another upload staged for the same run and attempt. A non-upload
-publication cannot claim an upload-staged marker. When the shared-head check or pull comment is intentionally
+exact token; a queued writer cannot replace another upload staged for the same run and attempt. An ordinary
+request publication cannot claim an upload-staged marker; an authoritative App-generated withdrawal can
+supersede it so an abandoned upload cannot preserve an old success. When the shared-head check or pull comment is intentionally
 skipped because a newer publication exists, feedback records a superseded marker, not a perpetual pending state.
 
 Pending request publications retain source `request` and their payload digest. A matching request retry may
