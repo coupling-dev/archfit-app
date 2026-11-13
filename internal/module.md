@@ -9,7 +9,7 @@
 Archfit App is one Go service that turns a customer-executed Archfit engine report into
 trustworthy GitHub feedback: an advisory `archfit/state` check, one updated PR comment, and
 an explicitly enabled, fail-closed `archfit/gate` check. Around that gate path it provides
-onboarding, policy editing, AI assistance on request, and entitlements. Without it, an
+onboarding, owner answers to requests, and entitlements. Without it, an
 engine report is only a self-reported file: nothing binds it to the approved policy on the
 protected ref, to an architecture owner's approval, or to the revision it claims to describe.
 
@@ -27,17 +27,15 @@ repository), which replaces those three records. Choices made without an owner a
   `success`, `failure`, or `action_required`; never `neutral` or `skipped`.
 - Publish `archfit/state`, `archfit/gate` (when `gate: required`) and one PR comment, idempotently.
 - Enforce architecture-owner approval on the exact head SHA for policy, baseline, settings and
-  workflow changes, including atomic code-and-policy PRs. An owner approves by a review on GitHub or with Approve on
-  the App's pull request page; a push never approves, and an agent identity listed in the settings never approves.
+  workflow changes, including atomic code-and-policy PRs. An owner approves by a review on GitHub or by answering the
+  request in the App; a push never approves, and an agent identity listed in the settings never approves.
 - Recover from missed events with one periodic sweep; schedule around waiver expiry and base policy changes
   by re-running the customer's workflow.
 - Onboard repositories in customer-executed mode (two PRs) and managed mode (sandbox job after consent).
-- Serve the UI: GitHub OAuth login, organization overview without a score, YAML editor with server-side
-  schema diagnostics by line, drafts as draft PRs, read-only graph.
-- Offer AI assistance only on explicit request: managed (one provider, consent, hard budget) or
-  customer mode (workflow dispatch). Proposals are always reviewable diffs.
-- Keep entitlements (manual grants, trial, grace, suspension), consent records and the LLM budget
-  counter in a KV store; delete them on uninstall. Besides them only short-lived publication leases, which
+- Serve the UI: GitHub OAuth login, organization overview without a score, the request page where an owner answers
+  with a passkey, read-only graph.
+- Keep entitlements (manual grants, trial, grace, suspension) and consent records
+  in a KV store; delete them on uninstall. Besides them only short-lived publication leases, which
   serialize the GitHub writes of one head SHA across instances. Store nothing else: no reports, no source, no queue state.
 
 ## Subdomain Classification
@@ -47,7 +45,7 @@ The system as a whole is a **core** product. Per area:
 | Area                                                 | Subdomain                                               | Volatility                                                            | Rationale                                                                         |
 | ---------------------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `gate`                                               | Core — the part that makes the product worth paying for | High                                                                  | Trust rules, outcome mapping and feedback will be tuned with every pilot          |
-| `control/onboarding`, `control/ui`, `control/assist` | Core-adjacent product surface                           | High                                                                  | Adoption UX; product.md leaves usability targets open                             |
+| `control/onboarding`, `control/ui`                   | Core-adjacent product surface                           | High                                                                  | Adoption UX; product.md leaves usability targets open                             |
 | `control/account`                                    | Supporting — needed, not differentiating                | Moderate                                                              | Trial and commercial terms are **[default]** and expected to change before launch |
 | `control/proposal`                                   | Supporting                                              | Low                                                                   | Branch-plus-draft-PR mechanics are stable GitHub behavior                         |
 | `control/passkey`                                    | Generic — WebAuthn, done by go-webauthn (M2 D9)          | Low                                                                   | Parameters fixed by M2 D9; the stored passkey is the App's own type               |
@@ -60,7 +58,7 @@ The system as a whole is a **core** product. Per area:
 - The decomposition itself: which packages exist, the allowed import directions, and the rule
   that `gate` never imports `control` or `app`.
 - The single-binary shape: every module is a Go package in one binary; the only platform seams
-  are `Store`, `Queue`, `Sandbox`, and the LLM `Provider`. A role setting runs the binary as one process with
+  are `Store`, `Queue` and `Sandbox`. A role setting runs the binary as one process with
   every route, or as a public process and a worker process.
 - The rule that GitHub is the database and the protected ref the only source of customer-approved truth.
 
@@ -124,7 +122,6 @@ type Config struct {
     OAuthSecretFile  string // ARCHFIT_GITHUB_OAUTH_SECRET_FILE
     CookieKeyFile    string // ARCHFIT_COOKIE_KEY_FILE
     OperatorTokenFile string // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
-    AnthropicKeyFile string // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM
     StoreDriver      string // ARCHFIT_STORE, "memory" (default) or "firestore"
     FirestoreProject string // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
     FirestoreDatabase string // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
@@ -184,11 +181,9 @@ internal/                         Archfit App (root)
 │   ├── records/                  Archfit 4 state under v4/: keys, values, indexes, join and consume
 │   └── sweep/                    reconciliation of open PRs
 └── control/                      control plane (never on the gate path)
-    ├── account/                  entitlements, consent records, LLM budget (all KV state)
+    ├── account/                  entitlements and consent records (all KV state)
     ├── proposal/                 a change as branch + draft PR, idempotent
     ├── onboarding/               two-PR customer flow, managed discovery behind Sandbox
-    ├── assist/                   explicit AI requests; owns the LLM Provider seam
-    │   └── anthropic/            Provider implementation
     ├── passkey/                  WebAuthn passkeys of owners and the step-up of an answer (go-webauthn)
     └── ui/                       the embedded web app, its JSON API, sign-in
         ├── session/              OAuth login, signed cookies, permission checks
@@ -201,12 +196,12 @@ Root fan-out is eight, three above the 4±1 guidance; see Minor issues below.
 
 - A module folder is a Go package. A parent package composes its children; a child never imports its parent.
   One exception: an implementation package of a seam imports the package that declares the interface
-  (`store/<driver>` → `store`, `control/assist/anthropic` → `control/assist`); the declaring package never imports its implementations.
+  (`store/<driver>` → `store`); the declaring package never imports its implementations.
 - `wire` and `github` **publish their child packages**: Go cannot re-export a package without alias
   boilerplate, and these children hold no hidden internals. Their parents' contracts say so, and consumers
   cite the child they import. `gate` and `control` publish only their façade package; nobody outside imports
   `gate/*` or `control/*`, with one exception: `app` calls the constructor of a platform implementation
-  (`control/assist/anthropic`, `store/firestore`, and later `control/onboarding/<sandbox>`), which `control` or `store` publishes for that purpose.
+  (`store/firestore`, and later `control/onboarding/<sandbox>`), which `control` or `store` publishes for that purpose.
 - `cmd/reporter` stays a thin entry point: build the logger, `app.Load`, `app.Run`.
 
 ### Allowed imports (enforced by Archfit on this repository and by a root test)
@@ -263,12 +258,7 @@ opens or updates one pull request on `archfit/baseline` that changes only `.arch
 the default branch; the gate's protected-path rule requires an owner approval of the exact head before that PR merges.
 
 **Managed onboarding**: consent recorded in KV → onboarding PR opened with a "discovery running" body → `Sandbox.Discover`
-→ policy commit pushed to the same PR. No LLM runs inside the sandbox **[default]**; optional LLM refinement
-is an ordinary `assist` request on the resulting draft.
-
-**Edit and assist**: the editor loads the policy, checks syntax and schema on the server, and saves through
-`proposal.Propose` with the head SHA it read (stale edits are refused). Engine validation is the check result
-on the draft PR. `assist.Propose` adds a commit to the draft (managed) or dispatches the customer's assist workflow.
+→ policy commit pushed to the same PR. No LLM runs inside the sandbox **[default]**.
 
 ### Coupling assessment
 
@@ -302,11 +292,8 @@ Distance scale and thresholds are those of the Fractal Design skill. Depths: roo
 | control/onboarding → control/proposal, control/account                      | Contract                          | control        | 1    | 1        | High       | Yes       | —                                                |
 | control/onboarding → wire/{envelope,settings,policy,manifest}, github/api   | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
 | control/onboarding, control/ui → github/auth (`TokenSource`, `OAuth`)       | Contract                          | root           | 2    | 2        | Low        | Yes       | —                                                |
-| control/assist → control/account, control/proposal                          | Contract                          | control        | 1    | 1        | High       | Yes       | —                                                |
-| control/assist → wire/policy, wire/settings, github/api                     | Contract                          | root           | 2    | 2        | High       | Yes       | —                                                |
-| control/assist/anthropic → control/assist (`Provider`)                      | Contract                          | control/assist | 1    | 1        | Moderate   | Yes       | —                                                |
 | control/proposal → github/api                                               | Contract                          | root           | 2    | 2        | Low        | Yes       | —                                                |
-| control/ui → control/{account,onboarding,assist,proposal}                   | Contract                          | control        | 1    | 1        | High       | Yes       | —                                                |
+| control/ui → control/{account,onboarding,proposal}                          | Contract                          | control        | 1    | 1        | High       | Yes       | —                                                |
 | control/ui → control/passkey                                                | Contract                          | control        | 1    | 1        | Low        | Yes       | —                                                |
 | control/passkey → store, github/api, wire/{policy3,policy}                  | Contract                          | root           | 2    | 2        | Low        | Yes       | go-webauthn is its only third-party import       |
 | control/ui → control/ui/{session,graph}                                     | Functional (composition)          | control/ui     | 1    | 1        | High       | Yes       | —                                                |
@@ -324,7 +311,6 @@ Distance scale and thresholds are those of the Fractal Design skill. Depths: roo
 | queue/cloudtasks → queue (`Queue`)                                          | Contract                          | queue          | 1    | 1        | Low        | Yes       | —                                                |
 | app → github/{auth,api,webhook,oidc}                                        | Contract                          | root           | 2    | 2        | Low        | Yes       | —                                                |
 | control → github/webhook (`Event`)                                          | Contract                          | root           | 2    | 2        | Low        | Yes       | —                                                |
-| app → control/assist/anthropic (constructor)                                | Contract                          | root           | 3    | 3        | Low        | Yes       | —                                                |
 
 No integration is intrusive. Every model- or functional-strength integration is between siblings or parent
 and child (distance 1). Everything that crosses the root is contract coupling, which tolerates any distance.
@@ -344,14 +330,14 @@ and child (distance 1). Everything that crosses the root is contract coupling, w
    (`actions: write`, their CI minutes) and show `action_required` until the new report arrives.
 5. **The check is its own receipt.** Run ID, attempt, report digest, policy and baseline digests and the earliest
    waiver expiry live in the check run; the sweep compares them with the protected ref. No second copy can drift.
-6. **Consumer-owned seams.** `Sandbox` lives with `onboarding`, `Provider` with `assist`, `Store` stands alone
+6. **Consumer-owned seams.** `Sandbox` lives with `onboarding`, `Store` stands alone
    because both branches use it. Platform implementations are separate packages chosen in `app`.
 7. **Four upload routes, one provenance path.** `/v1/discoveries`, `/v1/baselines` and `/v1/reanchors` reuse the gate's `Receiver`,
    so neither can weaken or fork the authentication rules. Discovery and baseline output never satisfy the gate; a
    baseline becomes trusted input only when an owner-approved pull request merges it.
 8. **Advisory mode publishes no `archfit/gate` check [default].** If a ruleset requires the check while settings
    say `advisory`, the PR stays blocked as "expected": closed, never green.
-9. **No LLM in the sandbox [default].** One LLM call site (`assist`), one budget counter, and source never
+9. **No LLM in the sandbox [default].** The App has no LLM call site, and source never
    reaches a model from Archfit infrastructure.
 10. **Published children instead of alias façades (deliberate deviation).** The model says an integration at rank ≥ 2
     should pass through the counterpart's ancestor. For `wire` and `github` the ancestor's contract is "these child
@@ -366,14 +352,13 @@ and child (distance 1). Everything that crosses the root is contract coupling, w
 Beyond the **[default]** rows of decisions.md: file path `.archfit-app.yaml`;
 envelope in the `X-Archfit-Envelope` header; operator bearer token for `/internal/*`; artifact name
 `archfit-report`; head baseline and head labels accepted under the same owner-approval rule as head policy;
-baseline and labels integrity through producer-stated envelope digests (below); `Store` tenant `0` for the App-wide budget counter; session
-permission cache of 60 seconds; Anthropic model `claude-sonnet-5`.
+baseline and labels integrity through producer-stated envelope digests (below); session
+permission cache of 60 seconds.
 
 Readings of decisions.md adopted here, to be confirmed by the owner: §3 "Supported triggers" governs report
 uploads; discovery uploads (§5) and baseline uploads (§4) also accept `workflow_dispatch`. §4 "The App never
 commits it" means never to the protected ref: the App commits a captured baseline only to `archfit/baseline`, and it
-reaches the protected ref only by an owner-approved merge. §2 "keys are prefixed by installation ID" has
-one exception, the App-wide LLM budget counter of §7. §4 "created `in_progress` on PR open or push" means a push
+reaches the protected ref only by an owner-approved merge. §4 "created `in_progress` on PR open or push" means a push
 to the PR branch (a new head SHA); a default-branch push gets `archfit/state` only. §7 "suggestion" means a
 commit on the draft PR, not a GitHub review suggestion. Supported languages are whatever engine v2.5.0 supports;
 the App has no language-specific logic, so no module owns that list. "Checked by Archfit on this repository"
@@ -407,7 +392,7 @@ draft are gone. What the real engine changed in this design:
 ## Change Vectors
 
 - Adding a module under `gate` or `control` without touching the other branch.
-- Replacing the KV, queue, sandbox, or LLM platform: a new implementation package plus one line in `app`.
+- Replacing the KV, queue or sandbox platform: a new implementation package plus one line in `app`.
 - A new engine version: `wire/report`, `wire/policy`, `wire/manifest`, `wire/result`, `wire/policy3` and their fixtures.
 - Splitting `gate` into its own deployment later: the import rule already guarantees it builds alone.
 - A billing provider: inside `control/account`; the `Entitlement` record stays.
@@ -424,7 +409,7 @@ draft are gone. What the real engine changed in this design:
 - Wire types are read-only inputs: modules read a decoded `wire` value and pass it on, but nothing stores one, mutates one, or re-publishes one as its own type.
 - Versioned wire contracts (`wire/*`) stay separate from domain types; storage holds only `account`'s records and the `Entitlement` record.
 - Tenant identity comes from a verified webhook, verified OIDC claims, or an authorized OAuth session; never from a client-supplied ID.
-- Nothing is persisted except KV keys under an installation prefix (and the system budget counter). No report, source, queue state, or job table.
+- Nothing is persisted except KV keys under an installation prefix. No report, source, queue state, or job table.
 - Logs and telemetry carry IDs, digests, outcomes and timings only: no report bodies, paths, or messages.
 - Webhook handlers are idempotent: a queue delivers at least once, and the task name (the delivery ID and the half)
   is the only dedup key the App gives the queue. Uploads do their work in the request.
@@ -474,8 +459,8 @@ draft are gone. What the real engine changed in this design:
   **Scenario**: send requests carrying another tenant's installation ID in headers, query, envelope and form fields.
   **Expected behavior**: the tenant used is always the one from OIDC, webhook, or session; no cross-tenant key or repository is touched.
 - **Test name**: `TestUninstallLeavesNoKeys`
-  **Scenario**: install, create entitlement, consent and budget activity, then deliver `installation_removed`.
-  **Expected behavior**: the tenant has no keys; the system budget counter is unchanged.
+  **Scenario**: install, create entitlement and consent, then deliver `installation_removed`.
+  **Expected behavior**: the tenant has no keys.
 
 ### Behavior Tests
 
@@ -486,7 +471,7 @@ draft are gone. What the real engine changed in this design:
   **Scenario**: head-edited policy, baseline, settings, workflow, CODEOWNERS; stale approval after re-push; unknown image; missing profile; fork PR; `workflow_run` upload.
   **Expected behavior**: each ends `action_required` with its own reason; none is `success`, `neutral`, or `skipped`.
 - **Test name**: `TestGateSurvivesControlPlaneFailure`
-  **Scenario**: LLM provider failing, UI handler panicking, control sweep failing; separately the Store failing together with the control sweep.
+  **Scenario**: UI handler panicking, control sweep failing; separately the Store failing together with the control sweep.
   **Expected behavior**: without the Store failure, report upload, webhook pending checks and the gate sweep still complete. With the Store failing, an unreadable entitlement would mean "not suspended", but no publication lease can be taken: the upload answers 503, the webhook and every sweep visit return errors, and no gate check is written, so nothing is green.
 - **Test name**: `TestSweepRepairsMissedEvents`
   **Scenario**: drop the PR-opened webhook, drop an upload, change the base policy, let a waiver expire, suspend then restore an installation.
@@ -501,12 +486,6 @@ draft are gone. What the real engine changed in this design:
 - **Test name**: `TestSuspensionIsNeitherArchitectureFailureNorSuccess`
   **Scenario**: private repository after trial and grace with no grant; then a grant.
   **Expected behavior**: `action_required` in category `subscription` with a recovery action; after the grant the workflow is re-run and only a fresh report can produce `success`.
-- **Test name**: `TestSoleOwnerApprovesTheExactCommitInTheApp`, `TestAnAgentIdentityCannotApproveInTheApp`
-  **Scenario**: a policy change that only its sole owner can approve: the owner reads the pull request page, approves
-  the shown head and digests, then the re-run reports; the same with the owner also listed in `agents`.
-  **Expected behavior**: `owner_approval_missing`, then the Approve answers granted by the owner, the workflow run is
-  re-run, nothing turns green before the fresh report, which is `success`; for the agent: no Approve offered, `403`,
-  no re-run, still `owner_approval_missing`.
 - **Test name**: `TestBothOnboardingModesComplete`
   **Scenario**: customer mode through PR 1, discovery upload, PR 2; managed mode with and without consent and with no sandbox configured.
-  **Expected behavior**: exactly one PR per step after retries; no consent means no sandbox job and no LLM call; "not available" is a clear state.
+  **Expected behavior**: exactly one PR per step after retries; no consent means no sandbox job; "not available" is a clear state.

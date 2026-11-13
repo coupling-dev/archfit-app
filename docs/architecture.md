@@ -48,7 +48,6 @@ flowchart LR
     end
 
     APP["archfit-app<br/>one Go binary"]
-    LLM["Anthropic API<br/>optional"]
 
     ACT -->|"report + OIDC token"| APP
     PR -->|"webhook"| APP
@@ -57,29 +56,26 @@ flowchart LR
     APP -->|"publish checks and comment"| PR
     USER -->|"OAuth browser session"| APP
     SCHED -->|"operator request"| APP
-    APP -.->|"proposal on request"| LLM
 
     classDef core fill:#2f855a,stroke:#22543d,color:#ffffff
     classDef control fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
     classDef nottrusted fill:#fff4d6,stroke:#b7791f,color:#1a202c
-    classDef optional fill:#f3e8ff,stroke:#6b46c1,color:#1a202c,stroke-dasharray:4 3
     classDef neutral fill:#edf2f7,stroke:#718096,color:#1a202c
 
     class APP core
     class PR,REF,OIDC control
     class ACT nottrusted
-    class LLM optional
     class USER,SCHED neutral
 
     style CI fill:#fff4d6,stroke:#b7791f,color:#1a202c
     style GH fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
 ```
 
-Solid arrows show request, read, or publication flow. The dotted arrow shows an optional AI proposal.
+Arrows show request, read, or publication flow.
 
 The App stores no report or source code. GitHub stores checks, comments, workflow runs, and the no-source
-report artifact that the Graph page reads. The App stores entitlements, consent records, an LLM budget
-counter, and short-lived publication leases in a key-value store. A lease makes the writes for one head SHA run
+report artifact that the Graph page reads. The App stores entitlements, consent records,
+and short-lived publication leases in a key-value store. A lease makes the writes for one head SHA run
 one at a time, on every instance, so an older publication cannot overwrite a newer one. Inside the lease an upload
 reads its inputs again, so a decision from replaced inputs is never written. Without the store, the App
 publishes nothing.
@@ -97,7 +93,7 @@ The App is one Go binary. The main internal packages are shown below.
 ```mermaid
 flowchart TB
     APP["app<br/>config, wiring, routes"]
-    CONTROL["control<br/>UI, onboarding,<br/>proposals, account, assist"]
+    CONTROL["control<br/>UI, onboarding,<br/>proposals, account"]
     GATE["gate<br/>upload, verdict,<br/>feedback, sweep"]
     BASE["Shared packages<br/>wire · github · store"]
 
@@ -124,7 +120,7 @@ The shared group contains `wire`, `github`, and `store`.
 | ---------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
 | `app`      | Loads environment settings, builds packages, and registers routes              | none                                                                         |
 | `gate`     | Verifies uploads, decides outcomes, publishes feedback, and runs the sweep     | `ingest`, `inputs`, `verdict`, `feedback`, `sweep`                           |
-| `control`  | Serves the UI and manages onboarding, proposals, AI requests, and entitlements | `account`, `assist`, `onboarding`, `proposal`, `ui`                          |
+| `control`  | Serves the UI and manages onboarding, proposals, and entitlements              | `account`, `onboarding`, `proposal`, `ui`                                    |
 | `wire`     | Defines versioned file and message formats                                     | `decision`, `envelope`, `manifest`, `policy`, `report`, `result`, `settings` |
 | `github`   | Holds GitHub API, authentication, webhook, and OIDC knowledge                  | `api`, `auth`, `oidc`, `webhook`                                             |
 | `store`    | Defines the tenant key-value interface and the memory driver                   | `firestore`                                                                  |
@@ -489,12 +485,10 @@ the e-mail is `ARCHFIT_INVOKER` and is verified, and the token is not expired.
 | `POST /auth/logout`                                                                                                | GitHub OAuth session and CSRF token                                           |
 | `GET /assets/{path}`, `GET /licenses.txt` and `GET /schema/policy.json`                                            | None                                                                          |
 | `GET /api/session` and `GET /api/repos`                                                                            | GitHub OAuth session                                                          |
-| `GET /r/{o}/{n}`, `/graph`, `/policy`, `/pull/{number}`, `/pull/{number}/graph`, `/data-sharing`, `/passkeys` and `/requests/{number}` | GitHub OAuth session. The same shell for every repository; no repository data |
-| `GET /api/repos/{o}/{n}/overview`, `/findings`, `/graph`, `/policy`, `/pulls/{number}` and `/pulls/{number}/graph` | Session with repository `read` permission                                     |
+| `GET /r/{o}/{n}`, `/graph`, `/pull/{number}`, `/pull/{number}/graph`, `/data-sharing`, `/passkeys` and `/requests/{number}` | GitHub OAuth session. The same shell for every repository; no repository data |
+| `GET /api/repos/{o}/{n}/overview`, `/findings`, `/graph`, `/pulls/{number}` and `/pulls/{number}/graph`            | Session with repository `read` permission                                     |
 | `GET /api/repos/{o}/{n}/requests/{number}` and `/requests/{number}/preview`                                         | Session with repository `read` permission                                     |
 | `POST /api/repos/{o}/{n}/requests/{number}/answer/digest` and `/requests/{number}/answer`                          | Session with repository `read` permission, JSON body, CSRF token header; an owner named in the policy, and a passkey step-up for an answer that loosens it |
-| `POST /api/repos/{o}/{n}/policy/check`                                                                             | Session with repository `read` permission, JSON body, CSRF token header       |
-| `POST /api/repos/{o}/{n}/policy`, `/policy/ready` and `/assist`                                                    | Session with repository `write` permission, JSON body, CSRF token header      |
 | `POST /api/repos/{o}/{n}/onboarding` and `/discover`                                                               | Session with repository `admin` permission, JSON body, CSRF token header      |
 | `GET /api/repos/{o}/{n}/data-sharing`                                                                              | Session with repository `admin` permission                                    |
 | `POST /api/repos/{o}/{n}/data-sharing`                                                                             | Session with repository `admin` permission, JSON body, CSRF token header      |
@@ -508,14 +502,13 @@ repository's account, after the permission check. The gate drops that account's 
 
 ## Platform seams
 
-The App keeps platform-dependent code behind four interfaces.
+The App keeps platform-dependent code behind three interfaces.
 
 | Seam       | Current driver                       | Current behavior                                                                      |
 | ---------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
 | `Store`    | `memory` (default) or `firestore`    | `memory` loses data when the process stops. `firestore` keeps it in Cloud Firestore   |
 | `Queue`    | `inline` (default) or `cloudtasks`   | `inline` runs webhook work in the intake request. `cloudtasks` hands it to the worker |
 | `Sandbox`  | `none`                               | Managed discovery is not available                                                    |
-| `Provider` | `anthropic` when a key is configured | Managed AI is optional                                                                |
 
 A new driver changes the composition in `app`. The gate contracts do not change.
 
@@ -551,7 +544,6 @@ See [`.env.example`](../.env.example).
 | `ARCHFIT_GITHUB_OAUTH_SECRET_FILE`            | OAuth client secret file. Not read by the `worker` role                                                 |
 | `ARCHFIT_COOKIE_KEY_FILE`                     | 32-byte session-cookie key file. Not read by the `worker` role                                          |
 | `ARCHFIT_OPERATOR_TOKEN_FILE`                 | Bearer token file for the operator routes. Not read by the `public` role                                |
-| `ARCHFIT_ANTHROPIC_KEY_FILE`                  | Optional Anthropic key file. Empty disables managed AI. Not read by the `worker` role                   |
 | `ARCHFIT_STORE`                               | Store driver: `memory` (default) or `firestore`                                                         |
 | `ARCHFIT_FIRESTORE_PROJECT`                   | Google Cloud project ID. Required with `firestore`                                                      |
 | `ARCHFIT_FIRESTORE_DATABASE`                  | Firestore database ID. Default `(default)`                                                              |

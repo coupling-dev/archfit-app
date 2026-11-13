@@ -1838,22 +1838,14 @@ test('docs: the screenshots of the report-derived action-required page and the u
 // The pages of the agent-first gate that watch many agents: the repository overview with its counters, the watch line on
 // the main branch and the decision requests under Needs you. Light and dark, sample data.
 // Regenerate with ARCHFIT_DOCS_SHOTS=1.
-test('docs: the screenshots of the overview counters', async ({ page }) => {
+test('docs: the screenshot of the pull requests to update', async ({ page }) => {
   test.skip(!process.env.ARCHFIT_DOCS_SHOTS, 'set ARCHFIT_DOCS_SHOTS=1 to regenerate the guide screenshots');
   await page.setViewportSize({ width: 1280, height: 900 });
   for (const scheme of ['light', 'dark'] as const) {
     await page.unrouteAll();
     await page.emulateMedia({ colorScheme: scheme });
     await open(page, '/r/acme/app', { overview: watching });
-    await expect(page.getByRole('region', { name: 'Needs you' })).toContainText(
-      '7 decision requests wait for an owner.',
-    );
     await expect(page.getByRole('heading', { name: 'Findings on main' })).toBeVisible();
-    await page.screenshot({
-      path: new URL(`overview-watch-${scheme}.png`, shotsDir).pathname,
-      clip: { x: 0, y: 0, width: 1280, height: 900 },
-    });
-
     await page.getByRole('region', { name: 'Open pull requests' }).screenshot({
       path: new URL(`overview-pulls-to-update-${scheme}.png`, shotsDir).pathname,
     });

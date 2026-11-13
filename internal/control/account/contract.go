@@ -1,4 +1,4 @@
-// Package account owns subscription status, consents and the managed-LLM budget.
+// Package account owns subscription status and consents.
 package account
 
 import (
