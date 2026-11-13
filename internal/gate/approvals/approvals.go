@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate/proposals"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -19,6 +21,9 @@ import (
 
 // PolicyPath is the policy file.
 const PolicyPath = ".archfit.yaml"
+
+// WorkflowPath is the workflow file of M2 D15: a pull request runs its own copy, so a change to it needs an owner.
+const WorkflowPath = ".github/workflows/archfit.yaml"
 
 // maxAssignees is GitHub's limit of assignees on an issue.
 const maxAssignees = 10
@@ -56,16 +61,19 @@ type GitHub interface {
 	CloseIssue(ctx context.Context, r api.RepoRef, number int) error
 	ReopenIssue(ctx context.Context, r api.RepoRef, number int) error
 	SetAssigneesAndLabels(ctx context.Context, r api.RepoRef, number int, assignees, labels []string) ([]string, []string, error)
+	CreateCheckRun(ctx context.Context, r api.RepoRef, c api.CheckRun) (api.CheckRun, error)
+	CheckRuns(ctx context.Context, r api.RepoRef, headSHA, name string) ([]api.CheckRun, error)
 }
 
 // Service judges the pushes of the repositories of one App.
 type Service struct {
 	gh    GitHub
 	store store.Store
+	now   func() time.Time // the time an owner action records
 }
 
 // New returns a Service over gh and s.
-func New(gh GitHub, s store.Store) *Service { return &Service{gh: gh, store: s} }
+func New(gh GitHub, s store.Store) *Service { return &Service{gh: gh, store: s, now: time.Now} }
 
 // Push is a push to the default branch.
 type Push struct {
@@ -123,16 +131,38 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error) {
 		}
 	}
 
-	merged, err := s.mergedIn(ctx, p)
+	merged, err := s.mergedIn(ctx, p, false)
 	if err != nil {
 		return Outcome{}, err
 	}
+	var r records.Repo
+	if err := records.Load(ctx, s.store, t, records.RepoKey(name), &r); err != nil && !errors.Is(err, records.ErrNoRecord) {
+		return Outcome{}, fmt.Errorf("approvals: read the repository: %w", err)
+	}
 	voided := ""
 	if merged != nil {
-		if merged.rec.ExpectedDigest == digest {
+		admits := merged.rec.ExpectedDigest == digest
+		if admits {
+			// A first approval admits the workflow of its head too: a merge with another one uses none of it.
+			if admits, err = s.landedWorkflow(ctx, p.Repo.RepoRef, merged); err != nil {
+				return Outcome{}, err
+			}
+		}
+		if admits {
+			// An approval made in a state that ended admits nothing (records.Consume refuses it too).
+			if admits, err = s.stillApplies(ctx, p.Repo, r, merged); err != nil {
+				return Outcome{}, err
+			}
+		}
+		if admits {
+			// The head's verdict first, so a failure is retried with the delivery before the approvals are used.
+			if err := s.retire(ctx, p.Repo, merged, proposals.RetiredUsed); err != nil {
+				return Outcome{}, err
+			}
 			if err := s.consume(ctx, p.Repo, merged, push, digest); err != nil {
 				return Outcome{}, err
 			}
+			s.closeReverted(ctx, p.Repo, merged)
 			return s.consumed(ctx, p.Repo, merged.id)
 		}
 		// A merge commit is one commit, landed once: this proposal can never be consumed. Its approvals are void and
@@ -143,10 +173,6 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error) {
 		voided = merged.id
 	}
 
-	var r records.Repo
-	if err := records.Load(ctx, s.store, t, records.RepoKey(name), &r); err != nil && !errors.Is(err, records.ErrNoRecord) {
-		return Outcome{}, fmt.Errorf("approvals: read the repository: %w", err)
-	}
 	unguarded := r.ApprovedDigest == "" && r.OutsideFlow == nil
 	if !unguarded && r.GuardedSince != "" {
 		// A push that happened before the first approval was made outside change control, whenever it is delivered.
@@ -173,6 +199,11 @@ func (s *Service) outside(ctx context.Context, p Push, digest string) (Outcome, 
 	r, marked, err := records.Outside(ctx, s.store, t, p.Repo.FullName, records.Push{Before: p.Before, After: p.After}, digest)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("approvals: record the policy changed outside the flow: %w", err)
+	}
+	// A revert made for another change no longer holds, and its head must not merge on its success (review H2). Also on
+	// a delivery again: Retire repeats safely, and a failure is retried with the delivery.
+	if err := s.retireStaleReverts(ctx, p.Repo); err != nil {
+		return Outcome{}, err
 	}
 	out := Outcome{Judged: JudgedOutside}
 	if r.OutsideFlow == nil {
@@ -251,8 +282,9 @@ type proposal struct {
 
 // mergedIn is the open proposal whose pull request's merge commit this push landed, or nil: the pushed commit itself,
 // or, when a merge queue landed several pull requests at once, a commit after the commit before the push and on the
-// history of the pushed one.
-func (s *Service) mergedIn(ctx context.Context, push Push) (*proposal, error) {
+// history of the pushed one. workflow picks the workflow proposals, which the workflow push consumes
+// (WorkflowPushed), else every other one, which the policy push consumes.
+func (s *Service) mergedIn(ctx context.Context, push Push, workflow bool) (*proposal, error) {
 	r := push.Repo
 	t := tenant(r)
 	index := records.Index{Schema: records.SchemaProposalIndex}
@@ -265,7 +297,7 @@ func (s *Service) mergedIn(ctx context.Context, push Push) (*proposal, error) {
 		if err := records.Load(ctx, s.store, t, records.ProposalKey(r.FullName, e.ID), &p.rec); err != nil {
 			return nil, fmt.Errorf("approvals: read proposal %s: %w", e.ID, err)
 		}
-		if p.rec.State != records.StateOpen {
+		if p.rec.State != records.StateOpen || (p.rec.Kind == records.ProposalWorkflow) != workflow {
 			continue
 		}
 		pull, err := s.gh.Pull(ctx, r.RepoRef, p.rec.PullRequest)
@@ -397,6 +429,9 @@ func (s *Service) tipDigest(ctx context.Context, r api.Repo) (string, error) {
 // joined p meanwhile (records.ErrApprovalsLeft) is read and voided too.
 func (s *Service) void(ctx context.Context, r api.Repo, p *proposal) error {
 	t := tenant(r)
+	if err := s.retire(ctx, r, p, proposals.RetiredVoid); err != nil {
+		return err
+	}
 	for range voidRounds {
 		for _, id := range p.rec.Approvals {
 			request, reopened, err := records.Void(ctx, s.store, t, r.FullName, id)

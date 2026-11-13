@@ -276,6 +276,7 @@ func TestATargetThatMovesBetweenTwoAnswers(t *testing.T) {
 		first := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
 		oldDigest := w.proposalOf(first).ExpectedDigest
 		tip := w.hub.push(fakeBase, policyPath, testPolicy+"# moved\n")
+		w.approveTip() // the change of the default branch was judged and approved
 		second := w.mustAnswer(olivia, 432, requests.Answer{Kind: policy3.Approve}, false)
 		if second.State != requests.PullMerged {
 			t.Fatalf("outcome = %+v", second)
@@ -309,6 +310,7 @@ func TestAChangeThatNoLongerAppliesIsVoidAndItsRequestOpensAgain(t *testing.T) {
 	first := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
 	without := strings.Replace(testPolicy, "  pkg_util:\n    paths: [pkg/util/**]\n", "", 1)
 	w.hub.push(fakeBase, policyPath, without)
+	w.approveTip() // the change of the default branch was judged and approved
 
 	second := w.mustAnswer(olivia, 432, requests.Answer{Kind: policy3.Approve}, false)
 	if second.State != requests.PullMerged || second.PullRequest != first.PullRequest {
@@ -355,6 +357,11 @@ func TestAMergedProposalWaitsForItsPushAndANewOneOpens(t *testing.T) {
 	w.request(431, "graph", "pkg_tc", "pkg_util")
 	w.request(432, "graph", "pkg_tc", "pkg_db")
 	first := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, false)
+	// Until the merge's push is judged, the default branch holds a policy the record does not approve yet.
+	if _, err := w.answer(olivia, 432, requests.Answer{Kind: policy3.Approve}, false); !errors.Is(err, ErrPolicyUnapproved) {
+		t.Fatalf("an answer before the push is judged = %v, want ErrPolicyUnapproved", err)
+	}
+	w.approveTip() // the merge's push consumed the proposal
 	second := w.mustAnswer(olivia, 432, requests.Answer{Kind: policy3.Approve}, false)
 	if second.PullRequest == first.PullRequest || second.State != requests.PullMerged {
 		t.Fatalf("second = %+v, want a new merged pull request", second)
@@ -441,6 +448,7 @@ func TestAnExceptionOfAnOnlyRuleHasNoTo(t *testing.T) {
 	w := newWorld(t)
 	w.hub.push(fakeBase, policyPath, testPolicy+"  - id: no-docker\n    only:\n      use: github.com/docker/docker\n      in: [pkg_net]\n"+
 		"    why: One adapter owns the Docker API.\n")
+	w.approveTip() // the change of the default branch was judged and approved
 	w.request(431, "no-docker", "pkg_tc", "github.com/docker/docker")
 	out := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.ApproveUntil, Until: "2026-12-31"}, false)
 	want := "exceptions:\n  - rule: no-docker  # request #431\n    from: pkg_tc\n    expires: 2026-12-31\n"
@@ -533,6 +541,7 @@ func TestAVoidedApprovalFreesItsPlace(t *testing.T) {
 	}
 	full := strings.Replace(testPolicy, "rules:\n", extra+"rules:\n", 1)
 	w.hub.push(fakeBase, policyPath, full)
+	w.approveTip() // the change of the default branch was judged and approved
 	for i := range records.MaxApprovals {
 		w.request(500+i, "graph", "pkg_tc", "m"+strconv.Itoa(i))
 		w.mustAnswer(olivia, 500+i, requests.Answer{Kind: policy3.Approve}, true)
@@ -542,6 +551,7 @@ func TestAVoidedApprovalFreesItsPlace(t *testing.T) {
 		t.Fatalf("a tenth answer = %v, want ErrFull", err)
 	}
 	w.hub.push(fakeBase, policyPath, strings.Replace(full, "  m0:\n    paths: [m0/**]\n", "", 1))
+	w.approveTip() // the change of the default branch was judged and approved
 	out, err := w.answer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
 	if err != nil {
 		t.Fatalf("an answer after one approval was voided = %v", err)
@@ -562,7 +572,8 @@ func TestAnAnswerThatWritesNoLineResyncsWithoutMerging(t *testing.T) {
 		w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
 		kept := w.mustAnswer(olivia, 432, requests.Answer{Kind: policy3.Approve}, true)
 		w.hub.push(fakeBase, policyPath, strings.Replace(testPolicy, "  pkg_util:\n    paths: [pkg/util/**]\n", "", 1))
-		checks := len(w.hub.checks)
+		w.approveTip() // the change of the default branch was judged and approved
+		checks, old := len(w.hub.checks), w.proposalOf(kept).HeadSHA
 
 		out := w.mustAnswer(oscar, 433, requests.Answer{Kind: policy3.Reject, Instead: "Call pkg_net."}, false)
 		if out.PullRequest != 0 || len(w.hub.merges) != 0 {
@@ -574,8 +585,10 @@ func TestAnAnswerThatWritesNoLineResyncsWithoutMerging(t *testing.T) {
 			strings.Contains(branch, "request #431") || !strings.Contains(branch, "request #432") {
 			t.Errorf("proposal %+v, branch:\n%s", p, branch)
 		}
-		if len(w.hub.checks) != checks+1 || w.hub.checks[len(w.hub.checks)-1].HeadSHA != p.HeadSHA {
-			t.Errorf("checks %+v; want one on the new head", w.hub.checks[checks:])
+		added := w.hub.checks[checks:]
+		if len(added) != 2 || added[0].HeadSHA != old || added[0].Conclusion != conclusionNoVerdict ||
+			added[1].HeadSHA != p.HeadSHA || added[1].Conclusion != conclusionSuccess {
+			t.Errorf("checks %+v; want the old head retired, then the new head's", added)
 		}
 		if got := w.requestState(431); got != records.StateOpen {
 			t.Errorf("request 431 = %q, want open again", got)
@@ -587,6 +600,7 @@ func TestAnAnswerThatWritesNoLineResyncsWithoutMerging(t *testing.T) {
 		w.request(433, "duplication", "pkg_tc", "pkg_net")
 		first := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
 		w.hub.push(fakeBase, policyPath, strings.Replace(testPolicy, "  pkg_util:\n    paths: [pkg/util/**]\n", "", 1))
+		w.approveTip() // the change of the default branch was judged and approved
 
 		w.mustAnswer(oscar, 433, requests.Answer{Kind: policy3.Reject, Instead: "Call pkg_net."}, false)
 		if p := w.proposalOf(first); p.State != records.StateVoid {
@@ -609,6 +623,7 @@ func TestAVoidIsNotedEvenWhenTheAnswerFails(t *testing.T) {
 	w.request(432, "graph", "pkg_tc", "pkg_db")
 	w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
 	w.hub.push(fakeBase, policyPath, strings.Replace(testPolicy, "  pkg_util:\n    paths: [pkg/util/**]\n", "", 1))
+	w.approveTip() // the change of the default branch was judged and approved
 	w.hub.errs["CommitOn"] = errors.New("github: 502")
 
 	if _, err := w.answer(olivia, 432, requests.Answer{Kind: policy3.Approve}, false); err == nil {

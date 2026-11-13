@@ -12,6 +12,10 @@ import (
 // ErrAnswered is returned when the request of an answer is no longer open: another owner answered it, or it closed.
 var ErrAnswered = errors.New("records: the request is not open")
 
+// ErrOutsideFlow is returned when an answer would be recorded while the repository's policy changed outside the flow:
+// its change would be written on a policy no owner approved (M2 task 23).
+var ErrOutsideFlow = errors.New("records: the policy changed outside the flow")
+
 // Pin is the proposal an answer joins and the head that carries it (M2 task 19). PullRequest is set when the proposal
 // is new: Answer creates it with its proposal index entry.
 type Pin struct {
@@ -26,7 +30,8 @@ type Pin struct {
 // proposal pinned to its head and digest, as Join does. Without pin the request leaves the request index at once; with
 // pin it stays there until the proposal is consumed (Consume) or the approval is voided (Void). A proposal that does not exist yet is
 // created open on pin.PullRequest with its index entry. A request that is not open is ErrAnswered; an approval id in
-// use is ErrExists; a proposal that is not open is ErrMoved, and a full one ErrFull.
+// use is ErrExists; a proposal that is not open is ErrMoved, and a full one ErrFull. The repository record is in the
+// swap unchanged: one outside the flow is ErrOutsideFlow.
 func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approvalID string, a Approval, pin *Pin) error {
 	if approvalID == "" || a.Request <= 0 || pin != nil && (pin.Proposal == "" || pin.HeadSHA == "" || pin.Digest == "") {
 		return errors.New("records: answer: an empty id, request, head or digest")
@@ -35,7 +40,9 @@ func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approv
 	if pin != nil {
 		keys = append(keys, ProposalKey(fullName, pin.Proposal), ProposalIndexKey(fullName))
 	}
+	keys = append(keys, RepoKey(fullName))
 	return store.Update(ctx, s, t, keys, func(cur [][]byte) ([][]byte, error) {
+		repoBytes := cur[len(cur)-1]
 		if cur[0] != nil {
 			return nil, ErrExists
 		}
@@ -48,6 +55,15 @@ func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approv
 		}
 		if req.State != StateOpen {
 			return nil, ErrAnswered
+		}
+		if repoBytes != nil {
+			var r Repo
+			if err := Decode(repoBytes, &r); err != nil {
+				return nil, err
+			}
+			if r.OutsideFlow != nil {
+				return nil, ErrOutsideFlow
+			}
 		}
 		req.State = StateAnswered
 		requests, err := readIndex(cur[2], SchemaRequestIndex)
@@ -71,7 +87,7 @@ func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approv
 			if err != nil {
 				return nil, err
 			}
-			return [][]byte{out[0], out[1], requestIndex}, nil
+			return [][]byte{out[0], out[1], requestIndex, repoBytes}, nil
 		}
 
 		a.Proposal = pin.Proposal
@@ -110,7 +126,7 @@ func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approv
 		if err != nil {
 			return nil, err
 		}
-		return [][]byte{out[0], out[1], requestIndex, out[2], proposalIndex}, nil
+		return [][]byte{out[0], out[1], requestIndex, out[2], proposalIndex, repoBytes}, nil
 	})
 }
 

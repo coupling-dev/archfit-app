@@ -132,6 +132,10 @@ func TestAnswerRefusesAndWritesNothing(t *testing.T) {
 			"a1", &records.Pin{Proposal: "p1", PullRequest: 12, HeadSHA: "h", Digest: "d"}, records.ErrExists, false},
 		{"an empty digest", func(s store.Store) { seedRequest(t, s) },
 			"a1", &records.Pin{Proposal: "p1", PullRequest: 12, HeadSHA: "h"}, nil, true},
+		{"a repository outside the flow", func(s store.Store) {
+			seedRequest(t, s)
+			put(t, s, records.RepoKey(repoName), &records.Repo{ApprovedDigest: "d0", OutsideFlow: &records.OutsideFlow{Digest: "dx"}})
+		}, "a1", &records.Pin{Proposal: "p1", PullRequest: 12, HeadSHA: "h", Digest: "d"}, records.ErrOutsideFlow, false},
 	}
 	keys := []string{records.ApprovalKey(repoName, "a1"), records.RequestKey(repoName, 431), records.RequestIndexKey(repoName),
 		records.ProposalKey(repoName, "p1"), records.ProposalIndexKey(repoName)}

@@ -64,6 +64,14 @@ func newWorld4(t *testing.T) *world4 {
 	return w
 }
 
+// unrecorded deletes the shop's repository record: no owner approved a policy yet.
+func (w *world4) unrecorded() {
+	w.t.Helper()
+	if err := w.mem.Delete(context.Background(), store.Tenant(w.shop.InstallationID), records.RepoKey(w.shop.FullName)); err != nil {
+		w.t.Fatal(err)
+	}
+}
+
 // approved records policy as the approved policy of r: the repository is under change control (M2 task 20).
 func (w *world4) approved(r api.Repo, policy string) {
 	w.t.Helper()
@@ -311,6 +319,7 @@ func TestUpload4FirstPolicy(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			w := newWorld4(t)
+			w.unrecorded()
 			setup(w)
 			p := w.openPull(w.shop, 7)
 			s := w.spec4(p, "pass")
@@ -321,8 +330,15 @@ func TestUpload4FirstPolicy(t *testing.T) {
 		})
 	}
 
+	t.Run("a repository under change control whose default branch lost its policy", func(t *testing.T) {
+		w := newWorld4(t)
+		w.removeFile(w.shop, testBranch, policyPath)
+		w.wantStatus(w.send4(w.spec4(w.openPull(w.shop, 7), "pass")), "unknown", reasonPolicyUnapproved)
+	})
+
 	t.Run("a first pull request that also adds the workflow", func(t *testing.T) {
 		w := newWorld4(t)
+		w.unrecorded()
 		w.removeFile(w.shop, testBranch, policyPath)
 		wf := w.gh.files[fileKey(shopName, testBranch, ingest.WorkflowPath)]
 		w.removeFile(w.shop, testBranch, ingest.WorkflowPath)
@@ -404,6 +420,15 @@ func TestUpload4WorkflowFile(t *testing.T) {
 		s := w.spec4(p, "pass")
 		w.setFile(w.shop, testBranch, ingest.WorkflowPath, workflow4(actionBumped, " # v4.0.1"))
 		w.wantStatus(w.send4(s), "pass", "")
+	})
+	t.Run("two files read without blob ids are not the same file", func(t *testing.T) {
+		w := newWorld4(t)
+		p := w.openPull(w.shop, 7)
+		s := w.spec4(p, "pass")
+		w.setFile(w.shop, s.claims.SHA, ingest.WorkflowPath, workflow4(actionPinned, " # v4.0.0",
+			"      - run: curl -X POST https://app.archfit.test/v1/reports --data @pass.json\n"))
+		w.gh.noBlobIDs = true
+		w.wantStatus(w.send4(s), "unknown", reasonWorkflowChanged)
 	})
 	t.Run("the workflow record says to update the branch", func(t *testing.T) {
 		w := newWorld4(t)

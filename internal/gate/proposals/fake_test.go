@@ -323,6 +323,21 @@ func (h *fakeHub) passed(head string) bool {
 	return false
 }
 
+func (h *fakeHub) CheckRuns(ctx context.Context, _ api.RepoRef, headSHA, name string) ([]api.CheckRun, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if err := h.enter(ctx, "CheckRuns"); err != nil {
+		return nil, err
+	}
+	var out []api.CheckRun
+	for _, c := range h.checks {
+		if c.HeadSHA == headSHA && c.Name == name {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
 func (h *fakeHub) CreateCheckRun(ctx context.Context, _ api.RepoRef, c api.CheckRun) (api.CheckRun, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -394,7 +409,7 @@ func (h *fakeHub) lastComment(number int) string {
 func (h *fakeHub) writes() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	reads := []string{"File", "BranchHead", "Pull", "Compare"}
+	reads := []string{"File", "BranchHead", "Pull", "Compare", "CheckRuns"}
 	return slices.DeleteFunc(slices.Clone(h.calls), func(c string) bool { return slices.Contains(reads, c) })
 }
 

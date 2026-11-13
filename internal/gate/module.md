@@ -50,7 +50,27 @@ separate, testable steps. Without this module a report is a self-reported file a
   approved policy is not under change control yet: the push is recorded, and its uploads say `first_approval`. The pull requests waiting on a
   consumed proposal's requests get a fresh result without their authors (design 10.5, M2 task 21,
   `sweep.AfterAnswer`): a re-run when the four conditions hold, else a branch update with the App token; the path is
-  recorded in the pull record and on each request issue. Its failure is returned, so the delivery is retried.
+  recorded in the pull record and on each request issue. Its failure is returned, so the delivery is retried. The same push is then judged for the
+  workflow approval it uses (`approvals.WorkflowPushed`, façade file `owner.go`).
+- When a pull request into the default branch opens or moves to a head whose latest `archfit/gate` is the success of a
+  proposal that ended (used, void or gone; external id `proposal:<id>`), take that success back first
+  (`proposals.Retire`, M2 review H2, façade file `owner.go`): an approval is valid once, for its own pull request. A
+  proposal still open keeps its success: its own pull request relies on it, and a pull request at the same head carries
+  the same approved change (if that merges first, the push is outside the flow). A failed read or write is returned,
+  so the delivery is retried.
+- Take the owner actions outside requests (M2 task 23, façade file `owner.go`, `OwnerActions`): the first approval of an
+  onboarding pull request or of the policy already on the default branch, a workflow approval (`gate/approvals`), and
+  the confirm or revert of a policy changed outside the flow (confirm `gate/approvals`, revert `gate/proposals`).
+  Each is bound to the digest of what the owner saw (`OwnerDigest`) and made with a passkey. A first or workflow
+  approval of a pull request then gets the approved head its verdict: the re-run guard (`sweep.Rerun`, design 10.5)
+  re-runs the head's stored run (pull record of M2 D6) when its four conditions hold, and the run's upload passes the
+  approval (manager, 2026-11-13). Otherwise the check stays `unknown` with the App's record naming the condition not
+  met (`no_run`, `not_latest`, `too_old`, `base_changed`) and the way out; a failed re-run says so too. A first
+  approval of the default branch's policy and a confirm re-run, through the same guard, every open pull request of
+  this repository (no fork) whose stored status is `unknown`; one that cannot run again keeps its check, whose unknown
+  may have a reason of its own. A `first` approval counts only while the repository has no approved policy and is not outside the
+  flow: once change control started, another onboarding pull request's approval admits nothing, and a default branch
+  that lost its policy is `outside_flow` or `policy_unapproved`, never `first_policy`.
 - For the App's pull request page only (`FirstScreen`, `RecoveryStep`): word a published result with the code that
   words the comment, so the page's first screen is the comment's. Pure functions of what the check recorded.
 - Run one reconciliation pass on request.
@@ -149,6 +169,26 @@ var ErrNotPolicyOwner, ErrNeedsPasskey, ErrAnswerBusy, ErrProposalFull // gate/p
 file is `answers.go`. `Answer` takes the passkey as `AnswerInput.Redeem`, which `control/answers` sets, so the gate
 never imports `control`. An error from `Answer` means the answer was not recorded; what it found on its way (a
 policy pull request closed without a merge, an approval that no longer applies) may have been recorded void.
+
+```go
+// OwnerActions takes in an owner action outside requests (M2 task 23). *Gate implements it.
+type OwnerActions interface {
+    OwnerDigest(ctx context.Context, t Target, a OwnerAction) (string, error)
+    OwnerAct(ctx context.Context, t Target, in OwnerInput) (OwnerOutcome, error)
+}
+const OwnerFirst, OwnerWorkflow, OwnerConfirm, OwnerRevert // records' approval kinds
+type OwnerAction = approvals.Action; type OwnerUser = approvals.Owner
+type OwnerInput struct { Action OwnerAction; User OwnerUser; Digest string; Later bool; Redeem func(ctx, digest) (string, error) }
+type OwnerOutcome struct { Approval string; PullRequest int; State, Merge string; Issue int; Check string }
+const CheckRerun, CheckPending, CheckBlocked // how an approved head gets its verdict
+var ErrOwnerNotAdmin, ErrOwnerNotOwner, ErrOwnerNotDue, ErrOwnerNotPossible, ErrOwnerMoved, ErrOwnerNeedsPasskey,
+    ErrNotOutsideFlow, ErrNothingToRevert, ErrRevertMoved, ErrRevertNotOwner
+```
+
+`OwnerDigest` and `OwnerAct` ask `Admitted` first. A revert runs `gate/proposals` (`RevertDigest`, `Revert`); the
+others `gate/approvals` (`Bind`, `Act`). `OwnerInput.Redeem` comes from `control/answers`, as for an answer. An error
+means nothing was recorded; a token Redeem used stays used. `Answer` refuses with `ErrOutsideFlow` while the policy
+changed outside the flow.
 
 `RequestView` and `RequestPreview` ask `Admitted` first, then read the request and pull records from the Store and the
 policy at the default branch's tip from GitHub (`t.Repo` names the repository). `RequestPreview` judges an
@@ -363,16 +403,16 @@ Steps, in order:
 | --- | --- | --- |
 | an ingest `Problem` | `envelope_mismatch`, `unsupported_event`, `fork`, `result_invalid` | run the check again; open the pull request against the default branch; push the branch to this repository; pin archfit-action to a commit the App lists |
 | the engine identity (version, image digest, platform) is a manifest 4 row (`manifest.EngineApproved`) | `unknown_engine` | pin archfit-action to a commit the App lists |
-| `T` has a schema 3 policy (`.archfit.yaml` that `policy3.Decode` reads) | `first_policy` | an administrator approves the first policy in the App (task 23) |
+| `T` has a schema 3 policy (`.archfit.yaml` that `policy3.Decode` reads), or an administrator approved this pull request's head as its first policy (an open `first` proposal pinned to the upload's head with the run's policy digest, M2 task 23) | `first_policy` | an administrator approves the first policy in the App (task 23) |
 | the repository is not outside the flow (`records.Repo.OutsideFlow`, set by a policy push no approval made, M2 task 20) | `outside_flow` | an owner confirms or reverts it in the App: `#<issue>` |
 | the repository has an approved policy (`records.Repo.ApprovedDigest`, set by a consume or, in task 23, the first approval) | `first_approval` | an administrator approves the policy in the App |
 | the policy at `T` is the approved one (`policy3.Digest` of `T`'s policy equals `ApprovedDigest`; not checked outside the flow or without an approved policy): a policy push no judgement has reached yet gives no verdict | `policy_unapproved` | the check runs again |
 | `target_sha` is `T` or behind it (`Compare(target_sha, T)` is `identical` or `ahead`; a commit GitHub does not know is not) | `target_not_on_branch` | run the check again |
 | `policy_digest` is the digest of `.archfit.yaml` at `target_sha` (a policy from the head fails here) | `policy_not_target` | restore the policy from the default branch |
 | the digest at `target_sha` is the digest at `T` | `policy_changed` | the check runs again |
-| `.github/workflows/archfit.yaml` at the run's commit (`Binding4.RunSHA`, the test merge commit of a pull request) is `T`'s (same blob), or differs only in the ref and the version comment (` # v4.0.1`) of whole `uses: alexei-led/archfit-action@<ref>` lines (LF line ends, optional matching quotes), each new ref a commit manifest 4 lists (`manifest.ActionApproved`); any other text, a reference inside a script, a CR, NEL or U+2028 stays compared | `workflow_changed` | update the branch; if the pull request changes the workflow, an owner approves it in the App (task 23) |
+| `.github/workflows/archfit.yaml` at the run's commit (`Binding4.RunSHA`, the test merge commit of a pull request) is `T`'s (same blob, both ids present: an empty id proves nothing, review M1), or differs only in the ref and the version comment (` # v4.0.1`) of whole `uses: alexei-led/archfit-action@<ref>` lines (LF line ends, optional matching quotes), each new ref a commit manifest 4 lists (`manifest.ActionApproved`); any other text, a reference inside a script, a CR, NEL or U+2028 stays compared; or the file has the digest an owner approved for this pull request's head (an open `first` or `workflow` proposal pinned to the upload's head, `records.FileDigest`, M2 task 23) | `workflow_changed` | update the branch; if the pull request changes the workflow, an owner approves it in the App (task 23) |
 
-The policy rules are skipped on a first policy, and the `target_sha` digest rules after `target_not_on_branch`. The two
+A later push to a pull request needs a new approval: a proposal pinned to another head lifts nothing. The policy rules are skipped on a first policy, and the `target_sha` digest rules after `target_not_on_branch`. The two
 state rules come first among the policy rules; `outside_flow` is checked before `first_approval`, and
 `policy_unapproved` after the `target_sha` rules. Without an approved policy no upload passes: change control starts
 with the first approval (manager, 2026-11-12). A lost push event leaves `policy_unapproved` until the sweep (task 22)
@@ -871,9 +911,11 @@ func Withdrawal(t Target, current CheckState, tr Trusted) *Publication
 - **LCA / Rank / Distance**: gate / 1 / 1
 - **Volatility**: high
 - **Balanced?**: yes
-- **Shared knowledge**: `Service` (`Pushed`), built with the gate's GitHub client and Store; `Push`, `Outcome` and the
-  judgements. The façade file `approvals.go` calls it on `DefaultBranchPush` and logs the outcome with identifiers
-  only (`gate policy push`) and hands a consume to `sweep.AfterAnswer`. `upload4.go` reads the state it records (`records.Repo`).
+- **Shared knowledge**: `Service` (`Pushed`, `WorkflowPushed`, `Bind`, `Act`), built with the gate's GitHub client and
+  Store; `Push`, `Outcome`, the judgements, the owner action types and errors. The façade file `approvals.go` calls
+  `Pushed` on `DefaultBranchPush`, logs the outcome with identifiers only (`gate policy push`) and hands a consume to
+  `sweep.AfterAnswer`; `owner.go` calls `WorkflowPushed` after it, and `Bind` and `Act` for `OwnerActions`.
+  `upload4.go` reads the state it records (`records.Repo`) and the open first and workflow proposals.
 
 ### wire/manifest
 
@@ -1763,6 +1805,35 @@ are driven only as far as they go without GitHub. Child internals are tested in 
 - **Test name**: `TestAnUploadBeforeItsPushIsJudgedGivesNoVerdict`
   **Scenario**: the default branch's policy changed and no push event was handled yet; then the push arrives.
   **Expected behavior**: `unknown` `policy_unapproved`; after the push, `unknown` `outside_flow`.
+- **Test name**: `TestAFirstApprovalGivesTheOnboardingPullRequestItsVerdict`, `TestAFirstApprovalAdmitsOnlyTheWorkflowItWasMadeFor`
+  **Scenario**: an onboarding pull request (no policy and no workflow on the default branch) uploads a `pass`; a user who
+  is not an administrator, then an administrator, approves its head; the re-run uploads; a later push uploads; a run
+  that executed another workflow than the approved one.
+  **Expected behavior**: `first_policy` before; refused for the non-administrator; the stored run re-run, its upload
+  `pass` and `archfit/gate` success; the later head `first_policy` again; the other workflow `workflow_changed` alone.
+- **Test name**: `TestAFirstApprovalOnAHeadWhoseRunIsGoneSaysSo`, `TestAFirstApprovalWhoseRunCannotRunAgainNamesTheCondition`
+  **Scenario**: the approved head's run is gone; the default branch moved in more than the policy since the run.
+  **Expected behavior**: no re-run; `archfit/gate` `action_required` with a record that says the head is approved,
+  names the condition (`no_run`, `base_changed`) and the way out (push a commit, update the branch; then approve the
+  new head).
+- **Test name**: `TestAConsumedProposalsHeadMergesNothing`, `TestAPullRequestAtAProposalsHeadTakesBackItsSuccess`
+  **Scenario**: the App's policy pull request merged and its push used its approvals, then another pull request opens
+  at its old head; a success left on a proposal's head when another pull request opens there.
+  **Expected behavior**: the latest `archfit/gate` on that head is not a success (M2 review H2).
+- **Test name**: `TestAStaleFirstApprovalAdmitsNothingOnceChangeControlStarts`
+  **Scenario**: an onboarding pull request approved, then the repository approved another way, or outside the flow,
+  with no policy on the default branch.
+  **Expected behavior**: `policy_unapproved` or `outside_flow`, and `workflow_changed`: the approval lifts nothing.
+- **Test name**: `TestAnOnboardingPullRequestClosedWithoutAMerge`
+  **Scenario**: the approved onboarding pull request closes; the policy lands another way; another pull request uploads.
+  **Expected behavior**: no approved policy; the upload `unknown` `first_approval`; `v4/repos` lists the repository;
+  the first approval of the landed policy is made.
+- **Test name**: `TestTheFirstApprovalOfAnAlreadyConvertedRepositoryGivesItsPullRequestsAVerdict`, `TestAWorkflowApprovalGivesItsHeadAVerdict`, `TestAWorkflowMergePushConsumesItsApproval`
+  **Scenario**: a schema 3 policy with no record and an open pull request `first_approval`; a pull request that edits
+  the workflow; the push that merges it.
+  **Expected behavior**: an issue records the approval and the pull request's run is re-run to `pass`; the workflow
+  approval re-runs the head to `pass`; the merge push consumes the workflow proposal. `gate/approvals` and
+  `gate/proposals` test the actions.
 - **Test name**: `TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed`
   **Scenario**: a request answered with "merge later"; a second pull request fails on the same key and asks again; the policy pull request merges and its push arrives; a third pull request fails on the key.
   **Expected behavior**: the second waits on the answered request, no second issue opens, both pull requests are in its `Waiting`; the push consumes the proposal; the third is `fail`: the key is free.

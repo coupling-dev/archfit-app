@@ -55,6 +55,7 @@ type fakeGitHub struct {
 	commentOps  int            // comments created or updated
 	issueEdits  int            // issue bodies updated
 	reruns      []int64
+	noBlobIDs   bool // File returns no blob id
 	// beforeCheckWrite runs once, unlocked, at the start of the next check run create or update: what it does
 	// happens after that publisher's reads and before its first write.
 	beforeCheckWrite func()
@@ -169,6 +170,9 @@ func (f *fakeGitHub) File(_ context.Context, r api.RepoRef, ref, path string) ([
 	}
 	if !ok {
 		return nil, "", api.ErrNotFound
+	}
+	if f.noBlobIDs {
+		return slices.Clone(raw), "", nil // a client that lost the blob id
 	}
 	sum := sha256.Sum256(raw) // the same bytes give the same blob, as in git
 	return slices.Clone(raw), hex.EncodeToString(sum[:20]), nil
@@ -660,6 +664,7 @@ const (
 	requestIndexKeyPrefix    = "v4/request-index/"
 	answerKeyPrefixes        = "v4/approval/ v4/proposal/ v4/proposal-index/ v4/proposal-lease/" // M2 task 19
 	pushKeyPrefixes          = "v4/repo/ v4/policy-push/"                                        // M2 task 20
+	reposKey                 = "v4/repos"                                                        // M2 task 23
 )
 
 // isRecord reports whether key is a pusher or an approval record of gate/inputs, a request record of gate/decisions,
@@ -679,7 +684,7 @@ func isV4Record(key string) bool {
 			return true
 		}
 	}
-	return false
+	return key == reposKey
 }
 
 // guardStore proves the gate path writes nothing but publication leases and the records of gate/inputs: every other
@@ -749,7 +754,8 @@ func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key str
 }
 
 // CompareAndSwapAll is allowed for decision request records and Archfit 4 pull, request, approval and proposal records,
-// the proposal lease, the repository record and the judgement of a policy push only, every key of the call.
+// the proposal lease, the repository record and its index, and the judgement of a policy push only, every key of the
+// call.
 func (s *guardStore) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
 	s.mu.Lock()
 	for _, sw := range swaps {

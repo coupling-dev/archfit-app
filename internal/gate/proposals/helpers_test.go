@@ -61,7 +61,23 @@ func newWorld(t *testing.T) *world {
 	w := &world{t: t, hub: newFakeHub(testPolicy), store: store.NewMemory(), tokens: map[string]string{}}
 	w.svc = New(w.hub, w.store, func() time.Time { return testNow })
 	w.svc.sleep = func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
+	w.approveTip()
 	return w
+}
+
+// approveTip records the default branch's policy as the approved one, as its first approval or the consume of the
+// change that brought it does: the repository is under change control (M2 task 23, review H1).
+func (w *world) approveTip() {
+	w.t.Helper()
+	tip := w.hub.branches[fakeBase]
+	raw, err := records.Encode(&records.Repo{ApprovedDigest: policy3.Digest(w.hub.commits[tip].files[policyPath]),
+		ApprovedCommit: tip, GuardedSince: tip})
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	if err := w.store.Put(context.Background(), tenant(testRepo), records.RepoKey(testRepo.FullName), raw); err != nil {
+		w.t.Fatal(err)
+	}
 }
 
 // request stores request number open, as task 16 does, and its open issue.

@@ -200,19 +200,38 @@ func (v *upload4) decide(ctx context.Context, u ingest.Upload4) (decision4, erro
 	if err != nil {
 		return decision4{}, err
 	}
+	state, err := v.repoState(ctx, b.Repo)
+	if err != nil {
+		return decision4{}, err
+	}
+	approval, err := v.ownerApproval(ctx, b, state)
+	if err != nil {
+		return decision4{}, err
+	}
 	policy, err := policy3.Decode(tipPolicy)
 	advisory := policy.Gate != gateRequired
-	if !found || err != nil {
+	validTip := found && err == nil
+	guarded := state.ApprovedDigest != "" || state.OutsideFlow != nil
+	switch {
+	case !validTip && !guarded:
 		// No approved policy yet: this pull request brings the first one, which an administrator approves (task 23).
-		add(reasonFirstPolicy, result.Unknown{Path: policyPath, Cause: "policy",
-			What: branch + " has no policy of version 3 yet",
-			Why:  "an administrator approves the first policy",
-			Next: result.Next{Kind: "wait", Text: "an administrator approves the first policy in the App"}})
-	} else {
-		state, err := v.checkState(ctx, b.Repo, add)
-		if err != nil {
-			return decision4{}, err
+		if approval == nil || approval.Kind != records.ProposalFirst || approval.ExpectedDigest != env.PolicyDigest {
+			add(reasonFirstPolicy, result.Unknown{Path: policyPath, Cause: "policy",
+				What: branch + " has no policy of version 3 yet",
+				Why:  "an administrator approves the first policy",
+				Next: result.Next{Kind: "wait", Text: "an administrator approves the first policy in the App"}})
 		}
+	case !validTip:
+		// Change control started, and the default branch has no policy of version 3: a change no approval made.
+		checkState(state, b.Repo, add)
+		if state.OutsideFlow == nil {
+			add(reasonPolicyUnapproved, result.Unknown{Path: policyPath, Cause: "policy",
+				What: "changed on " + branch + " and has no recorded approval yet",
+				Why:  "only owners change the policy",
+				Next: result.Next{Kind: "wait", Text: "the check runs again"}})
+		}
+	default:
+		checkState(state, b.Repo, add)
 		if err := v.checkPolicy(ctx, ref, branch, tip, tipPolicy, env, add); err != nil {
 			return decision4{}, err
 		}
@@ -225,7 +244,7 @@ func (v *upload4) decide(ctx context.Context, u ingest.Upload4) (decision4, erro
 				Next: result.Next{Kind: "wait", Text: "the check runs again"}})
 		}
 	}
-	if err := v.checkWorkflow(ctx, ref, branch, tip, b.RunSHA, add); err != nil {
+	if err := v.checkWorkflow(ctx, ref, branch, tip, b.RunSHA, approval, add); err != nil {
 		return decision4{}, err
 	}
 
@@ -265,15 +284,20 @@ func (v *upload4) covered(ctx context.Context, u ingest.Upload4) ([]int, result.
 	return ids, shown, nil
 }
 
-// checkState reads the repository's record (M2 task 20) and returns it: a policy no owner approved yet, or one changed
-// outside the flow, gives no verdict. Change control starts with the first approval (task 23), and a policy changed
-// outside the flow stays unknown until an owner confirms or reverts it.
-func (v *upload4) checkState(ctx context.Context, r api.Repo, add func(string, result.Unknown)) (records.Repo, error) {
+// repoState reads the repository's record (M2 task 20); a repository with none has the zero record.
+func (v *upload4) repoState(ctx context.Context, r api.Repo) (records.Repo, error) {
 	var state records.Repo
 	err := records.Load(ctx, v.store, store.Tenant(r.InstallationID), records.RepoKey(r.FullName), &state)
 	if err != nil && !errors.Is(err, records.ErrNoRecord) {
 		return records.Repo{}, fmt.Errorf("gate: read the repository record: %w", err)
 	}
+	return state, nil
+}
+
+// checkState applies the repository's state: a policy no owner approved yet, or one changed outside the flow, gives no
+// verdict. Change control starts with the first approval (task 23), and a policy changed outside the flow stays unknown
+// until an owner confirms or reverts it.
+func checkState(state records.Repo, r api.Repo, add func(string, result.Unknown)) {
 	switch {
 	case state.OutsideFlow != nil:
 		next := "an owner confirms or reverts it in the App"
@@ -290,7 +314,6 @@ func (v *upload4) checkState(ctx context.Context, r api.Repo, add func(string, r
 			Why:  "an administrator approves the first policy",
 			Next: result.Next{Kind: "wait", Text: "an administrator approves the policy in the App"}})
 	}
-	return state, nil
 }
 
 // checkPolicy requires target_sha on the default branch and the policy digest of the run to be the digest at
@@ -342,9 +365,11 @@ func (v *upload4) onBranch(ctx context.Context, ref api.RepoRef, commit, tip str
 }
 
 // checkWorkflow requires the workflow file the run executed to be the default branch's, or to differ only in the
-// Action's ref, moved to commits manifest 4 lists. A pull request runs its own workflow file, so a changed one could
-// upload a forged pass (design 9.2).
-func (v *upload4) checkWorkflow(ctx context.Context, ref api.RepoRef, branch, tip, runSHA string, add func(string, result.Unknown)) error {
+// Action's ref, moved to commits manifest 4 lists, or to be the file an owner approved for this head (approval, M2 task
+// 23). A pull request runs its own workflow file, so a changed one could upload a forged pass (design 9.2).
+func (v *upload4) checkWorkflow(ctx context.Context, ref api.RepoRef, branch, tip, runSHA string, approval *records.Proposal,
+	add func(string, result.Unknown),
+) error {
 	same := false
 	// An empty ref would read the default branch: only a commit SHA names the file the run executed.
 	if commitSHA.MatchString(runSHA) {
@@ -356,7 +381,9 @@ func (v *upload4) checkWorkflow(ctx context.Context, ref api.RepoRef, branch, ti
 		if err != nil {
 			return err
 		}
-		same = runFound && tipFound && (runBlob == tipBlob || v.refOnly(run, target))
+		// Equal blob ids prove equal files only when there are ids: an empty one proves nothing (M2 review M1).
+		same = runFound && tipFound && (runBlob != "" && runBlob == tipBlob || v.refOnly(run, target)) ||
+			runFound && approval != nil && approval.WorkflowDigest == records.FileDigest(run)
 	}
 	if !same {
 		add(reasonWorkflowChanged, result.Unknown{Path: ingest.WorkflowPath, Cause: "tool",
@@ -398,6 +425,34 @@ func (v *upload4) fileBlob(ctx context.Context, ref api.RepoRef, at, path string
 		return nil, "", false, fmt.Errorf("gate: read %s: %w", path, err)
 	}
 	return content, blob, true, nil
+}
+
+// ownerApproval is the open proposal of an owner's approval of the upload's pull request as it is (M2 task 23): a
+// first or a workflow approval pinned to this head, or nil. A later push to the pull request needs a new one. A first
+// approval counts only while the repository has no approved policy and is not outside the flow (state): once change
+// control started, another onboarding pull request's approval admits nothing.
+func (v *upload4) ownerApproval(ctx context.Context, b ingest.Binding4, state records.Repo) (*records.Proposal, error) {
+	if b.PullRequest == 0 {
+		return nil, nil
+	}
+	t, name := store.Tenant(b.Repo.InstallationID), b.Repo.FullName
+	index := records.Index{Schema: records.SchemaProposalIndex}
+	if err := records.Load(ctx, v.store, t, records.ProposalIndexKey(name), &index); err != nil && !errors.Is(err, records.ErrNoRecord) {
+		return nil, fmt.Errorf("gate: read the proposal index: %w", err)
+	}
+	id, ok := index.Lookup(records.PullEntry(b.PullRequest))
+	if !ok {
+		return nil, nil
+	}
+	var p records.Proposal
+	if err := records.Load(ctx, v.store, t, records.ProposalKey(name, id), &p); err != nil {
+		return nil, fmt.Errorf("gate: read proposal %s: %w", id, err)
+	}
+	guarded := state.ApprovedDigest != "" || state.OutsideFlow != nil
+	if p.State != records.StateOpen || p.Kind == "" || p.HeadSHA != b.HeadSHA || p.Kind == records.ProposalFirst && guarded {
+		return nil, nil
+	}
+	return &p, nil
 }
 
 // problemRecord is the App's record of an ingest Problem.

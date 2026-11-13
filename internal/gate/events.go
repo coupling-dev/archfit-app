@@ -61,6 +61,9 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 		if otherBase(e.DefaultBranch, e.BaseRef) {
 			return g.sharedHeadOpened(ctx, e)
 		}
+		if err := g.retireForeignProposal(ctx, eventTarget(e)); err != nil {
+			return reactionNone, err
+		}
 		return g.newHead(ctx, eventTarget(e))
 	case webhook.PullClosed:
 		return reactionPullClosed, g.pullClosed(ctx, e)
@@ -149,6 +152,9 @@ func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error
 	t := eventTarget(e)
 	// Judged before the sweep reads the new policy: a consume or "outside the flow" is recorded first.
 	if err := g.policyPushed(ctx, e); err != nil {
+		return reactionNone, err
+	}
+	if err := g.workflowPushed(ctx, e); err != nil {
 		return reactionNone, err
 	}
 	if !protectedPush(e.ChangedPaths) {
