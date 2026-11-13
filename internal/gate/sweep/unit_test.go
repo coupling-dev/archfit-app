@@ -407,6 +407,14 @@ func TestRerunConditions(t *testing.T) {
 		{name: "a newer run of the head is in progress", change: func(a *fakeActions, _ *RerunInput) {
 			a.runs[10] = run(10, 1, "in_progress", now.Add(-time.Hour))
 		}, want: RerunInFlight},
+		{name: "a newer run in progress, and a newest one completed", change: func(a *fakeActions, _ *RerunInput) {
+			a.runs[10] = run(10, 1, "in_progress", now.Add(-2*time.Hour))
+			a.runs[11] = run(11, 1, "completed", now.Add(-time.Hour))
+		}, want: RerunImpossible, unmet: UnmetNotLatest},
+		{name: "a newer run completed, and a newest one in progress", change: func(a *fakeActions, _ *RerunInput) {
+			a.runs[10] = run(10, 1, "completed", now.Add(-2*time.Hour))
+			a.runs[11] = run(11, 1, "queued", now.Add(-time.Hour))
+		}, want: RerunInFlight},
 		{name: "a run created at the same time with a higher id is newer", change: func(a *fakeActions, _ *RerunInput) {
 			a.runs[10] = run(10, 1, "completed", now.Add(-day))
 		}, want: RerunImpossible, unmet: UnmetNotLatest},

@@ -9,17 +9,15 @@ import (
 )
 
 func TestRechecked(t *testing.T) {
-	was := records.Pull{HeadSHA: "head1", RunID: 9, RunAttempt: 1, Status: "waiting", Errors: []string{"e1"}, RequestKeys: []string{"k1"}}
 	rc := records.Recheck{Proposal: "prop1", Path: "updated", Unmet: "base_changed", HeadSHA: "head1"}
 	tests := []struct {
 		name    string
 		current *records.Pull // nil: no record
-		want    bool
 	}{
-		{"the record still names the run", &was, true},
-		{"a newer attempt uploaded", &records.Pull{HeadSHA: "head1", RunID: 9, RunAttempt: 2, Status: "pass"}, false},
-		{"a newer head uploaded", &records.Pull{HeadSHA: "head2", RunID: 10, RunAttempt: 1, Status: "fail"}, false},
-		{"no record", nil, false},
+		{"the record of the run the re-check read", &records.Pull{HeadSHA: "head1", RunID: 9, RunAttempt: 1, Status: "waiting", Errors: []string{"e1"}, RequestKeys: []string{"k1"}}},
+		{"a newer attempt uploaded meanwhile", &records.Pull{HeadSHA: "head1", RunID: 9, RunAttempt: 2, Status: "pass"}},
+		{"a newer head uploaded meanwhile", &records.Pull{HeadSHA: "head2", RunID: 10, RunAttempt: 1, Status: "fail"}},
+		{"no record", nil},
 	}
 	for _, b := range backends() {
 		for _, tc := range tests {
@@ -37,29 +35,32 @@ func TestRechecked(t *testing.T) {
 					}
 				}
 
-				ok, err := records.Rechecked(ctx, s, tenant, repoName, 12, was, rc)
-				if err != nil || ok != tc.want {
-					t.Fatalf("Rechecked = %v, %v; want %v", ok, err, tc.want)
+				ok, err := records.Rechecked(ctx, s, tenant, repoName, 12, rc)
+				if err != nil || ok != (tc.current != nil) {
+					t.Fatalf("Rechecked = %v, %v; want written %v", ok, err, tc.current != nil)
 				}
 				var got records.Pull
 				err = records.Load(ctx, s, tenant, key, &got)
-				switch {
-				case tc.current == nil:
+				if tc.current == nil {
 					if err == nil {
 						t.Errorf("a record was created: %+v", got)
 					}
-				case err != nil:
+					return
+				}
+				if err != nil {
 					t.Fatal(err)
-				case tc.want && (got.Recheck == nil || *got.Recheck != rc || got.Status != was.Status || len(got.Errors) != 1):
-					t.Errorf("record = %+v, want the same record with the recheck", got)
-				case !tc.want && (got.Recheck != nil || got.RunAttempt != tc.current.RunAttempt || got.HeadSHA != tc.current.HeadSHA):
-					t.Errorf("record = %+v, want the newer upload kept", got)
+				}
+				want := *tc.current
+				want.Schema, want.Recheck = records.SchemaPull, &rc
+				if got.Recheck == nil || *got.Recheck != rc || got.HeadSHA != want.HeadSHA || got.RunAttempt != want.RunAttempt ||
+					got.Status != want.Status || len(got.Errors) != len(want.Errors) {
+					t.Errorf("record = %+v, want %+v with the recheck", got, want)
 				}
 			})
 		}
 	}
 	t.Run("an empty recheck is refused", func(t *testing.T) {
-		if _, err := records.Rechecked(context.Background(), store.NewMemory(), tenant, repoName, 12, was, records.Recheck{}); err == nil {
+		if _, err := records.Rechecked(context.Background(), store.NewMemory(), tenant, repoName, 12, records.Recheck{}); err == nil {
 			t.Error("written")
 		}
 	})

@@ -485,7 +485,7 @@ func Rerun(ctx context.Context, gh Runs, r api.RepoRef, in RerunInput, now time.
 
 // latest checks that run is the latest run of its workflow for its head, among the runs of the same event that GitHub
 // ties to the same pull request or to none, ordered as ingest orders them: creation time (a re-run keeps it), then id.
-// RerunRequested means it is.
+// RerunRequested means it is; RerunInFlight means the latest run is still queued or in progress.
 func latest(ctx context.Context, gh api.WorkflowRuns, r api.RepoRef, run api.WorkflowRun) (RerunResult, Unmet, error) {
 	runs, err := gh.HeadRuns(ctx, r, run.WorkflowPath, run.HeadSHA)
 	if errors.Is(err, api.ErrNotFound) {
@@ -494,23 +494,27 @@ func latest(ctx context.Context, gh api.WorkflowRuns, r api.RepoRef, run api.Wor
 	if err != nil {
 		return RerunInFlight, UnmetNone, err
 	}
-	res := RerunRequested
+	newest := run
 	for _, other := range runs {
 		if other.ID == run.ID || other.Event != run.Event || !samePull(run.PullRequests, other.PullRequests) {
 			continue
 		}
-		if other.CreatedAt.Before(run.CreatedAt) || other.CreatedAt.Equal(run.CreatedAt) && other.ID < run.ID {
-			continue
+		if newer(other, newest) {
+			newest = other
 		}
-		if other.Status != runCompleted {
-			return RerunInFlight, UnmetNone, nil
-		}
-		res = RerunImpossible
 	}
-	if res == RerunImpossible {
-		return res, UnmetNotLatest, nil
+	switch {
+	case newest.ID == run.ID:
+		return RerunRequested, UnmetNone, nil
+	case newest.Status != runCompleted:
+		return RerunInFlight, UnmetNone, nil // the latest run reads the tip itself; its upload decides
 	}
-	return res, UnmetNone, nil
+	return RerunImpossible, UnmetNotLatest, nil
+}
+
+// newer reports whether a was created after b, or at the same time with a higher id, as ingest orders runs.
+func newer(a, b api.WorkflowRun) bool {
+	return a.CreatedAt.After(b.CreatedAt) || a.CreatedAt.Equal(b.CreatedAt) && a.ID > b.ID
 }
 
 // samePull reports whether a run tied to the pull requests b counts against a run tied to a: b names none, or one of a.
@@ -547,8 +551,8 @@ func onlyPolicy(ctx context.Context, gh api.Commits, r api.RepoRef, base, tip st
 
 // rerun counts and logs what Rerun requested. The pass's receipts are Archfit 3's: the event's base is the base the
 // receipt's run measured, else the pull request's base, and the Archfit 3 Action reads the protected inputs from the
-// target tip (design D.2: run.sh input_tip). A tip that cannot be read is unknown, so no re-run is requested; only a
-// rate limit or a cancelled ctx is returned.
+// target tip (design D.2: run.sh input_tip). A tip that cannot be read is an error, as any failed read of the guard:
+// the pull counts in Errors and the next pass tries again. A branch GitHub does not have is an unknown tip.
 func (p *pass) rerun(ctx context.Context, rule string, t inputs.Target, rc feedback.Receipt) (RerunResult, error) {
 	in := RerunInput{Receipt: rc, Head: t.HeadSHA, EventBase: rc.BaseSHA, ReadsTip: true}
 	if in.EventBase == "" {
@@ -556,12 +560,10 @@ func (p *pass) rerun(ctx context.Context, rule string, t inputs.Target, rc feedb
 	}
 	if rc.RunID != 0 {
 		tip, err := p.tip(ctx, t.Repo)
-		if err != nil && (errors.Is(err, api.ErrRateLimited) || ctx.Err() != nil) {
+		if err != nil {
 			return RerunInFlight, err
 		}
-		if err == nil {
-			in.Tip = tip.sha
-		}
+		in.Tip = tip.sha
 	}
 	res, unmet, err := Rerun(ctx, p.actions, t.Repo.RepoRef, in, p.now)
 	switch {

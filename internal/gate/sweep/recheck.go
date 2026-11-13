@@ -87,8 +87,8 @@ type answer struct {
 	tipRead  bool
 }
 
-// pull re-checks pull request n and records the path in its pull record. An empty path did nothing. The record is
-// left as it is when an upload replaced it meanwhile, or when there is none.
+// pull re-checks pull request n and records the path in its pull record, where uploads keep it. An empty path did
+// nothing. A pull request without a pull record is not recorded.
 func (a *answer) pull(ctx context.Context, n int) (records.Recheck, error) {
 	t, name := store.Tenant(a.repo.InstallationID), a.repo.FullName
 	var rec records.Pull
@@ -114,7 +114,7 @@ func (a *answer) pull(ctx context.Context, n int) (records.Recheck, error) {
 		return records.Recheck{}, err
 	}
 	a.log(ctx, n, rc)
-	if _, err := records.Rechecked(ctx, a.store, t, name, n, rec, rc); err != nil {
+	if _, err := records.Rechecked(ctx, a.store, t, name, n, rc); err != nil {
 		return rc, err
 	}
 	return rc, nil

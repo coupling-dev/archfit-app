@@ -124,7 +124,8 @@ func TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed(t *testing.T) {
 		base := w.gh.pulls[pullKey(shopName, n)].BaseSHA
 		w.gh.compares[shopName+"|"+base+"|"+merge] = api.Comparison{Status: "ahead", Paths: []string{policyPath}}
 	}
-	w.handle(w.policyPush(w.tip, merge))
+	before := w.tip
+	w.handle(w.policyPush(before, merge))
 	w.tip = merge
 
 	var p records.Proposal
@@ -153,6 +154,21 @@ func TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed(t *testing.T) {
 		!strings.Contains(notes[len(notes)-1].Body, "#8: its check runs again") {
 		t.Errorf("request comments = %+v, want #7 and #8 told", notes)
 	}
+	// The re-run of #7 uploads; the same push delivered again then re-runs and tells nothing twice: the upload keeps the
+	// pull record's re-check marker.
+	w.finishRun(asked)
+	rerun := w.spec4(asked, "graph")
+	rerun.env.RunAttempt = w.gh.runs[asked.runID].Attempt
+	rerun.env.PolicyDigest = policy3.Digest([]byte(answered))
+	rerun.result["policy"].(map[string]any)["digest"] = rerun.env.PolicyDigest
+	w.wantStatus(w.send4(rerun), "fail", "")
+	told := len(w.gh.comments[pullKey(shopName, firstRequest)])
+	w.handle(w.policyPush(before, merge))
+	if len(w.gh.reruns) != 2 || len(w.gh.comments[pullKey(shopName, firstRequest)]) != told {
+		t.Errorf("a delivery again after the re-run's upload: re-runs %v, %d request comments (want %d)",
+			w.gh.reruns, len(w.gh.comments[pullKey(shopName, firstRequest)]), told)
+	}
+
 	// The key is free: no answered request covers it now. The run reads the merged policy from the new tip.
 	third := w.spec4(w.pullBy(9), "graph")
 	third.env.PolicyDigest = policy3.Digest([]byte(answered))

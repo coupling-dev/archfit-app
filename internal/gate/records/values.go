@@ -167,8 +167,8 @@ type Pull struct {
 	// none. The engine's keys are compared, never parsed, so the preview of an answer reads these to know which errors
 	// the answer clears.
 	RequestKeys []string `json:"request_keys,omitempty"`
-	// Recheck is how the App got this pull request a fresh result after an answer it waited on (M2 task 21). The next
-	// upload replaces the record, and with it this field.
+	// Recheck is how the App last got this pull request a fresh result after an answer it waited on (M2 task 21). An
+	// upload keeps it, so a delivery of the same push again finds it.
 	Recheck *Recheck `json:"recheck,omitempty"`
 }
 

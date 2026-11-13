@@ -866,6 +866,10 @@ func TestHandleEventRules(t *testing.T) {
 			f.publisher.state.Receipt.BaseSHA, f.gh.heads[branchKey(shopName, "")] = "base", "base"
 			f.actions.run = api.WorkflowRun{Status: runCompleted, Attempt: 2, HeadSHA: "head", WorkflowPath: testWorkflow, CreatedAt: testStart}
 		}},
+		{"pull request base read for the re-run guard", webhook.ReviewChanged, func(f *pipelineFakes) {
+			f.publisher.state, f.resolver.trusted, f.gh.fail["Pull"] = missing, granted, boom // a receipt without a base
+			f.actions.run = api.WorkflowRun{Status: runCompleted, Attempt: 2, HeadSHA: "head", WorkflowPath: testWorkflow, CreatedAt: testStart}
+		}},
 		{"repository sweep", webhook.DefaultBranchPush, func(f *pipelineFakes) { f.sweeper.err = boom }},
 		{"withdrawal", webhook.ReviewChanged, func(f *pipelineFakes) {
 			f.publisher.state, f.resolver.trusted, f.publisher.publishErr = green, withdrawn, boom

@@ -536,7 +536,8 @@ change of the workflow on `T` reads `unknown` until its branch is updated.
 4. The pull record (M2 D6, `records.Pull` at `PullKey` with its `PullIndexKey` entry, one `records.Indexed` swap):
    pull request uploads only. It holds the run id and attempt, the payload digest, the status the App gave, and the
    result's error keys only when no rule failed. A record of a newer run, or a newer attempt of the same run, is never
-   replaced: run ids grow, so a late upload of an older head cannot win. Push and merge group uploads store nothing
+   replaced: run ids grow, so a late upload of an older head cannot win. A newer record keeps the old one's `recheck`
+   marker (the re-check after an answer, M2 task 21). Push and merge group uploads store nothing
    here (task 22 owns push results).
 5. The check and the comment (`feedback.Publisher4`, M2 task 15; see `gate/feedback`, "Archfit 4 publication"):
    `archfit/gate` on the head and, for a pull request, its one comment. The result shown is the engine's with the
@@ -1708,8 +1709,9 @@ with the protected paths in `Detail`, logged as `approval_withdrawn`, and no re-
 which repairs a lost event within the hour. After `owner_approval_missing`, once `!verdict.Unapproved(trusted)`
 (approval granted, or no longer required), it calls `sweep.Rerun` inside the same lease and publishes nothing. The
 guard's inputs: the event's head; the receipt's base, else the pull request's base (`Pulls.Pull`); the default
-branch's head (`BranchHead`); and "reads the policy from the tip", which the Archfit 3 Action does (design D.2). A base
-or tip that cannot be read is unknown, so no re-run is requested; a rate limit is returned.
+branch's head (`BranchHead`); and "reads the policy from the tip", which the Archfit 3 Action does (design D.2). A failed
+read of the base or the tip is returned, so the delivery is retried; one GitHub does not have is unknown, and no re-run
+is requested.
 
 Because nothing is decided outside the lease, every ordering of these events and an upload ends right:
 

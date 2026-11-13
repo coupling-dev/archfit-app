@@ -35,7 +35,7 @@ its index could drift apart.
   the flow" (design 7.1) until an owner confirms or reverts it (M2 task 23), and the issue opened for it
   (`OutsideIssue`). Record a policy push to a repository without an approved policy (`Unguarded`).
 - Record in a pull record how the re-check after an answer got its pull request a fresh result (`Rechecked`, M2 task
-  21), while the record still names the run it read.
+  21); uploads keep it.
 
 Not provided: GitHub calls, verdicts, the request line, the policy writer, passkeys. The passkey and challenge keys
 (`v4/passkey/<github-user-id>`, `v4/challenge/<github-user-id>`) belong to `control/passkey` (M2 task 18), because `control`
@@ -148,10 +148,10 @@ Functions, all under one installation tenant:
   and finishes a cleanup that stopped half way. A proposal that still lists an approval (one joined after the caller
   voided the ones it read) is `ErrApprovalsLeft`: no approval stays joined to a void proposal.
 
-- `Rechecked(ctx, s, t, repo, pr, was Pull, rc Recheck) (bool, error)`: sets `Pull.Recheck` to `rc` while the pull
-  record still has `was`'s head, run id and attempt, and reports whether it wrote. A record an upload replaced, or none,
-  is left as it is (false). An empty proposal or path is an error. `gate/sweep` (`AfterAnswer`) writes it; the next
-  upload replaces the record and the field with it.
+- `Rechecked(ctx, s, t, repo, pr, rc Recheck) (bool, error)`: sets `Pull.Recheck` to `rc` in the pull record, whatever
+  run it names now, and reports whether it wrote; no record is left as it is (false). An empty proposal or path is an
+  error. `gate/sweep` (`AfterAnswer`) writes it. The marker belongs to the pull request: `gate`'s upload keeps it when it
+  writes a newer run's record, so a delivery of the same push again finds it.
 
 Every write goes through `store.Update`; after 5 lost swaps it returns `store.ErrConflict`, and the caller may read
 again and retry.
@@ -214,8 +214,8 @@ sweep) read and write through this module;
 - `TestOutside`: the state and the push recorded; the issue recorded once, a second one returns the first; the same
   push again changes no byte; a later push keeps the issue; a consumed push is `ErrMoved`; `OutsideIssue` inside the
   flow is `ErrMoved`.
-- `TestRechecked` (memory store and emulator): the record that still names the run gets the field and keeps the rest;
-  a newer attempt or head, and no record, are left as they are; an empty recheck is refused.
+- `TestRechecked` (memory store and emulator): the record of the run read, of a newer attempt and of a newer head each
+  get the field and keep the rest; no record stays absent; an empty recheck is refused.
 - On the memory store and on the Firestore emulator (`FIRESTORE_EMULATOR_HOST`, run by the CI emulator job):
   `TestAConsumeWinsOnce` (two commits, one wins, the other `ErrMoved`),
   `TestTheSameCommitConsumesConcurrentlyWithoutError`, `TestAnApprovalJoinsOneProposalOnly` (two proposals race for

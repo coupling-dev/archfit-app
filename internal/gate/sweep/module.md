@@ -410,8 +410,8 @@ pass finds nothing to do.
 
 A receipt with `BaseSHA == ""` (written before the field existed) and a receipt measured on the tip keep the rule's
 behaviour, re-run included, under the re-run guard. A tip that cannot be read (not `ErrNotFound`) publishes what the
-rule did before, but the guard requests no re-run: the compare from the event's base to the tip cannot be made (rules
-7a and 7b then publish `missing_upload`); a rate limit or a cancelled context stops the pass, as everywhere. Rule 5a requests no re-run and is unchanged.
+rule did before, then fails the re-run guard's read: no re-run, the pull counts in `Errors`, and the next pass tries
+again; a rate limit or a cancelled context stops the pass, as everywhere. Rule 5a requests no re-run and is unchanged.
 
 Rules 6b and 7c leave a `target_moved` receipt alone; 5b still replaces it with `stale_inputs` when the protected inputs
 change, and rules 5a, 7a and 7b never match it. A new upload after the branch update replaces it.
@@ -477,8 +477,8 @@ first row that matches decides, cheapest first:
 | completed and `run.Attempt != RunAttempt` (a newer attempt ran)                                | `Run`                       | `RerunImpossible` | `not_latest`          |
 | `!ReadsTip`: the workflow does not read the policy from the target tip                         | `Run`                       | `RerunImpossible` | `policy_not_from_tip` |
 | `run.HeadSHA != Head`: the run is of an older head                                             | `Run`                       | `RerunImpossible` | `not_latest`          |
-| a newer run of the same workflow, head and event, tied to the same pull request or to none (created later, or at the same time with a higher id), still running | `Run`, `HeadRuns` | `RerunInFlight` | — |
-| such a newer run, completed                                                                    | `Run`, `HeadRuns`           | `RerunImpossible` | `not_latest`          |
+| the newest run of the same workflow, head and event, tied to the same pull request or to none (latest created, then highest id), is another run, still queued or in progress: it reads the tip itself | `Run`, `HeadRuns` | `RerunInFlight` | — |
+| that newest run is another run, completed                                                      | `Run`, `HeadRuns`           | `RerunImpossible` | `not_latest`          |
 | `now − run.CreatedAt ≥ 30 days` (a re-run keeps the creation time; GitHub re-runs none later)  | `Run`, `HeadRuns`           | `RerunImpossible` | `too_old`             |
 | `EventBase` or `Tip` unknown; or `EventBase != Tip` and `Compare(EventBase, Tip)` is not `ahead` or `identical`, is cut (`Truncated`), lists a path other than `.archfit.yaml`, or is a permanent refusal | `Run`, `HeadRuns`, `Compare` | `RerunImpossible` | `base_changed` |
 | all four hold                                                                                  | the above, `Rerun`          | `RerunRequested`  | —                     |
@@ -490,8 +490,8 @@ The callers' inputs:
 
 | Caller | `Head` | `EventBase` | `Tip` | `ReadsTip` |
 | --- | --- | --- | --- | --- |
-| Rules 0b, 0c, 5b, 6b, 7a, 7b, 7c (Archfit 3 receipts) | the target's head | `rc.BaseSHA`, else the pull request's base SHA from the `OpenPulls` listing | the tip the pass reads once; unknown when it cannot be read | true: the Archfit 3 Action reads the protected inputs from `origin/<base>` (design D.2, `run.sh` `input_tip`) |
-| `gate` `ReviewChanged` (Archfit 3 receipts) | the event's head | `rc.BaseSHA`, else `Pulls.Pull` base SHA | `BranchHead`; unknown when it cannot be read | true, as above |
+| Rules 0b, 0c, 5b, 6b, 7a, 7b, 7c (Archfit 3 receipts) | the target's head | `rc.BaseSHA`, else the pull request's base SHA from the `OpenPulls` listing | the tip the pass reads once; a failed read is an error (`Errors`, retried next pass) | true: the Archfit 3 Action reads the protected inputs from `origin/<base>` (design D.2, `run.sh` `input_tip`) |
+| `gate` `ReviewChanged` (Archfit 3 receipts) | the event's head | `rc.BaseSHA`, else `Pulls.Pull` base SHA | `BranchHead`; a failed read (of the base too) is returned, so the delivery is retried; a branch or pull request GitHub does not have is unknown | true, as above |
 | `AfterAnswer` (Archfit 4 pull records) | the pull request's head now | its base SHA, which stays at the event's base until the head changes (design D.2) | `BranchHead`, read once per call | the pull record holds `pass`, `fail` or `waiting`: an envelope 2 result of the fixed workflow the App accepted as it is |
 
 The base-behind rule (above) still runs first in rules 5b, 6b, 7a, 7b and 7c, so for them `EventBase` is the tip or
@@ -516,7 +516,7 @@ Termination: what changes in GitHub state after each re-run site, so the next pa
 | Rules 7a, 7b                 | a successful `Rerun` advances the run's attempt, so the guard blocks; an upload then replaces the reason; no upload → the next pass publishes `missing_upload`, which no rule re-runs |
 | Rule 7c                      | guard only: it fires while the run is still completed at the receipt's attempt (the earlier `Rerun` failed) and stops once the attempt advances                                       |
 | `HandleEvent(ReviewChanged)` | the same `Rerun` function, called by `gate`; a redelivered event finds the run queued, in progress, or at a newer attempt                                                             |
-| `AfterAnswer`                | the pull record names the consumed proposal (`Recheck.Proposal`), so a redelivered push skips it; a pull record an upload replaced is a fresh result |
+| `AfterAnswer`                | the pull record names the consumed proposal (`Recheck.Proposal`), and uploads keep that field, so a redelivered push skips it, also after the re-run's own upload |
 
 A `Rerun` call that keeps failing (for example a revoked `actions: write` permission) is retried once per pass and
 counted in `Summary.Errors`; it costs one API call and no CI minutes.
@@ -541,9 +541,9 @@ must get a fresh result without an action by its author (design 10.5). For each 
      branch. One call, never retried.
    - `ErrNotFound`: skip it. Any other error is returned.
 
-The path, the unmet condition and the head acted on go into the pull record (`records.Rechecked`, only while the
-record still names the same head, run and attempt: an upload that replaced it meanwhile is the fresh result). The next
-upload replaces the record and the field with it. Then each request issue of the proposal gets one comment that lists
+The path, the unmet condition and the head acted on go into the pull record (`records.Rechecked`, whatever run it
+names now). The marker belongs to the pull request, not to a run: an upload keeps it (gate's `storePull`), so a
+delivery of the same push again skips the pull request also after the re-run's own upload. Then each request issue of the proposal gets one comment that lists
 its waiting pull requests this call acted on and their path, with the unmet condition in words for an update. A
 failed comment is logged, not returned. The default branch's head is read once per call.
 
@@ -1178,7 +1178,7 @@ calls and serves `State` from what was published; injectable errors. Time is the
   **Scenario**: through a pass (rule 7c): `RunID` 0; run not found; run queued; run in progress; run completed at the receipt's attempt; run completed at a later attempt.
   **Expected behavior**: `Actions.Rerun` is called only for the run completed at the receipt's attempt; `RunID` 0 calls nothing; nothing is published.
 - **Test name**: `TestRerunConditions`
-  **Scenario**: the exported `Rerun` with all four conditions true, then one row per change: the run checks above, `Actions.Run` or `Actions.Rerun` fails; `ReadsTip` false; the run of an older head; a newer run of the head completed, in progress, or created at the same time with a higher id; an older run, a newer run of another pull request or another event; `HeadRuns` fails; a run a second short of 30 days, exactly 30 days and 31 days old; the target moved in the policy only, in a code file too, in the workflow; a cut file list; a diverged base; a base GitHub does not know; a failing compare; an unknown event base or tip.
+  **Scenario**: the exported `Rerun` with all four conditions true, then one row per change: the run checks above, `Actions.Run` or `Actions.Rerun` fails; `ReadsTip` false; the run of an older head; a newer run of the head completed, in progress, or created at the same time with a higher id; a newer run in progress with a newest one completed, and the other way round; an older run, a newer run of another pull request or another event; `HeadRuns` fails; a run a second short of 30 days, exactly 30 days and 31 days old; the target moved in the policy only, in a code file too, in the workflow; a cut file list; a diverged base; a base GitHub does not know; a failing compare; an unknown event base or tip.
   **Expected behavior**: one `Rerun` request when all hold, for the older run and the other pull request or event, and a second short of 30 days; the matching `Unmet` (`no_run`, `not_latest`, `policy_not_from_tip`, `too_old`, `base_changed`) and no request otherwise; `RerunInFlight` with no request while a run of the head is queued or in progress; the error with `RerunInFlight` for a failed call.
 - **Test name**: `TestArchfit3RulesDoNotRerunAnOldRun`
   **Scenario**: rules 7c and 7b over a run created 30 days before the pass.

@@ -488,8 +488,8 @@ func (g *Gate) approvalChanged(ctx context.Context, t inputs.Target) (string, er
 
 // rerunInput is what the re-run guard judges an Archfit 3 receipt rc of t on: the event's base is the base the
 // receipt's run measured, else the pull request's base; the Archfit 3 Action reads the protected inputs from the target
-// tip (design D.2: run.sh input_tip). A base or tip that cannot be read stays unknown, so no re-run is requested; only a
-// rate limit is returned.
+// tip (design D.2: run.sh input_tip). A failed read is returned, so the delivery is retried; a pull request or branch
+// GitHub does not have is unknown, and no re-run is requested.
 func (g *Gate) rerunInput(ctx context.Context, t inputs.Target, rc feedback.Receipt) (sweep.RerunInput, error) {
 	in := sweep.RerunInput{Receipt: rc, Head: t.HeadSHA, EventBase: rc.BaseSHA, ReadsTip: true}
 	if rc.RunID == 0 {
@@ -498,18 +498,18 @@ func (g *Gate) rerunInput(ctx context.Context, t inputs.Target, rc feedback.Rece
 	if in.EventBase == "" && t.PullRequest != 0 {
 		pull, err := g.pulls.Pull(ctx, t.Repo.RepoRef, t.PullRequest)
 		switch {
-		case errors.Is(err, api.ErrRateLimited):
-			return in, fmt.Errorf("gate: read the pull request base: %w", err)
 		case err == nil:
 			in.EventBase = pull.BaseSHA
+		case !errors.Is(err, api.ErrNotFound):
+			return in, fmt.Errorf("gate: read the pull request base: %w", err)
 		}
 	}
 	tip, err := g.repos.BranchHead(ctx, t.Repo.RepoRef, t.Repo.DefaultBranch)
 	switch {
-	case errors.Is(err, api.ErrRateLimited):
-		return in, fmt.Errorf("gate: read the default branch head: %w", err)
 	case err == nil:
 		in.Tip = tip
+	case !errors.Is(err, api.ErrNotFound):
+		return in, fmt.Errorf("gate: read the default branch head: %w", err)
 	}
 	return in, nil
 }
