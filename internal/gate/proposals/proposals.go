@@ -160,11 +160,13 @@ type approved struct {
 
 // proposal is the open proposal of a repository whose pull request is open, with its open approvals in order. base is
 // the approved policy a revert in it restores, which its answers are written on instead of the tip's; nil without one.
+// stale are its reverts of a state that ended (a confirm, or a later change outside the flow): they no longer apply.
 type proposal struct {
 	id        string
 	rec       records.Proposal
 	approvals []approved
 	base      []byte
+	stale     []approved
 }
 
 func (s *Service) answer(ctx context.Context, r api.Repo, in Input) (Outcome, error) {
@@ -344,6 +346,10 @@ func (s *Service) current(ctx context.Context, r api.Repo) (*proposal, error) {
 		!errors.Is(err, records.ErrNoRecord) {
 		return nil, fmt.Errorf("proposals: read the proposal index: %w", err)
 	}
+	var repo records.Repo
+	if err := records.Load(ctx, s.store, t, records.RepoKey(r.FullName), &repo); err != nil && !errors.Is(err, records.ErrNoRecord) {
+		return nil, fmt.Errorf("proposals: read the repository: %w", err)
+	}
 	var open *proposal
 	for _, e := range index.Entries {
 		p := &proposal{id: e.ID}
@@ -358,7 +364,7 @@ func (s *Service) current(ctx context.Context, r api.Repo) (*proposal, error) {
 		if err != nil {
 			return nil, fmt.Errorf("proposals: read pull request %d: %w", p.rec.PullRequest, err)
 		}
-		if err := s.loadApprovals(ctx, r, p); err != nil {
+		if err := s.loadApprovals(ctx, r, repo, p); err != nil {
 			return nil, err
 		}
 		switch {
@@ -366,7 +372,7 @@ func (s *Service) current(ctx context.Context, r api.Repo) (*proposal, error) {
 			continue
 		case pull.State != "open":
 			// The approvals first: while the proposal is in the index, a later answer repeats a cleanup that stopped.
-			if err := s.voidAndNote(ctx, r, p.rec.PullRequest, p.approvals, true); err != nil {
+			if err := s.voidAndNote(ctx, r, p.rec.PullRequest, append(p.approvals, p.stale...), true); err != nil {
 				return nil, err
 			}
 			if err := records.VoidProposal(ctx, s.store, t, r.FullName, p.id); err != nil {
@@ -381,7 +387,9 @@ func (s *Service) current(ctx context.Context, r api.Repo) (*proposal, error) {
 	return open, nil
 }
 
-func (s *Service) loadApprovals(ctx context.Context, r api.Repo, p *proposal) error {
+// loadApprovals reads the open approvals of p. A revert applies only while repo is outside the flow with the digest it
+// replaces; otherwise it is stale.
+func (s *Service) loadApprovals(ctx context.Context, r api.Repo, repo records.Repo, p *proposal) error {
 	for _, id := range p.rec.Approvals {
 		a := approved{id: id}
 		if err := records.Load(ctx, s.store, tenant(r), records.ApprovalKey(r.FullName, id), &a.rec); err != nil {
@@ -394,6 +402,10 @@ func (s *Service) loadApprovals(ctx context.Context, r api.Repo, p *proposal) er
 			a.revert = &records.Revert{}
 			if err := json.Unmarshal(a.rec.Change, a.revert); err != nil {
 				return fmt.Errorf("proposals: approval %s holds an unreadable revert: %w", id, err)
+			}
+			if repo.OutsideFlow == nil || repo.OutsideFlow.Digest != a.revert.Outside {
+				p.stale = append(p.stale, a)
+				continue
 			}
 			base, err := s.approvedPolicy(ctx, r.RepoRef, *a.revert)
 			if err != nil {
@@ -410,12 +422,13 @@ func (s *Service) loadApprovals(ctx context.Context, r api.Repo, p *proposal) er
 
 // apply writes the changes of the open approvals of cur, in order, into the tip's policy, or, when cur holds a revert,
 // into the approved policy it restores. An approval whose change the policy no longer takes (ErrByHand: a module it
-// names is gone, a list the writer cannot place) is voided.
+// names is gone, a list the writer cannot place) is voided, and so is a stale revert.
 func apply(tipFile []byte, cur *proposal) (file []byte, kept, voided []approved, err error) {
 	file = tipFile
 	if cur == nil {
 		return file, nil, nil, nil
 	}
+	voided = slices.Clone(cur.stale)
 	if cur.base != nil {
 		file = cur.base
 	}

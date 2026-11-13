@@ -65,8 +65,10 @@ notes the answer on the request issue. Without it an answer is a record nobody a
   the open answers of the proposal written on it again (one that no longer applies is voided as above). Only an owner
   the approved policy names reverts (`ErrNotOwner`): the changed policy could name anyone. The revert is bound to
   `RevertDigest` (the approved commit and digest, and the changed digest; `ErrMoved` when it moved, before the step-up
-  is used). A tip that already holds what the revert writes is `ErrNothingToRevert` (confirm it instead); a repository
-  not outside the flow is `ErrNotOutside`. The approval (`records.RevertTo`, kind `revert`) joins the proposal; the
+  is used), and the tip's policy must still be that changed one (`""` for a deleted policy): a later push not judged
+  yet is `ErrMoved` too. A tip that already holds what the revert writes is `ErrNothingToRevert` (confirm it instead); a
+  repository not outside the flow is `ErrNotOutside`. A revert of a state that ended (a confirm, a later change) no
+  longer applies: the next answer or revert voids it, and the branch is written without it. The approval (`records.RevertTo`, kind `revert`) joins the proposal; the
   pull request lists it (no request) with its owner and passkey; the issue of the state gets a note naming them. Its
   merge push ends the state (`records.Consume`, `gate/approvals`).
 - `IsProposalPull` is true only for a proposal with no kind: a first or workflow approval's pull request gets its
@@ -208,5 +210,6 @@ an `archfit/gate` success on the head (design appendix D.2), and the memory Stor
 - `TestAnAnswerOutsideTheFlowIsRefused` (an owner a direct push added and an owner of the approved policy: nothing
   written, no step-up used), `TestARevertRestoresTheApprovedPolicyWithTheOpenAnswers` (a "merge later" answer survives
   the revert; the issue and the pull request record owner and passkey), `TestOnlyAnOwnerOfTheApprovedPolicyReverts`,
-  `TestARevertRefuses` (inside the flow, moved, nothing to revert),
+  `TestARevertRefuses` (inside the flow, moved, nothing to revert), `TestARevertRestoresADeletedPolicy`,
+  `TestARevertIsBoundToTheChangeTheOwnerSaw` (a later push, not judged), `TestAConfirmEndsAnOpenRevert`,
   `TestAProposalOfAPullRequestSomeoneElseWroteIsNotThePolicyPullRequest`.

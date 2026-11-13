@@ -56,6 +56,10 @@ direct push to the policy is the new rule with no owner's word.
 - A proposal that admits a workflow file (a first approval, `Proposal.WorkflowDigest`) is consumed only when its merge
   commit also holds that file: one first approval never admits another workflow. A merge with another file voids it
   as a merge of another policy does; with no approved policy the push is then `unguarded`.
+- A proposal approved in a state that ended is voided as such a merge is, and the push judged as any other
+  (`stillApplies`, and `records.Consume` refuses it too): a `first` proposal once the repository has an approved
+  policy or is outside the flow (another onboarding pull request started change control), and one holding a revert
+  of another change than the one outside the flow now, or after a confirm ended the state.
 - After a consume whose proposal holds a revert (M2 task 23, `gate/proposals`) ended the state, the issue of the state
   gets a note and is closed (a notification: a failure is logged, a delivery again does not repeat it).
 - `WorkflowPushed` judges a default-branch push for the workflow approval it uses (M2 task 23): the open `workflow`
@@ -226,7 +230,8 @@ policy of version 3 or without the workflow, a branch with a policy, no pull req
 assigned to the owners; a later direct push is outside the flow), `TestAWorkflowApprovalIsConsumedByItsMergeOnce`,
 `TestAWorkflowMergedWithAnotherFileVoidsItsApproval`, `TestAWorkflowApprovalRefuses`,
 `TestOnlyAnOwnerOfTheApprovedPolicyConfirms` (the owner a direct push named is refused),
-`TestAConfirmWaitsForTheJudgementOfALaterChange`, `TestARevertConsumeEndsTheStateAndClosesItsIssue`.
+`TestAConfirmWaitsForTheJudgementOfALaterChange`, `TestARevertConsumeEndsTheStateAndClosesItsIssue`,
+`TestAFirstApprovalMergedAfterChangeControlStartedIsOutsideTheFlow`, `TestARevertMergedAfterAConfirmIsOutsideTheFlow`.
 
 In `internal/gate` (`approvals_test.go`), over the gate's fake GitHub: `TestADirectPushPutsEveryUploadOutsideTheFlow`
 (one issue, the upload `unknown` with `outside_flow` naming it), `TestAnAnsweredRequestCoversItsKeyUntilItsProposalIsConsumed`,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,13 +20,33 @@ var mallory = Owner{ID: 666, Login: "mallory"}
 
 // outsideTheFlow records the start policy as approved, then pushes mallorysPolicy straight to the default branch and
 // records the state as the push judgement does, with issue 70.
-func (w *world) outsideTheFlow() {
+func (w *world) outsideTheFlow() { w.outsideWith(mallorysPolicy) }
+
+// outsideWith is outsideTheFlow with policy pushed; "" deletes the policy.
+func (w *world) outsideWith(policy string) {
 	w.t.Helper()
 	approved := w.hub.branches[fakeBase]
-	w.hub.push(fakeBase, policyPath, mallorysPolicy)
+	digest := ""
+	if policy == "" {
+		w.hub.remove(fakeBase, policyPath)
+	} else {
+		w.hub.push(fakeBase, policyPath, policy)
+		digest = policy3.Digest([]byte(policy))
+	}
 	w.putRepo(records.Repo{ApprovedDigest: policy3.Digest([]byte(testPolicy)), ApprovedCommit: approved, GuardedSince: approved,
-		OutsideFlow: &records.OutsideFlow{Digest: policy3.Digest([]byte(mallorysPolicy)), Issue: 70}})
+		OutsideFlow: &records.OutsideFlow{Digest: digest, Issue: 70}})
 	w.hub.issues[70] = true
+}
+
+// remove moves branch to a new commit without path, as a person's push that deletes it does.
+func (h *fakeHub) remove(branch, path string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	head := h.branches[branch]
+	files := maps.Clone(h.commits[head].files)
+	delete(files, path)
+	h.branches[branch] = h.put(head, "push", files)
+	h.follow(branch)
 }
 
 func (w *world) putRepo(r records.Repo) {
@@ -145,7 +166,10 @@ func TestARevertRefuses(t *testing.T) {
 	t.Run("the default branch holds the approved policy", func(t *testing.T) {
 		w := newWorld(t)
 		w.outsideTheFlow()
-		w.hub.push(fakeBase, policyPath, testPolicy)
+		w.hub.push(fakeBase, policyPath, testPolicy) // put back by hand, and judged outside the flow again
+		r := load[records.Repo](t, w.store, records.RepoKey(testRepo.FullName))
+		r.OutsideFlow.Digest = policy3.Digest([]byte(testPolicy))
+		w.putRepo(r)
 		if _, err := w.revert(olivia); !errors.Is(err, ErrNothingToRevert) {
 			t.Errorf("err = %v, want ErrNothingToRevert", err)
 		}
@@ -170,5 +194,68 @@ func TestAProposalOfAPullRequestSomeoneElseWroteIsNotThePolicyPullRequest(t *tes
 	}
 	if own, err := IsProposalPull(ctx, w.store, testRepo, out.PullRequest); err != nil || !own {
 		t.Errorf("IsProposalPull(policy) = %v, %v; want true", own, err)
+	}
+}
+
+func TestARevertRestoresADeletedPolicy(t *testing.T) {
+	w := newWorld(t)
+	w.outsideWith("")
+	out, err := w.revert(oscar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.State != requests.PullMerged || w.hub.file(fakeBase, policyPath) != testPolicy {
+		t.Errorf("outcome %+v, policy on main:\n%s\nwant the approved policy back", out, w.hub.file(fakeBase, policyPath))
+	}
+}
+
+// TestARevertIsBoundToTheChangeTheOwnerSaw: a later push, not judged yet, changed the policy again.
+func TestARevertIsBoundToTheChangeTheOwnerSaw(t *testing.T) {
+	w := newWorld(t)
+	w.outsideTheFlow()
+	digest, err := w.svc.RevertDigest(context.Background(), testRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.hub.push(fakeBase, policyPath, mallorysPolicy+"# again\n")
+	w.mu.Lock()
+	w.tokens["revert-token"] = digest
+	w.mu.Unlock()
+	_, err = w.svc.Revert(context.Background(), testRepo, RevertInput{Owner: oscar, Digest: digest, Redeem: w.redeem("revert-token")})
+	if !errors.Is(err, ErrMoved) || len(w.redeemed) != 0 {
+		t.Errorf("Revert = %v, redeemed %v; want ErrMoved with the step-up unused", err, w.redeemed)
+	}
+}
+
+// TestAConfirmEndsAnOpenRevert: an owner reverted to merge later; another confirmed the change. The next answer is
+// written on the confirmed policy, and the revert is void.
+func TestAConfirmEndsAnOpenRevert(t *testing.T) {
+	w := newWorld(t)
+	edited := testPolicy + "# edited by hand\n"
+	w.outsideWith(edited)
+	digest, err := w.svc.RevertDigest(context.Background(), testRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.mu.Lock()
+	w.tokens["revert-token"] = digest
+	w.mu.Unlock()
+	reverted, err := w.svc.Revert(context.Background(), testRepo, RevertInput{Owner: oscar, Digest: digest, Later: true,
+		Redeem: w.redeem("revert-token")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.putRepo(records.Repo{ApprovedDigest: policy3.Digest([]byte(edited)), ApprovedCommit: w.hub.branches[fakeBase]}) // confirmed
+
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	out := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, false)
+	if got := w.hub.file(fakeBase, policyPath); !strings.Contains(got, "# edited by hand") || !strings.Contains(got, "# request #431") {
+		t.Errorf("the answer was not written on the confirmed policy:\n%s", got)
+	}
+	if a := load[records.Approval](t, w.store, records.ApprovalKey(testRepo.FullName, reverted.Approval)); a.State != records.StateVoid {
+		t.Errorf("the revert is %q, want void", a.State)
+	}
+	if p := w.proposalOf(out); slices.Contains(p.Approvals, reverted.Approval) {
+		t.Errorf("proposal %+v still lists the revert", p)
 	}
 }

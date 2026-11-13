@@ -2,7 +2,9 @@ package records
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 
@@ -122,10 +124,12 @@ const consumeReads = 3
 // errApprovalsMoved is a proposal holding an approval Consume did not read.
 var errApprovalsMoved = errors.New("records: the proposal's approvals moved")
 
-// joined is what a consume needs of an approval of the proposal: its request (0 when none), and whether it reverts.
+// joined is what a consume needs of an approval of the proposal: its request (0 when none), and, for a revert, the
+// digest of the policy changed outside the flow it replaces.
 type joined struct {
 	request int
 	revert  bool
+	outside string
 }
 
 // approvalsOf reads each approval of the proposal.
@@ -140,7 +144,15 @@ func approvalsOf(ctx context.Context, s store.Store, t store.Tenant, fullName, p
 		if err := Load(ctx, s, t, ApprovalKey(fullName, id), &a); err != nil {
 			return nil, err
 		}
-		out[id] = joined{request: a.Request, revert: a.Kind == KindRevert}
+		j := joined{request: a.Request, revert: a.Kind == KindRevert}
+		if j.revert {
+			var rev Revert
+			if err := json.Unmarshal(a.Change, &rev); err != nil {
+				return nil, fmt.Errorf("records: approval %s holds an unreadable revert", id)
+			}
+			j.outside = rev.Outside
+		}
+		out[id] = j
 	}
 	return out, nil
 }
@@ -148,9 +160,9 @@ func approvalsOf(ctx context.Context, s store.Store, t store.Tenant, fullName, p
 func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string, m Merge, approvals map[string]joined) error {
 	keys := []string{ProposalKey(fullName, m.Proposal), ProposalIndexKey(fullName), RepoKey(fullName),
 		RequestIndexKey(fullName), PolicyPushKey(fullName, m.Push)}
-	approvedMoved := false
+	approvedMoved, stale := false, false
 	err := store.Update(ctx, s, t, keys, func(cur [][]byte) ([][]byte, error) {
-		approvedMoved = false
+		approvedMoved, stale = false, false
 		if cur[0] == nil {
 			return nil, ErrNoRecord
 		}
@@ -175,13 +187,16 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 			}
 		}
 		answered, reverts := map[string]bool{}, false
+		var outside []string
 		for _, id := range p.Approvals {
 			a, ok := approvals[id]
 			if !ok {
 				return nil, errApprovalsMoved
 			}
 			answered[strconv.Itoa(a.request)] = true
-			reverts = reverts || a.revert
+			if a.revert {
+				reverts, outside = true, append(outside, a.outside)
+			}
 		}
 		p.State, p.Commit = StateMerged, m.Commit
 
@@ -215,6 +230,12 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 				return nil, err
 			}
 		}
+		if !applies(p, r, outside) {
+			// Judged on the proposal and the repository together, so confirmed by a swap of the unchanged bytes, as
+			// below.
+			stale = true
+			return cur, nil
+		}
 		if m.AtTip && (r.OutsideFlow == nil || reverts) {
 			if r.ApprovedCommit != m.Over {
 				// This judges the proposal and the repository together, and Update reads them one by one: a consume
@@ -235,10 +256,28 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 		}
 		return [][]byte{out[0], proposalIndex, out[1], requestIndex, out[2]}, nil
 	})
-	if err == nil && approvedMoved {
+	switch {
+	case err == nil && stale:
+		return ErrMoved
+	case err == nil && approvedMoved:
 		return ErrApprovedMoved
 	}
 	return err
+}
+
+// applies reports whether proposal p still applies to the repository r: a first approval only while r has no approved
+// policy and is not outside the flow, and a revert only while r is outside the flow with the digest it replaces
+// (outside, one per revert). A proposal approved in a state that ended admits nothing (M2 task 23).
+func applies(p Proposal, r Repo, outside []string) bool {
+	if p.Kind == ProposalFirst && (r.ApprovedDigest != "" || r.OutsideFlow != nil) {
+		return false
+	}
+	for _, digest := range outside {
+		if r.OutsideFlow == nil || r.OutsideFlow.Digest != digest {
+			return false
+		}
+	}
+	return true
 }
 
 // Outside records that push brought a policy of digest that no approval made: the repository is outside the flow

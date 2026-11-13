@@ -34,12 +34,14 @@ const (
 )
 
 // The refusals of an answer, besides the request page's (ErrNoRequest, ErrClosedRequest, ErrAnswer, ErrNoPolicy,
-// ErrByHand) and the passkey's, which Redeem returns as they are.
+// ErrByHand) and the passkey's, which Redeem returns as they are. ErrOutsideFlow: the policy changed outside the flow,
+// and an owner confirms or reverts it first (M2 task 23).
 var (
 	ErrNotPolicyOwner = proposals.ErrNotOwner
 	ErrNeedsPasskey   = proposals.ErrNeedsPasskey
 	ErrAnswerBusy     = proposals.ErrBusy
 	ErrProposalFull   = proposals.ErrFull
+	ErrOutsideFlow    = proposals.ErrOutsideFlow
 )
 
 // AnswerDigest is the change digest of answer a to request number of t's repository.

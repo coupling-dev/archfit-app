@@ -244,3 +244,44 @@ func TestAWorkflowProposalIsConsumedByItsMergeOnce(t *testing.T) {
 		t.Errorf("the policy proposal consumed as a workflow = %v, want ErrMoved", err)
 	}
 }
+
+// TestAProposalApprovedInAStateThatEndedIsNotConsumed: a first approval once change control started, and a revert once
+// the state it was made in ended, admit nothing; nothing is written.
+func TestAProposalApprovedInAStateThatEndedIsNotConsumed(t *testing.T) {
+	ctx := context.Background()
+	m := records.Merge{Proposal: "p1", Commit: "m1", Digest: "sha256:p", Push: records.Push{Before: "b", After: "m1"}, AtTip: true}
+	cases := []struct {
+		name    string
+		outside bool // the repository is outside the flow with sha256:x when the approval is recorded
+		record  func(context.Context, store.Store) error
+		later   records.Repo
+	}{
+		{"a first approval after change control started", false, first,
+			records.Repo{ApprovedDigest: "sha256:q", ApprovedCommit: "c9"}},
+		{"a revert after a confirm", true, revert("sha256:x"), records.Repo{ApprovedDigest: "sha256:x", ApprovedCommit: "c9"}},
+		{"a revert after the policy changed again", true, revert("sha256:x"),
+			records.Repo{ApprovedDigest: "sha256:p", ApprovedCommit: "c0", OutsideFlow: &records.OutsideFlow{Digest: "sha256:y"}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := store.NewMemory()
+			if tc.outside {
+				put(t, s, records.RepoKey(repoName), &records.Repo{ApprovedDigest: "sha256:p", ApprovedCommit: "c0",
+					OutsideFlow: &records.OutsideFlow{Digest: "sha256:x", Issue: 70}})
+			}
+			if err := tc.record(ctx, s); err != nil {
+				t.Fatal(err)
+			}
+			put(t, s, records.RepoKey(repoName), &tc.later)
+			keys := []string{records.RepoKey(repoName), records.ProposalKey(repoName, "p1"), records.ProposalIndexKey(repoName),
+				records.PolicyPushKey(repoName, m.Push)}
+			before := snapshot(t, s, keys...)
+			if err := records.Consume(ctx, s, tenant, repoName, m); !errors.Is(err, records.ErrMoved) {
+				t.Errorf("Consume = %v, want ErrMoved", err)
+			}
+			if !reflect.DeepEqual(before, snapshot(t, s, keys...)) {
+				t.Error("a refused consume wrote a key")
+			}
+		})
+	}
+}

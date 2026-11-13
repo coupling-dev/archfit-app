@@ -20,8 +20,9 @@ var (
 	// ErrNotAdmin refuses a first approval by a user who is not a repository administrator, or, for a policy already on
 	// the default branch, not also an owner it names (design 9.2; manager, 2026-11-13).
 	ErrNotAdmin = errors.New("approvals: the first policy is approved by a repository administrator")
-	// ErrNotOwner refuses a workflow approval, a confirm or a revert by a user the approved policy does not name in
-	// owners. The approved policy, not the default branch's: a policy changed outside the flow could name anyone.
+	// ErrNotOwner refuses a workflow approval or a confirm by a user the approved policy does not name in owners. The
+	// approved policy, not the default branch's: a policy changed outside the flow could name anyone. A revert's is
+	// gate/proposals' ErrNotOwner.
 	ErrNotOwner = errors.New("approvals: not an owner named in the approved policy")
 	// ErrNotDue refuses an action the repository's state does not call for: a first approval of an approved repository,
 	// a workflow approval before the first approval or outside the flow, a confirm inside the flow.
@@ -100,10 +101,8 @@ func (s *Service) Bind(ctx context.Context, r api.Repo, a Action) (Change, error
 	case a.Kind == records.KindFirst && !unapproved, a.Kind == records.KindWorkflow && (unapproved || repo.OutsideFlow != nil),
 		a.Kind == records.KindConfirm && repo.OutsideFlow == nil:
 		return Change{}, ErrNotDue
-	case a.Kind == records.KindFirst && a.Pull > 0:
-		return s.bindPull(ctx, r, a, false)
-	case a.Kind == records.KindWorkflow && a.Pull > 0:
-		return s.bindPull(ctx, r, a, true)
+	case (a.Kind == records.KindFirst || a.Kind == records.KindWorkflow) && a.Pull > 0:
+		return s.bindPull(ctx, r, a)
 	case a.Kind == records.KindFirst || a.Kind == records.KindConfirm:
 		return s.bindTip(ctx, r, a, repo)
 	}
@@ -112,7 +111,7 @@ func (s *Service) Bind(ctx context.Context, r api.Repo, a Action) (Change, error
 
 // bindPull binds a first or a workflow approval to the open pull request's head: its policy, which must be of version
 // 3, and its workflow file, which it must have.
-func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action, workflow bool) (Change, error) {
+func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action) (Change, error) {
 	ref := r.RepoRef
 	pull, err := s.gh.Pull(ctx, ref, a.Pull)
 	switch {
@@ -142,7 +141,7 @@ func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action, workflow b
 	if run == nil {
 		return Change{}, fmt.Errorf("%w: the head has no %s", ErrNotApprovable, WorkflowPath)
 	}
-	if workflow {
+	if a.Kind == records.KindWorkflow {
 		target, err := s.fileAt(ctx, ref, tip, WorkflowPath)
 		if err != nil {
 			return Change{}, err

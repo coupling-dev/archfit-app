@@ -24,9 +24,7 @@ func (w *world4) onboarding() {
 	w.t.Helper()
 	w.removeFile(w.shop, testBranch, policyPath)
 	w.removeFile(w.shop, testBranch, ingest.WorkflowPath)
-	if err := w.mem.Delete(context.Background(), store.Tenant(w.shop.InstallationID), records.RepoKey(w.shop.FullName)); err != nil {
-		w.t.Fatal(err)
-	}
+	w.unrecorded()
 }
 
 // onboardingPull opens pull request number with policy4 and the workflow at its head, and the upload of its run.
@@ -260,5 +258,66 @@ func TestAWorkflowMergePushConsumesItsApproval(t *testing.T) {
 	}
 	if len(x.Entries) != 0 {
 		t.Errorf("proposal index = %v, want the workflow proposal consumed", x.Entries)
+	}
+}
+
+// TestAStaleFirstApprovalAdmitsNothingOnceChangeControlStarts: two onboarding pull requests were approved; change
+// control started with another one, then the policy left the default branch. The other approval lifts neither the
+// first policy nor its workflow.
+func TestAStaleFirstApprovalAdmitsNothingOnceChangeControlStarts(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		state records.Repo
+		want  []string
+	}{
+		{"approved", records.Repo{ApprovedDigest: policy3.Digest([]byte(policy4)), ApprovedCommit: "c0"},
+			[]string{reasonPolicyUnapproved, reasonWorkflowChanged}},
+		{"outside the flow", records.Repo{ApprovedDigest: policy3.Digest([]byte(policy4)), ApprovedCommit: "c0",
+			OutsideFlow: &records.OutsideFlow{Issue: 70}}, []string{reasonOutsideFlow, reasonWorkflowChanged}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld4(t)
+			w.onboarding()
+			_, s := w.onboardingPull(8)
+			if _, err := w.act(oliviaAdmin, OwnerAction{Kind: OwnerFirst, Pull: 8}); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := records.Encode(&tc.state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := w.mem.Put(context.Background(), store.Tenant(w.shop.InstallationID), records.RepoKey(w.shop.FullName), raw); err != nil {
+				t.Fatal(err)
+			}
+			if got := w.decide(s).codes(); !slices.Equal(got, tc.want) {
+				t.Errorf("reasons = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAFirstApprovalWhoseRunCannotRunAgainNamesTheCondition: the default branch moved in more than the policy since
+// the run, so the re-run guard (design 10.5) keeps the run back, and the check names the condition and the way out.
+func TestAFirstApprovalWhoseRunCannotRunAgainNamesTheCondition(t *testing.T) {
+	w := newWorld4(t)
+	w.onboarding()
+	p, s := w.onboardingPull(7)
+	w.send4(s)
+	base := w.gh.pulls[pullKey(shopName, 7)].BaseSHA
+	moved := w.sha()
+	w.gh.heads[branchKey(shopName, testBranch)] = moved
+	w.gh.compares[shopName+"|"+base+"|"+moved] = api.Comparison{Status: "ahead", Paths: []string{"pkg/a.go"}}
+
+	out, err := w.act(oliviaAdmin, OwnerAction{Kind: OwnerFirst, Pull: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Check != CheckBlocked || len(w.gh.reruns) != 0 {
+		t.Fatalf("check %q, reruns %v; want no re-run", out.Check, w.gh.reruns)
+	}
+	run, ok := w.latestGate(p.head)
+	if !ok || run.Conclusion != "action_required" || !strings.Contains(run.Summary, "(base_changed)") ||
+		!strings.Contains(run.Summary, "update the branch; an owner then approves the new head") {
+		t.Errorf("archfit/gate = %+v, want unknown naming base_changed and the way out", run)
 	}
 }

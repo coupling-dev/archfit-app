@@ -132,12 +132,22 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, err
 	}
+	var r records.Repo
+	if err := records.Load(ctx, s.store, t, records.RepoKey(name), &r); err != nil && !errors.Is(err, records.ErrNoRecord) {
+		return Outcome{}, fmt.Errorf("approvals: read the repository: %w", err)
+	}
 	voided := ""
 	if merged != nil {
 		admits := merged.rec.ExpectedDigest == digest
 		if admits {
 			// A first approval admits the workflow of its head too: a merge with another one uses none of it.
 			if admits, err = s.landedWorkflow(ctx, p.Repo.RepoRef, merged); err != nil {
+				return Outcome{}, err
+			}
+		}
+		if admits {
+			// An approval made in a state that ended admits nothing (records.Consume refuses it too).
+			if admits, err = s.stillApplies(ctx, p.Repo, r, merged); err != nil {
 				return Outcome{}, err
 			}
 		}
@@ -156,10 +166,6 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error) {
 		voided = merged.id
 	}
 
-	var r records.Repo
-	if err := records.Load(ctx, s.store, t, records.RepoKey(name), &r); err != nil && !errors.Is(err, records.ErrNoRecord) {
-		return Outcome{}, fmt.Errorf("approvals: read the repository: %w", err)
-	}
 	unguarded := r.ApprovedDigest == "" && r.OutsideFlow == nil
 	if !unguarded && r.GuardedSince != "" {
 		// A push that happened before the first approval was made outside change control, whenever it is delivered.

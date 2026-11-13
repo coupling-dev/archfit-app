@@ -61,10 +61,14 @@ separate, testable steps. Without this module a report is a self-reported file a
   onboarding pull request or of the policy already on the default branch, a workflow approval (`gate/approvals`), and
   the confirm or revert of a policy changed outside the flow (confirm `gate/approvals`, revert `gate/proposals`).
   Each is bound to the digest of what the owner saw (`OwnerDigest`) and made with a passkey. A first or workflow
-  approval of a pull request then gets the approved head its verdict: the App re-runs the head's stored run
-  (`sweep.Rerun`, pull record of M2 D6), and the run's upload passes the approval (manager, 2026-11-13). A run that
-  cannot run again leaves the check `unknown` with a record that says so and to run it again. A first approval of the
-  default branch's policy and a confirm re-run every open pull request whose stored status is `unknown`.
+  approval of a pull request then gets the approved head its verdict: the re-run guard (`sweep.Rerun`, design 10.5)
+  re-runs the head's stored run (pull record of M2 D6) when its four conditions hold, and the run's upload passes the
+  approval (manager, 2026-11-13). Otherwise the check stays `unknown` with the App's record naming the condition not
+  met (`no_run`, `not_latest`, `too_old`, `base_changed`) and the way out; a failed re-run says so too. A first
+  approval of the default branch's policy and a confirm do the same for every open pull request whose stored status
+  is `unknown`. A `first` approval counts only while the repository has no approved policy and is not outside the
+  flow: once change control started, another onboarding pull request's approval admits nothing, and a default branch
+  that lost its policy is `outside_flow` or `policy_unapproved`, never `first_policy`.
 - For the App's pull request page only (`FirstScreen`, `RecoveryStep`): word a published result with the code that
   words the comment, so the page's first screen is the comment's. Pure functions of what the check recorded.
 - For the App's pull request page only (`Decisions`): list the decision requests of a pull request, and let an
@@ -271,15 +275,15 @@ const OwnerFirst, OwnerWorkflow, OwnerConfirm, OwnerRevert // records' approval 
 type OwnerAction = approvals.Action; type OwnerUser = approvals.Owner
 type OwnerInput struct { Action OwnerAction; User OwnerUser; Digest string; Later bool; Redeem func(ctx, digest) (string, error) }
 type OwnerOutcome struct { Approval string; PullRequest int; State, Merge string; Issue int; Check string }
-const CheckRerun, CheckPending, CheckGone // how an approved head gets its verdict
+const CheckRerun, CheckPending, CheckBlocked // how an approved head gets its verdict
 var ErrOwnerNotAdmin, ErrOwnerNotOwner, ErrOwnerNotDue, ErrOwnerNotPossible, ErrOwnerMoved, ErrOwnerNeedsPasskey,
-    ErrNotOutsideFlow, ErrNothingToRevert, ErrRevertMoved, ErrRevertNotOwner, ErrOutsideFlow
+    ErrNotOutsideFlow, ErrNothingToRevert, ErrRevertMoved, ErrRevertNotOwner
 ```
 
 `OwnerDigest` and `OwnerAct` ask `Admitted` first. A revert runs `gate/proposals` (`RevertDigest`, `Revert`); the
 others `gate/approvals` (`Bind`, `Act`). `OwnerInput.Redeem` comes from `control/answers`, as for an answer. An error
-means nothing was recorded; a token Redeem used stays used. `ErrOutsideFlow` is also what `Answer` returns while the
-policy changed outside the flow.
+means nothing was recorded; a token Redeem used stays used. `Answer` refuses with `ErrOutsideFlow` while the policy
+changed outside the flow.
 
 `RequestView` and `RequestPreview` ask `Admitted` first, then read the request and pull records from the Store and the
 policy at the default branch's tip from GitHub (`t.Repo` names the repository). `RequestPreview` judges an
@@ -2111,10 +2115,15 @@ are driven only as far as they go without GitHub. Child internals are tested in 
   that executed another workflow than the approved one.
   **Expected behavior**: `first_policy` before; refused for the non-administrator; the stored run re-run, its upload
   `pass` and `archfit/gate` success; the later head `first_policy` again; the other workflow `workflow_changed` alone.
-- **Test name**: `TestAFirstApprovalOnAHeadWhoseRunIsGoneSaysSo`
-  **Scenario**: the approved head's run is gone.
-  **Expected behavior**: `archfit/gate` `action_required` with a record that says the head is approved, its run cannot
-  run again, and to run the check again.
+- **Test name**: `TestAFirstApprovalOnAHeadWhoseRunIsGoneSaysSo`, `TestAFirstApprovalWhoseRunCannotRunAgainNamesTheCondition`
+  **Scenario**: the approved head's run is gone; the default branch moved in more than the policy since the run.
+  **Expected behavior**: no re-run; `archfit/gate` `action_required` with a record that says the head is approved,
+  names the condition (`no_run`, `base_changed`) and the way out (push a commit, update the branch; then approve the
+  new head).
+- **Test name**: `TestAStaleFirstApprovalAdmitsNothingOnceChangeControlStarts`
+  **Scenario**: an onboarding pull request approved, then the repository approved another way, or outside the flow,
+  with no policy on the default branch.
+  **Expected behavior**: `policy_unapproved` or `outside_flow`, and `workflow_changed`: the approval lifts nothing.
 - **Test name**: `TestAnOnboardingPullRequestClosedWithoutAMerge`
   **Scenario**: the approved onboarding pull request closes; the policy lands another way; another pull request uploads.
   **Expected behavior**: no approved policy; the upload `unknown` `first_approval`; `v4/repos` lists the repository;

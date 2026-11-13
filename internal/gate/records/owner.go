@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"slices"
 
@@ -46,7 +47,7 @@ type Bound struct {
 // ProposalFirst proposal of the pull request, which is created with its proposal index entry or pinned again to the
 // new head, and the repository in ReposKey, in one swap. A repository that has an approved policy is ErrMoved.
 func First(ctx context.Context, s store.Store, t store.Tenant, fullName, approvalID string, a Approval, b Bound) error {
-	return approveAsIs(ctx, s, t, fullName, approvalID, a, ProposalFirst, b, true, func(r Repo) bool {
+	return approveAsIs(ctx, s, t, fullName, approvalID, a, ProposalFirst, b, func(r Repo) bool {
 		return r.ApprovedDigest == "" && r.OutsideFlow == nil
 	})
 }
@@ -55,7 +56,7 @@ func First(ctx context.Context, s store.Store, t store.Tenant, fullName, approva
 // but with a ProposalWorkflow proposal and no ReposKey entry. A repository with no approved policy, or one outside
 // the flow, is ErrMoved.
 func Workflow(ctx context.Context, s store.Store, t store.Tenant, fullName, approvalID string, a Approval, b Bound) error {
-	return approveAsIs(ctx, s, t, fullName, approvalID, a, ProposalWorkflow, b, false, func(r Repo) bool {
+	return approveAsIs(ctx, s, t, fullName, approvalID, a, ProposalWorkflow, b, func(r Repo) bool {
 		return r.ApprovedDigest != "" && r.OutsideFlow == nil
 	})
 }
@@ -64,8 +65,9 @@ func Workflow(ctx context.Context, s store.Store, t store.Tenant, fullName, appr
 // is the state at the swap. An approval id in use is ErrExists, a pull request held by a proposal of another kind or
 // one that is not open ErrMoved, a full proposal ErrFull.
 func approveAsIs(ctx context.Context, s store.Store, t store.Tenant, fullName, approvalID string, a Approval, kind string,
-	b Bound, listRepo bool, due func(Repo) bool,
+	b Bound, due func(Repo) bool,
 ) error {
+	listRepo := kind == ProposalFirst // a first approval lists the repository
 	if approvalID == "" || b.Proposal == "" || b.PullRequest <= 0 || b.HeadSHA == "" || b.Digest == "" {
 		return errors.New("records: approve: an empty id, pull request, head or digest")
 	}
@@ -211,14 +213,20 @@ func Confirm(ctx context.Context, s store.Store, t store.Tenant, fullName, appro
 	return issue, err
 }
 
-// RevertTo records an owner's revert of the policy changed outside the flow: the approval joins the App's policy
-// proposal as Answer's does with pin, which the caller wrote with the approved policy restored. The repository record
-// is in the swap unchanged: one no longer outside the flow, or outside it with another digest than revert.Outside, is
-// ErrMoved. An approval id in use is ErrExists, a proposal that is not open or has a kind ErrMoved, a full one ErrFull.
+// RevertTo records an owner's revert of the policy changed outside the flow: the approval, whose change is revert,
+// joins the App's policy proposal as Answer's does with pin, which the caller wrote with the approved policy restored.
+// The repository record is in the swap unchanged: one no longer outside the flow, or outside it with another digest
+// than revert.Outside ("" for a deleted policy), is ErrMoved. An approval id in use is ErrExists, a proposal that is
+// not open or has a kind ErrMoved, a full one ErrFull.
 func RevertTo(ctx context.Context, s store.Store, t store.Tenant, fullName, approvalID string, a Approval, revert Revert, pin Pin) error {
-	if approvalID == "" || pin.Proposal == "" || pin.HeadSHA == "" || pin.Digest == "" || revert.Outside == "" {
-		return errors.New("records: revert: an empty id, head or digest")
+	if approvalID == "" || pin.Proposal == "" || pin.HeadSHA == "" || pin.Digest == "" || revert.Commit == "" || revert.Digest == "" {
+		return errors.New("records: revert: an empty id, head, commit or digest")
 	}
+	change, err := json.Marshal(revert)
+	if err != nil {
+		return err
+	}
+	a.Kind, a.Change = KindRevert, change
 	keys := []string{ApprovalKey(fullName, approvalID), ProposalKey(fullName, pin.Proposal), ProposalIndexKey(fullName),
 		RepoKey(fullName)}
 	return store.Update(ctx, s, t, keys, func(cur [][]byte) ([][]byte, error) {

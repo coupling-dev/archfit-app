@@ -94,6 +94,10 @@ func (s *Service) revert(ctx context.Context, r api.Repo, in RevertInput) (Outco
 	if err != nil && !errors.Is(err, api.ErrNotFound) {
 		return Outcome{}, fmt.Errorf("proposals: read the policy: %w", err)
 	}
+	// The revert replaces the change the owner saw: a later push, not judged yet, is another one.
+	if digestOf(tipFile) != rev.Outside {
+		return Outcome{}, ErrMoved
+	}
 	cur, err := s.current(ctx, r)
 	if err != nil {
 		return Outcome{}, err
@@ -118,12 +122,8 @@ func (s *Service) revert(ctx context.Context, r api.Repo, in RevertInput) (Outco
 	if err != nil {
 		return Outcome{}, err
 	}
-	change, err := json.Marshal(rev)
-	if err != nil {
-		return Outcome{}, err
-	}
-	approval := records.Approval{Kind: records.KindRevert, Change: change, Owner: in.Owner.ID, Login: in.Owner.Login,
-		Credential: passkey, At: s.now().UTC()}
+	// RevertTo writes the kind and the change.
+	approval := records.Approval{Owner: in.Owner.ID, Login: in.Owner.Login, Credential: passkey, At: s.now().UTC()}
 	if cur != nil {
 		if err := s.voidAndNote(ctx, r, cur.rec.PullRequest, voided, false); err != nil {
 			return Outcome{}, err
@@ -183,6 +183,14 @@ func (s *Service) approvedPolicy(ctx context.Context, ref api.RepoRef, rev recor
 		return nil, fmt.Errorf("proposals: the policy at %s is not the approved one", rev.Commit)
 	}
 	return file, nil
+}
+
+// digestOf is the policy digest of file; "" for no policy, as the push judgement records a deleted one.
+func digestOf(file []byte) string {
+	if file == nil {
+		return ""
+	}
+	return policy3.Digest(file)
 }
 
 // revertDigest is the digest a revert's step-up is bound to: the approved policy it restores and the changed one it

@@ -400,3 +400,60 @@ func TestARevertConsumeEndsTheStateAndClosesItsIssue(t *testing.T) {
 		t.Errorf("the issue's last note:\n%s", note)
 	}
 }
+
+// TestAFirstApprovalMergedAfterChangeControlStartedIsOutsideTheFlow: two onboarding pull requests were approved; the
+// first merge started change control, so the second admits nothing.
+func TestAFirstApprovalMergedAfterChangeControlStartedIsOutsideTheFlow(t *testing.T) {
+	w := newWorld(t)
+	w.gh.bare("c0")
+	w.openPull(12, "h1", policyV(1), "wf-1")
+	w.openPull(13, "h2", policyV(2), "wf-2")
+	if _, err := w.act(admin, Action{Kind: records.KindFirst, Pull: 12}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.act(admin, Action{Kind: records.KindFirst, Pull: 13}); err != nil {
+		t.Fatal(err)
+	}
+	w.mergeWith(12, "m1", policyV(1), "wf-1")
+	if out := w.push("c0", "m1"); out.Judged != JudgedConsumed {
+		t.Fatalf("the first merge = %+v, want consumed", out)
+	}
+
+	w.mergeWith(13, "m2", policyV(2), "wf-2")
+	out := w.push("m1", "m2")
+	w.wantOutside(out, digestV(2))
+	if out.Voided == "" || w.proposal(out.Voided).State != records.StateVoid {
+		t.Errorf("outcome %+v, want the second first proposal void", out)
+	}
+	if r := w.repo(); r.ApprovedDigest != digestV(1) {
+		t.Errorf("approved digest %q, want the first merge's", r.ApprovedDigest)
+	}
+}
+
+// TestARevertMergedAfterAConfirmIsOutsideTheFlow: an owner reverted to merge later, then another confirmed; the
+// revert's merge would undo the confirm, so it admits nothing.
+func TestARevertMergedAfterAConfirmIsOutsideTheFlow(t *testing.T) {
+	w := newWorld(t)
+	w.gh.commit("c0", policyV(0))
+	w.approvedAt(digestV(0), "c0")
+	w.gh.commit("c1", policyV(1))
+	pushed := w.push("c0", "c1")
+	err := records.RevertTo(context.Background(), w.mem, w.tenant(), testRepo.FullName, "r1",
+		records.Approval{Owner: 2, Login: "oscar", Credential: passkeyID},
+		records.Revert{Commit: "c0", Digest: digestV(0), Outside: digestV(1), Issue: pushed.Issue},
+		records.Pin{Proposal: "p9", PullRequest: 40, HeadSHA: "head-revert", Digest: digestV(0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.gh.pulls[40] = api.Pull{Number: 40, State: "open"}
+	if _, err := w.act(member, Action{Kind: records.KindConfirm}); err != nil {
+		t.Fatal(err)
+	}
+
+	w.merge(40, "m3", 0)
+	out := w.push("c1", "m3")
+	w.wantOutside(out, digestV(0))
+	if out.Voided != "p9" {
+		t.Errorf("outcome %+v, want the revert's proposal void", out)
+	}
+}

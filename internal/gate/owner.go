@@ -87,7 +87,6 @@ var (
 	ErrNothingToRevert   = proposals.ErrNothingToRevert
 	ErrRevertMoved       = proposals.ErrMoved
 	ErrRevertNotOwner    = proposals.ErrNotOwner
-	ErrOutsideFlow       = proposals.ErrOutsideFlow
 )
 
 // OwnerDigest is the change digest of action a of t's repository.
