@@ -127,3 +127,16 @@ func TestOwnerViewDigestIncludesAnUnchangedActionWithAMovedBase(t *testing.T) {
 		t.Fatal("base movement was not separately bound")
 	}
 }
+
+func TestRevertRefusesUnreadableOutsideFile(t *testing.T) {
+	w := ownerViewWorld(t, OwnerRevert, 0)
+	raw := []byte{0xff, 0xfe}
+	w.setFile(w.shop, w.tip, policyPath, raw)
+	r := w.repo4()
+	r.OutsideFlow.Digest = policy3.Digest(raw)
+	w.put4(records.RepoKey(shopName), &r)
+	_, err := w.gate.OwnerView(t.Context(), Target{Repo: w.shop}, OwnerAction{Kind: OwnerRevert})
+	if !errors.Is(err, ErrOwnerFileUnreadable) {
+		t.Fatalf("refusal = %v", err)
+	}
+}

@@ -18,6 +18,9 @@ import (
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
 )
 
+// ErrOwnerFileUnreadable refuses a file whose exact bytes cannot be shown as text.
+var ErrOwnerFileUnreadable = errors.New("gate: owner file is not readable text")
+
 // OwnerView is the complete, read-only artifact an owner's page shows.
 // ActionDigest remains the M2 action binding; Digest binds all displayed inputs and rendering.
 type OwnerView struct {
@@ -53,7 +56,7 @@ func (g *Gate) OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerVie
 	v := OwnerView{Kind: a.Kind, Pull: a.Pull, Files: []OwnerFile{}, Diffs: []OwnerDiff{}, Proposals: []proposals.RevertProposal{}}
 	add := func(role, ref, path string, raw []byte) error {
 		if !utf8.Valid(raw) {
-			return fmt.Errorf("gate: %s is not readable text", path)
+			return fmt.Errorf("%w: %s", ErrOwnerFileUnreadable, path)
 		}
 		v.Files = append(v.Files, OwnerFile{Role: role, Ref: ref, Path: path, Digest: policy3.Digest(raw), Text: string(raw), Missing: raw == nil})
 		return nil

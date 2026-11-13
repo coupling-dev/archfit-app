@@ -127,3 +127,20 @@ func TestOwnerViewAPIHidesRepositoryDataAndRejectsMalformedLinks(t *testing.T) {
 		t.Fatal("unauthorized view read")
 	}
 }
+
+func TestOwnerViewAPIExplainsUnreadableFiles(t *testing.T) {
+	e := newEnv(t)
+	e.owners.err = gate.ErrOwnerFileUnreadable
+	res := e.as("alice", permRead).get(ownerAPI + "revert/view")
+	wantStatus(t, res, http.StatusConflict)
+	var body errorJSON
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error != "This file cannot be displayed, so it cannot be approved here. Use the existing owner flow on the GitHub issue." {
+		t.Fatalf("error = %q", body.Error)
+	}
+	if words := wording.NotUsedIn(body.Error); len(words) > 0 {
+		t.Fatalf("error uses %v", words)
+	}
+}

@@ -132,3 +132,12 @@ test('owner: unsafe policy text stays text, and phone width stays inside the pag
   await expect(page.locator('main img')).toHaveCount(0);
   await expectClean(page);
 });
+
+test('owner: unreadable file gives the GitHub fallback and no action', async ({ page }) => {
+  const sentence = 'This file cannot be displayed, so it cannot be approved here. Use the existing owner flow on the GitHub issue.';
+  await open(page, root + 'revert', { [`GET ${api}owner/revert/view`]: () => [409, { error: sentence }] });
+  await expect(page.getByRole('alert')).toHaveText(sentence);
+  await expect(page.locator('main button')).toHaveCount(0);
+  await expectPageText(page, 'owner-unreadable');
+  await expectClean(page);
+});

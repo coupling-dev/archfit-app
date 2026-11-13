@@ -69,7 +69,9 @@ branch and confirm do not report each re-run outcome.
 consumed. A difference refuses the action and asks you to reload. GitHub and the Store do not provide one
 atomic snapshot: a ref can still move after the last read. Proposal consumption re-checks its files and
 digest, and outside-flow reconciliation surfaces a later default-branch policy change. The passkey binds
-the displayed view; it does not remove this residual window or prove that the owner read the files.
+the displayed view; it does not remove this residual window or prove that the owner read the files. A file
+that is not valid UTF-8 cannot be displayed or acted on from these pages; use the existing M2 owner-action
+API flow referenced by the GitHub issue instead.
 
 ## Register a passkey
 
