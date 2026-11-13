@@ -181,7 +181,7 @@ func TestCompareContract(t *testing.T) {
 		t.Errorf("Compare = %+v, %v\nwant      %+v", got, err, want)
 	}
 	req := findRequest(t, env.gh.requests(), "GET", "/repos/o/r/compare/"+testSHA1+"..."+testSHA2)
-	if req.Query.Get("per_page") != "1" || req.Auth != inst1 {
+	if req.Query.Get("per_page") != "100" || req.Auth != inst1 {
 		t.Errorf("compare query %v, Authorization %q", req.Query, req.Auth)
 	}
 

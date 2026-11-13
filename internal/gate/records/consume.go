@@ -78,6 +78,8 @@ type Merge struct {
 	// Digest become the approved digest: a consume handled after a later policy push never puts an older digest back,
 	// and never approves a tip that holds a change no approval made.
 	AtTip bool
+	// Recheck records a sweep recovery handoff in the same swap as the consume.
+	Recheck bool
 	// Over is the repository's ApprovedCommit the caller judged AtTip against. With AtTip, a repository that holds
 	// another one now (a consume landed in between) is ErrApprovedMoved: read it again and judge again.
 	Over string
@@ -249,6 +251,9 @@ func consume(ctx context.Context, s store.Store, t store.Tenant, fullName string
 				r.GuardedSince = m.Commit // the first approval: change control starts here
 			}
 			r.ApprovedDigest, r.ApprovedCommit, r.OutsideFlow = m.Digest, m.Commit, nil
+			if m.Recheck {
+				r.SweepRecheck = m.Proposal
+			}
 		}
 
 		out, err := encodeAll(&p, &r, &push)

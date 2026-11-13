@@ -98,7 +98,25 @@ direct push to the policy is the new rule with no owner's word.
 
 Not provided: the re-check of the waiting pull requests (`sweep.AfterAnswer`, called by the gate), the revert
 (written by `gate/proposals` as an answer is), the re-run that gives an approved head its verdict (`gate`, `owner.go`),
-the sweep's comparison of the tip with the approved digest when a push event is lost (task 22).
+traversing installations and the guarded re-check handoff (gate/sweep4.go).
+
+## Narrow sweep recovery
+
+`Reconcile(ctx, repo, tip)` does not change `Pushed`'s event contract and never voids a proposal. A pending
+`Repo.SweepRecheck` is returned as a consumed outcome until the gate finishes its handoff. Otherwise, with an approved
+policy whose tip differs, it proves a complete linear history from `ApprovedCommit` to `tip`, at most 100 commits,
+using parent identities rather than list/index order. It counts exact policy-byte digest transitions: exactly one
+policy-changing commit must leave the tip's digest.
+
+An indexed policy proposal must uniquely match that commit's GitHub-recorded merge and the tip digest. Only then is
+it consumed with the handoff marker in the same swap. No policy proposals means a proven direct push is recorded
+outside the flow. An unmatched index entry, multiple changes, missing/cut/non-linear history or an unreadable compare
+is `JudgedAmbiguous`: no consume, void or approval. The gate logs the range and records it on affected pull records.
+A rate limit or cancelled context still stops the pass.
+
+Follow-up 3 is partially satisfied: ambiguous lost pushes remain `policy_unapproved`, not repaired by guessing.
+Owner action through the approval flow, or a new delivered push followed by confirm, is needed. An intermediate
+policy blob never authorizes the tip.
 
 ## Subdomain Classification
 
@@ -198,10 +216,10 @@ var ErrNotAdmin, ErrNotOwner, ErrNotDue, ErrNotApprovable, ErrMoved, ErrNeedsPas
 - **Stated limit**: a direct push that lands while the first consume of a repository is in flight (after it read the
   tip, before its swap) is judged unguarded, and the consume approves: the tip then holds a policy no approval made,
   with no state and no issue. Every upload is `unknown` (`policy_unapproved`, fail closed) until the sweep compares the
-  tip with the approved digest (task 22).
-- **Stated limit**: a policy push whose event is lost is not judged until the sweep compares the tip with the approved
-  digest (task 22); meanwhile every upload is `unknown` (`policy_unapproved`). A proposal whose merge push is lost
-  stays open and its requests cover their keys until then.
+  tip with the approved digest through the narrow recovery above.
+- **Stated limit**: a lost policy push is repaired only when the narrow proof above holds. Until then uploads stay
+  `unknown` (`policy_unapproved`), and an unanswered lost-merge handoff leaves its requests covering their keys.
+  Ambiguous ranges intentionally remain so; no valid approval is voided to force progress.
 
 ## Test Specification
 

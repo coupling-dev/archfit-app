@@ -11,6 +11,7 @@ import (
 
 	"github.com/alexei-led/archfit-app/internal/gate/approvals"
 	"github.com/alexei-led/archfit-app/internal/gate/drift"
+	"github.com/alexei-led/archfit-app/internal/gate/expiry"
 	"github.com/alexei-led/archfit-app/internal/gate/feedback"
 	"github.com/alexei-led/archfit-app/internal/gate/ingest"
 	"github.com/alexei-led/archfit-app/internal/gate/inputs"
@@ -52,7 +53,8 @@ type Gate struct {
 	approvals  *approvals.Service // the judgement of a default-branch push that changes the policy (M2 task 20)
 	checks     api.Checks         // a proposal head's check, taken back from another pull request (M2 review H2)
 	recheckGH  sweep.AnswerGitHub // the re-check after an answer (M2 task 21)
-	drift      *drift.Service     // the drift issue from a push run's repository block (M2 task 22)
+	expiry     *expiry.Service
+	drift      *drift.Service // the drift issue from a push run's repository block (M2 task 22)
 	store      store.Store
 }
 
@@ -114,6 +116,7 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 	g.proposals = proposals.New(gh, s, now)
 	g.approvals = approvals.New(gh, s)
 	g.drift = drift.New(gh, s)
+	g.expiry = expiry.New(gh, s)
 	g.checks = gh
 	g.recheckGH, g.store = gh, s
 	return g

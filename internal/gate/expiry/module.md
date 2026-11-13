@@ -38,10 +38,10 @@ reaches, and the record the App shows when a pull request cannot be judged again
 Days are UTC calendar days, as the engine counts them: an exception holds through `expires` and is past its date from
 the next day.
 
-Sweep wiring is left for the second pull request of M2 task 22. The contract is `Approved` per repository, `Warn`
-as a separate notification step whose failure never blocks enforcement, and a re-run under the guard of design 10.5
-(`sweep.Rerun`) for each open pull request with `Due` exceptions; `Fail` only where the guard refuses. This pull
-request provides the helpers only: no runtime caller enforces expiry yet.
+`gate/sweep4.go` runs `Approved` per repository and `Warn` as a separate notification step whose failure never
+blocks enforcement. For each open pull request with `Due` exceptions it first attempts a re-run under the guard of
+design 10.5 (`sweep.Rerun`); `Fail` runs only where the guard refuses. A requested or in-flight re-run shows unknown
+until its fresh upload arrives, so an expired exception never keeps an old success.
 
 Not provided: the re-run (`gate/sweep`), the drift issue (`gate/drift`), the engine's judgement of the date.
 
@@ -87,7 +87,8 @@ func (s *Service) Fail(ctx context.Context, p feedback.Publisher4, f Failure) er
 
 ## Integrations
 
-- **gate/sweep** (second pull request of task 22, not wired here): `Approved`, `Warn`, `Due`, `Fail`.
+- **gate** (`sweep4.go`): `Approved`, `Warn`, `Due`, `Fail`; `Failure.Current` adds the live-pull and approval-state
+  checks inside the same publication lease.
 - **gate/markdown**: bounded, literal issue text.
 - **gate/records**: the repository record (`ApprovedDigest`, `OutsideFlow`, `ExpiryIssues`), the pull record (`Date`,
   run identity, status). **gate/feedback**: `Publisher4`. **wire/policy3**: `Decode`, `Digest`. **wire/result**:

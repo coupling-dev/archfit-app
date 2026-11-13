@@ -66,6 +66,8 @@ type Repo struct {
 	// GuardedSince is the commit of the first approval: change control started there, so a push that happened before
 	// it is not outside the flow, whenever it is delivered.
 	GuardedSince string `json:"guarded_since,omitempty"`
+	// SweepRecheck is a recovered consume whose AfterAnswer handoff still needs to finish.
+	SweepRecheck string `json:"sweep_recheck,omitempty"`
 	// OutsideFlow is set while the default branch has a policy that no approval made.
 	OutsideFlow *OutsideFlow `json:"outside_flow,omitempty"`
 	// DriftIssue is the one issue that lists the drift of the default branch (M2 task 22); DriftDigest names the body
@@ -171,6 +173,7 @@ type Pull struct {
 	RunAttempt    int    `json:"run_attempt"`
 	PayloadDigest string `json:"payload_digest"`
 	PolicyDigest  string `json:"policy_digest,omitempty"` // policy of the accepted result
+	SweepNote     string `json:"sweep_note,omitempty"`    // ambiguous approved-commit..tip range
 	Reason        string `json:"reason,omitempty"`        // App refusal code, for the guarded recheck
 	Status        string `json:"status"`
 	// Date is the date the result judged exceptions on (YYYY-MM-DD), for a result the App accepted as it is: an

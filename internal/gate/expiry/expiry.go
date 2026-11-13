@@ -338,6 +338,8 @@ type Failure struct {
 	Record   records.Pull // the pull record read; the publication keeps its run identity
 	Expired  []Exception  // Due for Record
 	Advisory bool
+	// Current adds caller-owned freshness checks inside the same publication lease.
+	Current func(context.Context) (bool, error)
 }
 
 // Fail publishes Result(f.Expired) on the pull request's head over the run of its pull record, so the next upload of a
@@ -354,6 +356,12 @@ func (s *Service) Fail(ctx context.Context, p feedback.Publisher4, f Failure) er
 		Advisory:   f.Advisory,
 		Result:     Result(f.Expired),
 		Current: func(ctx context.Context) (bool, error) {
+			if f.Current != nil {
+				ok, err := f.Current(ctx)
+				if err != nil || !ok {
+					return ok, err
+				}
+			}
 			tip, err := s.gh.BranchHead(ctx, r.RepoRef, r.DefaultBranch)
 			if err != nil || tip != f.Tip {
 				return false, err

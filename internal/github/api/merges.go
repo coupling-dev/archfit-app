@@ -88,12 +88,17 @@ func (c *Client) Compare(ctx context.Context, r RepoRef, base, head string) (Com
 		return Comparison{}, err
 	}
 	var j struct {
-		Status string      `json:"status"`
-		Files  *[]fileJSON `json:"files"`
+		Status       string      `json:"status"`
+		Files        *[]fileJSON `json:"files"`
+		TotalCommits int         `json:"total_commits"`
+		Commits      []struct {
+			SHA     string    `json:"sha"`
+			Parents []shaJSON `json:"parents"`
+		} `json:"commits"`
 	}
-	// per_page=1 keeps the commit list short; the files are on the first page whatever its size.
+	// The bounded history also lets the v4 sweep prove a linear policy change; longer ranges stay ambiguous.
 	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/compare/{base}...{head}",
-		url: apiURL(repo+"/compare/"+base+"..."+head, url.Values{"per_page": {"1"}})}
+		url: apiURL(repo+"/compare/"+base+"..."+head, url.Values{"per_page": {"100"}})}
 	if err := c.send(ctx, k, &j); err != nil {
 		return Comparison{}, err
 	}
@@ -102,5 +107,19 @@ func (c *Client) Compare(ctx context.Context, r RepoRef, base, head string) (Com
 	if !compareStatuses[j.Status] || j.Files == nil {
 		return Comparison{}, k.errorf("invalid response")
 	}
-	return Comparison{Status: j.Status, Paths: uniquePaths(*j.Files), Truncated: len(*j.Files) >= maxCompareFiles}, nil
+	out := Comparison{Status: j.Status, Paths: uniquePaths(*j.Files), Truncated: len(*j.Files) >= maxCompareFiles, TotalCommits: j.TotalCommits}
+	for _, c := range j.Commits {
+		if !commitSHARE.MatchString(c.SHA) {
+			return Comparison{}, k.errorf("invalid commit history")
+		}
+		n := Commit{SHA: c.SHA}
+		for _, p := range c.Parents {
+			if !commitSHARE.MatchString(p.SHA) {
+				return Comparison{}, k.errorf("invalid commit history")
+			}
+			n.Parents = append(n.Parents, p.SHA)
+		}
+		out.Commits = append(out.Commits, n)
+	}
+	return out, nil
 }
