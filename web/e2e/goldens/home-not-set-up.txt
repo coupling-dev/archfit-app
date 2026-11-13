@@ -1,0 +1,20 @@
+●
+Set up this repository.
+
+Home
+
+acme/app
+
+Set up this repository
+Run archfit init in the repository to write the policy, workflow file and instructions for agents.
+Read the policy and open one pull request.
+Install the App, register a passkey, and approve the first policy.
+Turn on the ruleset settings below.
+
+First policy: #12
+
+What is missing
+Register a passkey and approve the first policy.
+Ruleset settings
+● warning: Require a pull request before merging into the default branch.
+● warning: Require archfit/gate with this App's integration_id (42).

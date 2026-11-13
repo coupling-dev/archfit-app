@@ -18,7 +18,7 @@ test('data sharing: what leaves, who allowed it, and Allow', async ({ page }) =>
   // a feature the App does not run is never offered for allowing; a consent given earlier can still be revoked
   await expect(discovery.getByRole('button', { name: /Allow/ })).toHaveCount(0);
   await expect(discovery.getByRole('button', { name: 'Revoke' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('link', { name: 'Home', exact: true })).not.toHaveAttribute('aria-current', 'page');
   await expectClean(page);
 
   await ai.getByRole('button', { name: 'Allow Managed AI' }).click();

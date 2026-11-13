@@ -18,12 +18,12 @@ test('theme: the choice applies at once and survives a reload', async ({ page })
 test('a page reads its data beside the session and shows its frame at once', async ({ page }) => {
   let release = () => {};
   const holdSession = new Promise<void>((resolve) => (release = resolve));
-  const overview = page.waitForRequest('**/api/repos/acme/app/overview');
+  const home = page.waitForRequest('**/api/repos/acme/app/home');
   await open(page, '/r/acme/app', { holdSession });
-  await overview; // asked before the session answered
+  await home; // asked before the session answered
   await expect(page.getByRole('status', { name: 'Loading' })).toBeVisible();
   release();
-  await expect(page.getByRole('heading', { name: 'acme/app' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
   await expect(page.getByRole('status', { name: 'Loading' })).toHaveCount(0);
   await expectClean(page);
 });

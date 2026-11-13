@@ -628,6 +628,8 @@ export async function open(page: Page, path: string, mock: Mock = {}) {
         return json(200, installations);
       case '/api/repos':
         return json(200, repos);
+      case '/api/repos/acme/app/home':
+        return json(200, JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/home/clean.json', import.meta.url), 'utf8')));
       case '/api/repos/acme/app/overview':
         return json(200, mock.overview ?? reporting);
       case '/api/repos/acme/app/data-sharing':

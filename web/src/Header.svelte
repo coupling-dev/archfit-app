@@ -10,7 +10,7 @@
     repo = '',
     tab = '',
     pull = 0,
-  }: { session: Session | null; repo?: string; tab?: 'overview' | 'graph' | 'policy' | ''; pull?: number } = $props();
+  }: { session: Session | null; repo?: string; tab?: 'home' | 'graph' | 'policy' | ''; pull?: number } = $props();
 
   let theme = $state<Theme>(storedTheme());
   const themeNames: Record<Theme, string> = { auto: 'Auto', light: 'Light', dark: 'Dark' };
@@ -24,8 +24,7 @@
   const tabs = $derived(
     repo
       ? [
-          { label: 'Overview', href: repoPage(repo), current: tab === 'overview' },
-          { label: 'Architecture', href: repoPage(repo, '/graph'), current: tab === 'graph' },
+          { label: 'Home', href: repoPage(repo), current: tab === 'home' },
           { label: 'Policy', href: repoPage(repo, '/policy'), current: tab === 'policy' },
         ]
       : [],
@@ -45,7 +44,7 @@
       <span class="sep" aria-hidden="true">/</span>
       <span>{repo.split('/')[0]}</span>
       <span class="sep" aria-hidden="true">/</span>
-      <strong><a href={repoPage(repo)} aria-current={tab === 'overview' ? 'page' : undefined}>{repo.split('/')[1]}</a></strong>
+      <strong><a href={repoPage(repo)} aria-current={tab === 'home' ? 'page' : undefined}>{repo.split('/')[1]}</a></strong>
       {#if pull}
         <span class="sep" aria-hidden="true">/</span>
         <a href={repoPage(repo, `/pull/${pull}`)} aria-current="page">#{pull}</a>

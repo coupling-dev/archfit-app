@@ -819,35 +819,21 @@ to the default branch, then run the Archfit workflow again: nothing re-runs for 
 
 ## See a repository
 
-Open `/r/<owner>/<repo>`. The page always shows the setup steps with the current one marked. "Needs you" says what to
-do next in one sentence (**How** folds the details) and, for a repository admin, holds the button that starts
-onboarding or discovery, only when that is the step's action. After the first report it also shows:
+Open `/r/<owner>/<repo>` for **Home**. The status line comes first. **Needs you** lists open requests,
+exceptions near their date, drift and owner actions. Each item opens its page; a request's record folds away.
+Before the first policy is approved, Home shows the setup steps, what is missing and the ruleset settings to turn on
+instead of the map.
 
-- the Archfit result of the default branch at the top of the page, and when it reads "attention", why, in the latest
-  report's terms (advisories, a rule not evaluated, dimensions partially or not measured). An advisory repository's
-  check is neutral, so every page reads its headline: a check that found violations reads "violations found" on the overview, the repository
-  list, the open pull requests and the pull request page alike, never "attention";
-- under the result, a watch line: the commit of the default branch that Archfit last checked, and how long ago. It reads
-  the `archfit/state` check on the branch tip, so it names what the check saw, not what was merged since;
-- three counts: rule violations and advisories in the latest default-branch report, and the open pull requests whose
-  Archfit result needs attention. They are counts, never a score;
-- one more count: the pull requests to update (their result was withdrawn with `target_moved` after the default branch
-  moved, see [Merge safety when the target moves](#merge-safety-when-the-target-moves)). It reads "could not be read"
-  rather than zero when the App could not read the open pull requests;
-- the open pull requests, newest first, each with its result and a link to its page (up to 20). A pull request that
-  waits for an update says so under its row and names the modules the pull request and the default branch close a
-  cycle through, in the words of the comment;
-- **Findings on** the default branch: its violations, advisories and accepted debt, grouped as on a pull request page.
+**The map** shows modules by layer, outer first, with each module's volatility. Its legend identifies an allowed
+dependency, a requested one with its request number, one a rule denies, an exception with its date, and drift.
+When several kinds apply to a pair, only one is drawn, in this order: drift, a rule denies it, requested, exception,
+allowed. A dependency that is not drawn needs a request. **Show the map as a list** opens the same modules and
+dependencies as text. At phone width, scroll inside the map box; focus it and use the arrow keys to scroll by keyboard.
+If the layout worker fails, Home says so and the list is still available.
 
-![The open pull requests of a repository, one waiting for an update after the default branch moved](images/overview-pulls-to-update-light.png#gh-light-mode-only)
-![The open pull requests of a repository, one waiting for an update after the default branch moved](images/overview-pulls-to-update-dark.png#gh-dark-mode-only)
-
-_A pull request waiting for an update names the modules of the cycle, as the pull request comment does. Sample data._
-
-The tabs under the header open the overview, the graph (Architecture), and the policy. The policy page lists modules,
-rules, notes and exceptions from the default branch, with links to recorded requests. **Show raw YAML** opens the
-file; the digest identifies its content. **Edit** appears only when change control is available, but the editor is not
-yet available: the link currently returns to the read view.
+The repository tabs are **Home** and **Policy**. Policy lists modules, rules, notes and exceptions from the default
+branch, with links to recorded requests. **Show raw YAML** opens the file. **Edit** appears only when change control
+is available, but the editor is not yet available: the link currently returns to the read view.
 
 The header switches between
 the light and the dark theme, or follows the system (Auto); the choice is kept in this browser. The App needs a
