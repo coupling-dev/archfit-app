@@ -49,7 +49,7 @@
         <h3>{m.name}</h3>
         <dl class="kv">
           <dt>Paths</dt><dd>{m.paths?.join(', ') || 'None'}</dd>
-          <dt>Public</dt><dd>{m.public?.join(', ') || 'None'}</dd>
+          <dt>Public</dt><dd>{m.public === null ? 'Whole module' : m.public.join(', ')}</dd>
           <dt>Volatility</dt><dd>{m.volatility}</dd>
           {#if m.subdomain}<dt>Subdomain</dt><dd>{m.subdomain}</dd>{/if}
           <dt>Layer</dt><dd>{m.layer || 'None'}</dd>
@@ -76,7 +76,7 @@
 
   <section class="box" aria-labelledby="rules">
     <div class="box-head"><h2 id="rules">Custom rules and notes</h2></div>
-    {#each body.rules as rule (rule.id)}
+    {#each body.rules as rule, i (i)}
       <div class="box-row stack-sm">
         <h3>{rule.id}{rule.not_checked ? ' (not checked)' : ''}</h3>
         {#if rule.deny}<p>Deny: {rule.deny.from.join(', ')} → {rule.deny.to.join(', ')}</p>{/if}

@@ -59,3 +59,30 @@ test('policy: API failure is shown rather than an empty policy', async ({ page }
   await expect(page.getByRole('alert')).toContainText('The policy could not be read.');
   await expect(page.getByRole('heading', { name: 'Modules' })).toHaveCount(0);
 });
+
+
+test('policy: omitted public paths mean the whole module is public', async ({ page }) => {
+  await open(page, path, { [api]: () => [200, typical] });
+  const modules = page.getByRole('region', { name: 'Modules', exact: true });
+  const util = modules.locator('.box-row').filter({ has: page.getByRole('heading', { name: 'pkg_util', exact: true }) });
+  const chaos = modules.locator('.box-row').filter({ has: page.getByRole('heading', { name: 'pkg_chaos', exact: true }) });
+  await expect(util.locator('dd').nth(1)).toHaveText('Whole module');
+  await expect(chaos.locator('dd').nth(1)).toHaveText('pkg/chaos, pkg/chaos/cliflags');
+});
+
+test('policy: repeated custom rule IDs retain both rules', async ({ page }) => {
+  const body = {
+    ...typical,
+    rules: [
+      { id: 'shared-id', note: 'One checked declaration.', not_checked: true, why: 'First reason.' },
+      { id: 'shared-id', deny: { from: ['pkg_util'], to: ['pkg_chaos'] }, not_checked: false, why: 'Second reason.' },
+    ],
+  };
+  await open(page, path, { [api]: () => [200, body] });
+  const rules = page.getByRole('region', { name: 'Custom rules and notes', exact: true });
+  await expect(rules.getByRole('heading', { name: 'shared-id', exact: true })).toHaveCount(1);
+  await expect(rules.getByRole('heading', { name: 'shared-id (not checked)', exact: true })).toHaveCount(1);
+  await expect(rules.getByText('Why: First reason.')).toBeVisible();
+  await expect(rules.getByText('Why: Second reason.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Policy file' })).toBeVisible();
+});
