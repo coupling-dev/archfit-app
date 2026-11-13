@@ -1,0 +1,11 @@
+[
+  {"text":"pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency\n", "want":[]},
+  {"text":"a decision request", "want":["decision", "decision request"]},
+  {"text":"needs\n  attention", "want":["needs attention"]},
+  {"text":"config_file edge_count tasks", "want":[]},
+  {"text":"the check archfit/gate failed; gate: required", "want":[]},
+  {"text":"the gate is closed", "want":["gate"]},
+  {"text":"A Finding, a WAIVER", "want":["waiver", "finding"]},
+  {"text":"éconfigé config𐐀 config_", "want":[]},
+  {"text":"needs\u00a0attention", "want":[]}
+]
