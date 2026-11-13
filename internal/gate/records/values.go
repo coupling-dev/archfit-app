@@ -68,8 +68,11 @@ type Repo struct {
 	GuardedSince string `json:"guarded_since,omitempty"`
 	// OutsideFlow is set while the default branch has a policy that no approval made.
 	OutsideFlow *OutsideFlow `json:"outside_flow,omitempty"`
-	DriftIssue  int          `json:"drift_issue,omitempty"`
-	// ExpiryIssues maps an exception key to the issue that warns of its date.
+	// DriftIssue is the one issue that lists the drift of the default branch (M2 task 22); DriftHead is the commit its
+	// body describes.
+	DriftIssue int    `json:"drift_issue,omitempty"`
+	DriftHead  string `json:"drift_head,omitempty"`
+	// ExpiryIssues maps an exception and its date ("<exception key> <YYYY-MM-DD>") to the issue that warns of the date.
 	ExpiryIssues map[string]int `json:"expiry_issues,omitempty"`
 }
 
@@ -156,13 +159,16 @@ type PolicyPush struct {
 // Pull is the pull record of M2 D6 at PullKey: the latest verified upload of the pull request's head. No result
 // bytes are stored; the result is read back from the run's artifact and checked against PayloadDigest.
 type Pull struct {
-	Schema        string   `json:"schema"`
-	HeadSHA       string   `json:"head_sha"`
-	RunID         int64    `json:"run_id"`
-	RunAttempt    int      `json:"run_attempt"`
-	PayloadDigest string   `json:"payload_digest"`
-	Status        string   `json:"status"`
-	Errors        []string `json:"errors,omitempty"` // the error keys of the result
+	Schema        string `json:"schema"`
+	HeadSHA       string `json:"head_sha"`
+	RunID         int64  `json:"run_id"`
+	RunAttempt    int    `json:"run_attempt"`
+	PayloadDigest string `json:"payload_digest"`
+	Status        string `json:"status"`
+	// Date is the date the result judged exceptions on (YYYY-MM-DD), for a result the App accepted as it is: an
+	// exception that expired after it is one the result did not judge (M2 task 22).
+	Date   string   `json:"date,omitempty"`
+	Errors []string `json:"errors,omitempty"` // the error keys of the result
 	// RequestKeys holds, for each error of Errors in the same order, its request key (wire/request), "" when it has
 	// none. The engine's keys are compared, never parsed, so the preview of an answer reads these to know which errors
 	// the answer clears.

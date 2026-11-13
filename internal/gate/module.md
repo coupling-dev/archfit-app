@@ -535,7 +535,7 @@ change of the workflow on `T` reads `unknown` until its branch is updated.
    never waits: `waiting` is `in_progress`, which blocks a merge.
 4. The pull record (M2 D6, `records.Pull` at `PullKey` with its `PullIndexKey` entry, one `records.Indexed` swap):
    pull request uploads only. It holds the run id and attempt, the payload digest, the status the App gave, and the
-   result's error keys only when no rule failed. A record of a newer run, or a newer attempt of the same run, is never
+   result's date and error keys only when no rule failed. A record of a newer run, or a newer attempt of the same run, is never
    replaced: run ids grow, so a late upload of an older head cannot win. A newer record keeps the old one's `rechecks`
    markers (the re-check after an answer, M2 task 21). Push and merge group uploads store nothing
    here (task 22 owns push results).

@@ -429,6 +429,7 @@ func (v *upload4) storePull(ctx context.Context, u ingest.Upload4, d decision4) 
 	rec := records.Pull{HeadSHA: b.HeadSHA, RunID: b.RunID, RunAttempt: b.RunAttempt,
 		PayloadDigest: u.Envelope.PayloadDigest, Status: string(d.Status)}
 	if len(d.Reasons) == 0 && u.Result != nil {
+		rec.Date = u.Result.Date
 		for _, e := range u.Result.Errors {
 			key, err := asks.Key(e)
 			if err != nil {
