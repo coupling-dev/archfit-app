@@ -21,7 +21,7 @@ The architecture and user guide describe the current Archfit 4 implementation an
 | Document                                       | Use it for                                                                            |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------- |
 | [Architecture](architecture.md)                | Product boundary, request flows, package boundaries, routes, and runtime requirements |
-| [User guide](user-guide.md)                    | Setup, policy changes, feedback, expiry, and drift                                    |
+| [User guide](user-guide.md)                    | Setup, Home and the map, requests, policy edits, pull requests, expiry, and drift                                    |
 | [Tech stack](tech-stack.md)                    | Language, dependencies, tests, frontend, and platform seams                           |
 | [Module specifications](../internal/module.md) | Package contracts, invariants, and test specifications                                |
 | [`AGENTS.md`](../AGENTS.md)                    | Repository rules for contributors and coding agents                                   |
@@ -29,7 +29,7 @@ The architecture and user guide describe the current Archfit 4 implementation an
 ## Design records
 
 The current design for the engine, the Action, and this App is the Archfit 4 design:
-`docs/plans/20261110-archfit-4-architecture-change-control.md` in the [archfit](https://github.com/alexei-led/archfit) repository.
+[Archfit 4 design](https://github.com/alexei-led/archfit/blob/main/docs/plans/20261110-archfit-4-architecture-change-control.md) in the archfit repository.
 New work follows it.
 
 The files below explain intended scope and decisions. They are not a second source of

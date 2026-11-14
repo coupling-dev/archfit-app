@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import AxeBuilder from '@axe-core/playwright';
-import { expect, type Locator, type Page, type Request } from '@playwright/test';
+import { expect, type Page, type Request } from '@playwright/test';
 
 
 
@@ -171,36 +171,4 @@ export const everyPage = [
 export async function rendered(page: Page, path: string) {
   await expect(page.locator('main h1').first(), path).toBeVisible();
   await expect(page.locator('main').getByText('Loading…'), path).toHaveCount(0);
-}
-
-
-// The screenshots the user guide shows. Regenerate them with `npm run docs:shots` after a change to the pages they show;
-// they run only then, so the smoke suite stays fast.
-export const shotsDir = new URL('../../docs/images/', import.meta.url);
-
-
-// callouts numbers each element and labels it in the margin beside the content, drawn over the page for the screenshot.
-export async function callouts(page: Page, marks: { at: Locator; text: string }[]) {
-  const main = await page.locator('main').boundingBox();
-  const items = await Promise.all(
-    marks.map(async (m, i) => ({ n: i + 1, text: m.text, box: (await m.at.boundingBox())! })),
-  );
-  await page.evaluate(
-    ({ items, labelX }) => {
-      const layer = document.createElement('div');
-      layer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:9999;font:13px system-ui,sans-serif';
-      for (const it of items) {
-        const y = it.box.y + window.scrollY;
-        const dot = document.createElement('div');
-        dot.textContent = String(it.n);
-        dot.style.cssText = `position:absolute;left:${it.box.x - 34}px;top:${y - 12}px;width:24px;height:24px;border-radius:50%;background:#0969da;color:#fff;font-weight:700;display:grid;place-items:center;box-shadow:0 0 0 3px #fff`;
-        const box = document.createElement('div');
-        box.textContent = `${it.n}  ${it.text}`;
-        box.style.cssText = `position:absolute;left:${labelX}px;top:${y - 8}px;width:200px;padding:6px 10px;border-radius:6px;background:#fff;color:#1f2328;border:1px solid #0969da;box-shadow:0 2px 8px rgba(0,0,0,.15)`;
-        layer.append(dot, box);
-      }
-      document.body.append(layer);
-    },
-    { items: items.map((it) => ({ n: it.n, text: it.text, box: it.box })), labelX: main!.x + main!.width + 16 },
-  );
 }

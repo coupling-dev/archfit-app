@@ -58,7 +58,29 @@ The App can warn about ruleset configuration, but an administrator can change or
 
 ## HTTP routes
 
-The public role serves `/health`, `/ready`, GitHub webhooks, the upload, OAuth and UI routes. The worker handles queued events and internal sweep and grant routes. The local `all` role also serves internal routes with an operator bearer token. The six legacy onboarding, discovery, overview, findings, graph and pull-graph APIs return HTTP 409 with JSON `{"error":"Archfit 3 reports and discovery are no longer available. Use Archfit 4 setup and requests."}` after authorization and any pull lookup. The setup, Home, policy, pull, request, answer and passkey APIs are separate. A page route alone does not guarantee its backing API is available.
+The public role serves `/health`, `/ready`, GitHub webhooks, the upload, OAuth and UI routes. The worker handles queued events and internal sweep and grant routes. The local `all` role also serves internal routes with an operator bearer token. The removed onboarding, discovery, overview, findings, graph and pull-graph APIs return HTTP 404 without repository authorization or data access. The setup, Home, policy, pull, request, answer and passkey APIs are separate. A page route alone does not guarantee its backing API is available.
+
+### UI routes
+
+The shell serves these routes. Repository pages require sign-in. Each page reads its repository data from an authorized API, not from the shell.
+The repository route prefix below is `/r/{owner}/{repo}`; API paths use `/api/repos/{owner}/{repo}`.
+
+| Page route                    | Page data and actions                                                                                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `/`                           | Repository list from `GET /api/repos`; sign-in or admission state when needed.                                    |
+| `/admin`                      | Operator-only installation administration.                                                                        |
+| Prefix                        | Home reads `/home`; before first approval it shows setup. Otherwise it shows requests, owner actions and the map. |
+| Prefix + `/policy`            | Reads `/policy`; `?edit=1` opens the YAML editor, which previews and submits through `/policy/edit` endpoints.    |
+| Prefix + `/requests/{number}` | Reads `/requests/{number}` and its previews; owner answers use its answer endpoints.                              |
+| Prefix + `/pull/{number}`     | Reads `/pulls/{number}`; the page and GitHub comment use the same feedback model.                                 |
+| Prefix + `/passkeys`          | Reads and manages the user's passkeys with `/passkeys` endpoints.                                                 |
+| Prefix + `/owner/{action}`    | Reads `/owner/{action}/view` and submits first-policy, workflow, confirm or revert actions.                       |
+
+The browser renders Home from the target policy and available request, exception and drift data. Request previews show
+the proposed policy and affected pull requests before an answer. Approvals bind a passkey to the displayed change;
+reject does not need one. Every YAML edit uses a passkey. The pull page shows the published feedback or an explicit
+unavailable state. A fresh upload, not a page load, supplies a new result. See the [user guide](user-guide.md) for
+page tasks and the [module contract](../internal/control/ui/module.md) for API details.
 
 ## Deployment
 

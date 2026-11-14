@@ -6,6 +6,8 @@ import {
   ceremony,
   expectClean,
   expectPageText,
+  docsClock,
+  docsShot,
   open,
   origin,
   type Handlers,
@@ -31,7 +33,8 @@ for (const [name, fixture] of [
   ['typical', typical],
   ['pumba', pumba],
 ] as const) {
-  test(`policy: ${name} golden`, async ({ page }) => {
+  test(`policy: ${name} golden${name === 'pumba' ? ' @docs' : ''}`, async ({ page }) => {
+    await docsClock(page);
     const writes = await open(page, path, { [api]: () => [200, fixture] });
     await expect(page.getByRole('heading', { name: 'Policy', level: 1 })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Modules' })).toBeVisible();
@@ -39,6 +42,7 @@ for (const [name, fixture] of [
     await expect(page.getByRole('link', { name: 'Edit', exact: true })).toHaveAttribute('href', path + '?edit=1');
     await expect(page.getByText(fixture.yaml, { exact: true })).toBeHidden();
     await expectPageText(page, `policy-${name}`);
+    if (name === 'pumba') await docsShot(page, 'policy');
     await expectClean(page);
     await page.getByText('Show raw YAML').focus();
     await page.keyboard.press('Enter');
@@ -185,7 +189,8 @@ test('policy edit: line errors appear before any passkey step', async ({ page })
   await expectClean(page);
 });
 
-test('policy edit: server diff, local preview command and a verified passkey precede merge', async ({ page }) => {
+test('policy edit: server diff, local preview command and a verified passkey precede merge @docs', async ({ page }) => {
+  await docsClock(page);
   const device = await authenticator(page, true);
   const writes = await open(page, path + '?edit=1', editor(device.id));
   await page.getByLabel('Policy YAML').fill(editedYAML);
@@ -194,6 +199,7 @@ test('policy edit: server diff, local preview command and a verified passkey pre
   await expect(page.getByText('preview it:')).toContainText('archfit check --policy <file>');
   await expect(page.locator('main img')).toHaveCount(0);
   await expectPageText(page, 'policy-edit-preview');
+  await docsShot(page, 'policy-edit');
   await expectClean(page);
   await page.getByRole('button', { name: 'Approve and merge with passkey' }).click();
   await expect(page.getByRole('status')).toHaveText('Answered. The policy change merged in #77.');

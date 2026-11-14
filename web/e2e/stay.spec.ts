@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { open, type Mock } from './fixtures';
-import { expectClean, expectNoNotUsedWord } from './support';
+import { expectClean, expectNoNotUsedWord, docsClock, docsShot } from './support';
 
 const reposGolden = (name: string) =>
   JSON.parse(
@@ -68,13 +68,15 @@ const cases: { name: string; path: string; ready: string; mock?: Mock; keyboard:
 
 for (const width of [1280, 390]) {
   for (const c of cases) {
-    test(`pages that stay: ${c.name} whole-page text at ${width}px`, async ({ page }) => {
+    test(`pages that stay: ${c.name} whole-page text at ${width}px${c.name === 'passkeys' && width === 1280 ? ' @docs' : ''}`, async ({ page }) => {
+      await docsClock(page);
       await page.setViewportSize({ width, height: 900 });
       await open(page, c.path, c.mock);
       await expect(page.getByRole('heading', { name: c.ready, exact: true })).toBeVisible();
       await expect(page.getByRole('status', { name: 'Loading' })).toHaveCount(0);
       await expect(page.locator('body')).toContainText('Documentation');
       expect(await page.locator('body').innerText()).toMatchSnapshot(`stay-${c.name}-${width}.txt`);
+      if (c.name === 'passkeys' && width === 1280) await docsShot(page, 'passkeys');
       await expectClean(page);
 
       const target = page.getByRole(
