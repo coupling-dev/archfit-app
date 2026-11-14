@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { expectClean, expectNoNotUsedWord, expectPageText, open } from './support';
+import { expectClean, expectNoNotUsedWord, expectPageText, open, docsClock, docsShot } from './support';
 import { readHome } from '../src/lib/home';
 
 const path = '/r/acme/app';
@@ -13,7 +13,8 @@ const fixture = (name: string) => JSON.parse(readFileSync(new URL(name + '.json'
 
 for (const file of names) {
   const name = file.replace(/\.json$/, '');
-  test(`home: ${name} golden`, async ({ page }) => {
+  test(`home: ${name} golden${name === 'one-request' ? ' @docs' : ''}`, async ({ page }) => {
+    await docsClock(page);
     const json = fixture(name);
     const body = readHome(json);
     const reads: string[] = [];
@@ -36,6 +37,7 @@ for (const file of names) {
         await expect(page.getByRole('link', { name: need.text, exact: true })).toHaveAttribute('href', need.href);
     }
     await expectPageText(page, 'home-' + name);
+    if (name === 'one-request') await docsShot(page, 'home');
     await expectClean(page);
     if (body.map) {
       await page.getByText('Show the map as a list', { exact: true }).focus();

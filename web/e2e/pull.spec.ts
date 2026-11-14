@@ -1,14 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { expectClean, expectPageText, open } from './support';
+import { expectClean, expectPageText, open, docsClock, docsShot } from './support';
 
 const states = ['pass', 'fail-advisory', 'fail-advisory-request', 'required-request', 'fail-fix', 'fail-ask', 'fail-copy', 'next-backticks', 'fail-expired-exception', 'unknown', 'unknown-workflow', 'unknown-outside-flow', 'unknown-missing-evidence', 'waiting', 'unpublished', 'superseded', 'no-result', 'missing-artifact', 'mismatch', 'pending'];
 for (const state of states) {
-  test(`pull request: ${state}`, async ({ page }) => {
+  test(`pull request: ${state}${state === 'waiting' ? ' @docs' : ''}`, async ({ page }) => {
+    await docsClock(page);
     const body = JSON.parse(readFileSync(new URL(`../../internal/control/ui/testdata/pull/${state}.json`, import.meta.url), 'utf8')) as object;
     await open(page, '/r/acme/app/pull/4', { 'GET /api/repos/acme/app/pulls/4': () => [200, body] });
     await expect(page.locator('main section, main h1').last()).toBeVisible();
     await expectPageText(page, `pull-${state}`);
+    if (state === 'waiting') await docsShot(page, 'pull');
     await expectClean(page);
     if (state === 'waiting') await expect(page.getByRole('link', { name: '#431' }).first()).toHaveAttribute('href', '/r/acme/app/requests/431');
     if (state === 'fail-advisory-request') await expect(page.locator('main h1')).toHaveText('Archfit: fail, 1 error');

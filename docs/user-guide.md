@@ -7,46 +7,63 @@ This guide is for repository administrators and policy owners using Archfit 4. T
 ## Install and set up
 
 1. Install the GitHub App for the repository. An account not on the operator's approved list waits for operator admission.
-2. Put a schema 3 `.archfit.yaml` and `.github/workflows/archfit.yaml` in the repository. Review them before the first approval. The App does not generate these files.
+2. Put a schema 3 `.archfit.yaml` and `.github/workflows/archfit.yaml` in the repository. Read them before the first approval. The App does not generate these files.
 3. Sign in to the App and register a passkey as a repository administrator. See [Register a passkey](#register-a-passkey).
 4. A repository administrator must approve the first policy with a passkey. The owner action supports a same-repository open pull request when the default branch has no schema 3 policy, or the current default-branch policy otherwise. Open `/r/<owner>/<repo>/owner/first`, or add `?pull=<number>` for the onboarding pull request.
 5. Configure the branch ruleset below and verify the workflow and engine are approved in the App's release manifest.
 
-The App's setup API reads the policy and workflow at one default-branch commit and reports admission, first approval and ruleset findings. It does not change GitHub rulesets. Home shows this setup information before the first approval.
+The App's setup API reads the policy and workflow at one default-branch commit and reports admission, first approval and ruleset advice. It does not change GitHub rulesets. Home shows this setup information before the first approval.
 
 ## Home and the map
 
 Open `/r/<owner>/<repo>` for **Home**. The status line comes first. **Needs you** lists open requests,
 exceptions near their date, drift and owner actions. Each item opens its page. A request's record folds away.
-Before the first policy is approved, Home shows the setup steps, what is missing and the ruleset findings
+Before the first policy is approved, Home shows the setup steps, what is missing and the ruleset advice
 instead of the map. Owner actions open the pages below.
 
-**The map** shows modules by layer, outer first, with each module's volatility. Its legend identifies an allowed
-dependency, a requested one with its request number, one a rule denies, an exception with its date, and drift.
+![Home: a request and the map](images/home.png)
+
+**The map** shows modules by layer, outer first, with each module's volatility. The legend shows five kinds:
+
+| Line | Meaning |
+| --- | --- |
+| Solid | An allowed dependency. |
+| Dashed | A requested dependency, with its request number. |
+| Heavy dash-dot | A dependency a rule denies, when an open request or error touches it. |
+| Dotted | An exception, with its date. |
+| Red solid | Drift. |
+
 When several kinds apply to a pair, only one is drawn, in this order: drift, a rule denies it, requested, exception,
 allowed. A dependency that is not drawn needs a request. **Show the map as a list** opens the same modules and
 dependencies as text. At phone width, scroll inside the map box. Focus it and use the arrow keys to scroll by keyboard.
 If the layout worker fails, Home says so and the list is still available.
 
-The repository tabs are **Home** and **Policy**. Policy lists modules, rules, notes and exceptions from the default
-branch, with links to recorded requests. **Show raw YAML** opens the file. **Edit** appears only when change control
-is available.
+## Policy
+
+The repository tabs are **Home** and **Policy**. Open **Policy** to read the default-branch policy: modules and their
+allowed dependencies, built-in and custom rules, notes marked **not checked**, and exceptions with their dates.
+Exceptions link to a request when the policy includes its number. **Show raw YAML** opens the file. **Edit** appears
+only when change control is available.
+
+![Policy: modules, rules and exceptions](images/policy.png)
 
 ### Edit the policy YAML
+
+![Policy YAML edit and preview](images/policy-edit.png)
 
 Open **Edit** to start from the open policy proposal's file, or from the default branch when no proposal is open.
 The editor accepts a whole file up to 32 KiB. **Preview the edit** lists every decoder error by line and shows
 the App's text diff against the current default-branch policy. Check path globs locally before approval:
 `archfit check --policy <file>`.
 
-If an earlier branch write was not recorded, **Reload the policy** restores only the recorded proposal under the App\'s proposal lock.
+If an earlier branch write was not recorded, **Reload the policy** restores only the recorded proposal under the App's proposal lock.
 It does not approve or merge new bytes. Preview and confirm the edit again after reload.
 
 Every edit needs your passkey, even one that tightens the policy. **Approve and merge with passkey** appends it
 as the last change in the App's `archfit/policy` pull request. Its comment names the owner and the passkey.
 The merge push consumes the approval once.
 
-If the starting file changed, the App says **the policy changed; reload**. Reload and review again.
+If the starting file changed, the App says **the policy changed; reload**. Reload and read the preview again.
 Any default-branch tip movement before the merge, including a code-only push, voids the edit's approval.
 The App does not replay its YAML on the new tip; edit and confirm again. This is the fail-closed reading of D9,
 not a comparison of whether the new policy loosens or tightens a rule.
@@ -75,7 +92,7 @@ all input files and their immutable commit refs. GitHub issue links and direct l
 | Confirm a policy changed outside the flow              | `/owner/confirm`                |
 | Revert a policy changed outside the flow               | `/owner/revert`                 |
 
-The first approval has no approved baseline: every policy line is shown as an addition.
+The first approval has no previously approved policy: every policy line is shown as an addition.
 Only a repository administrator named in that policy can make it. Other actions require an owner
 of the previously approved policy, not an owner added by an outside-flow change.
 A revert shows the exact policy it will write, including earlier approved answers kept from the open
@@ -94,9 +111,13 @@ API flow referenced by the GitHub issue instead.
 
 ## Register a passkey
 
+![Passkeys page](images/passkeys.png)
+
 Open `/r/<owner>/<repo>/passkeys` after signing in. A policy owner can register a passkey; before the first policy, a repository administrator can register one. Follow the browser's registration prompt. Registration opens a GitHub issue notifying the user and owners. A second passkey and each removal require an existing passkey. The App uses user verification for the assertion; it does not prove that the owner read the request.
 
 ## Answer a request
+
+![Request page and its answer previews](images/request.png)
 
 A worker can comment `/archfit request <reason>` on a pull request, or file a request through the CLI. The App creates or joins request issues. CLI-filed measurements are marked **as reported**, not verified.
 
@@ -110,6 +131,27 @@ An answered request shows its recorded answer and links to the GitHub issue that
 
 Only an owner named in the current policy can answer. The requester may answer if also an owner. Several answers can join one policy pull request. After consumption, the App attempts to re-check affected pull requests; a fresh result is needed before they can pass.
 
+## Pull request and comment
+
+Open `/r/<owner>/<repo>/pull/<number>` to see the check result. The page and the GitHub comment use the same status,
+records, and instructions for the author and owner. A result can be **pass**, **fail**, **waiting**, or **unknown**.
+Unknown is not a pass. A request number links to the request page.
+
+![Pull request waiting for a request](images/pull.png)
+
+For example, the comment for this fixture says:
+
+```markdown
+## Archfit: waiting, request #431
+
+`pkg/tc/netem.go:12` **graph** pkg_tc -> pkg_util is not an allowed dependency
+- why: a new dependency between modules needs an owner
+- balance: 9/10 (min 7)
+
+**Author:** nothing to do. This check runs again when #431 is answered.
+**Owner:** answer #431.
+```
+
 ## Expiry and drift
 
 An exception is valid through its expiry date, in UTC. From seven days before expiry the App maintains an `archfit-expiry` issue for the exception. Fix the code or ask an owner to extend the exception. After expiry an old pull-request result is withdrawn and the App attempts a fresh check; if it cannot re-run, it can publish an expired-exception failure.
@@ -121,10 +163,10 @@ An accepted default-branch result that reports drift opens or updates an `archfi
 | Situation                                  | Action                                                                                                           |
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
 | The check is `unknown`                     | Read its reason and restore the named authority or input. Unknown is not a pass.                                 |
-| A policy changed outside the approval flow | An owner must confirm or revert it with a passkey. Review the issue and the policy before acting.                |
+| A policy changed outside the approval flow | An owner must confirm or revert it with a passkey. Read the issue and the policy before acting.                |
 | A workflow changed                         | An owner must approve the workflow change with a passkey unless only the Action ref moved to an approved commit. |
-| A request shows **as reported**            | Treat its measurements as a claim. Review the source and a current pull-request result.                          |
+| A request shows **as reported**            | Treat its measurements as a claim. Read the source and a current pull-request result.                          |
 | The App cannot confirm a ruleset or bypass | Ask a repository administrator to inspect the ruleset in GitHub.                                                 |
-| A passkey prompt fails or the policy moved | Start the action again and review the new preview. A step-up is bound to one action and expires.                 |
+| A passkey prompt fails or the policy moved | Start the action again and read the new preview. A step-up is bound to one action and expires.                 |
 
 For operators, see [configuration](architecture.md#configuration) and [cloud operations](design/cloud/operations.md).

@@ -159,3 +159,15 @@ export function ceremony(credential: unknown) {
   const data = c.response.authenticatorData ? Buffer.from(c.response.authenticatorData, 'base64url') : undefined;
   return { id: c.id, rawId: c.rawId, type: c.type, client, verified: data ? (data[32] & 0x04) !== 0 : undefined };
 }
+
+// The owner page goldens fix the browser clock at this instant.
+export async function docsClock(page: Page) {
+  await page.clock.setFixedTime(new Date('2026-11-13T12:00:00Z'));
+}
+
+export async function docsShot(page: Page, name: string) {
+  if (!process.env.ARCHFIT_DOCS_SHOTS) return;
+  await expectNoNotUsedWord(page);
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.screenshot({ path: new URL(`../../docs/images/${name}.png`, import.meta.url).pathname, fullPage: true, animations: 'disabled' });
+}

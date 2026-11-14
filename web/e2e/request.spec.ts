@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { assertion, authenticator, ceremony, expectClean, expectPageText, open, origin, type Handlers } from './support';
+import { assertion, authenticator, ceremony, expectClean, expectPageText, open, origin, docsClock, docsShot, type Handlers } from './support';
 
 const path = '/r/acme/app/requests/431';
 const api = '/api/repos/acme/app';
@@ -299,7 +299,8 @@ for (const [name, data] of [
   ['joined', { ...request, state: 'answered', dependencies: [{ kind: 'exception', from: 'pkg_tc', to: 'pkg_util', rule: 'graph', expires: '2027-01-15' }], answer: { kind: 'approve-until', until: '2027-01-15' } }],
   ['answered', { ...request, state: 'answered', modules: request.modules.map((m) => m.name === 'pkg_tc' ? { ...m, depends_on: ['pkg_util'] } : m), dependencies: [{ kind: 'deny', from: 'pkg_tc', to: 'pkg_util', rule: 'no-tc-to-util' }], answer: { kind: 'reject', instead: 'Use a port.' } }],
 ] as const) {
-  test(`request: ${name} text golden on direct load`, async ({ page }) => {
+  test(`request: ${name} text golden on direct load${name === 'open' ? ' @docs' : ''}`, async ({ page }) => {
+    await docsClock(page);
     await open(page, path, { [`GET ${req}`]: () => [200, data], [`GET ${req}/preview`]: (_, url) => preview(url) });
     await expect(page.getByRole('heading', { name: 'Request #431' })).toBeVisible();
     await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toBeVisible();
@@ -312,6 +313,7 @@ for (const [name, data] of [
       await expect(page.getByRole('link', { name: 'Request #431 on GitHub' })).toHaveAttribute('href', 'https://github.com/acme/app/issues/431');
     }
     await expectPageText(page, 'request-' + name);
+    if (name === 'open') await docsShot(page, 'request');
     await expectClean(page);
   });
 }
