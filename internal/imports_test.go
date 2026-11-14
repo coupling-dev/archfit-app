@@ -1,6 +1,8 @@
 package internal_test
 
 import (
+	"errors"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -263,6 +265,18 @@ func TestArchfit3PackagesAreRemoved(t *testing.T) {
 	for _, name := range []string{"wire/report", "wire/policy", "wire/settings", "gate/verdict", "control/ui/graph", "control/proposal"} {
 		if _, exists := g.direct[internal+name]; exists {
 			t.Errorf("legacy package still exists: %s", name)
+		}
+	}
+}
+
+func TestArchfit3UISurfacesAreRemoved(t *testing.T) {
+	for _, path := range []string{
+		"control/ui/graph", "control/ui/graphpage.go", "control/ui/pullgraph.go",
+		"control/ui/datasharing.go", "control/ui/reportcache.go", "control/ui/hints.go", "control/ui/inbox.go",
+		"control/ui/legacy.go", "control/account/consent.go",
+	} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("legacy UI surface %s: want absent, got %v", path, err)
 		}
 	}
 }

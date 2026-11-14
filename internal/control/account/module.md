@@ -6,10 +6,10 @@
 
 ## Purpose
 
-`account` owns every byte the App persists: the entitlement state of an installation (public, trial,
-grace, manual grant, suspended) and administrator consent records. It is the only writer of the
+`account` owns the entitlement state of an installation (public, trial,
+grace, manual grant, suspended). It is the only writer of the
 cached `Entitlement` record the gate reads. Without it private repositories would never leave the
-trial and managed discovery would run without consent.
+trial.
 
 ## Functional Responsibilities
 
@@ -18,7 +18,6 @@ trial and managed discovery would run without consent.
 - Rewrite the gate's `Entitlement` record on every `Observe`, `Grant`, `Refresh`: suspension instant,
   warning instant, notice text, suspension reason with the recovery action.
 - Apply and clear operator grants; log each grant by installation ID.
-- Record, revoke and answer consent per installation and kind, with who recorded it and when. No consent, no call.
 - Write and delete the gate's `Admission` record when an operator approves or revokes an installation; log each change
   by installation ID and operator ID.
 - Delete every key of an installation on uninstall, its admission included.
@@ -34,16 +33,15 @@ provider may replace manual grants. The `Entitlement` record shape is stable: it
 - The private record, Store key `account`, JSON `{"first_private_at": RFC 3339, "grant_until": RFC 3339}`, zero times omitted.
 - The durations: trial 30 d, grace 7 d, warn 7 d before, "1 day left" inside the last 24 h. **[default]**
 - The plan state machine and the mapping from plan to `Entitlement` fields and texts.
-- Consent key layout `consent/<kind>`, value JSON `{"kind","by","by_id","at"}`. `by` is the login as it was when the consent
-  was recorded; `by_id` is the GitHub user ID, absent from a record written before it was stored. Such a record stays valid.
 - The update cycle of the record and the entitlement: read both keys, compute, write both with one
   `Store.CompareAndSwapAll` from the bytes read; on `false`, start again, at most 5 attempts **[default]**.
 
 - The admission key `admission`, the gate's `Admission` record. `account` writes and deletes it and never decides
   anything from it; the gate and `control/ui` read it through `gate.Admissions`.
 
-Nobody else reads the `account` or `consent/*` keys. The gate reads only `EntitlementKey` and `AdmissionKey`.
-Records of earlier versions (`consent/managed_llm`, `llm-budget/*`) may remain in the Store; nothing reads or writes them.
+Only this module reads the `account` key. The gate reads only `EntitlementKey` and `AdmissionKey`.
+Historical `consent/*` records remain in the Store, unread and unchanged by account operations.
+There is no consent API, migration or key cleanup in this change. Existing whole-tenant deletion on uninstall remains unchanged.
 
 ## Public Contract
 
@@ -86,43 +84,8 @@ type Account interface {
 ```
 
 ```go
-type ConsentKind string
-
-const (
-    ConsentSourceProcessing ConsentKind = "source_processing" // managed discovery
-)
-
-type Consent struct {
-    Kind ConsentKind
-    By   string // GitHub login of the administrator, as it was when the consent was recorded
-    ByID int64  // GitHub user ID of the administrator; 0 on a record written before the App stored it
-    At   time.Time
-}
-
-// ErrNoConsent is returned by callers' guards when Has is false.
-var ErrNoConsent = errors.New("account: consent not recorded")
-
-// ErrConsentExists is returned by Record when a consent of that kind is already recorded; the record is unchanged.
-var ErrConsentExists = errors.New("account: consent already recorded")
-
-type Consents interface {
-    // Record creates the consent atomically; ErrConsentExists if one is recorded, which keeps who and when.
-    Record(ctx context.Context, installationID int64, c Consent) error
-    Revoke(ctx context.Context, installationID int64, k ConsentKind) error
-    // Has is false on any error: no consent, no call.
-    Has(ctx context.Context, installationID int64, k ConsentKind) bool
-    // Get answers who recorded the consent and when. Unlike Has it tells "not recorded" (false, nil) from "cannot
-    // tell" (an error: the Store failed or the record is corrupt), so a page never shows an outage as "not allowed".
-    Get(ctx context.Context, installationID int64, k ConsentKind) (Consent, bool, error)
-}
+func New(s Store) Account
 ```
-
-```go
-func New(s Store) (Account, Consents)
-```
-
-`ErrNoConsent` is the sentinel that callers (`onboarding`) return from their own guard when `Has` is false; no method of
-this module returns it.
 
 ### Plan rules
 
@@ -180,13 +143,6 @@ The gate decides suspension itself from `SuspendAfter`, repository privacy and i
   `installation_id`, `operator_id` (the `byID` argument) and the outcome. A Store error is returned.
   The caller (`control/ui`) is the one that checks the operator; `account` trusts the arguments.
 - Any Store read error other than `ErrNotFound` returns the error and **writes nothing**.
-- `Record` rejects an unknown `Kind`, empty `By`, `ByID <= 0`, or zero `At`. It writes with `Store.CompareAndSwap(old = nil)`:
-  of concurrent `Record`s exactly one creates the record, and every other one, like any `Record` over an existing
-  consent, returns `ErrConsentExists` and changes nothing. `Revoke` deletes the key; revoking a missing consent is
-  not an error.
-- `Get`: a missing key is `(zero, false, nil)`; a Store error, a corrupt value or an invalid installation ID is an error, never
-  `false, nil`. `Has` is `Get` with every error read as false.
-
 ## Integrations
 
 ### internal/gate
@@ -292,7 +248,7 @@ type Swap struct {
 
 `ErrNotFound` is the sentinel `Get` returns for a missing key; here it means "zero record", never an error.
 `CompareAndSwapAll` writes `account` and `entitlement` together; `false` means another writer came first, and the
-cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Get` and `Delete` on their own key: they derive nothing.
+cycle reads again.
 `Tenants` is never called here; the `control` façade uses it for orphan cleanup and then calls `Forget`.
 
 ### Consumers (inbound, contract strength, all balanced)
@@ -300,14 +256,12 @@ cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Ge
 | Counterpart                    | Uses                                    | LCA / Rank / Distance | Volatility |
 | ------------------------------ | --------------------------------------- | --------------------- | ---------- |
 | `internal/control/`            | `New`, `Account` (events, sweep, grant, forget) | control / 1 / 1       | High       |
-| `internal/control/onboarding/` | `Consents.Has`                          | control / 1 / 1       | High       |
-| `internal/control/ui/`         | `Account.Status`, `Account.Admit`, `Account.Unadmit`, `Consents` | control / 1 / 1       | High       |
+| `internal/control/ui/`         | `Account.Status`, `Account.Admit`, `Account.Unadmit` | control / 1 / 1       | High       |
 
 ## Change Vectors
 
 - Trial, grace, warning durations, notice texts: constants here.
 - A billing provider: a new writer of `grant_until` (or a `paid_until` field) inside this module; `Entitlement` stays.
-- Consent kinds: a new constant and nothing else.
 - Approval with more than presence (an expiry, a note): a field of `gate.Admission`, owned by `gate/inputs`.
 
 ## Constraints and Invariants
@@ -355,12 +309,8 @@ cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Ge
   **Scenario**: `Refresh` twice with the same `now`; count the entitlement writes and compare bytes.
   **Expected behavior**: two writes with identical `Entitlement` bytes; the `account` record is only checked: never
   `Put`, and every swap of it carries its stored bytes.
-- **Test name**: `TestConsentRoundTrip`
-  **Scenario**: `Has` and `Get` before `Record`; after `Record`; after `Revoke`; `Revoke` again; the other kind.
-  **Expected behavior**: false, true, false, nil error, false; `Get` after `Record` returns the login, user ID and UTC time recorded;
-  a second `Record` is `ErrConsentExists` and keeps the first who and when.
 - **Test name**: `TestForgetDeletesTenantOnly`
-  **Scenario**: tenants A and B with records and consents; `Forget(A)` twice.
+  **Scenario**: tenants A and B with records and opaque historical consent bytes; `Forget(A)` twice.
   **Expected behavior**: A has no keys; B is unchanged; second call returns nil (T07 cleanup, T08 tenant scoping).
 
 - **Test name**: `TestAdmitUnadmitRoundTrip`
@@ -376,16 +326,11 @@ cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Ge
   **Scenario**: the `account` key holds invalid JSON.
   **Expected behavior**: `Observe`, `Refresh`, `Status` return an error and write nothing; they do not reset the trial.
 - **Test name**: `TestInvalidInstallationID`
-  **Scenario**: `installationID` 0 and −1 on every operation of the two interfaces.
-  **Expected behavior**: error (or `false` for `Has`, `false` and an error for `Get`); no `SystemTenant` key is read or written.
-- **Test name**: `TestConsentRejectsInvalid`
-  **Scenario**: unknown kind, empty `By`, zero `At`, no user ID; `Has` and `Get` with a failing Store and with a corrupt value; a
-  record written before the user ID.
-  **Expected behavior**: `Record` errors and writes nothing; `Has` is false and `Get` returns an error; the old record is a
-  consent with `ByID` 0.
+  **Scenario**: `installationID` 0 and −1 on every account operation.
+  **Expected behavior**: error; no `SystemTenant` key is read or written.
 - **Test name**: `TestOnlyDocumentedKeys`
   **Scenario**: run every operation against a recording Store.
-  **Expected behavior**: keys touched are `account`, `entitlement`, `admission` and `consent/source_processing`, all under the installation. Nothing else.
+  **Expected behavior**: keys touched by the exercised plan operations are `account` and `entitlement`, all under the installation. Nothing else.
 
 ### Behavior Tests
 
@@ -411,3 +356,7 @@ cycle reads again. Consents use `CompareAndSwap` (create only, `old = nil`), `Ge
 - **Test name**: `TestReinstallStartsNewTenant`
   **Scenario**: `Forget(A)`, then `Observe(true)` for new installation ID B of the same organization.
   **Expected behavior**: B gets a fresh 30-day trial; A stays empty. Documented limit.
+
+- **Test name**: `TestHistoricalConsentsRemainUnreadAndUnchanged`
+  **Scenario**: seed opaque consent bytes, then run plan/status and admission operations through a recording Store.
+  **Expected behavior**: no operation reads or writes the consent key, and its bytes stay unchanged.

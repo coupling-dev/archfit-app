@@ -3,14 +3,14 @@
   import { repoPage } from './lib/route';
   import { applyTheme, saveTheme, storedTheme, themes, type Theme } from './lib/theme';
 
-  // tab is the current tab of a repository page, '' on a page in no tab (a pull request page, Data sharing); pull is the
-  // pull request number on a pull request page or its graph, 0 elsewhere.
+  // tab is the current tab of a repository page, '' on a page in no tab (a pull request page); pull is the
+  // pull request number on a pull request page, 0 elsewhere.
   let {
     session,
     repo = '',
     tab = '',
     pull = 0,
-  }: { session: Session | null; repo?: string; tab?: 'home' | 'graph' | 'policy' | ''; pull?: number } = $props();
+  }: { session: Session | null; repo?: string; tab?: 'home' | 'policy' | ''; pull?: number } = $props();
 
   let theme = $state<Theme>(storedTheme());
   const themeNames: Record<Theme, string> = { auto: 'Auto', light: 'Light', dark: 'Dark' };

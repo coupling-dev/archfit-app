@@ -1,8 +1,6 @@
 // The App's JSON API (internal/control/ui/api.go). The session cookie authenticates; writes add the session's CSRF
 // token as a header. The client never names a user or an installation: the server reads both from the session.
 
-export type Tone = 'success' | 'attention' | 'danger' | 'accent' | 'neutral';
-
 export interface Session {
   login: string;
   csrf: string;
@@ -22,69 +20,6 @@ export interface Repos {
   truncated: boolean;
 }
 
-export interface PullRow {
-  number: number;
-  title: string;
-  state: string;
-  tone: Tone;
-  reason: string;
-  href: string;
-  rerun?: string; // the pull request waits for an update after the target branch moved: the next step, with the modules
-}
-
-export interface Step {
-  label: string;
-  done: boolean;
-  current: boolean;
-}
-
-export interface Overview {
-  default_branch: string;
-  main_state: string;
-  main_tone: Tone;
-  main_reason: string;
-  main_sha: string; // the default-branch commit that check is on, short
-  main_at: string; // when it started, RFC 3339; '' without a check
-  pulls: PullRow[] | null;
-  pulls_more: number;
-  pulls_error: boolean;
-  pulls_to_update: number; // listed pull requests that wait for an update after the target moved
-  pulls_unread: number; // listed pull requests whose check could not be read: pulls_to_update is a floor
-  steps: Step[];
-  next: string;
-  next_how: string;
-  stage: string;
-  diagnostic: string;
-  draft_url: string;
-  draft_state: string;
-  banner: string;
-  admin: boolean;
-  can_start: boolean;
-  can_discover: boolean;
-  pulls_url: string;
-  checks_url: string;
-  workflow?: WorkflowFile; // the file the owner adds by hand; absent when none is due
-}
-
-// WorkflowFile is the Archfit workflow the owner adds: the App has no permission to write .github/workflows.
-export interface WorkflowFile {
-  path: string;
-  branch: string;
-  content: string;
-  add_url: string; // GitHub's new-file page on branch, filled in
-}
-
-export interface Dimension {
-  key: string;
-  name: string;
-  status: string;
-  observed: number;
-  measurable: number;
-  basis: string;
-  confidence: string;
-  gate: string;
-}
-
 export interface AppBuild {
   version: string;
   source_revision: string;
@@ -93,85 +28,9 @@ export interface AppBuild {
   modified: boolean;
 }
 
-// Display only. A diagnostic run identity is never report admission.
-export interface CheckContext {
-  run_id: number;
-  run_attempt: number;
-  head_sha: string;
-  check_started_at: string;
-  report_digest: string;
-  reason: string;
-  next: string;
-  detail: string;
-  also: string[];
-  producer: string;
-  policy_digest: string;
-  baseline_digest: string;
-  labels_digest: string;
-  profile: string;
-  schema?: string;
-  approved?: { engine_version: string; image_digest: string; platform: string; action_ref: string };
-}
-
-// PullHead is the header the pull request page and its graph share.
-export interface PullHead {
-  number: number;
-  title: string;
-  author: string;
-  state: string;
-  head_ref: string;
-  base_ref: string;
-  head_sha: string;
-  url: string;
-  checks_url: string;
-  result: string;
-  tone: Tone;
-  headline: string;
-  required: boolean;
-  unavailable: string;
-  run_id: number;
-  no_baseline: boolean;
-  compared: boolean;
-  decision?: Decision; // absent without a report
-  check?: CheckContext; // App check diagnostics, independent of report availability
-}
-
-// Decision is the engine's decision on the report, as it states it.
-export interface Decision {
-  verdict: string; // the engine's verdict in words: "blocked", "needs attention", "healthy"
-  detail: string; // the rest of the comment's line: hard gates, active blockers, required rules
-  hard_gates: string; // pass, fail or unmeasured
-  blockers: number; // decision.active_blockers
-  unevaluated: { rule_id: string; reason: string }[];
-  origin_reasons: string[];
-}
-
 export interface Notice {
   notice?: string;
   location?: string;
-}
-
-export interface Precondition {
-  label: string;
-  state: 'met' | 'not_met' | 'unknown';
-}
-
-export interface SharedFeature {
-  kind: string;
-  title: string;
-  leaves: string;
-  note?: string;
-  offered: boolean; // false: the App does not run it, so it can only be revoked
-  allowed: boolean;
-  by?: string; // the login as it was when the consent was recorded
-  at?: string; // RFC 3339
-  checks: Precondition[];
-}
-
-export interface DataSharing {
-  owner: string;
-  features: SharedFeature[];
-  notice?: string;
 }
 
 // Installation is one account that installed the App, as the operators' page lists it.

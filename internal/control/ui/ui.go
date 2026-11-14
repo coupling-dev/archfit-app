@@ -23,7 +23,6 @@ type Deps struct {
 	BaseURL      string
 	GitHub       *api.Client
 	Account      account.Account
-	Consents     account.Consents
 	Admissions   *gate.Admissions // which installations the App serves; the others see the Waiting page
 	Passkeys     passkey.Passkeys // the signed-in user's passkeys and the step-up of an answer
 	RepoStates   gate.RepoStates  // repositories read their stored state through the gate façade
@@ -69,7 +68,6 @@ type server struct {
 	gh         github
 	sessions   session.Sessions
 	account    account.Account
-	consents   account.Consents
 	admissions *gate.Admissions
 	passkeys   passkey.Passkeys
 	repoStates gate.RepoStates
@@ -102,7 +100,6 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		gh:         gh,
 		sessions:   sessions,
 		account:    d.Account,
-		consents:   d.Consents,
 		admissions: d.Admissions,
 		passkeys:   d.Passkeys,
 		repoStates: d.RepoStates,
@@ -148,11 +145,8 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		index(w, r)
 	})
 	mux.Handle("GET /r/{o}/{n}", page)
-	mux.Handle("GET /r/{o}/{n}/graph", page)
 	mux.Handle("GET /r/{o}/{n}/policy", page)
 	mux.Handle("GET /r/{o}/{n}/pull/{number}", pullPage)
-	mux.Handle("GET /r/{o}/{n}/pull/{number}/graph", pullPage)
-	mux.Handle("GET /r/{o}/{n}/data-sharing", page)
 	mux.Handle("GET /r/{o}/{n}/passkeys", page)
 	mux.Handle("GET /r/{o}/{n}/requests/{number}", requestPage)
 	mux.Handle("GET /r/{o}/{n}/owner/{action}", s.signedIn(func(w http.ResponseWriter, r *http.Request, _ session.User) {
@@ -162,7 +156,6 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		}
 		index(w, r)
 	}))
-	mux.Handle("GET /r/{o}/{n}/consent", s.signedIn(consentMoved))
 	mux.Handle("GET /admin", s.signedIn(func(w http.ResponseWriter, r *http.Request, u session.User) {
 		if !s.isOperator(u) {
 			s.fail(w, r, api.ErrNotFound)
@@ -181,19 +174,11 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("POST /api/repos/{o}/{n}/owner/{action}/digest", s.apiRepo(permRead, s.apiOwnerDigest))
 	mux.Handle("POST /api/repos/{o}/{n}/owner/{action}", s.apiRepo(permRead, s.apiOwnerAct))
 	mux.Handle("GET /api/repos/{o}/{n}/home", s.apiRepo(permRead, s.apiHome))
-	mux.Handle("GET /api/repos/{o}/{n}/overview", s.apiRepo(permRead, s.apiLegacyUnavailable))
-	mux.Handle("GET /api/repos/{o}/{n}/findings", s.apiRepo(permRead, s.apiLegacyUnavailable))
 	mux.Handle("GET /api/repos/{o}/{n}/policy", s.apiRepo(permRead, s.apiPolicy))
 	mux.Handle("POST /api/repos/{o}/{n}/policy/edit/reload", s.apiRepo(permRead, s.apiEditReload))
 	mux.Handle("POST /api/repos/{o}/{n}/policy/edit/preview", s.apiRepo(permRead, s.apiEditPreview))
 	mux.Handle("POST /api/repos/{o}/{n}/policy/edit", s.apiRepo(permRead, s.apiEdit))
-	mux.Handle("GET /api/repos/{o}/{n}/graph", s.apiRepo(permRead, s.apiLegacyUnavailable))
 	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}", s.apiRepo(permRead, s.apiPull))
-	mux.Handle("GET /api/repos/{o}/{n}/pulls/{number}/graph", s.apiRepo(permRead, s.apiLegacyUnavailable))
-	mux.Handle("POST /api/repos/{o}/{n}/onboarding", s.apiRepo(permAdmin, s.apiLegacyUnavailable))
-	mux.Handle("POST /api/repos/{o}/{n}/discover", s.apiRepo(permAdmin, s.apiLegacyUnavailable))
-	mux.Handle("GET /api/repos/{o}/{n}/data-sharing", s.apiRepo(permAdmin, s.apiDataSharing))
-	mux.Handle("POST /api/repos/{o}/{n}/data-sharing", s.apiRepo(permAdmin, s.apiShareData))
 	mux.Handle("GET /api/repos/{o}/{n}/requests/{number}", s.apiRepo(permRead, s.apiRequest))
 	mux.Handle("GET /api/repos/{o}/{n}/requests/{number}/preview", s.apiRepo(permRead, s.apiRequestPreview))
 	// The answer routes need read: who answers is the owner rule of the policy on the default branch, which the gate

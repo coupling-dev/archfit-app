@@ -2,16 +2,11 @@ package ui
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/alexei-led/archfit-app/internal/control/account"
 )
 
 type route struct {
@@ -33,6 +28,7 @@ func repoRoutes(fullName string) []route {
 	base, api := "/r/"+fullName, "/api/repos/"+fullName
 	return []route{
 		{http.MethodGet, base, signedInOnly, nil, nil},
+		{http.MethodGet, base + "/policy", signedInOnly, nil, nil},
 		{http.MethodGet, base + "/owner/first", signedInOnly, nil, nil},
 		{http.MethodGet, api + "/owner/first/view", permRead, nil, nil},
 		{http.MethodGet, base + "/owner/first?pull=7", signedInOnly, nil, nil},
@@ -43,23 +39,12 @@ func repoRoutes(fullName string) []route {
 		{http.MethodGet, api + "/owner/confirm/view", permRead, nil, nil},
 		{http.MethodGet, base + "/owner/revert", signedInOnly, nil, nil},
 		{http.MethodGet, api + "/owner/revert/view", permRead, nil, nil},
-		{http.MethodGet, api + "/overview", permRead, nil, nil},
 		{http.MethodGet, api + "/setup", permRead, nil, nil},
 		{http.MethodGet, api + "/policy", permRead, nil, nil},
 		{http.MethodGet, api + "/requests/431", permRead, nil, nil},
 		{http.MethodGet, api + "/requests/431/preview", permRead, nil, nil},
-		{http.MethodPost, api + "/onboarding", permAdmin, nil, map[string]string{"mode": "customer", "owners": "alice"}},
-		{http.MethodPost, api + "/discover", permAdmin, nil, struct{}{}},
-		{http.MethodGet, base + "/graph", signedInOnly, nil, nil},
 		{http.MethodGet, base + "/pull/4", signedInOnly, nil, nil},
 		{http.MethodGet, api + "/pulls/4", permRead, nil, nil},
-		{http.MethodGet, api + "/pulls/4/graph", permRead, nil, nil},
-		{http.MethodGet, api + "/graph", permRead, nil, nil},
-		{http.MethodGet, api + "/findings", permRead, nil, nil},
-		{http.MethodGet, base + "/pull/4/graph", signedInOnly, nil, nil},
-		{http.MethodGet, base + "/data-sharing", signedInOnly, nil, nil},
-		{http.MethodGet, api + "/data-sharing", permAdmin, nil, nil},
-		{http.MethodPost, api + "/data-sharing", permAdmin, nil, dataSharingJSON{Kind: "source_processing", Action: actionAllow}},
 		{http.MethodGet, base + "/passkeys", signedInOnly, nil, nil},
 		{http.MethodGet, api + "/passkeys", permRead, nil, nil},
 		{http.MethodPost, api + "/passkeys/register", permRead, nil, passkeyTokenJSON{}},
@@ -121,10 +106,9 @@ func TestArchfit3RoutesAreGone(t *testing.T) {
 			t.Errorf("%s %s = %d, want 404", rt.method, rt.path, res.Code)
 		}
 	}
-	e.noWrites(t)
 	// The Archfit 4 routes beside them still answer.
 	for _, rt := range repoRoutes(repoName) {
-		if got := c.send(rt); got != rt.expectedStatus() {
+		if got := c.send(rt); got != http.StatusOK {
 			t.Errorf("%s %s = %d, want 200", rt.method, rt.path, got)
 		}
 	}
@@ -153,7 +137,7 @@ func TestRoutesAndMinimumPermissions(t *testing.T) {
 					if got != http.StatusNotFound {
 						t.Errorf("%s: status = %d, want 404", perm, got)
 					}
-				case got != rt.expectedStatus():
+				case got != http.StatusOK:
 					t.Errorf("%s: status = %d, want 200", perm, got)
 				}
 			}
@@ -208,135 +192,6 @@ func requestOf(rt route) *http.Request {
 	return req
 }
 
-func TestDataSharingAllowAndRevoke(t *testing.T) {
-	e := newEnv(t)
-	c := e.as("alice", permAdmin)
-	path := "/api/repos/" + repoName + "/data-sharing"
-	feature := func(t *testing.T, body dataSharingBody, kind account.ConsentKind) featureJSON {
-		t.Helper()
-		for _, f := range body.Features {
-			if f.Kind == string(kind) {
-				return f
-			}
-		}
-		t.Fatalf("no %s in %+v", kind, body)
-		return featureJSON{}
-	}
-	kind := account.ConsentSourceProcessing
-	allow := dataSharingJSON{Kind: string(kind), Action: actionAllow}
-	revoke := dataSharingJSON{Kind: string(kind), Action: actionRevoke}
-
-	var before dataSharingBody
-	c.getJSON(path, &before)
-	discovery := feature(t, before, kind)
-	owner, _, _ := strings.Cut(repoName, "/")
-	if before.Owner != owner || discovery.Allowed || discovery.By != "" || discovery.At != "" || len(before.Features) != len(sharedFeatures) {
-		t.Errorf("before = %+v", before)
-	}
-	if want := []precondition{{discovery.Checks[0].Label, checkNotMet}}; !reflect.DeepEqual(discovery.Checks, want) {
-		t.Errorf("checks = %+v; want the consent unmet", discovery.Checks)
-	}
-	if discovery.Note == "" || discovery.Offered {
-		t.Errorf("managed discovery = %+v; want the note that the App does not start it, not offered", discovery)
-	}
-
-	t.Run("a consent given earlier for a feature the page does not offer can be revoked", func(t *testing.T) {
-		_ = e.consents.Record(t.Context(), installA, account.Consent{Kind: account.ConsentSourceProcessing})
-		discovery := dataSharingJSON{Kind: string(account.ConsentSourceProcessing), Action: actionRevoke}
-		wantStatus(t, c.postJSON(path, discovery), http.StatusOK)
-		if _, ok := e.consents.recorded[installA][account.ConsentSourceProcessing]; ok {
-			t.Error("the earlier consent was not revoked")
-		}
-	})
-
-	res := c.postJSON(path, allow)
-	wantStatus(t, res, http.StatusOK)
-	got := e.consents.recorded[installA][kind]
-	alice := e.user("alice")
-	if got.By != "alice" || got.ByID != alice.UserID || !got.At.Equal(e.now) || got.Kind != kind {
-		t.Errorf("consent = %+v; want alice (%d) at %v", got, alice.UserID, e.now)
-	}
-	var after dataSharingBody
-	if err := json.Unmarshal(res.Body.Bytes(), &after); err != nil {
-		t.Fatal(err)
-	}
-	if f := feature(t, after, kind); !f.Allowed || f.By != "alice" || f.At != e.now.UTC().Format(time.RFC3339) ||
-		f.Checks[0].State != checkMet || after.Notice == "" {
-		t.Errorf("after allow = %+v", after)
-	}
-
-	t.Run("allowing again keeps who allowed it and when", func(t *testing.T) {
-		writes := e.consents.writes
-		e.now = e.now.Add(time.Hour)
-		wantStatus(t, e.as("bob", permAdmin).postJSON(path, allow), http.StatusOK)
-		if again := e.consents.recorded[installA][kind]; again != got || e.consents.writes != writes {
-			t.Errorf("consent = %+v after %d writes; want %+v unchanged", again, e.consents.writes-writes, got)
-		}
-	})
-
-	wantStatus(t, c.postJSON(path, revoke), http.StatusOK)
-	if e.consents.Has(t.Context(), installA, kind) {
-		t.Error("consent still recorded after revoke")
-	}
-	wantStatus(t, c.postJSON(path, revoke), http.StatusOK) // revoking nothing is not an error
-
-	for _, body := range []any{
-		dataSharingJSON{Kind: "everything", Action: actionAllow},
-		dataSharingJSON{Kind: "managed_llm", Action: actionAllow},
-		dataSharingJSON{Kind: "source_processing", Action: "record"},
-		dataSharingJSON{Kind: "source_processing"},
-		dataSharingJSON{Action: actionAllow},
-	} {
-		wantStatus(t, c.postJSON(path, body), http.StatusBadRequest)
-	}
-	if e.consents.Has(t.Context(), installA, kind) || e.consents.Has(t.Context(), installA, "managed_llm") {
-		t.Error("a refused write recorded a consent")
-	}
-}
-
-func TestDataSharingNeverShowsAnOutageAsNotAllowed(t *testing.T) {
-	e := newEnv(t)
-	c := e.as("alice", permAdmin)
-	_ = e.consents.Record(t.Context(), installA, account.Consent{Kind: account.ConsentSourceProcessing, By: "alice", ByID: 1, At: e.now})
-	e.consents.readErr = errors.New("store down")
-	writes := e.consents.writes
-
-	path := "/api/repos/" + repoName + "/data-sharing"
-	wantStatus(t, c.get(path), http.StatusBadGateway)
-	wantStatus(t, c.postJSON(path, dataSharingJSON{Kind: string(account.ConsentSourceProcessing), Action: actionAllow}), http.StatusBadGateway)
-	if e.consents.writes != writes {
-		t.Error("allow wrote a consent it could not read first")
-	}
-
-	t.Run("a change saved but not read back does not say nothing changed", func(t *testing.T) {
-		e := newEnv(t)
-		e.consents.readErrAfterWrite = errors.New("store down")
-		res := e.as("alice", permAdmin).postJSON(path, dataSharingJSON{Kind: string(account.ConsentSourceProcessing), Action: actionAllow})
-		wantStatus(t, res, http.StatusBadGateway)
-		wantContains(t, res.Body.String(), "The change was saved")
-		if _, ok := e.consents.recorded[installA][account.ConsentSourceProcessing]; !ok {
-			t.Error("the consent was not recorded")
-		}
-	})
-}
-
-// The redirect reads only the path: the same answer for every user and every repository, so it confirms nothing.
-func TestOldConsentPageMovedToDataSharing(t *testing.T) {
-	for _, perm := range []string{"none", permRead, permAdmin} {
-		for _, repo := range []string{repoName, otherRepo, "acme/missing"} {
-			e := newEnv(t)
-			res := e.as("alice", perm).get("/r/" + repo + "/consent")
-			wantStatus(t, res, http.StatusPermanentRedirect)
-			if loc := res.Header().Get("Location"); loc != "/r/"+repo+"/data-sharing" {
-				t.Errorf("%s on %s: Location = %q", perm, repo, loc)
-			}
-			if n := len(e.gh.called("Permission")); n != 0 {
-				t.Errorf("%s on %s: %d permission lookups, want none", perm, repo, n)
-			}
-		}
-	}
-}
-
 func TestPullPageNumberMustBeAPull(t *testing.T) {
 	e := newEnv(t)
 	c := e.as("alice", permRead)
@@ -350,13 +205,4 @@ func TestPullPageNumberMustBeAPull(t *testing.T) {
 		}
 		wantStatus(t, c.get("/api/repos/"+repoName+"/pulls/"+n+"/graph"), http.StatusNotFound)
 	}
-}
-
-func (rt route) expectedStatus() int {
-	for _, suffix := range []string{"/overview", "/onboarding", "/discover", "/pulls/4/graph", "/graph", "/findings"} {
-		if rt.api() && strings.HasSuffix(rt.path, suffix) {
-			return http.StatusConflict
-		}
-	}
-	return http.StatusOK
 }

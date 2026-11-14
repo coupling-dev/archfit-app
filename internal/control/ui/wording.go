@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/alexei-led/archfit-app/internal/control/account"
 	"github.com/alexei-led/archfit-app/internal/control/passkey"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/gate"
@@ -82,8 +81,6 @@ var sentinels = []struct {
 		"Another answer for this repository is being written. Nothing was changed. Try again in a minute."},
 	{gate.ErrProposalFull, http.StatusConflict, "proposal_full",
 		"The policy pull request holds the most answers it can. Merge it first, then answer. Your answer was not recorded."},
-	{account.ErrNoConsent, http.StatusConflict, "no_consent",
-		"Managed discovery needs the recorded consent of a repository administrator."},
 	{api.ErrRateLimited, http.StatusServiceUnavailable, "rate_limited", "GitHub is rate limiting Archfit. Try again in a minute."},
 	{passkey.ErrNotOwner, http.StatusForbidden, "not_owner",
 		"Only an owner named in the policy, or a repository administrator before the first policy, can register a passkey here."},

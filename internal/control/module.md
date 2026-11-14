@@ -5,7 +5,7 @@
 
 ## Purpose
 
-The facade composes account lifecycle, consent records, Archfit 4 setup reads, passkeys, request answers,
+The facade composes account lifecycle, Archfit 4 setup reads, passkeys, request answers,
 owner actions and the UI. The gate remains independent of the control plane.
 
 ## Public contract
@@ -27,10 +27,12 @@ their upload endpoints. Schema 3 setup and owner actions are preserved.
 The facade imports its children, the gate facade, GitHub roles and Store; external packages do not import
 control children. `unit_test.go` checks wiring and worker isolation. Account lifecycle, uninstall cleanup,
 failed reads, authorization and panic containment are exercised by the facade tests.
-Child modules own the setup, passkey, consent and answer contracts and their tests.
+Child modules own the setup, passkey and answer contracts and their tests.
 
 ## Home composition
 
 `New` passes `HomeViews: gate.NewHome(d.GitHub, d.Store, d.Admissions)` to `ui.New`.
 The read-only Home façade owns all access to gate records and uses only the already-wired dependencies;
 `control.Deps` needs no new App wiring. See [the UI Home contract](ui/module.md#home-api-m3-task-4).
+
+Historical consent records remain unread in storage. The facade wires no consent service or migration.

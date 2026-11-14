@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,14 +17,6 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
-
-// noWrites fails the test if any sibling module or GitHub write was reached.
-func (e *env) noWrites(t *testing.T) {
-	t.Helper()
-	if e.consents.writes != 0 {
-		t.Errorf("consent writes = %d", e.consents.writes)
-	}
-}
 
 func TestTenantIdentityOnlyFromSession(t *testing.T) {
 	// Installation B's IDs, supplied everywhere a client can put them.
@@ -73,10 +64,9 @@ func TestTenantIdentityOnlyFromSession(t *testing.T) {
 			t.Errorf("%s %s = %d, want 404", rt.method, rt.path, got)
 		}
 	}
-	e.noWrites(t)
 
 	for _, rt := range repoRoutes(repoName) {
-		if got := send(c, rt); got != rt.expectedStatus() {
+		if got := send(c, rt); got != http.StatusOK {
 			t.Errorf("%s %s = %d, want success", rt.method, rt.path, got)
 		}
 	}
@@ -89,7 +79,7 @@ func TestTenantIdentityOnlyFromSession(t *testing.T) {
 		}
 	}
 	e.gh.mu.Unlock()
-	for _, id := range append(e.consents.touched, e.acct.installations...) {
+	for _, id := range e.acct.installations {
 		if id != installA {
 			t.Errorf("a key of installation %d was touched", id)
 		}
@@ -140,7 +130,7 @@ func TestNewRejectsBadSessionConfig(t *testing.T) {
 			clock := func() time.Time { return e.now }
 			_, wantErr := session.New(session.Config{CookieKey: tt.key, BaseURL: tt.baseURL}, e.oauth, gh, gh, clock)
 			h, err := New(Deps{
-				OAuth: e.oauth, CookieKey: tt.key, BaseURL: tt.baseURL, GitHub: gh, Account: e.acct, Consents: e.consents,
+				OAuth: e.oauth, CookieKey: tt.key, BaseURL: tt.baseURL, GitHub: gh, Account: e.acct,
 				Now: clock,
 			})
 			if (wantErr != nil) != tt.wantErr {
@@ -198,7 +188,6 @@ func TestCSRFRequiredOnEveryPost(t *testing.T) {
 			t.Errorf("%s as a form = %d, want 415", rt.path, got)
 		}
 	}
-	e.noWrites(t)
 	if got := c.get("/api/session").Code; got != http.StatusOK {
 		t.Errorf("a logout without a CSRF token ended the session: /api/session = %d", got)
 	}
@@ -245,7 +234,7 @@ func TestShellNonceIsFreshPerResponse(t *testing.T) {
 	e := newEnv(t)
 	c := e.as("alice", permAdmin)
 	seen := map[string]bool{}
-	for _, path := range []string{"/", "/r/" + repoName, "/r/" + repoName + "/graph", "/r/" + repoName + "/graph", "/r/" + repoName + "/data-sharing"} {
+	for _, path := range []string{"/", "/r/" + repoName, "/r/" + repoName + "/policy", "/r/" + repoName + "/pull/4", "/r/" + repoName + "/passkeys"} {
 		res := c.get(path)
 		wantStatus(t, res, http.StatusOK)
 		m := shellNonce.FindStringSubmatch(res.Header().Get("Content-Security-Policy"))
@@ -264,7 +253,7 @@ func TestShellNonceIsFreshPerResponse(t *testing.T) {
 			t.Errorf("%s: Cache-Control = %q, want no-store", path, got)
 		}
 	}
-	for _, path := range []string{"/api/repos/" + repoName + "/overview", "/assets/app-1a2b.js", "/schema/policy.json"} {
+	for _, path := range []string{"/api/repos/" + repoName + "/policy", "/assets/app-1a2b.js", "/schema/policy.json"} {
 		if got := c.get(path).Header().Get("Content-Security-Policy"); got != wantCSP {
 			t.Errorf("%s: CSP = %q, want the policy without a nonce", path, got)
 		}
@@ -279,7 +268,7 @@ func TestNoAPIResponseHoldsASecret(t *testing.T) {
 	answers := []*httptest.ResponseRecorder{
 		c.get("/api/session"),
 		c.get("/api/repos"),
-		c.get(api + "/overview"),
+		c.get(api + "/policy"),
 		c.get(api + "/pulls/4"),
 		c.get(api + "/pulls/4/graph"),
 		c.get(api + "/graph"),
@@ -305,40 +294,14 @@ func TestLogsCarryOnlyIdentifiers(t *testing.T) {
 	logs := captureLogs(t)
 	e := newEnv(t)
 	c := e.as("alice", permAdmin)
-	e.acct.err = fmt.Errorf("MARKER-error")
 	base := "/r/" + repoName
 
-	sharing := "/api/repos/" + repoName + "/data-sharing"
-	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "MARKER-kind", Action: actionAllow}), http.StatusBadRequest)
-	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "source_processing", Action: "MARKER-action"}), http.StatusBadRequest)
-	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "source_processing", Action: actionAllow}), http.StatusOK)
-	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "source_processing", Action: actionAllow}), http.StatusOK)
-	wantStatus(t, c.postJSON(sharing, dataSharingJSON{Kind: "source_processing", Action: actionRevoke}), http.StatusOK)
-	wantStatus(t, c.get(base+"/graph"), http.StatusOK)
+	e.gh.fail["Permission"] = fmt.Errorf("MARKER-error")
 	wantStatus(t, c.get(base), http.StatusOK)
-	wantStatus(t, c.get("/api/repos"), http.StatusOK)
-	wantStatus(t, c.get("/api/repos/"+repoName+"/overview"), http.StatusConflict) // reads account.Status, which fails with the marker
-
+	wantStatus(t, c.get("/api/repos/"+repoName+"/policy"), http.StatusBadGateway)
 	out := logs.String()
-	if !strings.Contains(out, `"route":"POST /api/repos/{o}/{n}/data-sharing"`) || !strings.Contains(out, `"installation_id":1`) {
-		t.Fatalf("no request log line: %.300s", out)
-	}
-	var audit []string
-	for line := range strings.Lines(out) {
-		if strings.Contains(line, `"msg":"ui consent"`) {
-			audit = append(audit, line)
-		}
-	}
-	alice := strconv.FormatInt(e.user("alice").UserID, 10)
-	if len(audit) != 3 {
-		t.Fatalf("consent audit lines = %d, want one per allow or revoke that was accepted:\n%s", len(audit), strings.Join(audit, ""))
-	}
-	for i, outcome := range []string{"consent_recorded", "consent_kept", "consent_revoked"} {
-		for _, want := range []string{`"level":"INFO"`, `"outcome":"` + outcome + `"`, `"kind":"source_processing"`, `"installation_id":1`, `"user_id":` + alice} {
-			if !strings.Contains(audit[i], want) {
-				t.Errorf("audit line %d lacks %s: %s", i, want, audit[i])
-			}
-		}
+	if !strings.Contains(out, `"route":"GET /api/repos/{o}/{n}/policy"`) {
+		t.Fatalf("no request log line: %s", out)
 	}
 	secrets := []string{"MARKER-", c.token, c.csrf()}
 	for _, value := range c.cookies {
@@ -406,7 +369,7 @@ func TestRepositoryPagesAreOneShell(t *testing.T) {
 		h.Del("X-Request-Id") // per request, as the nonce
 		return strings.ReplaceAll(fmt.Sprint(res.Code, h, res.Body.String()), m[1], "NONCE")
 	}
-	for _, suffix := range []string{"", "/graph", "/pull/4", "/pull/4/graph", "/data-sharing", "/passkeys", "/policy", "/policy?edit=1"} {
+	for _, suffix := range []string{"", "/pull/4", "/passkeys", "/policy", "/policy?edit=1"} {
 		var want string
 		for _, repo := range []string{repoName, otherRepo, "acme/missing"} {
 			res := c.get("/r/" + repo + suffix)
@@ -423,7 +386,7 @@ func TestRepositoryPagesAreOneShell(t *testing.T) {
 		t.Errorf("serving the pages asked GitHub %d times, want none", n)
 	}
 
-	hidden, missing := c.get("/api/repos/"+otherRepo+"/overview"), c.get("/api/repos/acme/missing/overview")
+	hidden, missing := c.get("/api/repos/"+otherRepo+"/policy"), c.get("/api/repos/acme/missing/policy")
 	wantStatus(t, hidden, http.StatusNotFound)
 	if hidden.Code != missing.Code || hidden.Body.String() != missing.Body.String() {
 		t.Errorf("hidden = %d %q, missing = %d %q: want the same answer", hidden.Code, hidden.Body, missing.Code, missing.Body)

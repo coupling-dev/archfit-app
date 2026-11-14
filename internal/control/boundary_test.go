@@ -36,21 +36,14 @@ func (h *harness) event(kind webhook.EventKind, id int64) {
 	}
 }
 
-func (h *harness) consent(id int64, kinds ...account.ConsentKind) {
-	h.t.Helper()
-	for _, k := range kinds {
-		if err := h.c.consents.Record(ctx, id, account.Consent{Kind: k, By: "alice", ByID: 1, At: h.clock.Now()}); err != nil {
-			h.t.Fatalf("Record(%s): %v", k, err)
-		}
-	}
-}
-
 func TestUninstallLeavesNoTenantKeys(t *testing.T) {
 	h := newHarness(t)
 	for _, id := range []int64{7, 8} {
 		h.gh.install(id, ghr(id*10, "org/app", true))
 		h.event(webhook.InstallationAdded, id)
-		h.consent(id, account.ConsentSourceProcessing)
+		if err := h.store.Put(ctx, store.Tenant(id), "historical-record", []byte("opaque")); err != nil {
+			t.Fatal(err)
+		}
 	}
 	other, _ := h.entitlement(8)
 
@@ -61,10 +54,7 @@ func TestUninstallLeavesNoTenantKeys(t *testing.T) {
 	if got := h.tenants(); got[7] || !got[8] {
 		t.Errorf("tenants = %v, want only 8", got)
 	}
-	if h.c.consents.Has(ctx, 7, account.ConsentSourceProcessing) {
-		t.Error("consent of the removed tenant survived")
-	}
-	if after, _ := h.entitlement(8); after != other || !h.c.consents.Has(ctx, 8, account.ConsentSourceProcessing) {
+	if after, _ := h.entitlement(8); after != other {
 		t.Error("the other tenant changed")
 	}
 	if h.gh.requestCount() != requests || h.store.writes != writes {
@@ -95,7 +85,7 @@ func TestOrphanCleanupFailsSafe(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			st := &flakyStore{Store: store.NewMemory()}
-			acct, _ := account.New(st)
+			acct := account.New(st)
 			for _, id := range []int64{1, 2, 3} {
 				if err := acct.Observe(ctx, id, true, t0); err != nil {
 					t.Fatalf("Observe: %v", err)
@@ -134,7 +124,6 @@ func TestRevokedAccessSchedulesNothing(t *testing.T) {
 	h.gh.allow("alice", "org7/app", "admin")
 	h.event(webhook.InstallationAdded, 7)
 	h.event(webhook.InstallationAdded, 8)
-	h.consent(7, account.ConsentSourceProcessing)
 	b := newBrowser(t, h.c.UIHandler())
 	b.signIn("alice")
 	page := b.get("/r/org7/app")
@@ -156,8 +145,8 @@ func TestRevokedAccessSchedulesNothing(t *testing.T) {
 	}
 	// The session child caches an authorization briefly; past that, GitHub's 404 decides.
 	h.clock.Add(time.Hour)
-	if rec := b.get("/api/repos/org7/app/overview"); rec.Code != http.StatusNotFound {
-		t.Errorf("GET /api/repos/org7/app/overview = %d, want 404", rec.Code)
+	if rec := b.get("/api/repos/org7/app/policy"); rec.Code != http.StatusNotFound {
+		t.Errorf("GET /api/repos/org7/app/policy = %d, want 404", rec.Code)
 	}
 	form.Set("mode", "managed")
 	form.Set("owners", "org7/owners")
@@ -191,28 +180,6 @@ func TestReplayedAndForgedInstallationIDs(t *testing.T) {
 		}
 		if !s.TrialEnds.Equal(t0.Add(30 * day)) {
 			t.Errorf("TrialEnds = %v, want %v", s.TrialEnds, t0.Add(30*day))
-		}
-	})
-	t.Run("UI write with a foreign installation ID", func(t *testing.T) {
-		b := newBrowser(t, h.c.UIHandler())
-		b.signIn("alice")
-		allow := map[string]string{"kind": string(account.ConsentSourceProcessing), "action": "allow"}
-		forged := map[string]string{"kind": string(account.ConsentSourceProcessing), "action": "allow", "installation_id": "8"}
-
-		if rec := b.postJSON("/api/repos/org7/app/data-sharing", forged); rec.Code != http.StatusUnprocessableEntity {
-			t.Errorf("a body naming installation 8 = %d, want 422", rec.Code)
-		}
-		if rec := b.postJSON("/api/repos/org7/app/data-sharing?installation_id=8&installation=8", allow); rec.Code != http.StatusOK {
-			t.Fatalf("POST /api/repos/org7/app/data-sharing = %d, want 200", rec.Code)
-		}
-		if rec := b.postJSON("/api/repos/org8/app/data-sharing", allow); rec.Code != http.StatusNotFound {
-			t.Errorf("POST /api/repos/org8/app/data-sharing = %d, want 404", rec.Code)
-		}
-		if !h.c.consents.Has(ctx, 7, account.ConsentSourceProcessing) {
-			t.Error("consent was not recorded for the session's tenant")
-		}
-		if h.c.consents.Has(ctx, 8, account.ConsentSourceProcessing) || h.tenants()[8] {
-			t.Error("the foreign installation ID was used")
 		}
 	})
 }

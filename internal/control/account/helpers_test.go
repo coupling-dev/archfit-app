@@ -19,7 +19,6 @@ const (
 	instB int64 = 77
 
 	recordKeyName = "account"
-	capMicroUSD   = 20_000_000
 )
 
 var (
@@ -29,10 +28,10 @@ var (
 
 func day(n int) time.Time { return t0.Add(time.Duration(n) * 24 * time.Hour) }
 
-func newTest(s store.Store) (Account, Consents, *bytes.Buffer) {
+func newTest(s store.Store) (Account, *bytes.Buffer) {
 	var buf bytes.Buffer
-	a, c := newWithLogger(s, slog.New(slog.NewJSONHandler(&buf, nil)))
-	return a, c, &buf
+	a := newWithLogger(s, slog.New(slog.NewJSONHandler(&buf, nil)))
+	return a, &buf
 }
 
 type call struct {

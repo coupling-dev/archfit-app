@@ -16,7 +16,7 @@ import (
 func TestRevokedUserLosesEveryPage(t *testing.T) {
 	e := newEnv(t)
 	c := e.as("alice", permWrite)
-	for _, path := range []string{"", "/graph"} {
+	for _, path := range []string{"", "/policy"} {
 		wantStatus(t, c.get("/r/"+repoName+path), http.StatusOK)
 	}
 	wantContains(t, c.get("/api/repos").Body.String(), repoName)
@@ -69,7 +69,7 @@ func TestExpiredGitHubTokenSignsOutInsteadOfBadGateway(t *testing.T) {
 			func(c *client) *httptest.ResponseRecorder { return c.get("/api/repos") },
 			http.StatusUnauthorized, ""},
 		{"repository overview", func(e *env) { e.gh.fail["Permission"] = rejected },
-			func(c *client) *httptest.ResponseRecorder { return c.get("/api/repos/" + repoName + "/overview") },
+			func(c *client) *httptest.ResponseRecorder { return c.get("/api/repos/" + repoName + "/policy") },
 			http.StatusUnauthorized, ""},
 	}
 	for _, tt := range tests {
@@ -108,7 +108,7 @@ func TestExpiredGitHubTokenSignsOutInsteadOfBadGateway(t *testing.T) {
 			e.gh.fail[key] = errors.New("boom")
 			path := "/api/repos"
 			if key == "Permission" {
-				path = "/api/repos/" + repoName + "/overview"
+				path = "/api/repos/" + repoName + "/policy"
 			}
 
 			res := c.get(path)
@@ -159,5 +159,4 @@ func allNotFound(t *testing.T, e *env, c *client) {
 			t.Errorf("%s %s = %d, want 404", rt.method, rt.path, got)
 		}
 	}
-	e.noWrites(t)
 }

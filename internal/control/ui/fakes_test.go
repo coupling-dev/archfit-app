@@ -255,59 +255,6 @@ func (a *fakeAccount) Status(_ context.Context, installationID int64, _ time.Tim
 	return a.status, a.err
 }
 
-type fakeConsents struct {
-	recorded map[int64]map[account.ConsentKind]account.Consent
-	touched  []int64 // installation of every call
-	writes   int
-	readErr  error // the Store is down: Get and Record fail, Has is false
-	// readErrAfterWrite fails every Get once something was written: a change saved but not read back.
-	readErrAfterWrite error
-}
-
-func newFakeConsents() *fakeConsents {
-	return &fakeConsents{recorded: map[int64]map[account.ConsentKind]account.Consent{}}
-}
-
-func (c *fakeConsents) Record(_ context.Context, installationID int64, consent account.Consent) error {
-	c.touched = append(c.touched, installationID)
-	if c.readErr != nil {
-		return c.readErr
-	}
-	if _, ok := c.recorded[installationID][consent.Kind]; ok {
-		return account.ErrConsentExists
-	}
-	c.writes++
-	if c.recorded[installationID] == nil {
-		c.recorded[installationID] = map[account.ConsentKind]account.Consent{}
-	}
-	c.recorded[installationID][consent.Kind] = consent
-	return nil
-}
-
-func (c *fakeConsents) Revoke(_ context.Context, installationID int64, k account.ConsentKind) error {
-	c.touched = append(c.touched, installationID)
-	c.writes++
-	delete(c.recorded[installationID], k)
-	return nil
-}
-
-func (c *fakeConsents) Has(ctx context.Context, installationID int64, k account.ConsentKind) bool {
-	_, ok, err := c.Get(ctx, installationID, k)
-	return ok && err == nil
-}
-
-func (c *fakeConsents) Get(_ context.Context, installationID int64, k account.ConsentKind) (account.Consent, bool, error) {
-	c.touched = append(c.touched, installationID)
-	if c.readErr != nil {
-		return account.Consent{}, false, c.readErr
-	}
-	if c.readErrAfterWrite != nil && c.writes > 0 {
-		return account.Consent{}, false, c.readErrAfterWrite
-	}
-	got, ok := c.recorded[installationID][k]
-	return got, ok, nil
-}
-
 // fakeOAuth exchanges the code "code-<login>" for that login's token.
 type fakeOAuth struct {
 	tokens map[string]auth.UserToken

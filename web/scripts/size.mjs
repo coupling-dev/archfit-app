@@ -1,6 +1,6 @@
 // Fails the build when a load is over budget (docs/archive/design/ui-redesign.md, Bundle budget). First load is every
-// script and stylesheet index.html references; each lazy chunk has a budget of its own: the graph pages' (Graph-*) and
-// the graph's layout worker (layout.worker-*), which holds ELK.
+// script and stylesheet index.html references; the Home map's layout worker has its own budget
+// (layout.worker-*), which holds ELK.
 import { readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 
@@ -16,12 +16,6 @@ const chunk = (prefix) =>
     .map((f) => `assets/${f}`);
 
 const lazy = [
-  {
-    name: 'graph chunk',
-    prefix: 'Graph',
-    files: chunk('Graph'),
-    budget: { js: 120 * KB, css: 20 * KB },
-  },
   {
     name: 'layout worker',
     prefix: 'layout.worker',
