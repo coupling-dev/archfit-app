@@ -1,0 +1,7 @@
+{
+  "diff": "",
+  "errors": [
+    ".archfit.yaml:2: policy: owners: required: list at least one GitHub login",
+    ".archfit.yaml:3: policy: modules: required: declare at least one module"
+  ]
+}

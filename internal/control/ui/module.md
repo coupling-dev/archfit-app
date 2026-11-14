@@ -46,6 +46,21 @@ return 404 before repository authorization or data access. The v2 policy schema 
 No report cache, old graph builder, Archfit 3 renderer or consent reader remains. Stored consent records stay unread.
 `overview.go` remains because it implements the retained `/api/repos` list, not the removed Overview page.
 
+## YAML edit (M3 task 10)
+
+- `POST /api/repos/{o}/{n}/policy/edit/preview`: whole YAML, `answer: edit`, starting `base_digest`.
+  Returns all line errors, or the new digest, protected target tip and an App-rendered diff against the target policy.
+- `POST /api/repos/{o}/{n}/policy/edit/reload` explicitly restores only recorded approvals under the proposal lease.
+  GET and preview never repair a branch. A recovery flag offers reload before editing an unrecorded/moved head.
+- `POST /api/repos/{o}/{n}/policy/edit`: the same file and base, preview target, one-use passkey token.
+  Both routes use repository-read authorization, admission, CSRF and strict JSON (including no trailing values).
+  YAML is capped at 32 KiB before parsing. The gate rechecks owners and every input before redemption.
+- The edit passkey begin also takes the YAML and revalidates the preview before opening the ceremony.
+  Its token binds the NEW byte digest, starting base and exact target; the YAML is not stored in the token.
+- `/r/{o}/{n}/policy?edit=1` starts from the proposal file, otherwise the target file, and renders text only.
+  Text changes drop the preview. All edits need a passkey; local glob checking uses `archfit check --policy <file>`.
+- A changed base or target is `the policy changed; reload`. Any target-tip move, code-only included, voids an edit.
+
 ## Home API (M3 task 4)
 
 `GET /api/repos/{o}/{n}/home` uses the existing `apiRepo(permRead, ...)` authorization and admission chain.

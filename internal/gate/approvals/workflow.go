@@ -108,6 +108,12 @@ func (s *Service) stillApplies(ctx context.Context, r api.Repo, repo records.Rep
 	if p.rec.Kind == records.ProposalFirst {
 		return repo.ApprovedDigest == "" && repo.OutsideFlow == nil, nil
 	}
+	if _, err := s.editParent(ctx, r, p); err != nil {
+		if errors.Is(err, records.ErrMoved) || api.Permanent(err) {
+			return false, nil
+		}
+		return false, err
+	}
 	for _, id := range p.rec.Approvals {
 		var a records.Approval
 		if err := records.Load(ctx, s.store, tenant(r), records.ApprovalKey(r.FullName, id), &a); err != nil {

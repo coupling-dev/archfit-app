@@ -38,7 +38,8 @@ type hub struct {
 	comments  map[int][]string
 	assignees map[int][]string
 	checks    []api.CheckRun
-	checkErr  error // CreateCheckRun refuses with it
+	onHead    func() // runs under the fake GitHub lock before reading the default tip
+	checkErr  error  // CreateCheckRun refuses with it
 	next      int
 	fail      map[string]error
 }
@@ -60,6 +61,9 @@ func (h *hub) File(_ context.Context, _ api.RepoRef, ref, path string) ([]byte, 
 func (h *hub) BranchHead(_ context.Context, _ api.RepoRef, branch string) (string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.onHead != nil {
+		h.onHead()
+	}
 	if branch != testRepo.DefaultBranch || len(h.history) == 0 {
 		return "", api.ErrNotFound
 	}
@@ -77,7 +81,11 @@ func (h *hub) Compare(_ context.Context, _ api.RepoRef, base, head string) (api.
 	case b == hd:
 		return api.Comparison{Status: "identical"}, nil
 	case b < hd:
-		return api.Comparison{Status: "ahead"}, nil
+		var commits []api.Commit
+		for i := b + 1; i <= hd; i++ {
+			commits = append(commits, api.Commit{SHA: h.history[i], Parents: []string{h.history[i-1]}})
+		}
+		return api.Comparison{Status: "ahead", TotalCommits: len(commits), Commits: commits}, nil
 	}
 	return api.Comparison{Status: "behind"}, nil
 }
@@ -321,7 +329,7 @@ func TestARewrittenProposalIsConsumed(t *testing.T) {
 	w.approved(digestV(0))
 	w.gh.commit("c0", policyV(0))
 	a := w.answered(431, "graph a b", "p1", 21, digestV(1))
-	if err := records.Join(context.Background(), w.mem, w.tenant(), testRepo.FullName, a, "p1", "head-rewritten", digestV(3)); err != nil {
+	if err := records.Join(context.Background(), w.mem, w.tenant(), testRepo.FullName, a, "p1", "head-rewritten", digestV(3), 0); err != nil {
 		t.Fatal(err)
 	}
 	w.merge(21, "c1", 3)
@@ -441,7 +449,7 @@ func TestAnApprovalIsUsedOnce(t *testing.T) {
 	if !errors.Is(err, records.ErrAnswered) {
 		t.Errorf("a second answer of the consumed request = %v, want ErrAnswered", err)
 	}
-	if err := records.Join(context.Background(), w.mem, w.tenant(), testRepo.FullName, a, "p9", "h", "d"); err == nil {
+	if err := records.Join(context.Background(), w.mem, w.tenant(), testRepo.FullName, a, "p9", "h", "d", 0); err == nil {
 		t.Error("the consumed approval joined another proposal")
 	}
 }

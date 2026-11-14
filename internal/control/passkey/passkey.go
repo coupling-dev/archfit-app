@@ -43,6 +43,8 @@ var credentialParameters = []protocol.CredentialParameter{
 }
 
 var (
+	editSHA        = regexp.MustCompile("^[0-9a-f]{40}$")
+	editDigest     = regexp.MustCompile("^sha256:[0-9a-f]{64}$")
 	actionPattern  = regexp.MustCompile(`^[a-z][a-z-]{0,31}$`)
 	digestPattern  = regexp.MustCompile(`^[\x21-\x7e]{0,128}$`)
 	passkeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]*$`)
@@ -230,6 +232,12 @@ func (s *service) BeginStepUp(ctx context.Context, r api.Repo, u User, p Purpose
 	t, err := tenantOf(r, u.ID)
 	if err != nil {
 		return nil, err
+	}
+	if p.Action == "edit" && (p.Request != 0 || !editSHA.MatchString(p.Target) || !editDigest.MatchString(p.BaseDigest) || !editDigest.MatchString(p.Digest)) {
+		return nil, ErrInvalid
+	}
+	if len(p.Target) > 40 || !digestPattern.MatchString(p.BaseDigest) {
+		return nil, ErrInvalid
 	}
 	if !actionPattern.MatchString(p.Action) || p.Request < 0 || !digestPattern.MatchString(p.Digest) ||
 		len(p.Passkey) > maxPasskeyID || !passkeyPattern.MatchString(p.Passkey) {

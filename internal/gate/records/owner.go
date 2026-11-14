@@ -235,6 +235,11 @@ func RevertTo(ctx context.Context, s store.Store, t store.Tenant, fullName, appr
 		return err
 	}
 	a.Kind, a.Change = KindRevert, change
+	return joinPolicy(ctx, s, t, fullName, approvalID, a, pin, revert.Holds)
+}
+
+// joinPolicy records a requestless policy approval and its proposal pin together.
+func joinPolicy(ctx context.Context, s store.Store, t store.Tenant, fullName, approvalID string, a Approval, pin Pin, holds func(Repo) bool) error {
 	keys := []string{ApprovalKey(fullName, approvalID), ProposalKey(fullName, pin.Proposal), ProposalIndexKey(fullName),
 		RepoKey(fullName)}
 	return store.Update(ctx, s, t, keys, func(cur [][]byte) ([][]byte, error) {
@@ -247,7 +252,7 @@ func RevertTo(ctx context.Context, s store.Store, t store.Tenant, fullName, appr
 				return nil, err
 			}
 		}
-		if !revert.Holds(r) {
+		if !holds(r) {
 			return nil, ErrMoved
 		}
 		x, err := readIndex(cur[2], SchemaProposalIndex)
@@ -270,13 +275,13 @@ func RevertTo(ctx context.Context, s store.Store, t store.Tenant, fullName, appr
 			}
 		}
 		switch {
-		case p.State != StateOpen || p.Kind != "":
+		case p.State != StateOpen || p.Kind != "" || p.EditEpoch != pin.EditEpoch:
 			return nil, ErrMoved
 		case len(p.Approvals) >= MaxApprovals:
 			return nil, ErrFull
 		}
 		p.Approvals = append(p.Approvals, approvalID)
-		p.HeadSHA, p.ExpectedDigest = pin.HeadSHA, pin.Digest
+		p.HeadSHA, p.ExpectedDigest, p.EditVoided = pin.HeadSHA, pin.Digest, false
 		a.State, a.Proposal = StateOpen, pin.Proposal
 		index, err := writeIndex(cur[2], before, x)
 		if err != nil {

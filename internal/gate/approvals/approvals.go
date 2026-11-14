@@ -100,6 +100,9 @@ type Outcome struct {
 // moves the branch back to a commit judged before is another push, judged again. An error is a failed read or write;
 // the caller retries the delivery.
 func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error) {
+	if err := s.retireMovedEdits(ctx, p.Repo); err != nil {
+		return Outcome{}, err
+	}
 	if len(p.ChangedPaths) > 0 && !slices.Contains(p.ChangedPaths, PolicyPath) {
 		return Outcome{Judged: JudgedNone}, nil
 	}
@@ -384,6 +387,10 @@ func (s *Service) onHistory(ctx context.Context, ref api.RepoRef, commit, head s
 // (records.ErrApprovedMoved) makes it read both again.
 func (s *Service) consume(ctx context.Context, r api.Repo, p *proposal, push records.Push, digest string) error {
 	t := tenant(r)
+	parent, err := s.editParent(ctx, r, p)
+	if err != nil {
+		return editConsumeError(err)
+	}
 	for range approveRounds {
 		var repo records.Repo
 		if err := records.Load(ctx, s.store, t, records.RepoKey(r.FullName), &repo); err != nil &&
@@ -394,7 +401,7 @@ func (s *Service) consume(ctx context.Context, r api.Repo, p *proposal, push rec
 		if err != nil {
 			return err
 		}
-		m := records.Merge{Proposal: p.id, Commit: p.commit, Digest: digest, Push: push, AtTip: approve, Over: repo.ApprovedCommit}
+		m := records.Merge{Proposal: p.id, Commit: p.commit, Digest: digest, Push: push, AtTip: approve, Over: repo.ApprovedCommit, Parent: parent}
 		err = records.Consume(ctx, s.store, t, r.FullName, m)
 		if !errors.Is(err, records.ErrApprovedMoved) {
 			if err != nil {

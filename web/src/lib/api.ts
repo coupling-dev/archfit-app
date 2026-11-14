@@ -114,7 +114,7 @@ export interface Preview {
 
 export interface Answered {
   pull_request?: number; // the policy pull request; absent when no policy line changes
-  state?: 'merged' | 'later' | 'refused';
+  state?: 'merged' | 'later' | 'refused' | 'void';
   merge?: string;
   notice: string;
 }
@@ -228,11 +228,44 @@ export interface Policy {
   owners: string[] | null;
   gate: string;
   layers: string[] | null;
-  modules: { name: string; paths: string[] | null; public: string[] | null; volatility: string; subdomain: string; layer: string; depends_on: string[] }[];
-  builtin: { graph: string; coupling: string; duplication: string; cycle: string; layers: string; unowned: string; min_balance: number | null };
-  rules: { id: string; deny?: { from: string[]; to: string[] }; only?: { use: string; in: string[] }; note?: string; not_checked: boolean; why: string; instead?: string }[];
-  exceptions: { rule: string; from: string; to?: string; expires?: string; days_left?: number; why: string; request?: number; request_href?: string }[];
+  modules: {
+    name: string;
+    paths: string[] | null;
+    public: string[] | null;
+    volatility: string;
+    subdomain: string;
+    layer: string;
+    depends_on: string[];
+  }[];
+  builtin: {
+    graph: string;
+    coupling: string;
+    duplication: string;
+    cycle: string;
+    layers: string;
+    unowned: string;
+    min_balance: number | null;
+  };
+  rules: {
+    id: string;
+    deny?: { from: string[]; to: string[] };
+    only?: { use: string; in: string[] };
+    note?: string;
+    not_checked: boolean;
+    why: string;
+    instead?: string;
+  }[];
+  exceptions: {
+    rule: string;
+    from: string;
+    to?: string;
+    expires?: string;
+    days_left?: number;
+    why: string;
+    request?: number;
+    request_href?: string;
+  }[];
   yaml: string;
   digest: string;
-  edit: { available: boolean; reason: string; file?: string; digest?: string };
+  edit: { available: boolean; reason: string; file?: string; digest?: string; recovery?: boolean };
 }

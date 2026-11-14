@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
@@ -74,6 +73,7 @@ type policyEditJSON struct {
 	Reason    string `json:"reason"`
 	File      string `json:"file,omitempty"`
 	Digest    string `json:"digest,omitempty"`
+	Recovery  bool   `json:"recovery,omitempty"`
 }
 
 func (s *server) apiPolicy(r *http.Request, sc scope) (any, error) {
@@ -155,24 +155,11 @@ func (s *server) apiPolicy(r *http.Request, sc scope) (any, error) {
 		}
 	}
 	if body.Edit.Available && r.URL.Query().Get("edit") == "1" {
-		body.Edit.File, body.Edit.Digest = string(raw), body.Digest
-		pulls, err := s.gh.pulls.OpenPulls(ctx, sc.repo.RepoRef)
+		base, err := s.answers.Editor(ctx, sc.repo)
 		if err != nil {
 			return nil, err
 		}
-		for _, p := range pulls {
-			if p.HeadRef == "archfit/policy" && strings.EqualFold(p.HeadRepo, sc.repo.FullName) && p.BaseRef == sc.repo.DefaultBranch && p.State == "open" {
-				data, _, err := s.gh.files.File(ctx, sc.repo.RepoRef, p.HeadSHA, ".archfit.yaml")
-				if err != nil {
-					return nil, err
-				}
-				if _, err := policy3.Decode(data); err != nil {
-					return nil, conflict("The open policy proposal could not be read. Fix .archfit.yaml first.")
-				}
-				body.Edit.File, body.Edit.Digest = string(data), policy3.Digest(data)
-				break
-			}
-		}
+		body.Edit.File, body.Edit.Digest, body.Edit.Recovery = string(base.File), base.Digest, base.Recovery
 	}
 	return body, nil
 }
