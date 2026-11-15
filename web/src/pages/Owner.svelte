@@ -131,7 +131,11 @@
         <input type="hidden" name="view_digest" value={view.digest} />
         <input type="hidden" name="digest" value={view.action_digest} />
         <p>Your passkey confirms exactly the change shown above. Nothing is approved until this step finishes.</p>
-        <p class="small">No passkey yet? <a href={repoPage(route.fullName, '/passkeys?return=' + encodeURIComponent(here))}>Register a passkey</a> to return here after registration.</p>
+        {#if view.passkey}
+          <p class="small"><a href={repoPage(route.fullName, '/passkeys')}>Manage your passkeys</a></p>
+        {:else}
+          <p class="small">No passkey yet? <a href={repoPage(route.fullName, '/passkeys?return=' + encodeURIComponent(here))}>Register a passkey</a> to return here after registration.</p>
+        {/if}
         {#if actionError}<p class="flash error" role="alert">{actionError}</p>{/if}
         {#if stale}<p><a href={repoPage(route.fullName)}>View current setup</a></p>{/if}
         <div><button class="btn" type="submit" disabled={busy || stale}>{busy ? 'Waiting for your passkey and the App…' : view.main_action}</button></div>

@@ -18,6 +18,7 @@ export interface OwnerView {
   status: string;
   note: string;
   main_action: string;
+  passkey: boolean;
   action_digest: string;
   digest: string;
   head: string;
@@ -70,12 +71,14 @@ export function readOwnerView(value: unknown, route: OwnerRoute): OwnerView {
   const v = object(value);
   const kind = ownerKinds.find((k) => k === v.kind);
   if (!kind || kind !== route.action || number(v.pull_request) !== route.pull) throw new Error(unreadable);
+  if (typeof v.passkey !== 'boolean') throw new Error(unreadable);
   return {
     kind,
     pull_request: route.pull,
     status: string(v.status),
     note: string(v.note),
     main_action: string(v.main_action),
+    passkey: v.passkey,
     action_digest: digest(v.action_digest),
     digest: digest(v.digest),
     head: string(v.head),

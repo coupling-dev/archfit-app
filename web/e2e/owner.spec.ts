@@ -90,6 +90,27 @@ for (const name of ['first', 'first-pull', 'workflow', 'confirm', 'revert', 'rev
   });
 }
 
+for (const passkey of [true, false]) {
+  test(`owner: passkey guidance with registered passkey = ${passkey}`, async ({ page }) => {
+    const body = { ...fixture('workflow'), passkey };
+    const path = root + 'workflow?pull=7';
+    await open(page, path, { [`GET ${api}owner/workflow/view`]: () => [200, body] });
+    const register = page.getByRole('link', { name: 'Register a passkey' });
+    const manage = page.getByRole('link', { name: 'Manage your passkeys' });
+    if (passkey) {
+      await expect(manage).toHaveAttribute('href', '/r/acme/app/passkeys');
+      await expect(register).toHaveCount(0);
+      await expect(page.getByText('No passkey yet?', { exact: false })).toHaveCount(0);
+    } else {
+      await expect(register).toHaveAttribute('href', '/r/acme/app/passkeys?return=' + encodeURIComponent(path));
+      await expect(manage).toHaveCount(0);
+      await expect(page.getByText('No passkey yet?', { exact: false })).toBeVisible();
+    }
+    await expect(page.getByRole('button', { name: body.main_action, exact: true })).toBeEnabled();
+    await expectClean(page);
+  });
+}
+
 for (const [name, status, sentence] of [
   ['passkey-refused', 403, 'The passkey step-up could not be started. Try again.'],
   ['moved', 409, 'The change moved since you looked. Reload it and confirm again with your passkey.'],
