@@ -44,10 +44,25 @@ larger hit areas on narrow screens and touch devices. Request fields use the sel
 
 ## Policy
 
-The repository tabs are **Home** and **Policy**. Open **Policy** to read the default-branch policy: modules and their
-allowed dependencies, built-in and custom rules, notes marked **not checked**, and exceptions with their dates.
-Exceptions link to a request when the policy includes its number. **Show raw YAML** opens the file. **Edit** appears
-only when change control is available.
+The repository tabs are **Home** and **Policy**. Policy starts with owners, layers in inner-first order, the configured
+check mode, and counts. Approval and live enforcement are **Not provided**: this response does not carry that evidence.
+**Blocking rules** counts configured ask/deny rules, not off settings or unchecked notes. It does not prove that checks are required.
+
+Search filters rules, exceptions, and modules without changing the totals. Expand a rule for its scope, **Why**, and
+**Instead**. Notes remain **Not checked**. Exceptions show server-supplied days remaining, including today in the next
+30 days. Bars show the remaining days capped at 30, not exception age. Missing expiry or ownership stays **Not provided**.
+Request links appear only when the response supplies a safe destination.
+
+The module table follows the rules and exceptions. Expand a module for public paths, volatility, and subdomain.
+**Show graph** is closed by default at every width. It draws allowed dependencies, not measured imports, and keeps the
+whole policy visible during search. Select a node to clear search and open that module's details. Large maps scroll
+vertically; dependency targets missing from the module list are reported, not invented.
+
+**View source** opens **Show raw YAML**. **Copy digest** copies the complete digest; clipboard refusal leaves the value
+selectable. **Edit** appears only when change control is available. The existing edit and passkey flow is unchanged.
+
+Additional examples: [phone](images/policy-mobile.png), [dark phone](images/policy-mobile-dark.png),
+[expanded graph](images/policy-graph.png), [phone graph](images/policy-graph-mobile.png), and [expiry states](images/policy-expiry.png).
 
 ![Policy: modules, rules and exceptions](images/policy.png)
 
