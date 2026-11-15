@@ -289,7 +289,7 @@ test('request: numbers as reported say so; a closed request offers no answer', a
 
 test('request: a request that does not exist is the API sentence, with no repository tabs', async ({ page }) => {
   await open(page, '/r/acme/app/requests/999', {});
-  await expect(page.getByRole('heading', { name: 'This page cannot be shown' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Page not available' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Repository' })).toHaveCount(0);
 });
 

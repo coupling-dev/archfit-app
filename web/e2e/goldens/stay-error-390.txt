@@ -6,9 +6,10 @@ Dark
 A
 @alice
 Sign out
-This page cannot be shown
+Page not available
 
-Not found. See your repositories.
+This page does not exist or is not available to your account.
 
+Repositories
 Documentation Third-party licences
 About this App · v0.12.0
