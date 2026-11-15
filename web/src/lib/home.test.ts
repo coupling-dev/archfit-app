@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { homeHref, readHome, setupPasskeyActions, setupPullStep, setupRuleStatus, setupStepState } from './home';
+import { homeHref, readHome, readOwnerReview, setupPullStep, setupRuleStatus, setupStepState } from './home';
 import { mapLines, lineLabel } from '../components/map/model';
 
 describe('Home boundary', () => {
@@ -14,6 +14,8 @@ describe('Home boundary', () => {
     for (const [href, expected] of [
       ['/r/Acme/App/requests/431', '/r/acme/app/requests/431'],
       ['/r/Acme/App/policy', '/r/acme/app/policy'],
+      ['/r/Acme/App/owner/first?pull=8', '/r/acme/app/owner/first?pull=8'],
+      ['/r/Acme/App/owner/first', '/r/acme/app/owner/first'],
       ['/r/Acme/App/owner/confirm', '/r/acme/app/owner/confirm'],
       ['/r/Acme/App/owner/workflow?pull=4', '/r/acme/app/owner/workflow?pull=4'],
       ['https://github.com/Acme/App/issues/72', 'https://github.com/acme/app/issues/72'],
@@ -81,18 +83,6 @@ describe('setup step labels and progress', () => {
     expect(setupPullStep({ ...base, open_pull: 203 })).toEqual({ kind: 'review', status: 'In review', number: 203 });
   });
 
-  it('chooses passkey registration or approval actions from passkey and setup state', () => {
-    expect(setupPasskeyActions({ ...base, state: 'first_approval' })).toEqual({
-      register: true, manage: false, approve: false, approvalBlocked: true,
-    });
-    expect(setupPasskeyActions({ ...base, state: 'first_approval', passkey: true })).toEqual({
-      register: false, manage: true, approve: true, approvalBlocked: false,
-    });
-    expect(setupPasskeyActions({ ...base, state: 'approved', passkey: true })).toEqual({
-      register: false, manage: true, approve: false, approvalBlocked: false,
-    });
-  });
-
   it('derives progress from policy, first pull, approval and rules', () => {
     expect(setupStepState({ ...base, policy: true, rules: [{ code: 'x', state: 'ok', text: '' }] })).toEqual({
       done: [true, false, false, true], completed: 2, approval: 'Waiting', gate: 'On',
@@ -104,5 +94,34 @@ describe('setup step labels and progress', () => {
       done: [true, false, false, false], completed: 1, approval: 'Waiting', gate: 'Action needed',
     });
     expect(setupStepState({ ...base, policy: true, state: 'approved', rules: [{ code: 'x', state: 'ok', text: '' }] }).completed).toBe(3);
+  });
+});
+
+
+describe('setup applicable rules', () => {
+  it.each([
+    [['ok', 'not_applicable'], true],
+    [['ok', 'unknown', 'not_applicable'], false],
+    [['ok', 'warning'], false],
+    [[], false],
+  ])('keeps unknown blocking but excludes unavailable prerequisites: %j', (states, complete) => {
+    const setup = { state: 'approved', policy: true, workflow: true, passkey: true, open_pull: 0, missing: [],
+      rules: states.map((state) => ({ code: state, state, text: '' })) };
+    expect(setupStepState(setup).done[3]).toBe(complete);
+  });
+});
+
+
+describe('server-resolved owner actions', () => {
+  it.each(['Review first policy', 'Review workflow change'])('preserves the server label %s', (label) => {
+    expect(readOwnerReview({ label, href: '/r/acme/app/owner/first?pull=8' })).toEqual({ label, href: '/r/acme/app/owner/first?pull=8' });
+  });
+  it('accepts a role handoff without a link and rejects malformed links', () => {
+    expect(readOwnerReview({ label: 'An architecture owner can act.' })).toEqual({ label: 'An architecture owner can act.' });
+    expect(() => readOwnerReview({ label: 'Review first policy', href: 8 })).toThrow();
+  });
+  it('marks a resolved review as work to do, not waiting', () => {
+    expect(setupStepState({ state: 'not_admitted', policy: true, workflow: false, passkey: true, open_pull: 203,
+      missing: [], rules: [], owner_action: { label: 'Review workflow change', href: '/r/acme/app/owner/workflow?pull=203' } }).approval).toBe('Review needed');
   });
 });

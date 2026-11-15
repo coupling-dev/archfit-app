@@ -9,10 +9,12 @@ The checked-in [release manifest](../internal/wire/manifest/manifest4.json) appr
 1. Install the GitHub App for the repository. An account not on the operator's approved list waits for operator admission.
 2. Put a schema 3 `.archfit.yaml` and `.github/workflows/archfit.yaml` in the repository. Read them before the first approval. The App does not generate these files.
 3. Sign in to the App and register a passkey as a repository administrator. See [Register a passkey](#register-a-passkey).
-4. A repository administrator must approve the first policy with a passkey. The owner action supports a same-repository open pull request when the default branch has no schema 3 policy, or the current default-branch policy otherwise. Open `/r/<owner>/<repo>/owner/first`, or add `?pull=<number>` for the onboarding pull request.
+4. A repository administrator named as an owner in the proposed policy must approve the first policy with a passkey. The owner action supports a same-repository open pull request when the default branch has no schema 3 policy, or the current default-branch policy otherwise. Follow **Review first policy** from Home or the pull page. The App resolves the correct destination for eligible viewers; other viewers see which role can act.
 5. Configure the branch ruleset below and verify the workflow and engine are approved in the App's release manifest.
 
-The App's setup API reads the policy and workflow at one default-branch commit and reports admission, first approval and ruleset advice. It does not change GitHub rulesets. Home shows this setup information before the first approval.
+The App's setup API reads the policy and workflow at one default-branch commit and reports admission, first approval and ruleset advice. It does not change GitHub rulesets. Home shows this setup information before the first approval. A proposed policy or workflow is labelled as present in its PR, not yet on the default branch. Unavailable ruleset features do not block setup progress; unknown settings still need an administrator to check them. Setup progress is not an enforcement verdict.
+
+For a workflow change, an owner named in the approved policy can follow **Review workflow change** from Home or the pull page. Being a repository administrator alone does not qualify. You can read either review before registering a passkey; the final approval still requires one.
 
 ## Home and the map
 

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/control/answers"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/control/passkey"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
@@ -49,7 +50,7 @@ func newHomeEnv(t *testing.T, pol string) *env {
 		t.Fatal(err)
 	}
 	e.handler = newHandler(Deps{Account: e.acct,
-		Admissions: e.admit, HomeViews: gate.NewHome(e.gh, e.store, e.admit), Setups: e.setups, Passkeys: e.passkeys, Now: clock,
+		Admissions: e.admit, Owners: e.owners, HomeViews: gate.NewHome(e.gh, e.store, e.admit), Setups: e.setups, Passkeys: e.passkeys, Now: clock,
 	}, github{files: e.gh, pulls: e.gh, users: e.gh, installs: e.gh}, sessions, testWeb)
 	return e
 }
@@ -122,7 +123,7 @@ func TestHomeAPIGoldens(t *testing.T) {
 		}},
 		{"deny-request", homePolicy + homeDeny, func(t *testing.T, e *env) { homeRequest(t, e, "open") }},
 		{"workflow-review", homePolicy, func(_ *testing.T, e *env) {
-			e.setups.out = onboarding.Setup{Policy: true, OpenPull: 203, State: "first_approval", Missing: []string{},
+			e.setups.out = onboarding.Setup{Policy: true, OpenPull: 203, State: "not_admitted", Missing: []string{},
 				Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{
 					{Code: "pull_requests", State: "warning", Text: "Add a pull request rule to the default branch."},
 					{Code: "gate_check", State: "warning", Text: "Add the App's archfit/gate check as a required status check."},
@@ -161,9 +162,18 @@ func TestHomeAPIGoldens(t *testing.T) {
 			if tt.setup != nil {
 				tt.setup(t, e)
 			}
-			response := e.as("alice", permRead).get(homeAPI)
+			if tt.name == "workflow-review" || tt.name == "workflow-change" || tt.name == "not-set-up" {
+				e.owners.review = func(a answers.OwnerAction, _ gate.OwnerUser) error {
+					if tt.name == "not-set-up" && a.Kind == gate.OwnerFirst && a.Pull == 12 ||
+						tt.name != "not-set-up" && a.Kind == gate.OwnerWorkflow && a.Pull > 0 {
+						return nil
+					}
+					return gate.ErrOwnerNotDue
+				}
+			}
+			response := e.as("alice", permAdmin).get(homeAPI)
 			wantStatus(t, response, http.StatusOK)
-			if words := wording.NotUsedIn(response.Body.String()); len(words) > 0 {
+			if words := wording.NotUsedIn(withoutOwnerReviewCopy(response.Body.String())); len(words) > 0 {
 				t.Fatalf("Home uses %v:\n%s", words, response.Body.String())
 			}
 			var pretty bytes.Buffer
@@ -304,6 +314,12 @@ func TestHomeWorkflowActionsIgnoreForksOtherTargetsAndApprovedHeads(t *testing.T
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			e := newHomeEnv(t, homePolicy)
+			e.owners.review = func(a answers.OwnerAction, _ gate.OwnerUser) error {
+				if a.Kind == gate.OwnerWorkflow {
+					return nil
+				}
+				return gate.ErrOwnerNotDue
+			}
 			e.gh.pulls[repoName+"#4"] = api.Pull{Number: 4, State: "open", HeadSHA: sha(4), HeadRepo: tt.repo, BaseRef: tt.target}
 			e.gh.setFile(repoName, sha(4), workflow, "the changed workflow")
 			e.gh.setFile(repoName, sha(4), ".archfit.yaml", homePolicy)
