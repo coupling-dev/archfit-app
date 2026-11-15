@@ -20,6 +20,7 @@
     answerProblem,
     balanceText,
     dependency,
+    decisionState,
     earlierLine,
     loosens,
     moduleLine,
@@ -31,8 +32,7 @@
   import { repoPage, type Repo } from '../lib/route';
   import { passkeyFailure } from '../lib/webauthn';
 
-  // One request, one decision (design 12.3): the reason, the record with its balance, the two modules, the preview of
-  // each answer, earlier answers, then the answers. An answer that loosens the policy is confirmed with a passkey.
+  // Preview reads never answer a request. Only the adjacent confirmation starts the existing answer ceremony.
   let { route, session, here }: { route: Repo & { number: number }; session: Session; here: string } = $props();
 
   const api = (suffix: string) => repoAPI(route.owner, route.name, suffix);
@@ -48,6 +48,7 @@
   let until = $state('');
   let instead = $state('');
   let mergeLater = $state(false);
+  let selected = $state<AnswerKind>('approve');
   let busy = $state(false);
   let answered = $state<Answered | null>(null);
   let answerError = $state('');
@@ -65,24 +66,28 @@
     (first ? firstJSON<RequestView>(path) : getJSON<RequestView>(path)).then(
       (b) => {
         body = b;
-        if (b.state === 'open' && b.policy) for (const { kind } of kinds) void preview(kind);
+        if (b.state === 'open' && b.policy) void preview(selected);
       },
       (e: ApiError) => (failure = explainLoad(e, here)),
     );
   }
   load(true);
 
+  function invalidate(kind: AnswerKind) {
+    ++reads[kind];
+    previews[kind] = {};
+  }
+
   async function preview(kind: AnswerKind) {
     const n = ++reads[kind];
-    if (kind === 'reject' && !instead.trim()) {
-      previews[kind] = { note: 'Write what to do instead to see what this answer writes.' };
+    const problem = answerProblem(kind, until, instead);
+    if (problem) {
+      previews[kind] = { note: problem };
       return;
     }
-    // Without a date of the owner's, the preview takes the date the request asked for.
-    const date = answerProblem('approve-until', until, '') ? '' : until;
     previews[kind] = {};
     try {
-      const p = await getJSON<Preview>(api(previewPath(route.number, kind, date, instead.trim())));
+      const p = await getJSON<Preview>(api(previewPath(route.number, kind, until, instead.trim())));
       if (n === reads[kind]) previews[kind] = { preview: p };
     } catch (e) {
       if (n === reads[kind]) previews[kind] = { note: explain(e as ApiError, here) };
@@ -90,7 +95,8 @@
   }
 
   async function answer(kind: AnswerKind) {
-    if (!body || answerProblem(kind, until, instead)) return;
+    const decision = decisionState(kind, previews[kind].preview, mergeLater);
+    if (busy || !body || body.state !== 'open' || !decision.ready || answerProblem(kind, until, instead)) return;
     busy = true;
     answered = null;
     answerError = '';
@@ -98,7 +104,7 @@
       answer: kind,
       ...(kind === 'approve-until' ? { until } : {}),
       ...(kind === 'reject' ? { instead: instead.trim() } : {}),
-      ...(mergeLater ? { merge_later: true } : {}),
+      ...(decision.mergeLater ? { merge_later: true } : {}),
     };
     try {
       let token = '';
@@ -138,111 +144,76 @@
       <p class="small">
         Rule <code>{body.rule}</code> · <code>{dependency(body)}</code>{body.expires ? ` · asked until ${body.expires}` : ''}
       </p>
-      <p class="small"><a href={body.issue_href === `${github}/issues/${body.number}` ? body.issue_href : `${github}/issues/${body.number}`}>Request #{body.number} on GitHub</a></p>
+      {#if body.issue_href === `${github}/issues/${body.number}`}<p class="small"><a href={body.issue_href}>Request #{body.number} on GitHub</a></p>{/if}
     </div>
-  </section>
-
-  <section class="box" aria-labelledby="record">
-    <div class="box-head"><h2 id="record">Record</h2></div>
-    <div class="box-body stack-sm">
-      {#if balance}<p>Balance: <strong>{balance}</strong></p>{/if}
-      <pre>{body.record}</pre>
-    </div>
-  </section>
-
-  {#if body.modules.length}
-    <section class="box" aria-labelledby="modules">
-      <div class="box-head"><h2 id="modules">The map</h2></div>
-      <div class="box-body"><Map model={requestMap(body)} repo={route.fullName} /></div>
-    </section>
-    <section class="box" aria-labelledby="balance-why">
-      <div class="box-head"><h2 id="balance-why">Why the balance</h2></div>
-      <div class="box-body stack-sm">
-        {#if balance}<p>Balance: <strong>{balance}</strong></p>{:else}<p>The record has no balance.</p>{/if}
-        <p>The policy declares the volatility of each module:</p>
-        {#each body.modules as m (m.name)}<p><code>{m.name}</code>: {moduleLine(m)}</p>{/each}
-      </div>
-    </section>
-  {/if}
-
-  {#if body.state === 'open' && body.policy}
-    <section class="box" aria-labelledby="preview">
-      <div class="box-head"><h2 id="preview">Preview</h2></div>
-      {#each kinds as { kind, title } (kind)}
-        {@const shown = previews[kind]}
-        <div class="box-row stack-sm">
-          <h3>{title}</h3>
-          {#if shown.note}
-            <p class="muted small">{shown.note}</p>
-          {:else if !shown.preview}
-            <Skeleton rows={2} box={false} />
-          {:else}
-            {@const p = shown.preview}
-            <p class="small">
-              {p.loosens ? 'Loosens the policy: it needs your passkey.' : 'Tightens the policy: no passkey needed.'}
-              {#if p.until}Exception until {p.until}.{/if}
-            </p>
-            {#if p.diff}<pre aria-label={`${title}: the change to .archfit.yaml`}>{p.diff}</pre>
-            {:else}<p class="small">It writes no line in <code>.archfit.yaml</code>.</p>{/if}
-            {#if p.pulls.length}
-              <ul class="plain small" aria-label={`${title}: open pull requests`}>
-                {#each p.pulls as e (e.number)}<li>{pullLine(e)}</li>{/each}
-              </ul>
-            {:else}
-              <p class="muted small">No open pull request changes with this answer.</p>
-            {/if}
-          {/if}
-        </div>
-      {/each}
-    </section>
-  {/if}
-
-  <section class="box" aria-labelledby="earlier">
-    <div class="box-head"><h2 id="earlier">Earlier answers <span class="counter">{body.earlier.length}</span></h2></div>
-    {#if body.earlier.length}
-      <ul class="box-body plain stack-sm">
-        {#each body.earlier as e, i (i)}
-          <li>{earlierLine(e)}{#if e.why}<span class="muted">{` Why: ${e.why}`}</span>{/if}</li>
-        {/each}
-      </ul>
-    {:else}
-      <p class="box-row muted">No earlier answer about these modules.</p>
-    {/if}
   </section>
 
   <section class="box" aria-labelledby="answer">
     <div class="box-head"><h2 id="answer">Answer</h2></div>
     <div class="box-body stack">
       {#if body.state === 'open' && body.policy}
-        <p class="small">
-          Approve and approve until a date loosen the policy: your passkey confirms them.
-          <a class="inline" href={repoPage(route.fullName, '/passkeys')}>Your passkeys</a>
-        </p>
-        <label class="small form-choice"><input type="checkbox" bind:checked={mergeLater} disabled={busy} /> Merge later: keep the policy
-          pull request open, so the next answers join it</label>
-        <div class="stack-sm">
-          <button class="btn primary" type="button" disabled={busy} onclick={() => answer('approve')}>Approve and merge</button>
-        </div>
-        <div class="stack-sm">
-          <label for="until">The exception ends on</label>
-          <input class="form-control" id="until" type="date" bind:value={until} disabled={busy} onchange={() => preview('approve-until')} />
-          <div>
-            <button
-              class="btn"
-              type="button"
-              disabled={busy || !!answerProblem('approve-until', until, '')}
-              onclick={() => answer('approve-until')}>Approve until a date</button
-            >
-          </div>
-        </div>
-        <div class="stack-sm">
-          <label for="instead">What to do instead</label>
-          <textarea class="form-control" id="instead" rows="3" maxlength="500" bind:value={instead} disabled={busy} onchange={() => preview('reject')}
-          ></textarea>
-          <div>
-            <button class="btn" type="button" disabled={busy || !instead.trim()} onclick={() => answer('reject')}>Reject</button>
-          </div>
-        </div>
+        <p class="small">Choose an answer and read its policy change before confirming. Previewing or leaving this page changes nothing.</p>
+        <fieldset class="stack-sm">
+          <legend>Choose an answer</legend>
+          {#each kinds as { kind, title } (kind)}
+            <label class="form-choice"><input type="radio" name="answer-kind" value={kind} bind:group={selected} disabled={busy} /> {title}</label>
+          {/each}
+        </fieldset>
+        {@const title = kinds.find((item) => item.kind === selected)?.title ?? ''}
+        {@const shown = previews[selected]}
+        {@const decision = decisionState(selected, shown.preview, mergeLater)}
+        <section class="stack-sm" aria-label={title}>
+          <h3>{title}</h3>
+          {#if selected === 'approve-until'}
+            <label for="until">The exception ends on</label>
+            <input class="form-control" id="until" type="date" bind:value={until} disabled={busy} oninput={() => invalidate('approve-until')} />
+            <p class="small">Choose an expiry date to preview. The exception is valid through that date, in UTC.</p>
+          {:else if selected === 'reject'}
+            <label for="instead">What to do instead</label>
+            <textarea class="form-control" id="instead" rows="3" maxlength="500" bind:value={instead} disabled={busy} oninput={() => invalidate('reject')}></textarea>
+          {/if}
+          {#if !decision.ready}
+            <p class="small">{answerProblem(selected, until, instead) || 'Preview this answer to see its policy change and affected pull requests.'}</p>
+            <div><button class="btn" type="button" disabled={busy || !!answerProblem(selected, until, instead)} onclick={() => preview(selected)}>Preview {title.toLowerCase()}</button></div>
+          {/if}
+          {#if shown.note}<p class="flash error" role="alert">{shown.note}</p>{/if}
+          {#if shown.preview && decision.ready}
+            {@const p = shown.preview}
+            <div class="stack-sm" aria-label={`${title}: preview`}>
+              <h4>Policy change</h4>
+              <p class="small">
+                {p.loosens ? 'Loosens the policy: it needs your passkey.' : 'Tightens the policy: no passkey needed.'}
+                {#if p.until}Exception until {p.until}, inclusive (UTC).{/if}
+              </p>
+              {#if p.diff && selected === 'reject'}<p class="small">Adds the deny rule shown below, with what to do instead.</p>{/if}
+              {#if p.diff}
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users must be able to scroll the unwrapped diff.) -->
+                <pre tabindex="0" role="region" aria-label={`${title}: the change to .archfit.yaml`}>{p.diff}</pre>
+              {:else}<p class="small">It writes no line in <code>.archfit.yaml</code>.</p>{/if}
+              <h4>Affected pull requests</h4>
+              {#if p.pulls.length}
+                <ul class="plain small stack-sm" aria-label={`${title}: open pull requests`}>
+                  {#each p.pulls as e (e.number)}
+                    <li>
+                      <p>{pullLine(e)}</p>
+                      <a href={repoPage(route.fullName, `/pull/${e.number}`)}>PR #{e.number} in Archfit</a>
+                      · <a href={`${github}/pull/${e.number}`}>PR #{e.number} on GitHub</a>
+                    </li>
+                  {/each}
+                </ul>
+                <p class="small">These code pull requests are not merged by this answer. They still need a fresh check result.</p>
+              {:else}<p class="muted small">No open pull request changes with this answer.</p>{/if}
+            </div>
+            {#if decision.changesPolicy}
+              <label class="small form-choice"><input type="checkbox" bind:checked={mergeLater} disabled={busy} /> Keep the policy pull request open</label>
+            {/if}
+            <p class="small">{decision.effect}</p>
+            {#if loosens(selected)}
+              <p class="small">Confirm with your passkey. <a class="inline" href={repoPage(route.fullName, '/passkeys?return=' + encodeURIComponent(here))}>Your passkeys</a></p>
+            {/if}
+            <div><button class="btn primary" type="button" disabled={busy} onclick={() => answer(selected)}>{decision.confirm}</button></div>
+          {/if}
+        </section>
       {:else if body.state === 'open'}
         <p>Add <code>.archfit.yaml</code> of version 3 to the default branch, then answer.</p>
       {:else}
@@ -264,4 +235,42 @@
       {#if answerError}<p class="flash error" role="alert">{answerError}</p>{/if}
     </div>
   </section>
+
+  <section class="box" aria-labelledby="record">
+    <div class="box-head"><h2 id="record">Record</h2></div>
+    <div class="box-body stack-sm">
+      {#if balance}<p>Balance: <strong>{balance}</strong></p>{/if}
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users must be able to scroll the original record.) -->
+      <pre tabindex="0" role="region" aria-label="Original request record">{body.record}</pre>
+    </div>
+  </section>
+
+  {#if body.modules.length}
+    <section class="box" aria-labelledby="modules">
+      <div class="box-head"><h2 id="modules">The map</h2></div>
+      <div class="box-body"><Map model={requestMap(body)} repo={route.fullName} /></div>
+    </section>
+    <section class="box" aria-labelledby="balance-why">
+      <div class="box-head"><h2 id="balance-why">Why the balance</h2></div>
+      <div class="box-body stack-sm">
+        {#if balance}<p>Balance: <strong>{balance}</strong></p>{:else}<p>The record has no balance.</p>{/if}
+        <p>The policy declares the volatility of each module:</p>
+        {#each body.modules as m (m.name)}<p><code>{m.name}</code>: {moduleLine(m)}</p>{/each}
+      </div>
+    </section>
+  {/if}
+
+  <section class="box" aria-labelledby="earlier">
+    <div class="box-head"><h2 id="earlier">Earlier answers <span class="counter">{body.earlier.length}</span></h2></div>
+    {#if body.earlier.length}
+      <ul class="box-body plain stack-sm">
+        {#each body.earlier as e, i (i)}
+          <li>{earlierLine(e)}{#if e.why}<span class="muted">{` Why: ${e.why}`}</span>{/if}</li>
+        {/each}
+      </ul>
+    {:else}
+      <p class="box-row muted">No earlier answer about these modules.</p>
+    {/if}
+  </section>
+
 {/if}

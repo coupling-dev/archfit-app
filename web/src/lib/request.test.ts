@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { mapLines } from '../components/map/model';
-import type { RequestView } from './api';
-import { answerProblem, balanceText, dependency, earlierLine, loosens, moduleLine, requestMap, previewPath, pullLine, statusOf } from './request';
+import type { AnswerKind, Preview, RequestView } from './api';
+import {
+  answerProblem,
+  decisionState,
+  balanceText,
+  dependency,
+  earlierLine,
+  loosens,
+  moduleLine,
+  requestMap,
+  previewPath,
+  pullLine,
+  statusOf,
+} from './request';
 
 const open: RequestView = {
   number: 431,
@@ -160,5 +172,45 @@ describe('requestMap policy lines', () => {
       { name: 'pkg_util', volatility: 'low', depends_on: [] },
     ], dependencies: [{ kind, from: 'pkg_tc', to: 'pkg_util', rule: 'rule', expires: '2026-12-10' }] });
     expect(mapLines(result.lines)).toEqual([{ kind, from: 'pkg_tc', to: 'pkg_util', rule: 'rule', expires: '2026-12-10' }]);
+  });
+});
+
+describe('decisionState', () => {
+  const preview = (answer: AnswerKind, diff = '+ policy line'): Preview => ({
+    answer,
+    diff,
+    loosens: answer !== 'reject',
+    policy_digest: 'digest',
+    pulls: [],
+  });
+
+  it.each([
+    ['approve', 'Approve'],
+    ['approve-until', 'Approve until date'],
+    ['reject', 'Reject'],
+  ] as const)('%s describes merge and keep-open outcomes', (kind, verb) => {
+    expect(decisionState(kind, preview(kind), false)).toMatchObject({
+      ready: true,
+      changesPolicy: true,
+      mergeLater: false,
+      confirm: verb + ' and merge policy PR',
+    });
+    expect(decisionState(kind, preview(kind), true)).toMatchObject({
+      ready: true,
+      changesPolicy: true,
+      mergeLater: true,
+      confirm: verb + ' and keep policy PR open',
+    });
+    expect(decisionState(kind, preview(kind, ''), true)).toMatchObject({
+      ready: true,
+      changesPolicy: false,
+      mergeLater: false,
+      confirm: verb + (kind === 'reject' ? ' without a passkey' : ' with passkey'),
+    });
+  });
+
+  it('does not confirm a missing preview or another answer', () => {
+    expect(decisionState('approve', undefined, true)).toMatchObject({ ready: false, mergeLater: false });
+    expect(decisionState('approve', preview('reject'), true)).toMatchObject({ ready: false, mergeLater: false });
   });
 });
