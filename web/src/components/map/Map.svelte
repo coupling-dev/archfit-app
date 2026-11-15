@@ -91,8 +91,6 @@
       {/each}
     </svg>
   </div>
-  </details>
-{/if}
 
 <ul class="map-legend" aria-label="Map legend">
   <li><span class="sample allowed" aria-hidden="true"></span>An allowed dependency</li>
@@ -101,6 +99,8 @@
   <li><span class="sample exception" aria-hidden="true"></span>An exception (with its date)</li>
   <li><span class="sample drift" aria-hidden="true"></span>Drift</li>
 </ul>
+  </details>
+{/if}
 
 <p class="muted map-note">Dependencies not allowed by this policy need a request.</p>
 

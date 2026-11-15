@@ -14,10 +14,4 @@ Show the map as a list
 
 No modules.
 
-An allowed dependency
-A requested dependency
-One a rule denies
-An exception (with its date)
-Drift
-
 Dependencies not allowed by this policy need a request.

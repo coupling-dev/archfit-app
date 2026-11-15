@@ -34,10 +34,13 @@ for (const width of [390, 1280]) {
     const listToggle = page.getByText('Show the map as a list', { exact: true });
     const diagramToggle = page.getByText('Show the map as a diagram', { exact: true });
     await expect(page.locator('.map-node')).toHaveCount(3);
-    await expect(page.getByRole('list', { name: 'Map legend' })).not.toContainText('#');
+    const legend = page.locator('.map-diagram').getByRole('list', { name: 'Map legend', includeHidden: true });
+    await expect(legend).toHaveCount(1);
     await expect(page.locator('main')).not.toContainText('#431');
     if (width < 720) {
       await expect(diagram).toBeHidden();
+      await expect(legend).toBeHidden();
+      expect(await page.locator('main').innerText()).not.toContain('A requested dependency');
       await expect(page.getByText('app → other: Requested dependency · #415', { exact: true })).toBeVisible();
     } else {
       await expect(diagram).toBeVisible();
@@ -56,6 +59,9 @@ for (const width of [390, 1280]) {
       await page.keyboard.press('Enter');
     }
     await expect(diagram).toBeVisible();
+    await expect(legend).toBeVisible();
+    await expect(legend).not.toContainText('#');
+    await expect(legend).toContainText('A requested dependency');
     expect(await diagram.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThanOrEqual(width - 32);
     expect(
       await diagram.evaluate((el: SVGSVGElement) => {
