@@ -54,12 +54,12 @@ func (s *setups) rules(ctx context.Context, r api.Repo) RulesetReport {
 	if pulls {
 		add("pull_requests", "ok", "Default-branch changes require a pull request.")
 	} else {
-		add("pull_requests", "warning", "Default-branch changes do not require a pull request.")
+		add("pull_requests", "warning", "Add a pull request rule to the default branch.")
 	}
 	if check {
 		add("gate_check", "ok", "The App's archfit/gate check is required.")
 	} else {
-		add("gate_check", "warning", "Require the App's archfit/gate check.")
+		add("gate_check", "warning", "Add the App's archfit/gate check as a required status check.")
 	}
 	sets, err := s.gh.ListRulesets(ctx, r.RepoRef)
 	if err != nil {

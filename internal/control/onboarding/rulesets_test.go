@@ -54,6 +54,20 @@ func TestRulesetBranchRequirements(t *testing.T) {
 					t.Errorf("%s = %+v, want %q", code, fs[code], want)
 				}
 			}
+			pullText := "Add a pull request rule to the default branch."
+			if tt.pulls {
+				pullText = "Default-branch changes require a pull request."
+			}
+			if fs["pull_requests"].Text != pullText {
+				t.Errorf("pull_requests text = %q, want %q", fs["pull_requests"].Text, pullText)
+			}
+			gateText := "Add the App's archfit/gate check as a required status check."
+			if tt.wantGate == "ok" {
+				gateText = "The App's archfit/gate check is required."
+			}
+			if fs["gate_check"].Text != gateText {
+				t.Errorf("gate_check text = %q, want %q", fs["gate_check"].Text, gateText)
+			}
 		})
 	}
 }
