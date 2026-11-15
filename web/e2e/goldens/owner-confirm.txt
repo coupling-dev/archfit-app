@@ -1,0 +1,23 @@
+unknown: the policy changed outside the flow.
+
+Confirm the policy
+
+This makes the current policy the approved policy.
+
+The policy change
+--- a/.archfit.yaml
++++ b/.archfit.yaml
+@@ -3,3 +3,3 @@
+ modules:
+   app:
+-    paths: [cmd/**]
++    paths: [cmd/**, pkg/**]
+
+Show the files and their SHA-256s
+Confirm with your passkey
+
+Your passkey confirms exactly the change shown above. Nothing is approved until this step finishes.
+
+No passkey yet? Register a passkey, then reload this page.
+
+Confirm the policy

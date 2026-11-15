@@ -12,7 +12,3 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	}
 	s.shell.serve(w, status, sentence)
 }
-
-func repoPath(sc scope, suffix string) string {
-	return "/r/" + sc.repo.FullName + suffix
-}

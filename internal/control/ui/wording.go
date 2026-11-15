@@ -3,26 +3,18 @@ package ui
 import (
 	"errors"
 	"net/http"
-	"strings"
+	"strconv"
 
-	"github.com/alexei-led/archfit-app/internal/control/account"
-	"github.com/alexei-led/archfit-app/internal/control/assist"
-	"github.com/alexei-led/archfit-app/internal/control/onboarding"
-	"github.com/alexei-led/archfit-app/internal/control/proposal"
+	"github.com/alexei-led/archfit-app/internal/control/passkey"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/report"
 )
 
 const (
 	retryAfterSeconds = "60"
-	dateLayout        = "2 January 2006"
 
-	stateNone       = "no state yet"
-	stateUnknown    = "unknown"
-	stateViolations = "violations found"
-	stateWaiting    = "waiting for approval"
+	stateWaiting = "waiting for approval"
 )
 
 // userError is a refusal ui decides itself: its status, its log outcome and the sentence shown.
@@ -48,63 +40,65 @@ var sentinels = []struct {
 }{
 	{session.ErrForbidden, http.StatusNotFound, "not_found", "Not found."},
 	{api.ErrNotFound, http.StatusNotFound, "not_found", "Not found."},
-	{proposal.ErrStale, http.StatusConflict, "stale",
-		"The draft changed on GitHub after this page was loaded. Nothing was saved. Reload the draft and apply your edit again."},
-	{assist.ErrInvalidRequest, http.StatusUnprocessableEntity, "invalid", "The request is not valid: write a short instruction and try again."},
-	{assist.ErrInvalidProposal, http.StatusUnprocessableEntity, "invalid_proposal",
-		"The assistant did not produce a usable policy. Nothing was changed."},
-	{assist.ErrNoDraft, http.StatusConflict, "no_draft", "There is no open draft yet. Save the policy first, then ask again."},
-	{account.ErrNoConsent, http.StatusConflict, "no_consent",
-		"Managed AI needs the recorded consent of a repository administrator."},
-	{assist.ErrNotManaged, http.StatusConflict, "not_managed",
-		"The settings of this repository do not allow managed mode. Use customer mode."},
-	{assist.ErrPolicyTooLarge, http.StatusConflict, "policy_too_large", "The draft policy is too large for managed mode."},
-	{assist.ErrNoAssistWorkflow, http.StatusConflict, "no_assist_workflow",
-		"The assist workflow is not on the draft branch. Add " + assist.AssistWorkflowPath + " first."},
-	{onboarding.ErrNoSandbox, http.StatusConflict, "no_sandbox", "Managed discovery is not available."},
-	{onboarding.ErrAlreadyOnboarded, http.StatusConflict, "already_onboarded",
-		"This repository is already onboarded. Reload the page to see its state."},
-	{onboarding.ErrBusy, http.StatusConflict, "onboarding_busy",
-		"Managed discovery is busy with other repositories. Try again in a few minutes."},
-	{assist.ErrBusy, http.StatusTooManyRequests, "busy", "A request for this draft is still running. Wait for it to finish."},
-	{assist.ErrManagedUnavailable, http.StatusServiceUnavailable, "managed_unavailable",
-		"Managed AI is not configured on this service. Editing and saving still work."},
-	{account.ErrBudgetExhausted, http.StatusServiceUnavailable, "budget_exhausted",
-		"The managed AI budget is used up for now. Editing and saving still work."},
-	{assist.ErrProvider, http.StatusServiceUnavailable, "provider", "The AI provider failed. Editing and saving still work."},
+	{gate.ErrNoRequest, http.StatusNotFound, "not_found", "Not found."},
+	{gate.ErrClosedRequest, http.StatusConflict, "request_closed", "This request is answered or closed. Reload the page."},
+	{gate.ErrAnswer, http.StatusUnprocessableEntity, "answer",
+		"Choose an answer: approve, approve until a date (YYYY-MM-DD), or reject with what to do instead."},
+	{gate.ErrNoPolicy, http.StatusConflict, "no_policy",
+		"The default branch has no policy of version 3, so no answer can be written. Add .archfit.yaml first."},
+	{gate.ErrOutsideFlow, http.StatusConflict, "outside_flow",
+		"The policy changed outside the flow. An owner must confirm or revert it before a request can be answered."},
+	{gate.ErrFirstApproval, http.StatusConflict, "first_approval",
+		"A repository administrator must approve the first policy before a request can be answered."},
+	{gate.ErrOwnerNotAdmin, http.StatusForbidden, "not_administrator",
+		"Only a repository administrator who is also an owner named in the policy can approve the first policy."},
+	{gate.ErrOwnerNotOwner, http.StatusForbidden, "not_approved_owner",
+		"Only an owner named in the approved policy can make this action."},
+	{gate.ErrOwnerNeedsPasskey, http.StatusForbidden, "needs_step_up",
+		"Confirm this action with your passkey, then try again."},
+	{gate.ErrOwnerNotDue, http.StatusConflict, "owner_not_due",
+		"The repository no longer needs this action. Reload the page."},
+	{gate.ErrOwnerNotPossible, http.StatusConflict, "owner_not_possible",
+		"This pull request cannot be approved. Check its policy, workflow, head and target branch."},
+	{gate.ErrOwnerFileUnreadable, http.StatusConflict, "owner_file_unreadable",
+		"This file cannot be displayed, so it cannot be approved here. Use the existing owner flow on the GitHub issue."},
+	{gate.ErrOwnerMoved, http.StatusConflict, "owner_moved",
+		"The change moved since you looked. Reload it and confirm again with your passkey."},
+	{gate.ErrNotOutsideFlow, http.StatusConflict, "not_outside_flow",
+		"The policy has no change outside the flow to revert. Reload the page."},
+	{gate.ErrNothingToRevert, http.StatusConflict, "nothing_to_revert",
+		"The policy already matches the approved policy. There is nothing to revert."},
+	{gate.ErrRevertMoved, http.StatusConflict, "revert_moved",
+		"The policy changed since you looked. Reload it and confirm the revert again with your passkey."},
+	{gate.ErrByHand, http.StatusConflict, "by_hand", "Archfit cannot write this answer into .archfit.yaml. Edit the policy by hand."},
+	{gate.ErrNotPolicyOwner, http.StatusForbidden, "not_policy_owner",
+		"Only an owner named in .archfit.yaml on the default branch can answer a request."},
+	{gate.ErrNeedsPasskey, http.StatusForbidden, "needs_step_up",
+		"This answer loosens the policy. Confirm it with your passkey, then answer again."},
+	{gate.ErrEditChanged, http.StatusConflict, "edit_changed", "the policy changed; reload"},
+	{gate.ErrEditSize, http.StatusRequestEntityTooLarge, "edit_size", "The policy exceeds the 32 KiB edit limit."},
+	{gate.ErrAnswerBusy, http.StatusConflict, "answer_busy",
+		"Another answer for this repository is being written. Nothing was changed. Try again in a minute."},
+	{gate.ErrProposalFull, http.StatusConflict, "proposal_full",
+		"The policy pull request holds the most answers it can. Merge it first, then answer. Your answer was not recorded."},
 	{api.ErrRateLimited, http.StatusServiceUnavailable, "rate_limited", "GitHub is rate limiting Archfit. Try again in a minute."},
-	{gate.ErrNothingToApprove, http.StatusConflict, "nothing_to_approve",
-		"This pull request changes no protected file, so there is nothing to approve."},
-	{gate.ErrForkPull, http.StatusConflict, "fork",
-		"A pull request from a fork cannot be approved. Push the branch to this repository."},
-	{gate.ErrAgentIdentity, http.StatusForbidden, "agent_identity",
-		"An agent identity cannot approve. Sign in as a person who is an architecture owner."},
-	{gate.ErrNotOwner, http.StatusForbidden, "not_owner",
-		"Only an architecture owner named in .archfit-app.yaml on the base branch can approve."},
-	{gate.ErrDecisionRequester, http.StatusForbidden, "decision_requester",
-		"The login that filed a request cannot decide it. Another architecture owner decides."},
-	{gate.ErrDecisionSettled, http.StatusConflict, "decision_settled",
-		"This request was already decided or is out of date. Nothing was changed. Reload the page."},
-	{gate.ErrDecisionStale, http.StatusConflict, "decision_stale",
-		"The pull request or the policy changed since the agent filed this request, so it is out of date and no proposal was opened. " +
-			"The agent files a new request."},
-	{gate.ErrDecisionProposal, http.StatusBadGateway, "decision_proposal",
-		"The pull request opened for this request is not the draft Archfit expected, so nothing was recorded. Check it on GitHub."},
-	{gate.ErrDecisionNotFound, http.StatusNotFound, "not_found", "Not found."},
-	{gate.ErrStatusComment, http.StatusBadGateway, "decision_comment",
-		"The decision was recorded, but its status comment on the pull request could not be updated. Reload the page."},
-	{gate.ErrActiveObjections, http.StatusConflict, "active_objections",
-		"Another owner has requested changes. Review the displayed objection and use Override and approve with a reason, or resolve the objection."},
-	{gate.ErrOwnerDecisionStale, http.StatusConflict, "decision_stale",
-		"The candidate or objection set changed since this page was loaded. Nothing was saved. Reload and review the current decisions."},
-	{gate.ErrDecisionReason, http.StatusUnprocessableEntity, "decision_reason",
-		"Enter a reason. It will be posted to the pull request."},
-	{gate.ErrNoApprovalToWithdraw, http.StatusConflict, "no_approval_to_withdraw",
-		"You do not have an active architecture approval for this candidate to withdraw. Reload the page."},
-	{gate.ErrDecisionHistoryFull, http.StatusConflict, "decision_history_full",
-		"Decision history is full. Nothing was saved. Close this PR if its approval must be withdrawn; open a replacement for a fresh owner decision."},
-	{gate.ErrDigestsChanged, http.StatusConflict, "digests_changed",
-		"The protected files changed since this page was loaded. Nothing was approved. Reload the page and review them again."},
+	{passkey.ErrNotOwner, http.StatusForbidden, "not_owner",
+		"Only an owner named in the policy, or a repository administrator before the first policy, can register a passkey here."},
+	{passkey.ErrNeedsPasskey, http.StatusConflict, "needs_passkey",
+		"You already have a passkey. Confirm with it first: a new passkey needs an existing one."},
+	{passkey.ErrNoPasskey, http.StatusConflict, "no_passkey", "Register a passkey first."},
+	{passkey.ErrCeremony, http.StatusBadRequest, "ceremony",
+		"The passkey check failed or took more than 5 minutes. Nothing was changed. Try again."},
+	{passkey.ErrCounter, http.StatusForbidden, "counter",
+		"This passkey's counter went back, so the passkey may have been copied. Nothing was changed. Use another passkey."},
+	{passkey.ErrToken, http.StatusForbidden, "token",
+		"The passkey confirmation was used, is older than 5 minutes, or is for another action. Confirm again."},
+	{passkey.ErrTooMany, http.StatusConflict, "too_many",
+		"You have " + strconv.Itoa(passkey.MaxPasskeys) + " passkeys, the most allowed. Remove one first."},
+	{passkey.ErrUnknown, http.StatusNotFound, "not_found", "Not found."},
+	{passkey.ErrInvalid, http.StatusUnprocessableEntity, "invalid", "The request is not valid."},
+	{passkey.ErrPolicy, http.StatusConflict, "policy",
+		"The policy on the default branch is not valid, so Archfit cannot tell who the owners are. Fix .archfit.yaml first."},
 }
 
 // explain maps any error to its status, log outcome and sentence. Unknown errors are upstream failures.
@@ -126,96 +120,4 @@ func explain(err error) (status int, outcome, sentence string) {
 		}
 	}
 	return http.StatusBadGateway, "upstream", "GitHub or an Archfit service failed. Nothing was changed. Try again."
-}
-
-var draftWords = map[proposal.DraftState]string{
-	proposal.DraftOpen:     "draft",
-	proposal.DraftInReview: "awaiting review",
-	proposal.DraftMerged:   "published",
-	proposal.DraftClosed:   "closed",
-}
-
-var conclusionWords = map[string]string{
-	"":                "in progress",
-	"success":         "healthy",
-	"neutral":         "attention",
-	"failure":         stateViolations, // never "blocked": in advisory mode nothing blocks
-	"action_required": "action required",
-	"cancelled":       "cancelled",
-	"timed_out":       "timed out",
-	"skipped":         "skipped",
-	"stale":           "outdated",
-}
-
-// stateTones colour a state word in the web app; a word not listed is "neutral". The word is always shown next to
-// the colour, so the colour is never the only signal.
-var stateTones = map[string]string{
-	"healthy":         "success",
-	"attention":       "attention",
-	stateViolations:   "danger",
-	"action required": "danger",
-	"in progress":     "accent",
-}
-
-func toneOf(word string) string {
-	if t, ok := stateTones[word]; ok {
-		return t
-	}
-	return "neutral"
-}
-
-// stateWord is a check run as one word, the same wherever it is shown. An advisory check that found violations is
-// neutral, so its headline decides: "violations found", never "attention" over the engine's blocked verdict.
-func stateWord(conclusion, title string) string {
-	if conclusion == "neutral" &&
-		(strings.HasPrefix(title, report.HeadlineViolations) || strings.HasPrefix(title, report.HeadlineGateFailing)) {
-		return stateViolations
-	}
-	return conclusionWord(conclusion)
-}
-
-func conclusionWord(c string) string {
-	if w, ok := conclusionWords[c]; ok {
-		return w
-	}
-	return stateUnknown
-}
-
-var stageWords = map[onboarding.Stage]string{
-	onboarding.StageInstalled:      "App installed",
-	onboarding.StageWorkflowMerged: "Workflow merged",
-	onboarding.StageReportReceived: "First report received",
-	onboarding.StagePolicyMerged:   "Policy merged",
-	onboarding.StageAdvisory:       "Gate is advisory",
-	onboarding.StageRequired:       "Gate is required",
-}
-
-// banner is the entitlement sentence; public and granted installations get none.
-func banner(st account.Status) string {
-	switch st.Plan {
-	case account.PlanTrial:
-		return "Trial: private repositories are checked until " + st.TrialEnds.UTC().Format(dateLayout) + "."
-	case account.PlanGrace:
-		return "The trial has ended. Checks on private repositories stop on " + st.SuspendAfter.UTC().Format(dateLayout) + "."
-	case account.PlanSuspended:
-		return "Archfit is suspended for this installation and publishes no checks on private repositories. " +
-			"Ask the Archfit team for a grant to restore them."
-	}
-	return ""
-}
-
-var notices = map[string]string{
-	"saved":              "Saved as a commit on the draft pull request.",
-	"unchanged":          "Nothing to save: the text is already on the branch.",
-	"ready":              "The draft pull request is marked ready for review.",
-	"proposed":           "The proposal is a new commit on the draft pull request. Review the diff on GitHub.",
-	"requested":          "The assist workflow is running in your CI. Its proposal arrives as a new commit on the draft pull request.",
-	"onboarding":         "The onboarding pull request is open. Next: add the workflow file to it.",
-	"discover":           "Discovery was dispatched. The policy proposal arrives as a pull request.",
-	"declined":           "Declined. The agent sees the answer in the pull request thread, and it stays until the policy changes.",
-	"decision_approved":  "Approved. A draft pull request with the proposed policy is open; an architecture owner approves it like any policy change.",
-	"approved":           "Architecture approval saved for this exact commit. Check results refresh separately; this does not merge or publish the change.",
-	"changes_requested":  "Changes requested. The pull request stays open; the owner reason was recorded and the check will refresh.",
-	"approval_withdrawn": "Your architecture approval was withdrawn for Archfit. The pull request stays open; native GitHub reviews are unchanged.",
-	"override_approved":  "Override and approval saved for the objections shown on this exact candidate. GitHub-native review requirements remain independent.",
 }

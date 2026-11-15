@@ -1,0 +1,21 @@
+{
+  "producer": "synthetic: hand-written by the envelope module against envelope.v2.schema.json; uploaded with stand-in.payload; Action 4 publishes no capture yet",
+  "decode": "ok",
+  "fields": {
+    "schema_version": "archfit.upload-envelope.v2",
+    "repository": "alexei-led/archfit-demo",
+    "event": "pull_request",
+    "pull_request": 42,
+    "head_sha": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+    "merge_base_sha": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+    "target_ref": "refs/heads/main",
+    "target_sha": "9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d",
+    "policy_digest": "sha256:7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+    "run_id": 17654321098,
+    "run_attempt": 2,
+    "engine_version": "v4.0.0-rc.1",
+    "image_digest": "sha256:4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c",
+    "platform": "linux/amd64",
+    "payload_digest": "sha256:eceeebaa193d724b90394934a61e77b925abbb35d8e93b7fad9e492a5430d05e"
+  }
+}

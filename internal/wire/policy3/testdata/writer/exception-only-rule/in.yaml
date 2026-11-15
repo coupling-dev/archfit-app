@@ -1,0 +1,17 @@
+version: 3
+owners: [alexei-led]
+modules:
+  app:
+    paths: [cmd/**]
+  store:
+    paths: [internal/store/**]
+rules:
+  # One adapter talks to Docker.
+  - id: no-docker
+    only: { use: github.com/docker/docker, in: [store] }
+    why: One adapter owns the Docker API.
+exceptions:
+  - rule: graph
+    from: store
+    to: app
+    why: Migration in progress.

@@ -1,0 +1,34 @@
+{
+  "status": "clean",
+  "map": {
+    "layers": [
+      "cmd",
+      "core",
+      ""
+    ],
+    "modules": [
+      {
+        "name": "app",
+        "layer": "cmd",
+        "volatility": "high"
+      },
+      {
+        "name": "util",
+        "layer": "core",
+        "volatility": "low"
+      },
+      {
+        "name": "other",
+        "layer": "",
+        "volatility": "high"
+      }
+    ],
+    "lines": [
+      {
+        "kind": "allowed",
+        "from": "app",
+        "to": "util"
+      }
+    ]
+  }
+}

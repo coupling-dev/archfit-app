@@ -1,0 +1,46 @@
+{
+  "status": "policy changed outside the flow",
+  "needs_you": [
+    {
+      "kind": "confirm",
+      "text": "Confirm the policy changed outside the flow.",
+      "href": "/r/acme/app/owner/confirm"
+    },
+    {
+      "kind": "revert",
+      "text": "Revert the policy changed outside the flow.",
+      "href": "/r/acme/app/owner/revert"
+    }
+  ],
+  "map": {
+    "layers": [
+      "cmd",
+      "core",
+      ""
+    ],
+    "modules": [
+      {
+        "name": "app",
+        "layer": "cmd",
+        "volatility": "high"
+      },
+      {
+        "name": "util",
+        "layer": "core",
+        "volatility": "low"
+      },
+      {
+        "name": "other",
+        "layer": "",
+        "volatility": "high"
+      }
+    ],
+    "lines": [
+      {
+        "kind": "allowed",
+        "from": "app",
+        "to": "util"
+      }
+    ]
+  }
+}

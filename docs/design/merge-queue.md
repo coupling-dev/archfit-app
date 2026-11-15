@@ -1,7 +1,8 @@
 # Merge queue: design and Action contract
 
-Status: contract revision 1, frozen for archfit-action v3.1.1. A change to this contract is a new revision that
-both repositories adopt together.
+Updated for M2 task 26: no approval exists; a queued member that changes a protected path blocks its group.
+
+Status: contract revision 2 is the Archfit 4.0 contract and Action 4 ships it. Revision 1 (the v1 envelope) is no longer accepted by the App.
 
 This page states how the App gates a GitHub merge queue on the default branch, and what the Action must send for a
 merge group. The [architecture](../architecture.md) and the [user guide](../user-guide.md#merge-queue) describe the
@@ -15,54 +16,36 @@ the required checks pass on that commit. A success on a pull request head is not
 requests that pass alone can fail together.
 
 When the branch rule's "Only merge non-failing pull requests" is off, a pull request whose own group failed can merge
-inside a later group that passes. So each group must justify every protected change it carries, not only the change
+inside a later group that passes. So each group is checked for every protected change it carries, not only the change
 of its last entry.
 
 ## Wire contract (for the Action)
 
-The envelope schema is unchanged: `archfit.report-envelope.v1`,
-[`internal/wire/envelope/envelope.v1.schema.json`](../../internal/wire/envelope/envelope.v1.schema.json). A merge
-group report uses these values:
+The App accepts [`archfit.upload-envelope.v2`](../../internal/wire/envelope/envelope.v2.schema.json). Every field is self-reported. The body is result JSON v1. Action 4's schema is byte-identical to this App schema; its pin lands with archfit-action PR #16. A merge-group envelope contains:
 
-| Field                                       | Value                                                                 |
-| ------------------------------------------- | --------------------------------------------------------------------- |
-| `kind`                                      | `report`                                                              |
-| `event`                                     | `merge_group`                                                         |
-| `pull_request`                              | `0`                                                                   |
-| `head_sha`                                  | `merge_group.head_sha` of the event, which is `GITHUB_SHA` of the run |
-| `analyzed_sha`                              | the same as `head_sha`: the group commit is the integrated tree       |
-| `base_sha`, `merge_base_sha`, `integration` | `""`                                                                  |
-| `policy_change`                             | absent (the schema refuses it for every event except `pull_request`)  |
-| `run_id`, `run_attempt`                     | the run, as for every event                                           |
-| `baseline_digest`, `labels_digest`          | bare hex SHA-256 of the blobs the engine read, or `""` without a file |
-| engine identity, `payload_digest`           | as for every report                                                   |
+| Field | Value |
+| --- | --- |
+| `schema_version` | `archfit.upload-envelope.v2` |
+| `repository` | GitHub repository `owner/name` |
+| `event`, `pull_request` | `merge_group`, `0` |
+| `head_sha` | The merge group's checked commit |
+| `merge_base_sha` | The merge base of the group head and target tip |
+| `target_ref`, `target_sha` | The target branch ref and fetched tip |
+| `policy_digest` | `sha256:` digest of the policy bytes used |
+| `run_id`, `run_attempt` | GitHub Actions run and attempt numbers |
+| `engine_version`, `image_digest`, `platform` | Engine identity and runner platform |
+| `payload_digest` | `sha256:` digest of the exact result body |
 
-Fixtures: [`merge-group-report.json`](../../internal/wire/testdata/envelope/merge-group-report.json) (valid) and
-[`invalid-merge-group-with-base.json`](../../internal/wire/testdata/envelope/invalid-merge-group-with-base.json)
-(refused: `base_sha` set).
+The App's [merge-group fixture](../../internal/wire/testdata/envelope-v2/merge-group.json) is an example. The v1 fixtures were removed in Archfit 4.
 
 The Action must:
 
-1. Run only on `merge_group` with action `checks_requested`, and only when `merge_group.base_ref` is
-   `refs/heads/<default branch>`.
-2. Analyse exactly the group commit `merge_group.head_sha`.
-3. When an endpoint is set, write `.archfit.yaml`, `.archfit-baseline.json` and `.archfit-labels.yaml` from the git
-   blobs **at the group commit**, and report their digests. The App accepts a blob that differs from the default
-   branch only when it can attribute it to an owner-approved queued pull request (below). Without an endpoint no one
-   checks an approval, so the files come from `merge_group.base_sha`, a default-branch commit.
-4. Not create a check named `archfit/gate` or `archfit/state`. The App writes them, on the group commit.
-5. Upload to `POST <endpoint>/v1/reports` as for every report.
+1. Run only on `merge_group` with action `checks_requested` and the default branch as `base_ref`.
+2. Check the group head named by the event and verify the checkout and group base.
+3. Select `.archfit.yaml` using the merge base, checked head and target tip. The Action reports its digest; the App independently judges the policy against protected inputs.
+4. Upload the result to `POST <endpoint>/v1/reports` when an endpoint is configured. Without one, the Action fails the job unless the result is `pass`.
 
-Answers that are specific to a merge group:
-
-| Status | Body                                     | Meaning for the Action                                                                                        |
-| ------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 200    | `{"conclusion": "...", "reason": "..."}` | Accepted and published on the group commit. Not "passed"                                                      |
-| 409    | `{"error": "stale_group"}`               | The queue has no entry with this head commit: the group was destroyed, rebuilt or merged. Final: do not retry |
-| 409    | `{"error": "stale_attempt"}`             | A newer attempt of the run exists. Final                                                                      |
-| 503    | `{"error": "unavailable"}`               | The App could not read the queue, the inputs, or wrote nothing because they changed. Retry                    |
-
-All other answers are those of every report upload.
+The App's 200 response contains `status` and, when applicable, `reason`. Accepted does not mean passed.
 
 ## How the App binds the upload
 
@@ -89,16 +72,14 @@ gate mode and the workflow path come from `S`.
 For each protected path:
 
 - Same blob at `S` and `X`: unchanged.
-- Different blob: exactly one member must change the path in its own pull request, that member must have a current
-  owner authorization of its own head (the [pull request decision rules](../user-guide.md#architecture-decisions)), and
-  the blob at that member's head must equal the blob at `X`. No member, two members, or a different blob ends
-  `merge_group_conflict`.
+- Different blob: no member changes the path in its own pull request. That ends `merge_group_conflict`.
 
-Separately, every member whose pull request changes a protected path needs its own current owner approval, also when
-the group's combined file equals the default branch's. An active owner objection without an exact-candidate override ends `owner_approval_missing`. An Archfit override may authorize the group member for Archfit, but native GitHub reviews and branch protections remain independent.
+Separately, every member whose pull request changes a protected path ends the group `owner_approval_missing`, naming
+the member and the path, also when the group's combined file equals the default branch's. Nothing approves such a
+member: not a review, a push or an App answer.
 
-The accepted digest of each file is its blob at `X`, once the change is justified. The group commit itself is never
-approved: GitHub created it, and queue membership, a push or an `approved_by` text approve nothing.
+The accepted digest of each file is its blob at `S`. The group commit itself is never approved: GitHub created it, and
+queue membership, a push or an `approved_by` text approve nothing.
 
 ## Feedback and lifecycle
 
@@ -112,16 +93,15 @@ approved: GitHub created it, and queue membership, a push or an `approved_by` te
 - The webhook with `destroyed`, for a reason other than `merged`, turns a pending or successful group check into
   `action_required` `merge_group_unverified`. A later upload for the group gets `409 stale_group`.
 - Inside the publication lease the upload reads the queue and the inputs again. A group destroyed, a member
-  approval withdrawn, or a protected file changed since the decision writes nothing and answers `503`.
-- Native review changes and App approve/request-changes/withdraw/override decisions re-evaluate every queued group that holds the pull request, including a group check that was already successful.
+  that changes a protected path, or a protected file changed since the decision writes nothing and answers `503`.
 
 ## Recovery
 
 | Reason                   | What to do                                                                                                                                                                                                                                               |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `merge_group_conflict`   | Two queued pull requests change the same protected file, or the queued file is not the one an owner approved. Remove all but one from the queue and queue the others again after it merges. Or update the branch and have an owner approve the new head. |
+| `merge_group_conflict`   | A protected file of the group differs from the default branch, and no queued pull request changes it. Queue the pull requests again.                                                                                                                     |
 | `merge_group_unverified` | The App could not confirm the group from GitHub: it was destroyed or rebuilt, or a member changed. Queue the pull request again. (A missing Merge queues permission is not this reason: the upload answers `503`, see Limits.)                           |
-| `owner_approval_missing` | Resolve or explicitly override the active objection on the named pull request's exact candidate. Native GitHub reviews may still require resolution on GitHub; rebuild/requeue the group to obtain a fresh group report.                                 |
+| `owner_approval_missing` | A queued pull request changes a protected path. Remove it from the queue and revert the change; ask for a policy change with a request (see the user guide, "Change the policy"). Queue the pull requests again.                                         |
 
 ## Limits
 

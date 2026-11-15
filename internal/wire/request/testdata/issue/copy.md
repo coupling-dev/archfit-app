@@ -1,0 +1,18 @@
+Request: duplication pkg_tc <-> pkg_util
+
+**Reason**
+
+```text
+tc parses the interface name before pkg_util is loaded
+```
+
+**Record**
+
+```text
+pkg/tc/interface.go:12: duplication: this literal already lives in pkg/util/util.go:15
+  why: two copies must change together and nothing checks that they do
+  next: use pkg_util, or run: archfit request -m "<why a copy is needed>" --expires 2026-12-10
+```
+
+- Pull requests: #12
+- Expires: 2026-12-10

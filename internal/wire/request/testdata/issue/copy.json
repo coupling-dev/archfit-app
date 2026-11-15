@@ -1,0 +1,11 @@
+{
+  "rule": "duplication",
+  "from": "pkg_util",
+  "to": "pkg_tc",
+  "reason": "tc parses the interface name before pkg_util is loaded",
+  "expires": "2026-12-10",
+  "record": "pkg/tc/interface.go:12: duplication: this literal already lives in pkg/util/util.go:15\n  why: two copies must change together and nothing checks that they do\n  next: use pkg_util, or run: archfit request -m \"<why a copy is needed>\" --expires 2026-12-10\n",
+  "pulls": [
+    12
+  ]
+}

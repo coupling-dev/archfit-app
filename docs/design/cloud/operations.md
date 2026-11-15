@@ -206,14 +206,14 @@ The signed-in `GET /api/session` response includes a `build` object. Anonymous r
 `/ready` remains health-only. Only these public metadata fields enter the UI; no credential or environment map is
 returned. About is available to signed-in users, not limited to installation operators.
 
-| Field                                        | Source and limit                                                                                                                                                                                  |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `source_revision`                            | `APP_SOURCE_REVISION` build arg injected into the binary; fallback to Go's embedded `vcs.revision`, never a checkout at request time. Full lowercase 40-hex SHA only.                             |
-| `built_at`                                   | `APP_BUILT_AT`, the UTC image-build timestamp injected into the binary. No fallback to source commit time or deployment time.                                                                     |
-| `version`                                    | Go main-module version embedded in the serving binary, when recorded. The UI does not infer a release tag or provide a separate version-injection path. Missing module version falls back to the source SHA in the footer.                                                              |
-| `runtime_revision`                           | Validated `K_REVISION` from the serving runtime; not a GitHub analysis run.                                                                                                                       |
-| `modified`                                   | Go embedded `vcs.modified`, when present.                                                                                                                                                         |
-| Image digest / deployment time / environment | Not recorded in this UI contract. Obtain the digest from release `build.json`, and deployment evidence from `release.json` and the exact runtime inventory. An image cannot embed its own digest. |
+| Field                                        | Source and limit                                                                                                                                                                                                           |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source_revision`                            | `APP_SOURCE_REVISION` build arg injected into the binary; fallback to Go's embedded `vcs.revision`, never a checkout at request time. Full lowercase 40-hex SHA only.                                                      |
+| `built_at`                                   | `APP_BUILT_AT`, the UTC image-build timestamp injected into the binary. No fallback to source commit time or deployment time.                                                                                              |
+| `version`                                    | Go main-module version embedded in the serving binary, when recorded. The UI does not infer a release tag or provide a separate version-injection path. Missing module version falls back to the source SHA in the footer. |
+| `runtime_revision`                           | Validated `K_REVISION` from the serving runtime; not a GitHub analysis run.                                                                                                                                                |
+| `modified`                                   | Go embedded `vcs.modified`, when present.                                                                                                                                                                                  |
+| Image digest / deployment time / environment | Not recorded in this UI contract. Obtain the digest from release `build.json`, and deployment evidence from `release.json` and the exact runtime inventory. An image cannot embed its own digest.                          |
 
 `scripts/deploy/build.sh` supplies source SHA and build time on a fresh build. The final image carries the matching
 OCI revision/created labels. Reusing an existing commit image preserves that image's metadata; a reuse does not
@@ -259,7 +259,7 @@ baseline reset or re-anchor.
   older one, so a push could otherwise replace the waiting rollback. Check that the rollback run started.
 - **What is recovered.** Tasks that the worker answered with 5xx retry. See [Failure handling](architecture.md#failure-handling). Tasks that a bad worker
   answered with success are gone. The sweep repairs gate and control state for those.
-- A rollback does not undo stored data. The format rule in [State](architecture.md#state) keeps old revisions working.
+- A rollback does not undo stored data. The format rule in [State](../../architecture.md#state) keeps old revisions working.
 - After a rollback, do not release again until the cause is fixed. Keep releases on push off until then.
 
 ## Observability

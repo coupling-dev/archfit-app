@@ -1,0 +1,24 @@
+{
+  "status": "fail",
+  "status_line": "Archfit: fail, 1 error",
+  "records": [
+    {
+      "path": "pkg/tc/netem.go",
+      "line": 12,
+      "rule": "graph",
+      "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+      "balance": {
+        "value": 9,
+        "min": 7
+      },
+      "next": {
+        "kind": "command",
+        "text": "archfit request -m \"\u003cwhy you need it\u003e\"",
+        "note": "do not copy the code"
+      },
+      "show_next": false
+    }
+  ],
+  "author": "reply `/archfit request \u003cwhy you need it\u003e`. Do not copy the code.",
+  "owner": "nothing to do until a request exists."
+}

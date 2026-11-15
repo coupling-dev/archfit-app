@@ -7,7 +7,7 @@
 ## Purpose
 
 `store` is the only persistence seam of the App: a tenant-prefixed key-value interface and an
-in-memory implementation. Entitlements, consent records and the managed-LLM budget counter live behind
+in-memory implementation. Entitlements, consent records and the gate records live behind
 it. Without it, `gate` and `control` would each bind to a KV product, and tenant isolation would be a
 habit of every caller instead of a property of one interface.
 
@@ -18,16 +18,19 @@ habit of every caller instead of a property of one interface.
 - List the tenants that own keys (`Tenants`), so the sweep can forget an installation whose uninstall webhook was missed.
 - Provide `NewMemory`, the in-process implementation used by tests, local runs, and as `ARCHFIT_STORE=memory`.
   The persistent driver is the child `store/firestore` (`ARCHFIT_STORE=firestore`).
-- Provide an atomic integer `Add` so the budget counter needs no transaction.
+- Provide an atomic integer `Add`, a counter that needs no transaction.
 - Provide `CompareAndSwap` on one key, so a caller can hold a lease that every instance sees (the publication
   lease of `gate/feedback`).
 - Provide `CompareAndSwapAll` on several keys of one tenant, so a caller can write a record and a value derived
   from it together, under a check on both (the account record and its entitlement in `control/account`).
+- Provide `Update`, the caller-side loop of "read, then swap from the bytes read" over `CompareAndSwapAll`, so every
+  caller that changes several keys together (a record and its index in `gate/records`) uses one retry rule.
 - Provide `DeleteTenant` so uninstall is one call.
 - Export the conformance suite `storetest.Run` **[default]** so every future driver passes the same cases.
 
 Not provided, on purpose: listing keys, TTL, transactions beyond `Add`, `CompareAndSwap` and `CompareAndSwapAll`
-(compare-and-swap over the given keys of one tenant, no reads inside), schema, migrations, value encoding.
+(compare-and-swap over the given keys of one tenant, no reads inside), schema, migrations, value encoding. `Update` is
+no transaction inside the store: it reads with `Get` and only its swap is atomic.
 
 ## Subdomain Classification
 
@@ -51,13 +54,25 @@ interface absorbs that choice; consumers never see it.
 - Input limits **[default]**: key is non-empty, at most 512 bytes, has no NUL byte; value at most 64 KiB;
   tenant is never negative; `CompareAndSwapAll` takes 1 to 10 swaps, each key at most once.
 
-Known keys are informative only; their owners define them: `entitlement` (owned by `gate/inputs`, written by
-`control/account`), `account` and `consent/<kind>` (private to `control/account`), `feedback/lease/<head_sha>`
-(private to `gate/feedback`, written only by `CompareAndSwap`), and under `SystemTenant`
-`llm-budget/<YYYY-MM>` (`control/account`), `decision/<repo>/<pr>/<finding_id>/<policy_digest>` with its `/policy` text and
-`decision/<repo>/pending` and `decision/<repo>/lease/<pr>` (private to `gate/decisions`: a decision request, the proposed
-policy kept apart because a value is at most 64 KiB, the list of requests to walk because the Store cannot list keys,
-written with `CompareAndSwapAll`, and the status lease of a pull request, written only by `CompareAndSwap`). `store` never parses a key or a value except a counter in `Add`.
+Known keys are informative only; their owners define them.
+
+- Archfit 3, under the installation tenant: `entitlement` (owned by `gate/inputs`, written by `control/account`);
+  `admission`, `pusher/<repo>/<head_sha>`, `approval/<repo>/<pr>/<head_sha>`, `owner-decision/<repo>/<pr>` and
+  `review-request/<repo>/<pr>/<head_sha>/<base_sha>` (private to `gate/inputs`); `account` and `consent/<kind>`
+  (private to `control/account`); `feedback/lease/<head_sha>` (private to `gate/feedback`, written only by
+  `CompareAndSwap`); `decision/<repo>/<pr>/<finding_id>/<policy_digest>` with its `/policy` text,
+  `decision/<repo>/pending` and `decision/<repo>/lease/<pr>` (private to `gate/decisions`: a decision request, the
+  proposed policy kept apart because a value is at most 64 KiB, the list of requests to walk because the Store cannot
+  list keys, written with `CompareAndSwapAll`, and the status lease of a pull request, written only by
+  `CompareAndSwap`).
+- Archfit 3, under `SystemTenant`: `llm-budget/<YYYY-MM>` (`control/account`) and `app/readiness` (read by the
+  readiness probe of `app`, never written).
+- Archfit 4, under the installation tenant: every key under `v4/` (JSON values with a `schema`). `gate/records` owns
+  all of them except `v4/passkey/<github-user-id>` and `v4/challenge/<github-user-id>` (one open ceremony per user),
+  which `control/passkey` owns (M2 task 18), because `control` cannot import `gate/*`.
+
+The Archfit 3 and Archfit 4 sets never read or write each other's keys, so the previous revision stays deployable.
+`store` never parses a key or a value except a counter in `Add`.
 
 ## Public Contract
 
@@ -66,7 +81,7 @@ written with `CompareAndSwapAll`, and the status lease of a pull request, writte
 // Every key is stored under its tenant prefix; no operation crosses tenants.
 type Tenant int64
 
-// SystemTenant holds App-wide keys (the managed-LLM budget counter). It is never a GitHub installation ID.
+// SystemTenant holds App-wide keys (the readiness probe). It is never a GitHub installation ID.
 const SystemTenant Tenant = 0
 ```
 
@@ -108,6 +123,15 @@ type Swap struct {
 func NewMemory() Store
 ```
 
+```go
+// ErrConflict is returned by Update when every attempt lost its compare-and-swap to another writer.
+var ErrConflict = errors.New("store: update still in conflict")
+
+// Update reads keys, lets change compute their next bytes, and writes them in one CompareAndSwapAll from the bytes
+// it read. nil deletes a key; bytes equal to the current ones only check it.
+func Update(ctx context.Context, s Store, t Tenant, keys []string, change func(cur [][]byte) ([][]byte, error)) error
+```
+
 `GitHub` is the only identity provider: a `Tenant` is always a GitHub App installation ID, except
 `SystemTenant`. `SystemTenant` is the constant tenant `0`. `ErrNotFound` is the sentinel returned by `Get`; callers test it
 with `errors.Is`. `NewMemory` is the only constructor in this package.
@@ -145,8 +169,15 @@ with `errors.Is`. `NewMemory` is the only constructor in this package.
   ascending, no duplicates **[default: sorted]**. No keys → empty slice, `nil` error. A tenant whose last key was
   deleted, or that was removed by `DeleteTenant`, is no longer listed. It returns tenant IDs only, never keys or
   values. Cost is O(keys) in the memory driver; it is called once per sweep.
+- `Update` (a function over any `Store`, not a method): reads every key with `Get` (a missing key is `nil`), calls
+  `change` with the bytes in the order of `keys`, and swaps every key from the bytes it read in one `CompareAndSwapAll`.
+  `change` returns one value per key: `nil` deletes, the current bytes only check. A `false` swap reads again and calls
+  `change` again, at most 5 times **[default]**, then returns `ErrConflict`. An error from `change` or from the Store
+  ends `Update` with that error. A wrong number of values, more than 10 keys or a key twice is an error and changes
+  nothing. `change` gets copies of the bytes read, so editing them never changes what the swap compares against.
+  `change` sees keys read one by one, not a snapshot; it decides again on every attempt.
 - `DeleteTenant`: removes every key of `t` and nothing of any other tenant. A second call → `nil`.
-  `DeleteTenant(SystemTenant)` → error **[default]**: no uninstall can remove the App-wide budget counter.
+  `DeleteTenant(SystemTenant)` → error **[default]**: no uninstall can remove an App-wide key.
 
 Validation errors are plain errors with the prefix `store:`. They carry the tenant and the key length, never the value.
 
@@ -214,6 +245,18 @@ knowledge of every entry below; nothing is restated because this file is the nor
   calls `Tenants` in its sweep and reads the `SystemTenant` constant, which it skips before it compares the tenants
   with GitHub's installation list.
 
+### gate/records
+
+- **Counterpart**: internal/gate/records/
+- **Direction**: `gate/records` depends on `store`
+- **Strength**: Contract
+- **LCA / Rank / Distance**: root / 2 / 2
+- **Volatility**: High (the gate side)
+- **Balanced?**: Yes
+- **Shared knowledge**: `Tenant`, `Get`, `ErrNotFound`, `Update`, `ErrConflict` and the `CompareAndSwapAll` limits
+  (10 keys, 64 KiB values). It owns every key under `v4/` under `Tenant(installationID)` except the passkey and
+  challenge keys of `control/passkey`, never touches another key, and writes a record with its index in one `Update`. `store` knows nothing about its records or indexes.
+
 ### app
 
 - **Counterpart**: internal/app/
@@ -263,7 +306,7 @@ a platform TTL on `feedback/lease/` keys is allowed as a driver detail and never
   or an authorized session; never from a client-supplied ID. `store` cannot check that.
 - `Tenants` is the only enumeration. It serves the sweep alone (compare with GitHub's installation list, then
   `DeleteTenant` the leftovers). No request path may call it, and it never exposes a key or a value.
-- The App persists nothing except keys under an installation prefix and the system budget counter. No report,
+- The App persists nothing except keys under an installation prefix and the App-wide keys. No report,
   source, queue, or job table. `store` must not grow features that invite them.
 - Values are opaque. `store` never logs a value or a key; logs carry tenant ID, operation, outcome, timing only.
 - Safe for concurrent use. `Add` and `CompareAndSwap` are linearizable per key; `CompareAndSwapAll` is linearizable
@@ -367,6 +410,20 @@ All cases live in `storetest.Run` and run against `NewMemory` and every driver.
 - **Test name**: `TestErrorsCarryNoValues`
   **Scenario**: trigger every validation error with a marker string in key and value.
   **Expected behavior**: no error text contains the marker.
+
+- **Test name**: `TestUpdateWritesEveryKeyFromTheBytesItRead`, `TestUpdateRetriesFromFreshBytesAfterALostSwap`,
+  `TestUpdateGivesUpWithErrConflict`, `TestUpdateComparesAgainstWhatItReadNotWhatChangeEdited`,
+  `TestUpdateChangeErrorWritesNothing`,
+  `TestUpdateRefusesInvalidKeySetsAndWritesNothing`, `TestUpdateRefusesAWrongNumberOfValues`,
+  `TestUpdateHonorsACancelledContext`
+  **Scenario**: a create, a check, a delete and an edit in one call; a writer between the read and the swap twice;
+  a writer before every swap; a `change` that edits its input in place and returns it; a `change` error; 11 keys, a key twice, an empty key; one value for two keys; a
+  cancelled context.
+  **Expected behavior**: `change` sees `nil` for the missing key and every key is written; `change` runs three times
+  and both other writes are kept; `ErrConflict` after 5 calls and the lost value is not written; the edited value
+  written on the first attempt; the `change` error and
+  nothing written; an error and no tenant created; an error that is not `ErrConflict`; `context.Canceled` before
+  `change` runs.
 
 ### Behavior Tests
 

@@ -105,9 +105,9 @@
         <div>
           <strong>{row.account}</strong>
           <span class="label">{row.type}</span>
-          {#if row.auto}<span class="label success">auto</span>{/if}
+          {#if row.auto}<span class="label">auto</span>{/if}
           <div class="muted small">
-            {#if row.auto}From the App configuration{:else}Approved by {row.approved_by} on {day(row.approved_at ?? '')}{/if}
+            {#if row.auto}From the App settings{:else}Approved by {row.approved_by} on {day(row.approved_at ?? '')}{/if}
             · {repoCount(row)}
           </div>
           {@render repos(row)}

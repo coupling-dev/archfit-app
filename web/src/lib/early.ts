@@ -11,17 +11,15 @@ export function firstPaths(route: Route): string[] {
     case 'home':
       return ['/api/repos'];
     case 'repo':
-      return [repoAPI(route.owner, route.name, 'overview'), repoAPI(route.owner, route.name, 'findings')];
-    case 'graph':
-      return [repoAPI(route.owner, route.name, 'graph')];
+      return [repoAPI(route.owner, route.name, 'home')];
+    case 'policy':
+      return [repoAPI(route.owner, route.name, 'policy')];
     case 'pull':
       return [repoAPI(route.owner, route.name, `pulls/${route.number}`)];
-    case 'pull-graph':
-      return [repoAPI(route.owner, route.name, `pulls/${route.number}/graph`)];
-    case 'decisions':
-      return [repoAPI(route.owner, route.name, 'decisions')];
-    case 'data-sharing':
-      return [repoAPI(route.owner, route.name, 'data-sharing')];
+    case 'request':
+      return [repoAPI(route.owner, route.name, `requests/${route.number}`)];
+    case 'passkeys':
+      return [repoAPI(route.owner, route.name, 'passkeys')];
   }
   return [];
 }

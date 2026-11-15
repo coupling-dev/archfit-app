@@ -92,15 +92,15 @@ func TestRoleRouteTables(t *testing.T) {
 	}
 	tables := map[string]map[string]want{
 		roleAll: {
-			"health": {status: 200}, "upload": {call: "gate.Upload"}, "discovery": {call: "control.Discovery"},
-			"baseline": {call: "control.Baseline"}, "intake": {call: "gate.HandleEvent"}, "ui": {call: "control.UI"},
+			"health": {status: 200}, "upload": {call: "gate.Upload"}, "discovery": {status: 404},
+			"baseline": {status: 404}, "intake": {call: "gate.HandleEvent"}, "ui": {call: "control.UI"},
 			"ui page": {call: "control.UI"}, "sweep with the operator token": {call: "control.Sweep"},
 			"grant with the operator token": {call: "control.Grant"}, "task as the invoker": {status: 404},
 			"sweep as the invoker": {status: 401}, "unknown internal path": {status: 404},
 		},
 		rolePublic: {
-			"health": {status: 200}, "upload": {call: "gate.Upload"}, "discovery": {call: "control.Discovery"},
-			"baseline": {call: "control.Baseline"}, "intake": {status: http.StatusAccepted}, "ui": {call: "control.UI"},
+			"health": {status: 200}, "upload": {call: "gate.Upload"}, "discovery": {status: 404},
+			"baseline": {status: 404}, "intake": {status: http.StatusAccepted}, "ui": {call: "control.UI"},
 			"ui page": {call: "control.UI"}, "sweep with the operator token": {status: 404},
 			"grant with the operator token": {status: 404}, "task as the invoker": {status: 404},
 			"sweep as the invoker": {status: 404}, "unknown internal path": {status: 404},

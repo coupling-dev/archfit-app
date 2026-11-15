@@ -1,4 +1,0 @@
-{
-  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (an engine v3.0.0 capture) with jq: .comparison.measurement_profile.prompt=\"You are LEAK-7f3a\"",
-  "decode": "error"
-}

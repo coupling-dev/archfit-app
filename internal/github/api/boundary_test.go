@@ -14,7 +14,7 @@ func TestCheckRunCallerContract(t *testing.T) {
 	annotations := func(n int) []Annotation {
 		return make([]Annotation, n)
 	}
-	base := CheckRun{ID: 5, Name: "archfit", HeadSHA: "abc", Status: "in_progress"}
+	base := CheckRun{ID: 5, Name: "archfit", HeadSHA: "abc", Status: "in_progress", Title: "t", Summary: "s"}
 	with := func(edit func(*CheckRun)) CheckRun {
 		c := base
 		edit(&c)
@@ -31,8 +31,20 @@ func TestCheckRunCallerContract(t *testing.T) {
 		{name: "multi-byte summary over 65535 bytes", run: with(func(c *CheckRun) { c.Summary = strings.Repeat("é", 40000) }), wantErr: true},
 		{name: "50 annotations", run: with(func(c *CheckRun) { c.Annotations = annotations(50) })},
 		{name: "51 annotations", run: with(func(c *CheckRun) { c.Annotations = annotations(51) }), wantErr: true},
+		{name: "annotations without a title", run: with(func(c *CheckRun) { c.Annotations, c.Title = annotations(1), "" }), wantErr: true},
+		{name: "annotations without a summary", run: with(func(c *CheckRun) { c.Annotations, c.Summary = annotations(1), "" }), wantErr: true},
+		{name: "title and summary without annotations", run: with(func(c *CheckRun) {})},
 		{name: "completed without conclusion", run: with(func(c *CheckRun) { c.Status = "completed" }), wantErr: true},
-		{name: "completed with conclusion", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "success" })},
+		{name: "completed success", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "success" })},
+		{name: "completed failure", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "failure" })},
+		{name: "completed neutral", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "neutral" })},
+		{name: "completed action_required", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "action_required" })},
+		{name: "completed skipped", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "skipped" }), wantErr: true},
+		{name: "completed cancelled", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "cancelled" }), wantErr: true},
+		{name: "completed stale", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "stale" }), wantErr: true},
+		{name: "completed timed_out", run: with(func(c *CheckRun) { c.Status, c.Conclusion = "completed", "timed_out" }), wantErr: true},
+		{name: "queued", run: with(func(c *CheckRun) { c.Status = "queued" }), wantErr: true},
+		{name: "no status", run: with(func(c *CheckRun) { c.Status = "" }), wantErr: true},
 		{name: "in_progress with conclusion", run: with(func(c *CheckRun) { c.Conclusion = "success" }), wantErr: true},
 		{name: "update with ID 0", run: with(func(c *CheckRun) { c.ID = 0 }), updateOnly: true, wantErr: true},
 	}
@@ -84,7 +96,7 @@ func TestRevokedAccessAndRemovedRepository(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		etagJSON(w, r, `"policy-v1"`, map[string]any{"type": "file", "encoding": "base64", "content": "c2VjcmV0", "sha": "blob"})
+		etagJSON(w, r, `"policy-v1"`, map[string]any{"type": "file", "encoding": "base64", "content": "c2VjcmV0", "sha": "b10b5ea1b10b5ea1b10b5ea1b10b5ea1b10b5ea1"})
 	}))
 
 	for range 2 {
@@ -151,10 +163,6 @@ func repoRefCalls(c *Client, r RepoRef) map[string]func(context.Context) (bool, 
 			paths, truncated, err := c.ChangedFiles(ctx, r, 1)
 			return paths != nil || truncated, err
 		},
-		"Pulls.Reviews": func(ctx context.Context) (bool, error) {
-			rv, err := c.Reviews(ctx, r, 1)
-			return rv != nil, err
-		},
 		"Checks.CheckRuns": func(ctx context.Context) (bool, error) {
 			runs, err := c.CheckRuns(ctx, r, "abc", "archfit")
 			return runs != nil, err
@@ -191,6 +199,9 @@ func repoRefCalls(c *Client, r RepoRef) map[string]func(context.Context) (bool, 
 		"Issues.CloseIssue": func(ctx context.Context) (bool, error) {
 			return false, c.CloseIssue(ctx, r, 9)
 		},
+		"Issues.ReopenIssue": func(ctx context.Context) (bool, error) {
+			return false, c.ReopenIssue(ctx, r, 9)
+		},
 		"Actions.Run": func(ctx context.Context) (bool, error) {
 			wr, err := c.Run(ctx, r, 55)
 			return wr.ID != 0, err
@@ -216,6 +227,10 @@ func repoRefCalls(c *Client, r RepoRef) map[string]func(context.Context) (bool, 
 			sha, err := c.Commit(ctx, r, "main", "msg", []FileChange{{Path: "a", Content: []byte("b")}})
 			return sha != "", err
 		},
+		"Changes.CommitOn": func(ctx context.Context) (bool, error) {
+			sha, err := c.CommitOn(ctx, r, "archfit/policy", testSHA1, "msg", []FileChange{{Path: "a", Content: []byte("b")}}, true)
+			return sha != "", err
+		},
 		"Changes.EnsurePull": func(ctx context.Context) (bool, error) {
 			p, err := c.EnsurePull(ctx, r, NewPull{Title: "t", Head: "archfit/setup", Base: "main"})
 			return p != Pull{}, err
@@ -225,6 +240,25 @@ func repoRefCalls(c *Client, r RepoRef) map[string]func(context.Context) (bool, 
 		},
 		"Changes.MarkReady": func(ctx context.Context) (bool, error) {
 			return false, c.MarkReady(ctx, r, 1)
+		},
+		"Merges.MergePull": func(ctx context.Context) (bool, error) {
+			sha, err := c.MergePull(ctx, r, 1, testSHA1)
+			return sha != "", err
+		},
+		"Merges.UpdateBranch": func(ctx context.Context) (bool, error) {
+			return false, c.UpdateBranch(ctx, r, 1, testSHA1)
+		},
+		"Commits.Compare": func(ctx context.Context) (bool, error) {
+			cmp, err := c.Compare(ctx, r, testSHA1, testSHA2)
+			return cmp.Paths != nil || cmp.Status != "", err
+		},
+		"IssueTriage.SetAssigneesAndLabels": func(ctx context.Context) (bool, error) {
+			users, labels, err := c.SetAssigneesAndLabels(ctx, r, 9, []string{"alice"}, []string{"archfit-request"})
+			return users != nil || labels != nil, err
+		},
+		"WorkflowRuns.HeadRuns": func(ctx context.Context) (bool, error) {
+			runs, err := c.HeadRuns(ctx, r, ".github/workflows/archfit.yaml", testSHA1)
+			return runs != nil, err
 		},
 	}
 }
@@ -255,12 +289,6 @@ func TestCrossInstallationRepoRef(t *testing.T) {
 			}
 		})
 	}
-	t.Run("Pulls.TeamMember", func(t *testing.T) {
-		member, err := env.c.TeamMember(context.Background(), crossed, "b-org/core", "alice")
-		if member || err != nil {
-			t.Errorf("TeamMember = %v, %v; want false", member, err)
-		}
-	})
 	if env.ts.mintedFor(2) != 0 || env.ts.mintedFor(1) == 0 {
 		t.Errorf("tokens minted for %v, want installation 1 only", env.ts.minted)
 	}
@@ -304,6 +332,10 @@ func TestErrorsCarryNoSecretsOrContent(t *testing.T) {
 				_, err := c.Commit(ctx, ref, branchMark, bodyMark, []FileChange{{Path: pathMark, Content: []byte(bodyMark)}})
 				return err
 			},
+			"CommitOn": func(ctx context.Context) error {
+				_, err := c.CommitOn(ctx, ref, branchMark, testSHA1, bodyMark, []FileChange{{Path: pathMark, Content: []byte(bodyMark)}}, true)
+				return err
+			},
 			"CreateIssue": func(ctx context.Context) error {
 				_, err := c.CreateIssue(ctx, ref, NewIssue{Title: bodyMark, Body: bodyMark, Assignee: userMark})
 				return err
@@ -312,7 +344,18 @@ func TestErrorsCarryNoSecretsOrContent(t *testing.T) {
 				_, err := c.EnsurePull(ctx, ref, NewPull{Title: bodyMark, Body: bodyMark, Head: branchMark, Base: "main"})
 				return err
 			},
-			"MarkReady":  func(ctx context.Context) error { return c.MarkReady(ctx, ref, 1) },
+			"MarkReady":    func(ctx context.Context) error { return c.MarkReady(ctx, ref, 1) },
+			"MergePull":    func(ctx context.Context) error { _, err := c.MergePull(ctx, ref, 1, testSHA1); return err },
+			"UpdateBranch": func(ctx context.Context) error { return c.UpdateBranch(ctx, ref, 1, testSHA1) },
+			"Compare":      func(ctx context.Context) error { _, err := c.Compare(ctx, ref, testSHA1, testSHA2); return err },
+			"SetAssigneesAndLabels": func(ctx context.Context) error {
+				_, _, err := c.SetAssigneesAndLabels(ctx, ref, 9, []string{userMark}, []string{bodyMark})
+				return err
+			},
+			"HeadRuns": func(ctx context.Context) error {
+				_, err := c.HeadRuns(ctx, ref, ".github/workflows/"+pathMark+".yaml", testSHA1)
+				return err
+			},
 			"Permission": func(ctx context.Context) error { _, err := c.Permission(ctx, userMark, ref.FullName); return err },
 			"UserRepos":  func(ctx context.Context) error { _, err := c.UserRepos(ctx, userMark); return err },
 		}
@@ -405,8 +448,6 @@ func TestErrorsCarryNoSecretsOrContent(t *testing.T) {
 		check(t, "bad full name", err)
 		_, _, err = env.c.File(context.Background(), repoA, "main", pathMark+"/../x")
 		check(t, "bad path", err)
-		_, err = env.c.TeamMember(context.Background(), repoA, pathMark, "alice")
-		check(t, "bad team", err)
 		_, err = env.c.CreateComment(context.Background(), repoA, 1, strings.Repeat(bodyMark, 10000))
 		check(t, "long comment", err)
 	})

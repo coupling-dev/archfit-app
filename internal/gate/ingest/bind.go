@@ -4,18 +4,15 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/github/oidc"
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
 )
 
 const (
 	eventPullRequest = "pull_request"
 	eventPush        = "push"
-	eventDispatch    = "workflow_dispatch"
-	eventMergeGroup  = "merge_group"
+
+	eventMergeGroup = "merge_group"
 
 	branchRefPrefix   = "refs/heads/"
 	pullStateOpen     = "open"
@@ -34,78 +31,6 @@ func (s problemSet) list() []Problem {
 		}
 	}
 	return out
-}
-
-// eligible is the event table of step 13.
-func eligible(kind envelope.Kind, event string, onDefaultBranch bool) bool {
-	switch event {
-	case eventPush:
-		// A re-anchor is a dispatched run only: it rewrites a protected baseline on purpose, never from a push.
-		return onDefaultBranch && kind != envelope.KindReanchor
-	case eventPullRequest, eventMergeGroup:
-		return kind == envelope.KindReport
-	case eventDispatch:
-		return kind == envelope.KindDiscovery || kind == envelope.KindBaseline || kind == envelope.KindReanchor
-	}
-	return false
-}
-
-// bind builds the binding from the claims, the run and the resolved pull (steps 13 to 15).
-// The only rejections here are the rate limit, a moved head and a merge group the queue no longer lists.
-func (r *receiver) bind(ctx context.Context, kind envelope.Kind, env envelope.Envelope, claims oidc.Claims,
-	repo api.Repo, run api.WorkflowRun,
-) (Binding, problemSet, error) {
-	problems := problemSet{}
-	branch, onBranch := strings.CutPrefix(claims.Ref, branchRefPrefix)
-	if !eligible(kind, run.Event, onBranch && branch == repo.DefaultBranch) {
-		problems.add(ProblemUnsupportedEvent)
-	}
-
-	b := Binding{
-		Repo:         repo,
-		Event:        run.Event,
-		HeadSHA:      run.HeadSHA,
-		AnalyzedSHA:  run.HeadSHA,
-		BaseRef:      repo.DefaultBranch,
-		Fork:         run.HeadRepo != repo.FullName, // also the head repository of a workflow_run run
-		RunID:        claims.RunID,
-		RunAttempt:   claims.RunAttempt,
-		WorkflowPath: oidc.WorkflowPath(claims.JobWorkflowRef, repo.FullName),
-	}
-	if onBranch && run.Event != eventMergeGroup {
-		b.BaseRef = branch
-	}
-	if run.Event == eventMergeGroup && kind == envelope.KindReport {
-		if err := r.queued(ctx, repo, run.HeadSHA); err != nil {
-			return Binding{}, nil, err
-		}
-		b.MergeGroup = true
-	}
-
-	if run.Event == eventPullRequest {
-		pull, err := r.resolvePull(ctx, repo, run, env.PullRequest)
-		if err != nil {
-			return Binding{}, nil, err
-		}
-		if pull == nil {
-			problems.add(ProblemEnvelopeMismatch)
-		} else {
-			if pull.State != pullStateOpen {
-				problems.add(ProblemEnvelopeMismatch)
-			}
-			b.PullRequest = pull.Number
-			b.BaseRef, b.BaseSHA, b.MergeBaseSHA = pull.BaseRef, pull.BaseSHA, pull.MergeBaseSHA
-			b.AnalyzedSHA, b.Integration = landing(pull, run.HeadSHA)
-			b.Fork = b.Fork || pull.HeadRepo != repo.FullName
-		}
-	}
-	if b.Fork {
-		problems.add(ProblemFork)
-	}
-	if !envelopeMatches(env, b) {
-		problems.add(ProblemEnvelopeMismatch)
-	}
-	return b, problems, nil
 }
 
 // queued requires a merge group of the default branch's queue to have head as its commit, by GitHub's GraphQL entries.
@@ -154,30 +79,4 @@ func (r *receiver) resolvePull(ctx context.Context, repo api.Repo, run api.Workf
 		return nil, nil
 	}
 	return &matches[0], nil
-}
-
-// landing is what a pull request run must have measured, from GitHub's own answer and never from the envelope: the
-// head alone when GitHub says it conflicts, else GitHub's test merge commit. While GitHub has not computed the merge
-// there is no answer, and no envelope matches it: the run is made again.
-func landing(pull *api.Pull, head string) (analyzed, integration string) {
-	switch {
-	case pull.Mergeable != nil && !*pull.Mergeable:
-		return head, envelope.IntegrationConflicts
-	case pull.MergeCommitSHA != "":
-		return pull.MergeCommitSHA, envelope.IntegrationMerged
-	}
-	return "", ""
-}
-
-// envelopeMatches is step 15. Repository was compared in step 7.
-func envelopeMatches(env envelope.Envelope, b Binding) bool {
-	return env.Event == b.Event &&
-		env.PullRequest == b.PullRequest &&
-		env.HeadSHA == b.HeadSHA &&
-		env.BaseSHA == b.BaseSHA &&
-		env.MergeBaseSHA == b.MergeBaseSHA &&
-		env.AnalyzedSHA == b.AnalyzedSHA &&
-		env.Integration == b.Integration &&
-		env.RunID == b.RunID &&
-		env.RunAttempt == b.RunAttempt
 }

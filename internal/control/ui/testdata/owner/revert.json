@@ -1,0 +1,31 @@
+{
+  "kind": "revert",
+  "pull_request": 0,
+  "status": "unknown: the policy changed outside the flow.",
+  "note": "This restores the approved policy.",
+  "main_action": "Revert the policy",
+  "action_digest": "sha256:a49056135eb339d7bc6e720eb737f2d526eae8c89145c1f6edf791c165c79d32",
+  "digest": "sha256:b9359de3fb67e06c2f256556b99da5981014c30ab086e0949a37af6ef4f179ea",
+  "head": "",
+  "base": "",
+  "tip": "000000000000000000000000000000000000000a",
+  "approved": "0000000000000000000000000000000000000008",
+  "files": [
+    {
+      "role": "current",
+      "ref": "000000000000000000000000000000000000000a",
+      "path": ".archfit.yaml",
+      "digest": "sha256:2bd1008f0c36e371955aeb7929fae4e977798ee08f1d1794cb7fc73afdb85366",
+      "text": "version: 3\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n",
+      "missing": false
+    }
+  ],
+  "diffs": [
+    {
+      "title": "The policy to restore",
+      "path": ".archfit.yaml",
+      "text": "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -3,3 +3,3 @@\n modules:\n   app:\n-    paths: [cmd/**]\n+    paths: [cmd/**, pkg/**]\n"
+    }
+  ],
+  "proposals": []
+}

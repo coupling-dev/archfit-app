@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"maps"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -544,7 +545,7 @@ func TestETagCache(t *testing.T) {
 func TestInputGuards(t *testing.T) {
 	env := newEnv(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/contents/") {
-			writeJSON(w, http.StatusOK, map[string]any{"type": "file", "encoding": "base64", "content": "aGk=", "sha": "blob"})
+			writeJSON(w, http.StatusOK, map[string]any{"type": "file", "encoding": "base64", "content": "aGk=", "sha": "b10b5ea1b10b5ea1b10b5ea1b10b5ea1b10b5ea1"})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"object": map[string]any{"sha": "abc"}})
@@ -695,5 +696,33 @@ func TestArtifactDefect(t *testing.T) {
 		if err := artifactDefect(k, failure); errors.Is(err, ErrArtifactInvalid) || !errors.Is(err, failure) {
 			t.Errorf("%v became %v, want it returned as it is", failure, err)
 		}
+	}
+}
+
+// TestFileRefusesAResponseWithoutABlobID: the blob id proves two reads are the same file, so a response without a
+// valid one is an error, never a file with an empty id.
+func TestFileRefusesAResponseWithoutABlobID(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body map[string]any // the response fields besides type, encoding and content
+	}{
+		{"missing", map[string]any{}},
+		{"null", map[string]any{"sha": nil}},
+		{"empty", map[string]any{"sha": ""}},
+		{"short", map[string]any{"sha": "b10b5ea1"}},
+		{"upper case", map[string]any{"sha": strings.Repeat("B", 40)}},
+		{"not hex", map[string]any{"sha": strings.Repeat("z", 40)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newEnv(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body := map[string]any{"type": "file", "encoding": "base64", "content": "aGk="}
+				maps.Copy(body, tc.body)
+				writeJSON(w, http.StatusOK, body)
+			}))
+			content, blob, err := env.c.File(context.Background(), RepoRef{InstallationID: 1, FullName: "o/r"}, "main", "a.yaml")
+			if err == nil || content != nil || blob != "" {
+				t.Errorf("File = %q, %q, %v; want an error and no data", content, blob, err)
+			}
+		})
 	}
 }

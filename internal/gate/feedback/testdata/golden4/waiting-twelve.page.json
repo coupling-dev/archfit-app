@@ -1,0 +1,212 @@
+{
+  "status": "waiting",
+  "status_line": "Archfit: waiting, requests #431, #432, #433, #434, #435, #436, #437, #438, #439, #440 and 2 more",
+  "records": [
+    {
+      "path": "pkg/tc/netem1.go",
+      "line": 12,
+      "rule": "graph",
+      "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+      "why": "a new dependency between modules needs an owner",
+      "balance": {
+        "value": 9,
+        "min": 7
+      },
+      "next": {
+        "kind": "wait",
+        "text": "wait for an owner: #431"
+      },
+      "show_next": false,
+      "request": 431
+    },
+    {
+      "path": "pkg/tc/netem2.go",
+      "line": 12,
+      "rule": "graph",
+      "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+      "why": "a new dependency between modules needs an owner",
+      "balance": {
+        "value": 9,
+        "min": 7
+      },
+      "next": {
+        "kind": "wait",
+        "text": "wait for an owner: #432"
+      },
+      "show_next": false,
+      "request": 432
+    },
+    {
+      "path": "pkg/tc/netem3.go",
+      "line": 12,
+      "rule": "graph",
+      "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+      "why": "a new dependency between modules needs an owner",
+      "balance": {
+        "value": 9,
+        "min": 7
+      },
+      "next": {
+        "kind": "wait",
+        "text": "wait for an owner: #433"
+      },
+      "show_next": false,
+      "request": 433
+    },
+    {
+      "path": "pkg/tc/netem4.go",
+      "line": 12,
+      "rule": "graph",
+      "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+      "why": "a new dependency between modules needs an owner",
+      "balance": {
+        "value": 9,
+        "min": 7
+      },
+      "next": {
+        "kind": "wait",
+        "text": "wait for an owner: #434"
+      },
+      "show_next": false,
+      "request": 434
+    },
+    {
+      "path": "pkg/tc/netem5.go",
+      "line": 12,
+      "rule": "graph",
+      "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+      "why": "a new dependency between modules needs an owner",
+      "balance": {
+        "value": 9,
+        "min": 7
+      },
+      "next": {
+        "kind": "wait",
+        "text": "wait for an owner: #435"
+      },
+      "show_next": false,
+      "request": 435
+    },
+    {
+      "path": "pkg/tc/netem6.go",
+      "line": 12,
+      "rule": "graph",
+      "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+      "why": "a new dependency between modules needs an owner",
+      "balance": {
+        "value": 9,
+        "min": 7
+      },
+      "next": {
+        "kind": "wait",
+        "text": "wait for an owner: #436"
+      },
+      "show_next": false,
+      "request": 436
+    },
+    {
+      "path": "pkg/tc/netem7.go",
+      "line": 12,
+      "rule": "graph",
+      "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+      "why": "a new dependency between modules needs an owner",
+      "balance": {
+        "value": 9,
+        "min": 7
+      },
+      "next": {
+        "kind": "wait",
+        "text": "wait for an owner: #437"
+      },
+      "show_next": false,
+      "request": 437
+    },
+    {
+      "path": "pkg/tc/netem8.go",
+      "line": 12,
+      "rule": "graph",
+      "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+      "why": "a new dependency between modules needs an owner",
+      "balance": {
+        "value": 9,
+        "min": 7
+      },
+      "next": {
+        "kind": "wait",
+        "text": "wait for an owner: #438"
+      },
+      "show_next": false,
+      "request": 438
+    },
+    {
+      "path": "pkg/tc/netem9.go",
+      "line": 12,
+      "rule": "graph",
+      "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+      "why": "a new dependency between modules needs an owner",
+      "balance": {
+        "value": 9,
+        "min": 7
+      },
+      "next": {
+        "kind": "wait",
+        "text": "wait for an owner: #439"
+      },
+      "show_next": false,
+      "request": 439
+    },
+    {
+      "path": "pkg/tc/netem10.go",
+      "line": 12,
+      "rule": "graph",
+      "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+      "why": "a new dependency between modules needs an owner",
+      "balance": {
+        "value": 9,
+        "min": 7
+      },
+      "next": {
+        "kind": "wait",
+        "text": "wait for an owner: #440"
+      },
+      "show_next": false,
+      "request": 440
+    },
+    {
+      "path": "pkg/tc/netem11.go",
+      "line": 12,
+      "rule": "graph",
+      "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+      "why": "a new dependency between modules needs an owner",
+      "balance": {
+        "value": 9,
+        "min": 7
+      },
+      "next": {
+        "kind": "wait",
+        "text": "wait for an owner: #441"
+      },
+      "show_next": true,
+      "request": 441
+    },
+    {
+      "path": "pkg/tc/netem12.go",
+      "line": 12,
+      "rule": "graph",
+      "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+      "why": "a new dependency between modules needs an owner",
+      "balance": {
+        "value": 9,
+        "min": 7
+      },
+      "next": {
+        "kind": "wait",
+        "text": "wait for an owner: #442"
+      },
+      "show_next": true,
+      "request": 442
+    }
+  ],
+  "author": "nothing to do. This check runs again when #431, #432, #433, #434, #435, #436, #437, #438, #439, #440 and 2 more are answered.",
+  "owner": "answer #431, #432, #433, #434, #435, #436, #437, #438, #439, #440 and 2 more."
+}

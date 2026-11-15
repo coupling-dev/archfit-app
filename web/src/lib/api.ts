@@ -1,8 +1,6 @@
 // The App's JSON API (internal/control/ui/api.go). The session cookie authenticates; writes add the session's CSRF
 // token as a header. The client never names a user or an installation: the server reads both from the session.
 
-export type Tone = 'success' | 'attention' | 'danger' | 'accent' | 'neutral';
-
 export interface Session {
   login: string;
   csrf: string;
@@ -15,149 +13,11 @@ export interface RepoRow {
   full_name: string;
   waiting?: boolean; // no operator approved its account yet
   state: string;
-  tone: Tone;
-  reason: string;
 }
 
 export interface Repos {
   repos: RepoRow[];
   truncated: boolean;
-}
-
-export interface PullRow {
-  number: number;
-  title: string;
-  state: string;
-  tone: Tone;
-  reason: string;
-  href: string;
-  rerun?: string; // the pull request waits for an update after the target branch moved: the next step, with the modules
-}
-
-// DecisionRow is a decision request of an unattended agent. Every text is data written by an agent or GitHub.
-export interface DecisionRow {
-  pull: number;
-  title?: string;
-  status: 'pending' | 'approved' | 'declined' | 'stale';
-  finding: string; // short ID
-  rule: string;
-  edge: string; // "from → to"
-  requester: string; // whoever commented; never an approval
-  head: string; // short
-  created: string; // RFC 3339
-  href: string; // the pull request page, where an owner decides
-}
-
-// PolicyChangeRow is an open pull request that changes the protected policy.
-export interface PolicyChangeRow {
-  number: number;
-  title: string;
-  headline: string; // the policy change card's classification
-  approval: 'granted' | 'missing' | 'not_needed' | 'unknown';
-  by?: string;
-  href: string;
-}
-
-// Inbox is the decisions page: what waits for an owner. Read only.
-export interface Inbox {
-  requests: DecisionRow[];
-  requests_more: number;
-  requests_error: boolean;
-  policy_changes: PolicyChangeRow[];
-  policy_more: number;
-  policy_error: boolean;
-  policy_unread: number; // open pull requests whose check could not be read
-}
-
-export interface Step {
-  label: string;
-  done: boolean;
-  current: boolean;
-}
-
-export interface Overview {
-  default_branch: string;
-  main_state: string;
-  main_tone: Tone;
-  main_reason: string;
-  main_sha: string; // the default-branch commit that check is on, short
-  main_at: string; // when it started, RFC 3339; '' without a check
-  pulls: PullRow[] | null;
-  pulls_more: number;
-  pulls_error: boolean;
-  pulls_to_update: number; // listed pull requests that wait for an update after the target moved
-  pulls_unread: number; // listed pull requests whose check could not be read: pulls_to_update is a floor
-  decisions_pending: number; // decision requests that wait for an owner, in all pull requests
-  decisions: DecisionRow[]; // the first few
-  decisions_error: boolean;
-  steps: Step[];
-  next: string;
-  next_how: string;
-  stage: string;
-  diagnostic: string;
-  draft_url: string;
-  draft_state: string;
-  banner: string;
-  admin: boolean;
-  managed_ai?: ShareState; // for an administrator only
-  can_start: boolean;
-  can_discover: boolean;
-  pulls_url: string;
-  checks_url: string;
-  workflow?: WorkflowFile; // the file the owner adds by hand; absent when none is due
-}
-
-// WorkflowFile is the Archfit workflow the owner adds: the App has no permission to write .github/workflows.
-export interface WorkflowFile {
-  path: string;
-  branch: string;
-  content: string;
-  add_url: string; // GitHub's new-file page on branch, filled in
-}
-
-export interface Finding {
-  rule: string;
-  rule_id: string;
-  meta: string;
-  violation: boolean;
-  from: string;
-  to: string;
-  origin: '' | 'added' | 'existing';
-  why: string;
-  fix: string;
-  alternatives: string[] | null;
-  locations: string[];
-  locations_total: number; // the engine's full count; locations holds at most 50 of them
-  strength: string;
-  distance: string;
-  volatility: string;
-  move: string; // the engine's balancing move for the seam, worded as the PR comment words it; '' for none
-  metric: string; // a metric ratchet, which has no edge: "metric <name>: before → after (threshold)"
-  owner_decision: boolean; // the engine leaves the move to the repository's owner
-  also: string[] | null; // on a violation: the advisories on the same dependency, "rule · severity", as the comment says
-}
-
-export interface Cycle {
-  modules: string[];
-  rule: string;
-  rule_id: string;
-  meta: string;
-  violation: boolean;
-  why: string;
-  fixes: string[] | null;
-  alternatives: string[] | null;
-  directions: Finding[];
-}
-
-export interface Dimension {
-  key: string;
-  name: string;
-  status: string;
-  observed: number;
-  measurable: number;
-  basis: string;
-  confidence: string;
-  gate: string;
 }
 
 export interface AppBuild {
@@ -168,234 +28,9 @@ export interface AppBuild {
   modified: boolean;
 }
 
-// Display only. A diagnostic run identity is never report admission.
-export interface CheckContext {
-  run_id: number;
-  run_attempt: number;
-  head_sha: string;
-  check_started_at: string;
-  report_digest: string;
-  reason: string;
-  next: string;
-  detail: string;
-  also: string[];
-  producer: string;
-  policy_digest: string;
-  baseline_digest: string;
-  labels_digest: string;
-  profile: string;
-  schema?: string;
-  approved?: { engine_version: string; image_digest: string; platform: string; action_ref: string };
-}
-
-// PullHead is the header the pull request page and its graph share.
-export interface PullHead {
-  number: number;
-  title: string;
-  author: string;
-  state: string;
-  head_ref: string;
-  base_ref: string;
-  head_sha: string;
-  url: string;
-  checks_url: string;
-  result: string;
-  tone: Tone;
-  headline: string;
-  required: boolean;
-  unavailable: string;
-  run_id: number;
-  no_baseline: boolean;
-  compared: boolean;
-  decision?: Decision; // absent without a report
-  check?: CheckContext; // App check diagnostics, independent of report availability
-}
-
-// Decision is the engine's decision on the report, as it states it.
-export interface Decision {
-  verdict: string; // the engine's verdict in words: "blocked", "needs attention", "healthy"
-  detail: string; // the rest of the comment's line: hard gates, active blockers, required rules
-  hard_gates: string; // pass, fail or unmeasured
-  blockers: number; // decision.active_blockers
-  unevaluated: { rule_id: string; reason: string }[];
-  origin_reasons: string[];
-}
-
-// Findings is a report's findings in the PR comment's groups, its evidence and its agent tasks.
-export interface Findings {
-  violation_count: number;
-  cycles: Cycle[] | null;
-  other: Finding[] | null;
-  advisory_count: number;
-  advisories: Finding[] | null;
-  accepted_count: number;
-  accepted: Finding[] | null;
-  advisories_elsewhere: boolean; // an advisory joined a violation's row, so the rest are on other dependencies
-  fixed_count: number;
-  fixed: Finding[] | null; // known issues the report no longer finds
-  omitted: number;
-  dimensions: Dimension[] | null;
-  unknowns: { dimension: string; fact: string; reason: string }[] | null;
-  tasks: string;
-  task_count: number;
-}
-
-export interface OwnerObjection {
-  id: string; // GitHub review ID or App decision version; sent back only for explicit override
-  login: string;
-  source: 'github' | 'app';
-  reason: string; // imported review body or authenticated App reason; text only
-  head_sha: string;
-  at: string;
-  overridden: boolean; // Archfit authorization only; a native review remains on GitHub
-}
-
-export interface OwnerDecisionHistory {
-  id: string;
-  login: string;
-  action: 'approve' | 'request_changes' | 'withdraw' | 'override';
-  reason?: string;
-  head_sha: string;
-  base_sha: string;
-  at: string;
-  overrode?: string[];
-  overrode_objections?: OwnerObjection[];
-}
-
-// Approval is the trusted owner-decision context for a protected-path change; no report is needed to resolve it.
-export interface Approval {
-  head_sha: string;
-  base_sha: string; // exact protected-ref commit the page showed
-  paths: string[];
-  digests: Record<string, string> | null; // each path at the head; null for a fork, whose head is not read
-  short_digests: Record<string, string> | null;
-  state: 'granted' | 'missing';
-  by?: string;
-  can_decide: boolean; // current owner with the repository access required for App decisions
-  can_approve: boolean;
-  can_withdraw: boolean; // this user has an App or native grant they can withdraw for this candidate
-  notification_problem: boolean; // reviewer request failed; never changes authority
-  owners: string[]; // principals from protected settings; one eligible owner is sufficient
-  settings_ref: string;
-  settings_url: string;
-  gate_mode: 'required' | 'advisory' | '';
-  required: boolean;
-  decision_url: string;
-  objections: OwnerObjection[];
-  history: OwnerDecisionHistory[];
-  reason?: string;
-  author_is_agent: boolean;
-}
-
-// ScreenLine is one line of the comment's first screen, as plain text.
-export interface ScreenLine {
-  kind: 'headline' | 'heading' | 'text' | 'item';
-  text: string;
-}
-
-// DecisionRequest is a request an unattended agent filed on the pull request. Every text in it but the status is the
-// agent's: render it as text only.
-export interface DecisionRequest {
-  finding_id: string;
-  policy_digest: string; // with finding_id, the key of the request; Approve and Decline send it back in the path
-  rule_id: string;
-  from: string;
-  to: string;
-  status: 'pending' | 'approved' | 'declined' | 'stale';
-  reason?: string; // why it is declined or stale
-  requester: string;
-  why: string;
-  alternatives: string[];
-  proposal_pr?: number;
-  proposal_url?: string;
-  can_decide: boolean; // the signed-in user is an owner who did not file it, and it is pending
-}
-
-export type Pull = PullHead &
-  Findings & { approval?: Approval; decisions?: DecisionRequest[]; first_screen?: ScreenLine[] };
-
-// Decided answers the Approve and Decline buttons of a decision request: the requests as they stand now.
-export interface Decided {
-  decisions: DecisionRequest[];
-  notice: string;
-}
-
-// Approved answers the Approve button: the approval read again.
-export interface Approved {
-  approval: Approval | null;
-  notice: string;
-}
-
-// RepoFindings is the latest report of the default branch, for the overview.
-export type RepoFindings = Findings & {
-  unavailable: string;
-  branch: string;
-  no_baseline: boolean;
-  attention_reason: string; // why the engine's verdict is needs_attention; '' otherwise
-};
-
 export interface Notice {
   notice?: string;
   location?: string;
-}
-
-// unknown is "could not be read", never "not allowed".
-export type ShareState = 'allowed' | 'not_allowed' | 'unknown';
-
-export interface Precondition {
-  label: string;
-  state: 'met' | 'not_met' | 'unknown';
-}
-
-export interface SharedFeature {
-  kind: string;
-  title: string;
-  leaves: string;
-  note?: string;
-  offered: boolean; // false: the App does not run it, so it can only be revoked
-  allowed: boolean;
-  by?: string; // the login as it was when the consent was recorded
-  at?: string; // RFC 3339
-  checks: Precondition[];
-}
-
-export interface DataSharing {
-  owner: string;
-  features: SharedFeature[];
-  notice?: string;
-}
-
-// A problem of a policy text. line and column are 1-based; a problem with no single place has neither.
-export interface Diagnostic {
-  line?: number;
-  column?: number;
-  message: string;
-}
-
-export interface Check {
-  name: string;
-  state: string;
-  tone: Tone;
-  reason: string;
-}
-
-export type DraftState = 'none' | 'draft' | 'awaiting_review' | 'published' | 'closed';
-
-export interface PolicyPage {
-  branch: string;
-  head_sha: string; // the open draft's head, '' without one; every write sends it back
-  content: string;
-  draft: DraftState;
-  draft_state: string; // the draft's state in words, '' for none
-  draft_url: string;
-  checks: Check[];
-  diagnostics: Diagnostic[];
-  can_write: boolean;
-  can_ready: boolean;
-  managed: { offer: boolean; off?: string; data_sharing?: string };
-  run?: { state: 'pending' | 'failed' | 'completed' | 'unknown'; url: string };
-  since?: string;
-  notice?: string;
 }
 
 // Installation is one account that installed the App, as the operators' page lists it.
@@ -417,21 +52,97 @@ export interface AdminBody {
   unreadable: number;
 }
 
-export interface Checked {
-  diagnostics: Diagnostic[];
+// The request page (internal/control/ui/requests.go, answers.go): one request, the preview of an answer, the outcome.
+export type AnswerKind = 'approve' | 'approve-until' | 'reject';
+
+export interface RequestModule {
+  name: string;
+  layer?: string;
+  volatility?: string;
+  subdomain?: string;
+  depends_on: string[];
+}
+
+export interface RequestEarlier {
+  kind: 'deny' | 'exception';
+  rule: string;
+  from: string;
+  to?: string;
+  why?: string;
+  instead?: string;
+  expires?: string;
+}
+
+export interface RequestView {
+  issue_href?: string;
+  number: number;
+  state: 'open' | 'answered' | 'closed';
+  reason: string;
+  rule: string;
+  path?: string;
+  from?: string;
+  to?: string;
+  expires?: string;
+  record: string;
+  verified: boolean; // false: the numbers are as reported by the CLI
+  balance?: { value: number; max: number; min: number };
+  policy: boolean; // false: the default branch has no policy of version 3
+  layers: string[];
+  modules: RequestModule[];
+  answer?: { kind: AnswerKind; until?: string; instead?: string };
+  dependencies: { kind: 'deny' | 'exception'; from: string; to: string; rule: string; expires?: string }[];
+  allowed: boolean; // the policy already allows from -> to
+  earlier: RequestEarlier[];
+}
+
+export interface PullEffect {
+  number: number;
+  status: string;
+  waits: boolean;
+  clears: number;
+  left: number;
+}
+
+export interface Preview {
+  answer: AnswerKind;
+  until?: string;
+  diff: string; // '' when the answer writes no policy line
+  policy_digest: string;
+  loosens: boolean;
+  pulls: PullEffect[];
+}
+
+export interface Answered {
+  pull_request?: number; // the policy pull request; absent when no policy line changes
+  state?: 'merged' | 'later' | 'refused' | 'void';
+  merge?: string;
+  notice: string;
+}
+
+// The passkey page (internal/control/ui/passkey.go). A passkey's id is opaque; the user sees its dates.
+export interface Passkey {
+  id: string;
+  created: string;
+  last_used?: string;
+}
+
+export interface Passkeys {
+  passkeys: Passkey[];
+}
+
+export interface Registered {
+  passkey: Passkey;
   notice: string;
 }
 
 import { refused, waiting } from './gate';
 import { signInHref } from './route';
 
-// ApiError is a failed call: the sentence to show, for a refused policy text its problems, and for a repository of an
-// account no operator approved that account.
+// ApiError is a failed call: the sentence to show, and for a repository of an account no operator approved that account.
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
-    readonly diagnostics: Diagnostic[] = [],
     readonly waiting = '',
   ) {
     super(message);
@@ -475,15 +186,10 @@ async function answer<T>(res: Response): Promise<T> {
     throw new ApiError(res.status, unreadable);
   }
   if (!res.ok) {
-    const {
-      error: message,
-      diagnostics,
-      waiting: account,
-    } = (body ?? {}) as { error?: unknown; diagnostics?: unknown; waiting?: unknown };
+    const { error: message, waiting: account } = (body ?? {}) as { error?: unknown; waiting?: unknown };
     throw new ApiError(
       res.status,
       typeof message === 'string' && message ? message : unreadable,
-      Array.isArray(diagnostics) ? (diagnostics as Diagnostic[]) : [],
       typeof account === 'string' ? account : '',
     );
   }
@@ -501,7 +207,7 @@ export function explain(e: ApiError, here: string, go: (url: string) => void = (
 // explainLoad is explain for the read that fills a page. Its 404 (a repository that does not exist or the user cannot
 // see, a pull request that is not one) replaces the whole page, as the server's error page did, and so does the 403 of
 // an account waiting for approval, with the Waiting page. Never for a write: a write's 404 stays a sentence on the
-// page, so a form or the editor keeps what the user typed.
+// page, so a form keeps what the user typed.
 export function explainLoad(e: ApiError, here: string, go?: (url: string) => void): string {
   if (e.waiting) {
     waiting.set(e.waiting);
@@ -515,4 +221,51 @@ export function explainLoad(e: ApiError, here: string, go?: (url: string) => voi
 // repoAPI is the API path of a repository the page shows; each part is escaped, so a name cannot add a segment.
 export function repoAPI(owner: string, name: string, suffix: string): string {
   return `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${suffix}`;
+}
+
+// Policy is the default-branch policy read by the policy page, not the open proposal.
+export interface Policy {
+  owners: string[] | null;
+  gate: string;
+  layers: string[] | null;
+  modules: {
+    name: string;
+    paths: string[] | null;
+    public: string[] | null;
+    volatility: string;
+    subdomain: string;
+    layer: string;
+    depends_on: string[];
+  }[];
+  builtin: {
+    graph: string;
+    coupling: string;
+    duplication: string;
+    cycle: string;
+    layers: string;
+    unowned: string;
+    min_balance: number | null;
+  };
+  rules: {
+    id: string;
+    deny?: { from: string[]; to: string[] };
+    only?: { use: string; in: string[] };
+    note?: string;
+    not_checked: boolean;
+    why: string;
+    instead?: string;
+  }[];
+  exceptions: {
+    rule: string;
+    from: string;
+    to?: string;
+    expires?: string;
+    days_left?: number;
+    why: string;
+    request?: number;
+    request_href?: string;
+  }[];
+  yaml: string;
+  digest: string;
+  edit: { available: boolean; reason: string; file?: string; digest?: string; recovery?: boolean };
 }

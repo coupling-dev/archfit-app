@@ -1,0 +1,7 @@
+## Archfit: fail, 1 error (not from this change)
+
+`.archfit.yaml` **exception** duplication pkg_tc -> pkg_util expired on 2026-11-19
+- why: an exception with a date fails every change after that date
+
+**Author:** nothing to do. This check runs again when #431 is answered.
+**Owner:** answer #431.

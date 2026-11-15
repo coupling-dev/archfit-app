@@ -7,7 +7,7 @@
 <details class="app-about">
   <summary>About this App · {build?.version || build?.source_revision?.slice(0, 7) || 'build not recorded'}</summary>
   <div class="box-body stack-sm">
-    <p>Serving App build, not the Engine or Action that produced a PR analysis.</p>
+    <p>Serving App build, not the engine or Action that checked a pull request.</p>
     <dl class="analysis-details">
       <dt>Go module version</dt><dd>{build?.version || missing}</dd>
       <dt>Source revision</dt><dd><code>{build?.source_revision || missing}</code>{#if build?.modified} (modified source){/if}</dd>

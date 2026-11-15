@@ -1,535 +1,90 @@
 # Architecture
 
-This page explains the App boundary, the main request flows, and the Go package structure.
-Read the [module specifications](../internal/module.md) for package contracts and test specifications.
-
-## The main idea
-
-The Archfit engine runs in customer CI and writes a report. The report is customer-attested evidence.
-The App does not trust the report until it verifies the sender, revision, policy, and other gate inputs.
-
-For each report, the App:
-
-1. Verifies the GitHub Actions OIDC token and the upload envelope.
-2. Reads policy, baseline, labels, and settings from the protected ref.
-3. Compares the report with those trusted inputs.
-4. Publishes feedback on the pull request.
-
-The protected ref is the default branch. The App decides an upload only against it. A pull request into any other
-base never gets a success: that base is a branch the change's author controls, and the settings and policy read there
-could be loosened by the same change. Its upload ends `action_required` with `unsupported_event`, and the hourly sweep
-decides nothing for it. Because the `archfit/gate` check belongs to a head commit and not to one pull request, a success
-for a pull request into the default branch would show on another pull request on the same head. The App accepts no
-protected base other than the default branch, so it writes no success for a head that an open pull request into another
-base shares: the upload and the sweep (rule 5d, also started by the event of such a pull request) end it
-`action_required` with `shared_head`.
-
-A merge group of the default branch's merge queue is decided on its own commit, which holds the default branch and
-every queued pull request up to it. The App reads the group's members from GitHub's merge queue API and the protected
-files at two immutable commits: the default-branch head and the group commit. A protected file the group changes
-needs exactly one queued pull request that changes it, holds an owner approval of its own head, and has exactly that
-file; every member that changes a protected file needs its own approval. See [Merge queue](design/merge-queue.md).
-
-## System context
-
-```mermaid
-flowchart LR
-    USER(["Repository admin<br/>or policy owner"])
-    SCHED(["External scheduler"])
-
-    subgraph CI["Customer CI · report producer"]
-        ACT["archfit-action<br/>runs the engine"]
-    end
-
-    subgraph GH["GitHub · trusted source"]
-        PR["Pull request<br/>checks and comment"]
-        REF["Protected ref<br/>policy, baseline, labels,<br/>settings, workflow"]
-        OIDC["Actions OIDC keys"]
-    end
-
-    APP["archfit-app<br/>one Go binary"]
-    LLM["Anthropic API<br/>optional"]
-
-    ACT -->|"report + OIDC token"| APP
-    PR -->|"webhook"| APP
-    APP -->|"read trusted inputs"| REF
-    APP -->|"verify token keys"| OIDC
-    APP -->|"publish checks and comment"| PR
-    USER -->|"OAuth browser session"| APP
-    SCHED -->|"operator request"| APP
-    APP -.->|"proposal on request"| LLM
-
-    classDef core fill:#2f855a,stroke:#22543d,color:#ffffff
-    classDef control fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
-    classDef nottrusted fill:#fff4d6,stroke:#b7791f,color:#1a202c
-    classDef optional fill:#f3e8ff,stroke:#6b46c1,color:#1a202c,stroke-dasharray:4 3
-    classDef neutral fill:#edf2f7,stroke:#718096,color:#1a202c
-
-    class APP core
-    class PR,REF,OIDC control
-    class ACT nottrusted
-    class LLM optional
-    class USER,SCHED neutral
-
-    style CI fill:#fff4d6,stroke:#b7791f,color:#1a202c
-    style GH fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
-```
-
-Solid arrows show request, read, or publication flow. The dotted arrow shows an optional AI proposal.
-
-The App stores no report or source code. GitHub stores checks, comments, workflow runs, and the no-source
-report artifact that the Graph page reads. The App stores entitlements, consent records, an LLM budget
-counter, and short-lived publication leases in a key-value store. A lease makes the writes for one head SHA run
-one at a time, on every instance, so an older publication cannot overwrite a newer one. Inside the lease an upload
-reads its inputs again, so a decision from replaced inputs is never written. Without the store, the App
-publishes nothing.
-
-The repository split is:
-
-- `archfit` owns the engine, CLI, images, and report schemas.
-- `archfit-action` runs the engine in customer CI and uploads the report.
-- `archfit-app` owns approved policy, report intake, the gate, and feedback.
-
-## Packages
-
-The App is one Go binary. The main internal packages are shown below.
-
-```mermaid
-flowchart TB
-    APP["app<br/>config, wiring, routes"]
-    CONTROL["control<br/>UI, onboarding,<br/>proposals, account, assist"]
-    GATE["gate<br/>upload, verdict,<br/>feedback, sweep"]
-    BASE["Shared packages<br/>wire · github · store"]
-
-    APP --> CONTROL
-    APP --> GATE
-    APP --> BASE
-    CONTROL -->|"gate facade"| GATE
-    CONTROL --> BASE
-    GATE --> BASE
-
-    classDef core fill:#2f855a,stroke:#22543d,color:#ffffff
-    classDef control fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
-    classDef neutral fill:#edf2f7,stroke:#718096,color:#1a202c
-
-    class GATE core
-    class CONTROL control
-    class APP,BASE neutral
-```
-
-Arrows show permitted import groups. The `gate` arrow from `control` is a facade call.
-The shared group contains `wire`, `github`, and `store`.
-
-| Package    | Main responsibility                                                            | Child packages                                         |
-| ---------- | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| `app`      | Loads environment settings, builds packages, and registers routes              | none                                                   |
-| `gate`     | Verifies uploads, decides outcomes, publishes feedback, and runs the sweep     | `ingest`, `inputs`, `verdict`, `feedback`, `sweep`     |
-| `control`  | Serves the UI and manages onboarding, proposals, AI requests, and entitlements | `account`, `assist`, `onboarding`, `proposal`, `ui`    |
-| `wire`     | Defines versioned file and message formats                                     | `envelope`, `manifest`, `policy`, `report`, `settings` |
-| `github`   | Holds GitHub API, authentication, webhook, and OIDC knowledge                  | `api`, `auth`, `oidc`, `webhook`                       |
-| `store`    | Defines the tenant key-value interface and the memory driver                   | `firestore`                                            |
-| `gcptoken` | Reads the service-account access token from the Cloud Run metadata server      | none                                                   |
-| `queue`    | Defines the webhook hand-off interface and the inline driver                   | `cloudtasks`                                           |
-
-The import rules keep the gate independent:
-
-- `gate` never imports `control`, `app`, UI code, or LLM code.
-- `control` uses only the `gate` facade.
-- `wire`, `store` and `queue` import no other internal package.
-- A seam implementation can import the package that defines its interface.
-- Tests run `go list -deps` to enforce the allowed imports.
-
-## Report upload
-
-The upload path accepts a report, verifies it, and publishes feedback in one request.
-
-```mermaid
-flowchart LR
-    ACTION["archfit-action<br/>customer CI"]
-    INGEST["gate/ingest<br/>authenticate and bind"]
-    AUTH{"Sender and revision<br/>verified?"}
-    REJECT["HTTP error<br/>nothing published"]
-    INPUTS["gate/inputs<br/>read protected-ref inputs"]
-    VERDICT["gate/verdict<br/>pure decision"]
-    FEEDBACK["gate/feedback<br/>checks and comment"]
-    GITHUB["GitHub<br/>checks, comment, receipt"]
-
-    ACTION -->|"POST /v1/reports"| INGEST
-    INGEST --> AUTH
-    AUTH -->|"no"| REJECT
-    AUTH -->|"yes"| INPUTS
-    INPUTS -->|"trusted facts"| VERDICT
-    VERDICT -->|"success, failure, or action_required"| FEEDBACK
-    FEEDBACK -->|"publish"| GITHUB
-
-    classDef core fill:#2f855a,stroke:#22543d,color:#ffffff
-    classDef control fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
-    classDef nottrusted fill:#fff4d6,stroke:#b7791f,color:#1a202c
-    classDef neutral fill:#edf2f7,stroke:#718096,color:#1a202c
-
-    class INGEST,INPUTS,VERDICT,FEEDBACK core
-    class GITHUB control
-    class ACTION nottrusted
-    class AUTH,REJECT neutral
-```
-
-Arrows show the order of the upload request. Authentication defects return an HTTP status.
-After authentication, defects become gate reasons and appear in GitHub feedback.
-
-`gate/ingest` verifies the token, envelope, payload digest, report format, run, pull request, and revision.
-It reads the report with the key set of the engine release that the envelope claims.
-`gate/inputs` reads the protected-ref files and owner approval. `gate/verdict` performs no I/O and no AI call.
-The upload handler has a 55-second deadline. The target is feedback within 60 seconds.
-
-The upload body is at most 5 MiB. A larger body gets `413 payload_too_large`, and the App publishes nothing.
-The App does not read part of a report.
-
-A pull request is measured as it would land, not as its branch stands. The Action measures GitHub's test merge commit of
-the head into the target and states it in the envelope: `analyzed_sha` is that commit and `integration` is `merged`; when
-GitHub reports a conflict the head is measured alone, `analyzed_sha` is `head_sha`, and `integration` is `conflicts`.
-The App holds the claim to what GitHub says about the pull request, never to the envelope: a conflict claim needs GitHub
-to say `mergeable` is false, a merged claim needs the commit to be GitHub's test merge commit, and while GitHub has not
-computed the merge no claim matches. A mismatch ends `action_required` with `envelope_mismatch`; re-running the workflow
-measures the current merge. Approval of a protected change stays bound to `head_sha`, not to the merge commit.
-
-## Baseline upload
-
-The baseline is a file on the protected ref. It changes only through a pull request that an architecture owner
-approves. The App never commits it to the default branch.
-
-```mermaid
-flowchart LR
-    ACTION["archfit-action<br/>mode: baseline on main"]
-    ONB["control/onboarding<br/>receive and check"]
-    OK{"Approved run at the main head,<br/>approved identity, protected<br/>policy and labels?"}
-    REJECT["HTTP error<br/>nothing written"]
-    PR["Pull request from<br/>archfit/baseline"]
-    OWNER["Owner approves<br/>the exact head"]
-    MAIN["Protected ref"]
-
-    ACTION -->|"POST /v1/baselines"| ONB
-    ONB --> OK
-    OK -->|"no"| REJECT
-    OK -->|"yes"| PR
-    PR --> OWNER
-    OWNER -->|"merge"| MAIN
-
-    classDef core fill:#2f855a,stroke:#22543d,color:#ffffff
-    classDef control fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
-    classDef nottrusted fill:#fff4d6,stroke:#b7791f,color:#1a202c
-    classDef neutral fill:#edf2f7,stroke:#718096,color:#1a202c
-
-    class ONB core
-    class PR,MAIN control
-    class ACTION nottrusted
-    class OK,REJECT,OWNER neutral
-```
-
-Arrows show the order of the baseline flow. Only the merge writes the protected ref.
-
-`control/onboarding` uses the gate's `Receiver`, so the token, envelope, run and digest checks are the same as for a
-report. Then it checks, in this order, and the first failure decides:
-
-1. The run has no problem and ran on the default branch.
-2. The run checked out the current head of the default branch. Every later read is at that commit.
-3. The run used the workflow that `.archfit-app.yaml` names.
-4. The engine identity is a row of the locked manifest.
-5. The file is a structurally valid `archfit.baseline.v3` baseline of at most 1 MiB, and its measurement profile is
-   the profile of that manifest row.
-6. Its `state.config_hash` is the digest of the protected `.archfit.yaml`.
-7. The envelope's `labels_digest` is the digest of the protected `.archfit-labels.yaml`, or empty when there is none.
-
-A file equal to the protected baseline opens nothing. Otherwise the App opens a draft pull request from
-`archfit/baseline` into the default branch that changes only `.archfit-baseline.json`, with the uploaded bytes. A new
-upload updates the same branch and pull request and rewrites its body. The body counts the accepted findings added
-and removed, lists them by rule ID and finding ID, names the run, engine identity and digests, and states that an
-architecture owner must approve the exact head commit. The gate's protected-path rule then governs the merge.
-
-Today the Action captures with plain `archfit baseline`, which accepts all current eligible debt. The added count in
-the body is what keeps that visible to the owner. After an engine or profile change, the Action runs
-`archfit baseline --reanchor` instead. The App accepts only a re-anchor that keeps debt and seams the protected baseline
-already accepts; see the re-anchor section above.
-
-### Baseline upload contract
-
-The Action must implement this contract in `mode: baseline` when `endpoint` is set:
-
-- Request: `POST <endpoint>/v1/baselines`.
-- Headers: `Authorization: Bearer <OIDC token>` with the endpoint as audience, `X-Archfit-Envelope` with the
-  one-line `archfit.report-envelope.v1` JSON, and `Content-Type: application/json`.
-- Body: the exact bytes of the `.archfit-baseline.json` that `archfit baseline` wrote, at most 1,048,576 bytes.
-- Envelope: `kind` is `baseline`; `event` is `workflow_dispatch` (or `push` to the default branch); `pull_request` is
-  `0`; `base_sha` and `merge_base_sha` are `""`; `head_sha` is the checked-out default-branch commit; `analyzed_sha` is
-  `head_sha` and `integration` is `""`; `baseline_digest`
-  is `""`; `labels_digest` is the bare hex SHA-256 of the labels file the capture read, or `""` without one;
-  `payload_digest` is `sha256:<hex>` of the body; the engine identity fields are those of the pinned image.
-
-| Status        | Body                                    | Meaning                                                                  |
-| ------------- | --------------------------------------- | ------------------------------------------------------------------------ |
-| 200           | `{"pull_request": <n>, "url": "<url>"}` | The baseline pull request was opened or updated                          |
-| 200           | `{"unchanged": true}`                   | The capture equals the protected baseline. Nothing was written           |
-| 400           | `{"error": "<code>"}`                   | Malformed or unbound upload, or `baseline_invalid`. Final                |
-| 401           | `{"error": "<code>"}`                   | `token_missing` or `token_invalid`. Final                                |
-| 403           | `{"error": "<code>"}`                   | Not eligible or not bound to the protected inputs (below). Final         |
-| 409           | `{"error": "<code>"}`                   | `stale_head` or `stale_attempt`. Superseded: dispatch the capture again  |
-| 413           | `{"error": "<code>"}`                   | `baseline_too_large` above 1 MiB, `payload_too_large` above 5 MiB. Final |
-| 429, 503, 500 | `{"error": "<code>"}`                   | `rate_limited`, `oidc_unavailable`, `admission_unavailable` or `internal`. Retry |
-
-The `400` codes are `method_not_allowed`, `envelope_missing`, `envelope_invalid`, `kind_mismatch`, `digest_mismatch`,
-`unsupported_event`, `envelope_mismatch`, `fork` and `baseline_invalid`. The `403` codes are `repository_mismatch`,
-`not_installed`, `run_not_found`, `run_mismatch`, `not_default_branch`, `settings_missing`, `workflow_not_approved`,
-`unknown_engine_identity`, `policy_missing`, `policy_mismatch`, `labels_mismatch` and `installation_not_approved`.
-
-## Gate outcomes
-
-The `verdict` package has three conclusions. It cannot represent `neutral` or `skipped`.
-The first reason sets the conclusion. Later reasons remain in feedback.
-
-| Conclusion        | Use                                                | Categories                               |
-| ----------------- | -------------------------------------------------- | ---------------------------------------- |
-| `success`         | Trusted evidence has no blocking finding           | `architecture`                           |
-| `failure`         | Trusted evidence has a blocking finding            | `architecture`                           |
-| `action_required` | Evidence, governance, or subscription needs action | `evidence`, `governance`, `subscription` |
-
-The App publishes two checks:
-
-- `archfit/state` is advisory. It is published for each accepted report upload. It uses `neutral` for advisory
-  attention and for findings it does not enforce, and `action_required` whenever the gate result is
-  `action_required`. Errors and unverifiable evidence are never `neutral` or `skipped`.
-- `archfit/gate` is the blocking check. It is published only when the settings file contains `gate: required`.
-- A `needs_attention` verdict with nothing else to act on is `success` with the reason `attention_only`, never
-  `healthy`. A required rule whose selector matches nothing is `action_required` with `policy_defect`.
-
-Each published check carries a receipt with the run ID, report digest, policy digest, baseline digest, and
-labels digest. The sweep compares the receipt with the protected ref. See the [reason catalog](user-guide.md#reason-codes)
-for recovery actions.
-
-## Engine releases
-
-Approval and readability are separate contracts:
-
-- `wire/manifest` approves the exact v3.4.0 Linux platform tuples, with one current v3.4.0 amd64 row.
-- `wire/report` reads v3.4.0 through the pinned state schema, which requires `identity`, and the historical releases up to v3.2.3 without it.
-  Unknown keys and unknown releases fail decoding. Historical readability grants no producer approval.
-- `wire/policy` embeds the v3.4.0 config schema.
-- The gate uses the structured decision, trusted input bindings, measurement identity, and gate reference.
-  Origin remains display-only. A missing producer or required rule cannot become a healthy zero.
-
-New workflows pin Action v3.1.1 at commit `2221f4bfece0725a657414fed751cdc090ba1bd4`; it runs on `merge_group` too and runs engine v3.4.0 with the digest of the runner's platform.
-This Action commit accepts v3.4.0 only and requires explicit engine-version and platform-digest inputs, requests fresh measurements, and passes only fixed HOME and checkout-scoped Git settings.
-It forwards no credentials. The container is not network-isolated, and reports remain customer-attested.
-The `action-conformance` CI job verifies every distinct manifest Action commit against the App's unchanged envelope schema.
-
-Tests require an actual release capture, a readable state schema, a matching policy-schema pin, exact platform tuples,
-and rejection of old approvals. Baseline v3 remains readable, including historical fields removed by v3.0.1.
-A readable baseline is not necessarily comparable under new tool versions or producer semantics.
-
-The App does not update installed workflows. After approval cutover, old pins produce `action_required` until an owner
-merges the three-pin update from the [user guide](user-guide.md#engine-versions).
-Review baseline migration only after the new producer supplies complete required evidence.
-
-## Webhooks and the sweep
-
-A webhook starts immediate work. The sweep repairs work after a lost webhook or a changed protected ref.
-
-```mermaid
-flowchart LR
-    EVENT["Webhook or scheduler"]
-    READ["Read receipt and<br/>protected-ref inputs"]
-    FRESH{"Receipt is current?"}
-    KEEP["Keep feedback"]
-    ACTION["Set pending or<br/>action_required"]
-    RERUN["Request workflow rerun<br/>when recovery allows"]
-    UPLOAD["New report upload"]
-    UPDATE["Update checks and comment"]
-
-    EVENT --> READ
-    READ --> FRESH
-    FRESH -->|"yes"| KEEP
-    FRESH -->|"no or missing"| ACTION
-    ACTION --> RERUN
-    RERUN --> UPLOAD
-    UPLOAD --> UPDATE
-
-    classDef core fill:#2f855a,stroke:#22543d,color:#ffffff
-    classDef control fill:#e8eef7,stroke:#4a6fa5,color:#1a202c
-    classDef nottrusted fill:#fff4d6,stroke:#b7791f,color:#1a202c
-    classDef neutral fill:#edf2f7,stroke:#718096,color:#1a202c
-
-    class READ,ACTION,RERUN core
-    class UPDATE,KEEP neutral
-    class EVENT,UPLOAD control
-    class FRESH nottrusted
-```
-
-The arrows show recovery flow. The sweep does not compute a new report because the App stores no report.
-
-| Event                                                    | Gate action                                                                                                                                                                  | Control action                        |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| New pull request head                                    | Set a pending required check or refuse a fork                                                                                                                                | None                                  |
-| Push to the default branch that changes a protected path | Sweep that repository                                                                                                                                                        | None                                  |
-| Push to any branch                                       | Record who pushed the head. Then re-evaluate the open pull request on that head, as for a review change                                                                      | None                                  |
-| Merge group requested (`merge_group`, `checks_requested`) | Set a pending required check on the group commit                                                                                                                               | None                                  |
-| Merge group destroyed, not merged                        | Set `action_required` `merge_group_unverified` on a pending or decided group check                                                                                              | None                                  |
-| Review change                                            | Set `owner_approval_missing` when a `success` or `failure` check lost its owner approval; rerun when the last reason was `owner_approval_missing` and no approval is missing. Re-check the merge groups that hold the pull request | None                                  |
-| Installation added or removed                            | None                                                                                                                                                                         | Start the trial or delete tenant data |
-
-Webhook intake verifies the signature and queues two tasks: the gate half, then the control half. Each task carries
-GitHub's own headers and body and is named `<delivery ID>_gate` or `<delivery ID>_control`, so the queue refuses a
-repeated delivery by name. The worker verifies the signature again, then runs one half. A control failure never
-blocks or repeats gate work. A task that the queue refuses (a body too large for a task, or an unavailable queue)
-runs inline in the intake request. With the inline driver, the default, every task runs inline.
-During a webhook secret rotation, intake and the worker accept a signature made with the current or the previous
-secret.
-
-The worker answers by error class:
-
-| Class     | Examples                                                                          | Answer | Effect                     |
-| --------- | --------------------------------------------------------------------------------- | ------ | -------------------------- |
-| Done      | The handler succeeded, or the event is ignored                                    | `204`  | The task is complete       |
-| Transient | A Store error, a GitHub rate limit or `5xx`, a deadline, a panic                  | `503`  | The queue retries the task |
-| Permanent | A gone resource, a GitHub `400` or `422`, a bad signature, an unparsable delivery | `204`  | An error line; no retry    |
-
-Handlers are idempotent, because a queue delivers at least once and two worker instances can run one task at the
-same time. The publication lease serializes the GitHub writes of one head.
-
-The sweep inspects open pull requests for these conditions:
-
-- A pending required check is missing.
-- No report arrived within 60 minutes.
-- An owner grant is gone or an unoverridden owner objection now blocks the candidate.
-- The policy, baseline, or labels changed on the protected ref.
-- A waiver expires within seven days or has expired.
-- The subscription changed.
-- The default branch moved after a `success` check, and the report of its new tip and the report of the pull request
-  together close a module cycle that neither holds alone (`target_moved`; see [Merge safety](user-guide.md#merge-safety-when-the-target-moves)).
-
-An owner grant can end without a new commit when the approver leaves the protected owner set or agent rules change. A current owner request for changes creates an objection that blocks ordinary approval. An explicit, reasoned App override can cover exact App or native GitHub objection IDs for the exact head, protected settings SHA and digests. The App never dismisses the native review; GitHub may still block merge under its own review and branch-protection rules. A new head or protected-settings snapshot cannot reuse the old grant or override, and prior objections remain visible across a push.
-
-App decisions live in a bounded per-installation, per-PR CAS ledger. Request-changes, withdrawal and override reasons are mirrored as App-authored PR comments; comments are audit/display only and never input authority. Legacy unchanged-head `approval/` grants remain readable; current-candidate withdrawal also suppresses the native approval version(s) then present for that owner in Archfit only, without changing the GitHub review. An older App image does not understand the new decision ledger, so rollback requires a merge pause on protected-path PRs until a decision-aware version is restored or forward-fixed.
-
-Review events and App decisions read the check and inputs, decide, and write inside the head's publication lease. They re-evaluate affected merge groups, including groups that already have a successful check. A saved approval/override never turns a check green; a new workflow report is still required. Required and advisory `archfit/state` feedback are refreshed. Without the Store nothing is written; a mirror/check refresh failure leaves the authenticated decision saved and offers a separate retry instead of asking for duplicate approval.
-
-The sweep reruns the customer workflow after stale inputs, an expired waiver, late owner approval, or restored
-subscription, unless the default branch moved since the result was measured: a re-run measures the old merge
-commit, so the check says `target_moved` and asks the author to update the branch. A missing upload becomes `action_required`. A fresh report is required for a new `success` result.
+Archfit App is a GitHub App that receives engine results, publishes pull-request feedback, and controls changes to the repository policy. The engine runs in the customer's GitHub Actions workflow. The App uses GitHub and an installation-scoped store as authorities; the uploaded result remains a producer claim.
+
+For owner procedures, see the [user guide](user-guide.md). For deployment, see [cloud operations](design/cloud/operations.md).
+
+## Components
+
+- `internal/app` composes the service and mounts routes. Public and worker roles separate intake from queued work; `all` runs both locally.
+- `internal/github` authenticates webhooks and Actions OIDC tokens and accesses GitHub APIs.
+- `internal/gate` admits uploads, decides feedback, manages requests and proposals, and reconciles state.
+- `internal/control` serves authenticated pages, passkeys, owner actions and account administration.
+- `internal/wire` holds versioned envelope, result, policy and request contracts. `internal/store` supplies transactional state, in memory or Firestore.
+
+## Ingest
+
+### Report upload
+
+`POST /v1/reports` accepts envelope 2 (`archfit.upload-envelope.v2`) with result JSON v1 (`archfit.result.v1`), up to 5 MiB (`ingest.maxPayloadBytes`, `5 << 20` bytes). The receiver strictly decodes the envelope and checks the payload digest. It verifies the GitHub Actions OIDC token, resolves the installation, repository, workflow run and attempt through GitHub, and binds the event to a pull request, default-branch push or merge group. The accepted workflow path is `.github/workflows/archfit.yaml`.
+
+The envelope fields and result are self-reported. The App compares them with GitHub authority, the locked manifest and protected inputs; it does not prove that the engine's analysis is correct. Invalid payloads, mismatches, unsupported events and forks become unknown, not a neutral or skipped verdict. Stale attempts and moved heads are rejected. The App reads schema 3 `.archfit.yaml` from the target/default-branch authority and checks its exact-byte digest, the approved policy state and workflow identity. It does not trust policy supplied by the pull-request head.
+
+The checked-in [manifest](../internal/wire/manifest/manifest4.json) approves engine v4.0.0 and Action v4.0.0 by their exact identities. An HTTP 200 upload response means accepted, not passed.
+
+## Feedback
+
+The App publishes `archfit/gate`: pass is success; fail is failure, or neutral in advisory mode. Waiting is in progress. Unknown is action required, not neutral or skipped.
+
+## Requests and answers
+
+A pull-request author or a collaborator with write or admin permission can comment `/archfit request <reason>`. The App uses the current pull record and the `archfit-result` artifact matching its recorded digest. It creates or joins requests for eligible errors; a matching deny rule answers instead. A CLI-filed issue can also become a request; its measurements are marked **as reported**. A failed result becomes `waiting` only when all its errors are covered by open requests, in required mode.
+
+A policy owner can preview and answer an open request. Approve adds an allowed dependency or exception; approve-until adds a dated exception; reject adds a deny rule with an alternative. The first two require a passkey assertion bound to the request, answer and change digest. Reject does not. A recorded answer can join other answers on `archfit/policy`; the App checks the proposal's head, files and digest before setting its check and attempting the merge. Merge-later leaves the proposal open. A successful answer does not guarantee GitHub merged the proposal.
+
+## Approvals and re-check
+
+An administrator's first approval establishes change control. Later owner approvals are recorded for a specific change and consumed once when the matching policy proposal merges. A policy push outside this flow puts the repository outside the flow and opens an issue; checks become unknown until an owner confirms or reverts. A changed workflow also requires an owner action, except for a change limited to an approved Action ref.
+
+After a proposal is consumed, the App refreshes affected pull requests. It requests a re-run only for the latest relevant completed run of the live head, younger than 30 days, reading the target tip, when the target changed only in `.archfit.yaml` since the event base. An in-flight run is left alone. Otherwise it attempts an expected-head branch update for an eligible same-repository pull request, or explains why it cannot. Only a fresh upload supplies a new result.
+
+## Sweep
+
+An external scheduler calls `POST /internal/sweep` hourly. The sweep reconciles policy pushes and proposals, withdraws stale results, handles missing uploads and re-checks, and warns about or enforces expired exceptions. It acts on approved policy state, and does not turn unreadable evidence into a pass. See [cloud operations](design/cloud/operations.md) for deployment and authentication.
+
+An exception remains valid through its expiry date, using UTC calendar days. The App opens an `archfit-expiry` issue from seven days before that date. After expiry, the sweep withdraws an old result and requests a fresh run when possible; otherwise it publishes the expired-exception failure. An accepted default-branch result can also maintain an `archfit-drift` issue. Unread evidence is not treated as clean.
+
+## State
+
+The store is partitioned by installation. Archfit 4 gate records use `v4/` keys, including `v4/repos`, repository, request, approval, proposal, policy-push and pull records and their indexes. Repository names in keys are lower case. Passkeys and short-lived challenges also use `v4/` keys. Multi-key compare-and-swap transactions keep related records and indexes together; schema-tagged values are decoded strictly. Archfit 4 gate records do not read or write Archfit 3 keys.
+
+A rollback does not undo stored data. The separate key space prevents the older gate and the Archfit 4 gate from interpreting each other's gate records. It does not roll back GitHub policy changes.
 
 ## Trust rules
 
-These invariants keep repository authors from weakening the gate:
+GitHub authentication establishes the workflow and run, not the truth of the result. A digest comparison binds bytes, not correctness. A passkey confirms an action with user verification, not that a person read or understood the request. No LLM output decides the gate. Failures to establish authority or approved inputs must not become a pass.
 
-- Read policy, baseline, labels, settings, owners, and workflow from the protected ref.
-- Verify the policy digest against the report.
-- Accept a head policy only when an architecture owner approved the exact head SHA.
-- Accept a merge group's changed protected file only when it is exactly the file of one queued pull request whose own
-  head an owner approved. Never approve the group commit itself.
-- Treat missing, incompatible, or unverifiable evidence as not successful.
-- Describe report provenance as `customer-attested`, never as `verified`.
-- Keep LLM output, billing, and UI code off the gate path.
-- Resolve tenant identity from a verified webhook, OIDC claim, or OAuth session.
-- Never commit to the protected ref. A captured baseline arrives only as a pull request that an owner approves.
-- Log IDs, digests, outcomes, and timings only.
-
-The protected paths are:
-
-- `.archfit.yaml`
-- `.archfit-baseline.json`
-- `.archfit-labels.yaml`
-- `.archfit-app.yaml`
-- The workflow file named by `.archfit-app.yaml`
-
-A change to a protected path needs approval from an architecture owner on the exact head SHA.
+The App can warn about ruleset configuration, but an administrator can change or bypass rules. The branch ruleset must require the App's `archfit/gate` check and must not let the App bypass it. The separately scoped policy push ruleset, where supported, needs the App's bypass to write policy proposals. See [ruleset setup](user-guide.md#configure-the-ruleset).
 
 ## HTTP routes
 
-The routes come from [`internal/app/handler.go`](../internal/app/handler.go) and
-[`internal/control/ui/ui.go`](../internal/control/ui/ui.go).
-
-`ARCHFIT_ROLE` selects the routes. The `all` role, the default, serves every route below except
-`POST /internal/webhooks`. The `public` role serves no `/internal/*` route. The `worker` role serves only
-`GET /health`, `GET /ready` and the three worker routes.
-
-### Service routes
-
-| Method and route        | Owner     | Authentication                                                          |
-| ----------------------- | --------- | ----------------------------------------------------------------------- |
-| `GET /health`           | `app`     | None                                                                    |
-| `GET /ready`            | `app`     | None                                                                    |
-| `POST /v1/reports`      | `gate`    | GitHub Actions OIDC token                                               |
-| `POST /v1/discoveries`  | `control` | GitHub Actions OIDC checks                                              |
-| `POST /v1/baselines`    | `control` | GitHub Actions OIDC checks                                              |
-| `POST /v1/reanchors`    | `control` | GitHub Actions OIDC checks, plus the re-anchor subset and digest checks |
-| `POST /webhooks/github` | `app`     | `X-Hub-Signature-256`                                                   |
-| `POST /internal/sweep`  | `app`     | Operator bearer token                                                   |
-| `POST /internal/grants` | `app`     | Operator bearer token                                                   |
-
-`GET /health` probes nothing. `GET /ready` proves that the App key works with GitHub (`GET /app` with an App JWT)
-and that the store answers (a read of a reserved key). It answers `200`, or `503` with the names of the failed
-checks only. A result is kept for 30 seconds after a pass and 5 seconds after a failure, so frequent calls make at
-most one GitHub request in each window. The path does not end in `z`, because Cloud Run reserves some such paths.
-
-Worker routes:
-
-| Method and route          | Owner | Authentication                                                         |
-| ------------------------- | ----- | ---------------------------------------------------------------------- |
-| `POST /internal/webhooks` | `app` | Invoker ID token, then `X-Hub-Signature-256` on the queued body        |
-| `POST /internal/sweep`    | `app` | Invoker ID token                                                       |
-| `POST /internal/grants`   | `app` | Invoker ID token and the operator bearer token in `X-Archfit-Operator` |
-
-The invoker ID token is the Google ID token that Cloud Tasks or Cloud Scheduler attaches. Cloud Run's invoker check
-verifies its signature. The App then checks its claims: the issuer is Google, the audience is `ARCHFIT_WORKER_URL`,
-the e-mail is `ARCHFIT_INVOKER` and is verified, and the token is not expired.
+The public role serves `/health`, `/ready`, GitHub webhooks, the upload, OAuth and UI routes. The worker handles queued events and internal sweep and grant routes. The local `all` role also serves internal routes with an operator bearer token. The removed onboarding, discovery, overview, findings, graph and pull-graph APIs return HTTP 404 without repository authorization or data access. The setup, Home, policy, pull, request, answer and passkey APIs are separate. A page route alone does not guarantee its backing API is available.
 
 ### UI routes
 
-| Method and route                                                                                                   | Authentication                                                                |
-| ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `GET /`                                                                                                            | None. Serves the web app, which shows the landing page or the repository list |
-| `GET /auth/login` and `GET /auth/callback`                                                                         | None                                                                          |
-| `POST /auth/logout`                                                                                                | GitHub OAuth session and CSRF token                                           |
-| `GET /assets/{path}`, `GET /licenses.txt` and `GET /schema/policy.json`                                            | None                                                                          |
-| `GET /api/session` and `GET /api/repos`                                                                            | GitHub OAuth session                                                          |
-| `GET /r/{o}/{n}`, `/graph`, `/policy`, `/pull/{number}`, `/pull/{number}/graph` and `/data-sharing`                | GitHub OAuth session. The same shell for every repository; no repository data |
-| `GET /api/repos/{o}/{n}/overview`, `/findings`, `/graph`, `/policy`, `/pulls/{number}` and `/pulls/{number}/graph` | Session with repository `read` permission                                     |
-| `POST /api/repos/{o}/{n}/policy/check`                                                                             | Session with repository `read` permission, JSON body, CSRF token header       |
-| `POST /api/repos/{o}/{n}/policy`, `/policy/ready` and `/assist`                                                    | Session with repository `write` permission, JSON body, CSRF token header      |
-| `POST /api/repos/{o}/{n}/onboarding` and `/discover`                                                               | Session with repository `admin` permission, JSON body, CSRF token header      |
-| `GET /api/repos/{o}/{n}/data-sharing`                                                                              | Session with repository `admin` permission                                    |
-| `POST /api/repos/{o}/{n}/data-sharing`                                                                             | Session with repository `admin` permission, JSON body, CSRF token header      |
-| `GET /r/{o}/{n}/consent`                                                                                           | GitHub OAuth session; `308` to `/data-sharing`, from the path alone           |
-| `GET /admin` and `GET /api/admin/installations`                                                                    | Session of an operator (`ARCHFIT_OPERATORS`); `404` for any other signed-in user |
-| `POST /api/admin/installations/{id}/approve` and `/revoke`                                                         | Session of an operator, JSON body, CSRF token header; `404` for any other signed-in user |
+The shell serves these routes. Repository pages require sign-in. Each page reads its repository data from an authorized API, not from the shell.
+The repository route prefix below is `/r/{owner}/{repo}`; API paths use `/api/repos/{owner}/{repo}`.
 
-Every `/api/repos/{o}/{n}/…` route answers `403` with `"waiting": "<account>"` when no operator approved the
-repository's account, after the permission check. The gate drops that account's webhooks and uploads
-(`403 installation_not_approved`), and the sweep skips it. See [Who the App serves](user-guide.md#who-the-app-serves).
+| Page route                    | Page data and actions                                                                                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `/`                           | Repository list from `GET /api/repos`; sign-in or admission state when needed.                                    |
+| `/admin`                      | Operator-only installation administration.                                                                        |
+| Prefix                        | Home reads `/home`; before first approval it shows setup. Otherwise it shows requests, owner actions and the map. |
+| Prefix + `/policy`            | Reads `/policy`; `?edit=1` opens the YAML editor, which previews and submits through `/policy/edit` endpoints.    |
+| Prefix + `/requests/{number}` | Reads `/requests/{number}` and its previews; owner answers use its answer endpoints.                              |
+| Prefix + `/pull/{number}`     | Reads `/pulls/{number}`; the page and GitHub comment use the same feedback model.                                 |
+| Prefix + `/passkeys`          | Reads and manages the user's passkeys with `/passkeys` endpoints.                                                 |
+| Prefix + `/owner/{action}`    | Reads `/owner/{action}/view` and submits first-policy, workflow, confirm or revert actions.                       |
 
-## Platform seams
-
-The App keeps platform-dependent code behind four interfaces.
-
-| Seam       | Current driver                       | Current behavior                                                                      |
-| ---------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
-| `Store`    | `memory` (default) or `firestore`    | `memory` loses data when the process stops. `firestore` keeps it in Cloud Firestore   |
-| `Queue`    | `inline` (default) or `cloudtasks`   | `inline` runs webhook work in the intake request. `cloudtasks` hands it to the worker |
-| `Sandbox`  | `none`                               | Managed discovery is not available                                                    |
-| `Provider` | `anthropic` when a key is configured | Managed AI is optional                                                                |
-
-A new driver changes the composition in `app`. The gate contracts do not change.
+The browser renders Home from the target policy and available request, exception and drift data. Request previews show
+the proposed policy and affected pull requests before an answer. Approvals bind a passkey to the displayed change;
+reject does not need one. Every YAML edit uses a passkey. The pull page shows the published feedback or an explicit
+unavailable state. A fresh upload, not a page load, supplies a new result. See the [user guide](user-guide.md) for
+page tasks and the [module contract](../internal/control/ui/module.md) for API details.
 
 ## Deployment
 
-The App runs on Google Cloud Run in project `coupling-dev-510710`, as two services: a public one and an internal worker. The [cloud design](design/cloud/architecture.md) owns the deployment design.
-The OpenTofu code and the first-deployment runbook are in [`infra/`](../infra/README.md).
-This page lists only what any host must provide.
-A host must provide these runtime capabilities:
-
-- Run one static Go binary in a container.
-- Provide a key-value driver that passes the `store/storetest` suite. When more than one instance runs, its
-  `CompareAndSwap` and `CompareAndSwapAll` must be atomic across all of them.
-- Call `POST /internal/sweep` with an external scheduler.
-- Run the binary as one process (`all`), or as a public process and a worker process with a queue between them.
-- Provide a sandbox driver before managed discovery is enabled.
+See [cloud architecture](design/cloud/architecture.md) and [operations](design/cloud/operations.md). Build the embedded web app with `make web` before `make build`; `make all` runs formatting, lint, available web checks, tests and build.
 
 ### Configuration
 
@@ -549,19 +104,16 @@ See [`.env.example`](../.env.example).
 | `ARCHFIT_GITHUB_OAUTH_SECRET_FILE`            | OAuth client secret file. Not read by the `worker` role                                                 |
 | `ARCHFIT_COOKIE_KEY_FILE`                     | 32-byte session-cookie key file. Not read by the `worker` role                                          |
 | `ARCHFIT_OPERATOR_TOKEN_FILE`                 | Bearer token file for the operator routes. Not read by the `public` role                                |
-| `ARCHFIT_ANTHROPIC_KEY_FILE`                  | Optional Anthropic key file. Empty disables managed AI. Not read by the `worker` role                   |
 | `ARCHFIT_STORE`                               | Store driver: `memory` (default) or `firestore`                                                         |
 | `ARCHFIT_FIRESTORE_PROJECT`                   | Google Cloud project ID. Required with `firestore`                                                      |
 | `ARCHFIT_FIRESTORE_DATABASE`                  | Firestore database ID. Default `(default)`                                                              |
 | `FIRESTORE_EMULATOR_HOST`                     | Emulator `host:port`. Plain HTTP and no credentials                                                     |
-| `ARCHFIT_SANDBOX`                             | Sandbox driver. Only `none` exists                                                                      |
 | `ARCHFIT_ROLE`                                | `all` (default), `public`, or `worker`                                                                  |
 | `ARCHFIT_QUEUE`                               | Local `all` role defaults to `inline`; `public` requires `cloudtasks`; `worker` never enqueues          |
 | `ARCHFIT_TASKS_QUEUE`                         | `projects/<p>/locations/<l>/queues/<q>`, for `cloudtasks`                                               |
 | `ARCHFIT_WORKER_URL`                          | Worker service URL, the invoker token audience. No trailing `/`. For `cloudtasks` and the `worker` role |
 | `ARCHFIT_INVOKER`                             | Service account e-mail of queue and Scheduler dispatches. For `cloudtasks` and the `worker` role        |
-| `ARCHFIT_APPROVED_ACCOUNTS`                   | Accounts served without an operator's approval, comma-separated logins. Default `alexei-led,vladikk,coupling-dev` |
+| `ARCHFIT_APPROVED_ACCOUNTS`                   | Accounts served without operator approval. See `.env.example` for defaults                              |
 | `ARCHFIT_OPERATORS`                           | GitHub user IDs that approve installations on `/admin`, comma-separated. Default `1898375,1788671`      |
 | `GOOGLE_CLOUD_PROJECT`                        | Optional. Google Cloud project ID of the log trace field. Empty: log lines name no trace                |
 | `K_REVISION`                                  | Set by Cloud Run. Written as `revision` on every log line                                               |
-

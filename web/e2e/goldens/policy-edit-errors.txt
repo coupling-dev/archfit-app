@@ -1,0 +1,18 @@
+Policy
+
+acme/app · default branch
+
+Edit the policy
+
+Every YAML edit needs your passkey and goes through the policy pull request.
+
+Policy YAML
+
+preview it: archfit check --policy <file>
+
+Fix the policy
+.archfit.yaml:2: policy: owners: required: list at least one GitHub login
+.archfit.yaml:3: policy: modules: required: declare at least one module
+Preview the edit
+
+Your passkeys · Back to policy

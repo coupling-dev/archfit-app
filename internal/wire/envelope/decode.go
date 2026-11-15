@@ -5,136 +5,28 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"slices"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 )
 
 const (
-	maxRawBytes      = 8192
-	eventPullRequest = "pull_request"
-	sha256Prefix     = "sha256:"
-	shaHexLen        = 40
-	digestHexLen     = 64
+	maxRawBytes = 8192
+
+	sha256Prefix = "sha256:"
+	shaHexLen    = 40
+	digestHexLen = 64
 )
 
-// policyListKeys are the eleven lists of policy_change, beside direction. The items are the engine's: the envelope
-// checks that each is an object and report.DecodePolicyChange checks what is inside.
-var policyListKeys = []string{
-	"rules_removed", "rules_loosened", "waivers_added", "allowlists_widened", "coverage_lost", "declarations_changed",
-	"rules_added", "rules_tightened", "waivers_removed", "allowlists_narrowed", "coverage_gained",
-}
-
-// field is one envelope key: its JSON type and its v1 rule.
+// field is one envelope key: its JSON type.
 type field struct {
-	name  string
-	bits  int                      // 0 = string; jsonObject = the optional policy_change object; otherwise an integer of this size
-	check func(e *Envelope) string // the violated rule; "" when the value conforms
-}
+	name string
+	bits int // 0 = string; otherwise an integer of this size
 
-// jsonObject marks the one key whose value is an object, and the one key that may be absent.
-const jsonObject = -1
-
-func fields() []field {
-	return []field{
-		{"schema_version", 0, func(e *Envelope) string {
-			return rule(e.SchemaVersion == SchemaV1, "must equal "+SchemaV1)
-		}},
-		{"kind", 0, func(e *Envelope) string {
-			return rule(e.Kind == KindReport || e.Kind == KindDiscovery || e.Kind == KindBaseline || e.Kind == KindReanchor,
-				"must be report, discovery, baseline or reanchor")
-		}},
-		{"repository", 0, func(e *Envelope) string {
-			owner, name, ok := strings.Cut(e.Repository, "/")
-			return rule(ok && isName(owner, 100, isRepoChar) && isName(name, 100, isRepoChar), "must be owner/name")
-		}},
-		{"event", 0, func(e *Envelope) string {
-			return rule(isName(e.Event, 64, isEventChar), "must be 1 to 64 characters of a-z and _")
-		}},
-		{"pull_request", 32, func(e *Envelope) string {
-			if e.Event == eventPullRequest {
-				return rule(e.PullRequest > 0, "must be > 0 when event is pull_request")
-			}
-			return rule(e.PullRequest == 0, "must be 0 unless event is pull_request")
-		}},
-		{"head_sha", 0, func(e *Envelope) string {
-			return rule(isHex(e.HeadSHA, shaHexLen), "must be 40 lowercase hex characters")
-		}},
-		{"base_sha", 0, func(e *Envelope) string { return pullRequestSHA(e, e.BaseSHA) }},
-		{"merge_base_sha", 0, func(e *Envelope) string { return pullRequestSHA(e, e.MergeBaseSHA) }},
-		{"analyzed_sha", 0, func(e *Envelope) string {
-			return rule(isHex(e.AnalyzedSHA, shaHexLen), "must be 40 lowercase hex characters")
-		}},
-		{"integration", 0, func(e *Envelope) string {
-			if e.Event == eventPullRequest {
-				return rule(e.Integration == IntegrationMerged || e.Integration == IntegrationConflicts,
-					"must be merged or conflicts when event is pull_request")
-			}
-			return rule(e.Integration == "", "must be empty unless event is pull_request")
-		}},
-		{"run_id", 64, func(e *Envelope) string { return rule(e.RunID > 0, "must be > 0") }},
-		{"run_attempt", 32, func(e *Envelope) string { return rule(e.RunAttempt >= 1, "must be >= 1") }},
-		{"engine_version", 0, func(e *Envelope) string {
-			return rule(isName(e.EngineVersion, 64, isVersionChar), "must be 1 to 64 characters of A-Z a-z 0-9 . _ + -")
-		}},
-		{"image_digest", 0, func(e *Envelope) string { return prefixedDigest(e.ImageDigest) }},
-		{"platform", 0, func(e *Envelope) string {
-			return rule(isPlatform(e.Platform), "must be os/arch or os/arch/variant, at most 32 characters")
-		}},
-		{"payload_digest", 0, func(e *Envelope) string { return prefixedDigest(e.PayloadDigest) }},
-		{"baseline_digest", 0, func(e *Envelope) string {
-			// A baseline upload is the capture itself: the engine loaded no stored baseline to produce it.
-			switch e.Kind {
-			case KindBaseline:
-				return rule(e.BaselineDigest == "", "must be empty when kind is baseline")
-			case KindReanchor:
-				// A re-anchor is checked against the protected baseline it carries forward: the digest must name one.
-				return rule(isHex(e.BaselineDigest, digestHexLen), "must be 64 lowercase hex characters when kind is reanchor")
-			}
-			return inputDigest(e, e.BaselineDigest)
-		}},
-		{"labels_digest", 0, func(e *Envelope) string { return inputDigest(e, e.LabelsDigest) }},
-		{"policy_change", jsonObject, func(e *Envelope) string {
-			// Only a pull request report has a policy change to classify.
-			return rule(e.PolicyChange == nil || e.Kind == KindReport && e.Event == eventPullRequest,
-				"must be absent unless kind is report and event is pull_request")
-		}},
-	}
 }
 
 // Errors name the field and the rule, never the offending value; encoding/json errors quote input, so none is passed on.
 func fieldError(name, violated string) error {
 	return errors.New("envelope: " + name + ": " + violated)
-}
-
-// Decode parses and validates raw against the v1 JSON Schema. Unknown fields,
-// a wrong schema_version, malformed SHAs or digests are errors.
-func Decode(raw []byte) (Envelope, error) {
-	if len(raw) > maxRawBytes {
-		return Envelope{}, errors.New("envelope: larger than " + strconv.Itoa(maxRawBytes) + " bytes")
-	}
-	// encoding/json replaces invalid UTF-8 silently.
-	if !utf8.Valid(raw) {
-		return Envelope{}, errors.New("envelope: invalid UTF-8")
-	}
-	fs := fields()
-	if err := checkShape(raw, fs); err != nil {
-		return Envelope{}, err
-	}
-
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	var env Envelope
-	if err := dec.Decode(&env); err != nil {
-		return Envelope{}, errMalformed()
-	}
-	for _, f := range fs {
-		if violated := f.check(&env); violated != "" {
-			return Envelope{}, fieldError(f.name, violated)
-		}
-	}
-	return env, nil
 }
 
 func errMalformed() error { return errors.New("envelope: malformed JSON") }
@@ -162,16 +54,6 @@ func checkShape(raw []byte, fs []field) error {
 		}
 		seen[f.name] = true
 
-		if f.bits == jsonObject {
-			var value json.RawMessage
-			if err := dec.Decode(&value); err != nil {
-				return errMalformed()
-			}
-			if violated := policyChangeShape(value); violated != "" {
-				return fieldError(f.name, violated)
-			}
-			continue
-		}
 		value, err := dec.Token()
 		if err != nil {
 			return errMalformed()
@@ -187,66 +69,11 @@ func checkShape(raw []byte, fs []field) error {
 		return errors.New("envelope: trailing data after the object")
 	}
 	for _, f := range fs {
-		if !seen[f.name] && f.bits != jsonObject {
+		if !seen[f.name] {
 			return fieldError(f.name, "required")
 		}
 	}
 	return nil
-}
-
-// policyChangeShape checks what the schema checks of policy_change: an object of exactly the twelve keys, each once,
-// a known direction, and every list an array of objects. What an item holds is not checked here.
-func policyChangeShape(raw []byte) string {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
-		return "must be an object"
-	}
-	seen := make(map[string]bool, len(policyListKeys)+1)
-	for dec.More() {
-		key, err := dec.Token()
-		if err != nil {
-			return "must be an object"
-		}
-		name, _ := key.(string)
-		if seen[name] {
-			return "duplicate key " + strconv.Quote(name)
-		}
-		var value json.RawMessage
-		if err := dec.Decode(&value); err != nil {
-			return "must be an object"
-		}
-		switch {
-		case name == "direction":
-			var direction string
-			if json.Unmarshal(value, &direction) != nil || direction != "tightening" && direction != "loosening" && direction != "mixed" {
-				return "direction must be tightening, loosening or mixed"
-			}
-		case slices.Contains(policyListKeys, name):
-			if !isObjectArray(value) {
-				return name + " must be an array of objects"
-			}
-		default:
-			return "unknown key"
-		}
-		seen[name] = true
-	}
-	if len(seen) != len(policyListKeys)+1 {
-		return "must have exactly direction and the eleven lists"
-	}
-	return ""
-}
-
-func isObjectArray(raw json.RawMessage) bool {
-	var items []json.RawMessage
-	if len(raw) == 0 || raw[0] != '[' || json.Unmarshal(raw, &items) != nil {
-		return false
-	}
-	for _, item := range items {
-		if len(item) == 0 || item[0] != '{' {
-			return false
-		}
-	}
-	return true
 }
 
 func lookup(fs []field, key json.Token) (field, bool) {
@@ -281,23 +108,9 @@ func rule(ok bool, text string) string {
 	return text
 }
 
-func pullRequestSHA(e *Envelope, sha string) string {
-	if e.Event == eventPullRequest {
-		return rule(isHex(sha, shaHexLen), "must be 40 lowercase hex characters when event is pull_request")
-	}
-	return rule(sha == "", "must be empty unless event is pull_request")
-}
-
 func prefixedDigest(digest string) string {
 	hexPart, ok := strings.CutPrefix(digest, sha256Prefix)
 	return rule(ok && isHex(hexPart, digestHexLen), "must be sha256: and 64 lowercase hex characters")
-}
-
-func inputDigest(e *Envelope, digest string) string {
-	if e.Kind == KindDiscovery {
-		return rule(digest == "", "must be empty when kind is discovery")
-	}
-	return rule(digest == "" || isHex(digest, digestHexLen), "must be 64 lowercase hex characters, without prefix, or empty")
 }
 
 func isPlatform(s string) bool {
@@ -334,8 +147,8 @@ func isDigit(c byte) bool      { return '0' <= c && c <= '9' }
 func isLower(c byte) bool      { return 'a' <= c && c <= 'z' }
 func isAlnum(c byte) bool      { return isLower(c) || isDigit(c) || 'A' <= c && c <= 'Z' }
 func isLowerAlnum(c byte) bool { return isLower(c) || isDigit(c) }
-func isEventChar(c byte) bool  { return isLower(c) || c == '_' }
-func isRepoChar(c byte) bool   { return isAlnum(c) || c == '_' || c == '.' || c == '-' }
+
+func isRepoChar(c byte) bool { return isAlnum(c) || c == '_' || c == '.' || c == '-' }
 func isVersionChar(c byte) bool {
 	return isAlnum(c) || c == '.' || c == '_' || c == '+' || c == '-'
 }

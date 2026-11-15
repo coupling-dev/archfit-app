@@ -1,9 +1,8 @@
-// Package account owns subscription status, consents and the managed-LLM budget.
+// Package account owns subscription status.
 package account
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -48,53 +47,12 @@ type Account interface {
 	Unadmit(ctx context.Context, installationID int64, byID int64) error
 }
 
-type ConsentKind string
-
-const (
-	ConsentSourceProcessing ConsentKind = "source_processing" // managed discovery
-	ConsentManagedLLM       ConsentKind = "managed_llm"
-)
-
-type Consent struct {
-	Kind ConsentKind
-	By   string // GitHub login of the administrator, as it was when the consent was recorded
-	ByID int64  // GitHub user ID of the administrator; 0 on a record written before the App stored it
-	At   time.Time
-}
-
-// ErrNoConsent is returned by callers' guards when Has is false.
-var ErrNoConsent = errors.New("account: consent not recorded")
-
-// ErrConsentExists is returned by Record when a consent of that kind is already recorded; the record is unchanged.
-var ErrConsentExists = errors.New("account: consent already recorded")
-
-type Consents interface {
-	// Record creates the consent atomically; ErrConsentExists if one is recorded, which keeps who and when.
-	Record(ctx context.Context, installationID int64, c Consent) error
-	Revoke(ctx context.Context, installationID int64, k ConsentKind) error
-	// Has is false on any error: no consent, no call.
-	Has(ctx context.Context, installationID int64, k ConsentKind) bool
-	// Get answers who recorded the consent and when. Unlike Has it tells "not recorded" (false, nil) from "cannot
-	// tell" (an error: the Store failed or the record is corrupt), so a page never shows an outage as "not allowed".
-	Get(ctx context.Context, installationID int64, k ConsentKind) (Consent, bool, error)
-}
-
-var ErrBudgetExhausted = errors.New("account: managed LLM budget exhausted")
-
-// Budget is the App-wide managed-LLM hard cap: USD 20 per calendar month (UTC), in micro-USD.
-type Budget interface {
-	// Reserve atomically books maxCost; ErrBudgetExhausted if the cap would be exceeded.
-	Reserve(ctx context.Context, maxCostMicroUSD int64, now time.Time) error
-	// Settle returns the unused part of a reservation.
-	Settle(ctx context.Context, reservedMicroUSD, actualMicroUSD int64, now time.Time) error
-}
-
-func New(s store.Store) (Account, Consents, Budget) {
+func New(s store.Store) Account {
 	return newWithLogger(s, slog.Default())
 }
 
-func newWithLogger(s store.Store, log *slog.Logger) (Account, Consents, Budget) {
-	return &accounts{s: s, log: log}, &consents{s: s}, &budget{s: s, log: log}
+func newWithLogger(s store.Store, log *slog.Logger) Account {
+	return &accounts{s: s, log: log}
 }
 
 func tenantOf(installationID int64) (store.Tenant, error) {

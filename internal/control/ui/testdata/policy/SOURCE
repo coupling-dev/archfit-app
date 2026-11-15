@@ -1,0 +1,2 @@
+typical.yaml: the example in Archfit 4 design section 6.1, copied from internal/wire/policy3/testdata/valid/typical.yaml.
+pumba.yaml: .archfit.yaml at https://github.com/alexei-led/pumba/tree/73c8ef3fb6de39178dc25a7b7c11e47e61dc45b2 (73c8ef3fb6de39178dc25a7b7c11e47e61dc45b2); captured as-is, never fetched by tests.

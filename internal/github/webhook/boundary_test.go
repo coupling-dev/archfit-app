@@ -20,7 +20,6 @@ func TestParseRejectsIncompleteIdentity(t *testing.T) {
 		{"PullOpened", "pull_request", func() obj { return prPayload("opened", shaA) }, true, true, "pull_request.head.sha"},
 		{"PullSynchronized", "pull_request", func() obj { return prPayload("synchronize", shaA) }, true, true, "pull_request.head.sha"},
 		{"PullClosed", "pull_request", func() obj { return prPayload("closed", shaA) }, true, true, "pull_request.head.sha"},
-		{"ReviewChanged", "pull_request_review", func() obj { return reviewPayload("submitted", shaA) }, true, true, "pull_request.head.sha"},
 		{"DefaultBranchPush", "push", func() obj { return pushPayload("refs/heads/main", "main") }, true, false, "after"},
 		{"InstallationAdded", "installation", func() obj { return installationPayload("created", 6001) }, false, false, ""},
 		{"InstallationAdded by repositories", "installation_repositories", func() obj { return installationReposPayload("added", 6001) }, false, false, ""},
@@ -81,7 +80,7 @@ func TestPushWithoutRepositoryIsAnError(t *testing.T) {
 			return set(pushPayload("refs/heads/main", "main"), "deleted", true)
 		},
 	}
-	kinds := map[string]EventKind{"feature branch": BranchPush}
+	kinds := map[string]EventKind{}
 	breaks := map[string]func(obj){
 		"missing repository":        func(p obj) { delete(p, "repository") },
 		"empty full_name":           func(p obj) { set(p, "repository.full_name", "") },
@@ -121,7 +120,7 @@ func TestParseMalformedJSON(t *testing.T) {
 		"trailing second": valid + valid,
 	}
 	for _, eventType := range []string{
-		"pull_request", "pull_request_review", "push", "installation", "installation_repositories",
+		"pull_request", "push", "installation", "installation_repositories",
 	} {
 		for name, payload := range bodies {
 			t.Run(eventType+"/"+name, func(t *testing.T) {
@@ -166,14 +165,6 @@ func TestEventTypeHeaderCannotForgeIdentity(t *testing.T) {
 			}
 		})
 	}
-
-	// A body whose action is valid under another type still yields only the identity it contains.
-	t.Run("pull_request edited body as pull_request_review", func(t *testing.T) {
-		got := mustParse(t, "pull_request_review", prPayload("edited", shaA))
-		if got.InstallationID != 5001 || got.Repo != "acme/shop" {
-			t.Errorf("identity %d %q does not come from the body", got.InstallationID, got.Repo)
-		}
-	})
 }
 
 func TestUnknownFieldsAreIgnored(t *testing.T) {

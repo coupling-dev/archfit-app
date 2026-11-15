@@ -1,0 +1,21 @@
+Archfit
+Auto
+Light
+Dark
+A
+@alice
+Sign out
+Repositories
+
+The stored state of each repository.
+
+Repository	State
+acme/clean	clean
+acme/drift	drift
+acme/expired	expired
+acme/not-set-up	not set up
+acme/outside-flow	policy changed outside the flow
+acme/unknown	unknown
+octo/tool	waiting for approval
+Documentation Third-party licences
+About this App · v0.12.0

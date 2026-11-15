@@ -5,22 +5,27 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/url"
+	"regexp"
 	"time"
 )
 
 const maxFileBytes = 1 << 20
 
 type repoJSON struct {
-	ID            int64  `json:"id"`
-	FullName      string `json:"full_name"`
-	Private       bool   `json:"private"`
+	ID         int64  `json:"id"`
+	FullName   string `json:"full_name"`
+	Private    bool   `json:"private"`
+	Visibility string `json:"visibility"`
+	Owner      struct {
+		Type string `json:"type"`
+	} `json:"owner"`
 	DefaultBranch string `json:"default_branch"`
 }
 
 func (j repoJSON) repo(installationID int64) Repo {
 	return Repo{
 		RepoRef: RepoRef{InstallationID: installationID, FullName: j.FullName},
-		ID:      j.ID, Private: j.Private, DefaultBranch: j.DefaultBranch,
+		ID:      j.ID, Private: j.Private, DefaultBranch: j.DefaultBranch, OwnerType: j.Owner.Type, Visibility: j.Visibility,
 	}
 }
 
@@ -121,7 +126,9 @@ func (c *Client) File(ctx context.Context, r RepoRef, ref, path string) (content
 		return nil, "", k.errorf("not a regular file")
 	case j.Size > maxFileBytes:
 		return nil, "", k.errorf("file over %d bytes", maxFileBytes)
-	case j.Encoding != "base64":
+	case j.Encoding != "base64", !blobID.MatchString(j.SHA):
+		// The blob id is what proves two reads are the same file (gate upload4): one missing or malformed proves
+		// nothing, so the read fails rather than return a file without it.
 		return nil, "", k.errorf("invalid response")
 	}
 	// GitHub wraps the base64 text in newlines, which the decoder skips.
@@ -134,6 +141,9 @@ func (c *Client) File(ctx context.Context, r RepoRef, ref, path string) (content
 	}
 	return data, j.SHA, nil
 }
+
+// blobID is a git object id: SHA-1 (40) or SHA-256 (64) lowercase hex.
+var blobID = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 
 func (c *Client) BranchHead(ctx context.Context, r RepoRef, branch string) (string, error) {
 	cr, base, err := r.target()

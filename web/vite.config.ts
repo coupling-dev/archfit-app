@@ -21,7 +21,7 @@ export default defineConfig({
     // The layout worker is about 424 KB gzip, ELK all of it; scripts/size.mjs holds its budget.
     chunkSizeWarningLimit: 2000,
   },
-  // The graph's layout worker, an ES module like the app: its licences are collected by the same plugin.
+  // The Home map's layout worker, an ES module like the app: its licences are collected by the same plugin.
   worker: { format: 'es', plugins: () => [lic.worker] },
   preview: { headers: { 'Content-Security-Policy': csp } },
   test: { include: ['src/**/*.test.ts'] },

@@ -2,20 +2,17 @@ package gate
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/http"
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/alexei-led/archfit-app/internal/gate/feedback"
-	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/github/oidc"
 	"github.com/alexei-led/archfit-app/internal/store"
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
 )
 
 const (
@@ -35,8 +32,6 @@ type fakeGitHub struct {
 	files         map[string][]byte           // fileKey
 	pulls         map[string]api.Pull         // pullKey
 	changed       map[string][]string         // pullKey
-	reviews       map[string][]api.Review     // pullKey
-	teams         map[string]bool             // "team|login"
 	runs          map[int64]api.WorkflowRun   // run IDs are unique across the fake
 	checks        map[string][]api.CheckRun   // by full name
 	comments      map[string][]api.Comment    // pullKey; an issue's comments under its number
@@ -44,6 +39,9 @@ type fakeGitHub struct {
 	issues        map[string][]fakeIssue      // by full name, the App's issues
 	unassignable  map[string]bool             // logins GitHub refuses to assign
 	queue         map[string][]api.QueueEntry // branchKey → merge queue entries
+	compares      map[string]api.Comparison   // "full name|base|head"
+	artifacts     map[int64][]byte            // run ID → the one file of its result artifact
+	permissions   map[string]string           // "full name|login" → admin, write or read; none when absent
 	nextID        int64
 
 	fail        map[string]error // method name → injected error
@@ -52,6 +50,7 @@ type fakeGitHub struct {
 	commentOps  int            // comments created or updated
 	issueEdits  int            // issue bodies updated
 	reruns      []int64
+	noBlobIDs   bool // File returns no blob id
 	// beforeCheckWrite runs once, unlocked, at the start of the next check run create or update: what it does
 	// happens after that publisher's reads and before its first write.
 	beforeCheckWrite func()
@@ -80,14 +79,16 @@ func newFakeGitHub() *fakeGitHub {
 		files:    map[string][]byte{},
 		pulls:    map[string]api.Pull{},
 		changed:  map[string][]string{},
-		reviews:  map[string][]api.Review{},
-		teams:    map[string]bool{},
 		runs:     map[int64]api.WorkflowRun{},
 		checks:   map[string][]api.CheckRun{},
 		comments: map[string][]api.Comment{},
 		heads:    map[string]string{},
 		issues:   map[string][]fakeIssue{},
 		fail:     map[string]error{},
+		compares: map[string]api.Comparison{},
+
+		artifacts:   map[int64][]byte{},
+		permissions: map[string]string{},
 
 		unassignable: map[string]bool{},
 	}
@@ -165,7 +166,41 @@ func (f *fakeGitHub) File(_ context.Context, r api.RepoRef, ref, path string) ([
 	if !ok {
 		return nil, "", api.ErrNotFound
 	}
-	return slices.Clone(raw), "blob", nil
+	if f.noBlobIDs {
+		return slices.Clone(raw), "", nil // a client that lost the blob id
+	}
+	sum := sha256.Sum256(raw) // the same bytes give the same blob, as in git
+	return slices.Clone(raw), hex.EncodeToString(sum[:20]), nil
+}
+
+// HeadRuns lists the runs of the workflow file whose head is headSHA.
+func (f *fakeGitHub) HeadRuns(_ context.Context, r api.RepoRef, workflowPath, headSHA string) ([]api.WorkflowRun, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("HeadRuns", r); err != nil {
+		return nil, err
+	}
+	var out []api.WorkflowRun
+	for _, run := range f.runs {
+		if run.HeadSHA == headSHA && run.WorkflowPath == workflowPath {
+			out = append(out, run)
+		}
+	}
+	return out, nil
+}
+
+// Compare answers what compares holds for "full name|base|head"; anything else is a commit GitHub does not know.
+func (f *fakeGitHub) Compare(_ context.Context, r api.RepoRef, base, head string) (api.Comparison, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("Compare", r); err != nil {
+		return api.Comparison{}, err
+	}
+	c, ok := f.compares[r.FullName+"|"+base+"|"+head]
+	if !ok {
+		return api.Comparison{}, api.ErrNotFound
+	}
+	return c, nil
 }
 
 func (f *fakeGitHub) BranchHead(_ context.Context, r api.RepoRef, branch string) (string, error) {
@@ -252,24 +287,6 @@ func (f *fakeGitHub) ChangedFiles(_ context.Context, r api.RepoRef, number int) 
 	return slices.Clone(f.changed[pullKey(r.FullName, number)]), false, nil
 }
 
-func (f *fakeGitHub) Reviews(_ context.Context, r api.RepoRef, number int) ([]api.Review, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.enter("Reviews", r); err != nil {
-		return nil, err
-	}
-	return slices.Clone(f.reviews[pullKey(r.FullName, number)]), nil
-}
-
-func (f *fakeGitHub) TeamMember(_ context.Context, r api.RepoRef, team, login string) (bool, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.enter("TeamMember", r); err != nil {
-		return false, err
-	}
-	return f.teams[team+"|"+login], nil
-}
-
 func (f *fakeGitHub) Run(_ context.Context, r api.RepoRef, runID int64) (api.WorkflowRun, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -313,10 +330,46 @@ func (f *fakeGitHub) LatestRun(_ context.Context, r api.RepoRef, _ string, _ api
 	return api.WorkflowRun{}, cmpErr(f.enter("LatestRun", r), api.ErrNotFound)
 }
 
-func (f *fakeGitHub) Artifact(_ context.Context, r api.RepoRef, _ int64, _ string, _ int64) ([]byte, error) {
+func (f *fakeGitHub) Artifact(_ context.Context, r api.RepoRef, runID int64, name string, _ int64) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return nil, cmpErr(f.enter("Artifact", r), api.ErrNotFound)
+	if err := f.enter("Artifact", r); err != nil {
+		return nil, err
+	}
+	raw, ok := f.artifacts[runID]
+	if !ok || name != "archfit-result" {
+		return nil, api.ErrNotFound
+	}
+	return raw, nil
+}
+
+func (f *fakeGitHub) CollaboratorPermission(_ context.Context, r api.RepoRef, login string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("CollaboratorPermission", r); err != nil {
+		return "", err
+	}
+	if p, ok := f.permissions[r.FullName+"|"+login]; ok {
+		return p, nil
+	}
+	return "none", nil
+}
+
+// SetAssigneesAndLabels replaces the issue's sets; an unassignable login is dropped, as GitHub does.
+func (f *fakeGitHub) SetAssigneesAndLabels(_ context.Context, r api.RepoRef, number int, assignees, labels []string) ([]string, []string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("SetAssigneesAndLabels", r); err != nil {
+		return nil, nil, err
+	}
+	var kept []string
+	for _, a := range assignees {
+		if !f.unassignable[a] {
+			kept = append(kept, a)
+		}
+	}
+	err := f.editIssue(r.FullName, number, func(i *fakeIssue) { i.Assignees, i.Labels = kept, slices.Clone(labels) })
+	return kept, labels, err
 }
 
 func (f *fakeGitHub) CheckRuns(_ context.Context, r api.RepoRef, headSHA, name string) ([]api.CheckRun, error) {
@@ -420,12 +473,15 @@ func (f *fakeGitHub) UpdateComment(_ context.Context, r api.RepoRef, id int64, b
 // issue numbers clear of the pull requests the tests open.
 const firstIssue = 1000
 
-// fakeIssue is an issue the App opened.
+// fakeIssue is an issue the App opened, or one a worker opened (ByWorker).
 type fakeIssue struct {
 	api.Issue
-	Title    string
-	Assignee string
-	Open     bool
+	Title     string
+	Assignee  string
+	Assignees []string
+	Labels    []string
+	Open      bool
+	ByWorker  bool
 }
 
 func (f *fakeGitHub) AppIssues(_ context.Context, r api.RepoRef) ([]api.Issue, error) {
@@ -436,7 +492,7 @@ func (f *fakeGitHub) AppIssues(_ context.Context, r api.RepoRef) ([]api.Issue, e
 	}
 	out := []api.Issue{}
 	for _, i := range f.issues[r.FullName] {
-		if i.Open {
+		if i.Open && !i.ByWorker {
 			out = append(out, i.Issue)
 		}
 	}
@@ -453,7 +509,7 @@ func (f *fakeGitHub) CreateIssue(_ context.Context, r api.RepoRef, i api.NewIssu
 	if f.unassignable[i.Assignee] {
 		return api.Issue{}, api.ErrUnprocessable
 	}
-	issue := fakeIssue{Issue: api.Issue{Number: firstIssue + len(f.issues[r.FullName]), Body: i.Body}, Title: i.Title, Assignee: i.Assignee, Open: true}
+	issue := fakeIssue{Issue: api.Issue{Number: f.nextIssue(r.FullName), Body: i.Body}, Title: i.Title, Assignee: i.Assignee, Open: true}
 	f.issues[r.FullName] = append(f.issues[r.FullName], issue)
 	return issue.Issue, nil
 }
@@ -474,6 +530,65 @@ func (f *fakeGitHub) CloseIssue(_ context.Context, r api.RepoRef, number int) er
 		return err
 	}
 	return f.editIssue(r.FullName, number, func(i *fakeIssue) { i.Open = false })
+}
+
+func (f *fakeGitHub) ReopenIssue(_ context.Context, r api.RepoRef, number int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("ReopenIssue", r); err != nil {
+		return err
+	}
+	return f.editIssue(r.FullName, number, func(i *fakeIssue) { i.Open = true })
+}
+
+// errNoBranches is the answer of the branch, pull request and merge writes: the gate tests answer only with answers
+// that write no policy line. gate/proposals tests the whole flow over its own fake.
+var errNoBranches = errors.New("fake: the gate fake writes no branch, pull request or merge")
+
+func (f *fakeGitHub) refuse(method string, r api.RepoRef) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter(method, r); err != nil {
+		return err
+	}
+	return errNoBranches
+}
+
+func (f *fakeGitHub) EnsureBranch(_ context.Context, r api.RepoRef, _, _ string) error {
+	return f.refuse("EnsureBranch", r)
+}
+
+func (f *fakeGitHub) Commit(_ context.Context, r api.RepoRef, _, _ string, _ []api.FileChange) (string, error) {
+	return "", f.refuse("Commit", r)
+}
+
+func (f *fakeGitHub) CommitOn(_ context.Context, r api.RepoRef, _, _, _ string, _ []api.FileChange, _ bool) (string, error) {
+	return "", f.refuse("CommitOn", r)
+}
+
+func (f *fakeGitHub) EnsurePull(_ context.Context, r api.RepoRef, _ api.NewPull) (api.Pull, error) {
+	return api.Pull{}, f.refuse("EnsurePull", r)
+}
+
+func (f *fakeGitHub) UpdatePullBody(_ context.Context, r api.RepoRef, _ int, _ string) error {
+	return f.refuse("UpdatePullBody", r)
+}
+
+func (f *fakeGitHub) MarkReady(_ context.Context, r api.RepoRef, _ int) error {
+	return f.refuse("MarkReady", r)
+}
+
+func (f *fakeGitHub) MergePull(_ context.Context, r api.RepoRef, _ int, _ string) (string, error) {
+	return "", f.refuse("MergePull", r)
+}
+
+func (f *fakeGitHub) UpdateBranch(_ context.Context, r api.RepoRef, _ int, _ string) error {
+	return f.refuse("UpdateBranch", r)
+}
+
+// nextIssue is the next issue number of fullName. The caller holds the lock.
+func (f *fakeGitHub) nextIssue(fullName string) int {
+	return firstIssue + len(f.issues[fullName])
 }
 
 // editIssue edits the issue number of fullName. The caller holds the lock.
@@ -538,13 +653,33 @@ const (
 	ownerDecisionKeyPrefix   = "owner-decision/"
 	reviewerRequestKeyPrefix = "review-request/"
 	decisionKeyPrefix        = "decision/" // gate/decisions' request records
+	pullRecordKeyPrefix      = "v4/pull/"  // the envelope 2 pull records (M2 D6)
+	pullIndexKeyPrefix       = "v4/pull-index/"
+	requestKeyPrefix         = "v4/request/" // the requests of M2 task 16
+	requestIndexKeyPrefix    = "v4/request-index/"
+	answerKeyPrefixes        = "v4/approval/ v4/proposal/ v4/proposal-index/ v4/proposal-lease/" // M2 task 19
+	pushKeyPrefixes          = "v4/repo/ v4/policy-push/ v4/recovered-push/"                     // M2 task 20
+	reposKey                 = "v4/repos"                                                        // M2 task 23
 )
 
-// isRecord reports whether key is a pusher or an approval record of gate/inputs, or a request record of gate/decisions.
+// isRecord reports whether key is a pusher or an approval record of gate/inputs, a request record of gate/decisions,
+// or an envelope 2 pull record or its index.
 func isRecord(key string) bool {
 	return strings.HasPrefix(key, pusherKeyPrefix) || strings.HasPrefix(key, approvalKeyPrefix) ||
 		strings.HasPrefix(key, ownerDecisionKeyPrefix) || strings.HasPrefix(key, reviewerRequestKeyPrefix) ||
-		strings.HasPrefix(key, decisionKeyPrefix)
+		strings.HasPrefix(key, decisionKeyPrefix) || isV4Record(key)
+}
+
+// isV4Record is a pull record or a request of Archfit 4, or their index.
+func isV4Record(key string) bool {
+	prefixes := []string{"v4/publication/", pullRecordKeyPrefix, pullIndexKeyPrefix, requestKeyPrefix, requestIndexKeyPrefix}
+	prefixes = append(prefixes, strings.Fields(answerKeyPrefixes)...)
+	for _, prefix := range append(prefixes, strings.Fields(pushKeyPrefixes)...) {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return key == reposKey
 }
 
 // guardStore proves the gate path writes nothing but publication leases and the records of gate/inputs: every other
@@ -613,13 +748,15 @@ func (s *guardStore) CompareAndSwap(ctx context.Context, t store.Tenant, key str
 	return s.inner.CompareAndSwap(ctx, t, key, old, value)
 }
 
-// CompareAndSwapAll is allowed for request records only, every key of the call.
+// CompareAndSwapAll is allowed for decision request records and Archfit 4 pull, request, approval and proposal records,
+// the proposal lease, the repository record and its index, and the judgement of a policy push only, every key of the
+// call.
 func (s *guardStore) CompareAndSwapAll(ctx context.Context, t store.Tenant, swaps []store.Swap) (bool, error) {
 	s.mu.Lock()
 	for _, sw := range swaps {
-		if !strings.HasPrefix(sw.Key, decisionKeyPrefix) {
+		if !strings.HasPrefix(sw.Key, decisionKeyPrefix) && !isV4Record(sw.Key) {
 			s.mu.Unlock()
-			panic("gate path wrote to the Store: CompareAndSwapAll outside the decision records")
+			panic("gate path wrote to the Store: CompareAndSwapAll outside the decision, pull and request records")
 		}
 		s.recordTenants, s.recordKeys = append(s.recordTenants, t), append(s.recordKeys, sw.Key)
 	}
@@ -651,192 +788,3 @@ func (s *guardStore) Tenants(context.Context) ([]store.Tenant, error) {
 }
 
 // Hand-written fakes of the children, for the pipeline and HandleEvent rule tests.
-
-type fakeReceiver struct {
-	upload Upload
-	err    error
-	kinds  []envelope.Kind
-	ctxs   []context.Context
-}
-
-func (r *fakeReceiver) Receive(ctx context.Context, _ *http.Request, kind envelope.Kind) (Upload, error) {
-	r.kinds = append(r.kinds, kind)
-	r.ctxs = append(r.ctxs, ctx)
-	return r.upload, r.err
-}
-
-type fakeResolver struct {
-	trusted inputs.Trusted
-	err     error
-	targets []inputs.Target
-	nows    []time.Time
-	pushers []string // logins recorded by RecordPusher, in call order
-}
-
-func (r *fakeResolver) Resolve(_ context.Context, t inputs.Target, now time.Time) (inputs.Trusted, error) {
-	r.targets = append(r.targets, t)
-	r.nows = append(r.nows, now)
-	return r.trusted, r.err
-}
-
-func (r *fakeResolver) RecordPusher(_ context.Context, _ inputs.Target, login string) error {
-	r.pushers = append(r.pushers, login)
-	return nil
-}
-
-// The approval methods run only over the real resolver, in the world.
-func (r *fakeResolver) Candidate(context.Context, inputs.Target) (inputs.Candidate, error) {
-	panic("fakeResolver: Candidate")
-}
-
-func (r *fakeResolver) CanApprove(context.Context, inputs.Target, string) error {
-	panic("fakeResolver: CanApprove")
-}
-
-func (r *fakeResolver) CanDecide(context.Context, inputs.Target, string) error {
-	panic("fakeResolver: CanDecide")
-}
-
-func (r *fakeResolver) CanWithdraw(context.Context, inputs.Target, string) (bool, error) {
-	panic("fakeResolver: CanWithdraw")
-}
-
-func (r *fakeResolver) Decide(context.Context, inputs.Target, string, map[string]string, inputs.DecisionAction, string, []string, time.Time) error {
-	panic("fakeResolver: Decide")
-}
-
-func (r *fakeResolver) MirrorDecisions(context.Context, inputs.Target, api.Comments) error {
-	return nil
-}
-
-func (r *fakeResolver) RequestEligibleReviewers(context.Context, inputs.Target, string, time.Time) bool {
-	return false
-}
-
-func (r *fakeResolver) Approve(context.Context, inputs.Target, string, map[string]string, time.Time) error {
-	panic("fakeResolver: Approve")
-}
-
-type fakePublisher struct {
-	state      feedback.CheckState
-	stateErr   error
-	publishErr error
-	pendingErr error
-	published  []feedback.Publication
-	banners    []inputs.Target
-	pended     []inputs.Target
-	states     []inputs.Target
-}
-
-func (p *fakePublisher) Publish(_ context.Context, pub feedback.Publication) error {
-	if p.publishErr != nil {
-		return p.publishErr
-	}
-	p.published = append(p.published, pub)
-	return nil
-}
-
-func (p *fakePublisher) DecisionBanner(_ context.Context, t inputs.Target, _ inputs.Trusted) error {
-	p.banners = append(p.banners, t)
-	return nil
-}
-
-func (p *fakePublisher) Pending(_ context.Context, t inputs.Target) error {
-	if p.pendingErr != nil {
-		return p.pendingErr
-	}
-	p.pended = append(p.pended, t)
-	return nil
-}
-
-func (p *fakePublisher) State(_ context.Context, t inputs.Target) (feedback.CheckState, error) {
-	p.states = append(p.states, t)
-	return p.state, p.stateErr
-}
-
-func (p *fakePublisher) AdvisoryState(ctx context.Context, t inputs.Target) (feedback.CheckState, error) {
-	return p.State(ctx, t)
-}
-
-// Reconcile is State, decide and Publish, as feedback runs them inside the lease.
-func (p *fakePublisher) Reconcile(ctx context.Context, t inputs.Target, decide feedback.Decision) error {
-	current, err := p.State(ctx, t)
-	if err != nil {
-		return err
-	}
-	pub, err := decide(ctx, current)
-	if err != nil || pub == nil {
-		return err
-	}
-	return p.Publish(ctx, *pub)
-}
-
-func (p *fakePublisher) Warn(context.Context, inputs.Target, time.Time) error {
-	panic("the façade never calls Warn")
-}
-
-// fakeRepairer records the publications the façade hands to the repair issue.
-type fakeRepairer struct {
-	repaired []feedback.Publication
-}
-
-func (r *fakeRepairer) Repair(_ context.Context, p feedback.Publication) {
-	r.repaired = append(r.repaired, p)
-}
-
-type fakeSweeper struct {
-	summary  Summary
-	err      error
-	runs     []time.Time
-	repos    []api.Repo
-	rechecks []recheckCall
-}
-
-type recheckCall struct {
-	repo api.Repo
-	tip  string
-}
-
-func (s *fakeSweeper) Run(_ context.Context, now time.Time) (Summary, error) {
-	s.runs = append(s.runs, now)
-	return s.summary, s.err
-}
-
-func (s *fakeSweeper) RunRepo(_ context.Context, r api.Repo, now time.Time) (Summary, error) {
-	s.repos = append(s.repos, r)
-	s.runs = append(s.runs, now)
-	return s.summary, s.err
-}
-
-func (s *fakeSweeper) Recheck(_ context.Context, r api.Repo, tip string, now time.Time) (Summary, error) {
-	s.rechecks = append(s.rechecks, recheckCall{r, tip})
-	s.runs = append(s.runs, now)
-	return s.summary, s.err
-}
-
-type fakeActions struct {
-	api.Actions // the façade calls only Run and Rerun; anything else panics on the nil interface
-	run         api.WorkflowRun
-	runErr      error
-	rerunErr    error
-	ran         []int64
-	reran       []int64
-	refs        []api.RepoRef
-}
-
-func (a *fakeActions) Run(_ context.Context, r api.RepoRef, runID int64) (api.WorkflowRun, error) {
-	a.ran = append(a.ran, runID)
-	a.refs = append(a.refs, r)
-	return a.run, a.runErr
-}
-
-func (a *fakeActions) Rerun(_ context.Context, r api.RepoRef, runID int64) error {
-	if a.rerunErr != nil {
-		return a.rerunErr
-	}
-	a.reran = append(a.reran, runID)
-	a.refs = append(a.refs, r)
-	return nil
-}
-
-func (r *fakeResolver) ReviewerNotificationProblem(context.Context, inputs.Target) bool { return false }

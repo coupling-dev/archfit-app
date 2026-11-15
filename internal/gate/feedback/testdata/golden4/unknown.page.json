@@ -1,0 +1,18 @@
+{
+  "status": "unknown",
+  "status_line": "Archfit: unknown, no verdict",
+  "records": [
+    {
+      "path": ".archfit.yaml",
+      "rule": "policy",
+      "what": "differs from origin/main",
+      "why": "only owners change the policy",
+      "next": {
+        "kind": "restore",
+        "text": "git checkout origin/main -- .archfit.yaml"
+      },
+      "show_next": true
+    }
+  ],
+  "author": "do the `next` step of each record."
+}

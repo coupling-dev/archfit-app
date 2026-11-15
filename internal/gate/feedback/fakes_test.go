@@ -181,18 +181,6 @@ func (f *fakeChecks) latest(t *testing.T, headSHA, name string) api.CheckRun {
 	return slices.MaxFunc(runs, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) })
 }
 
-func (f *fakeChecks) count(call string) int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	n := 0
-	for _, c := range f.calls {
-		if c == call {
-			n++
-		}
-	}
-	return n
-}
-
 type fakeComments struct {
 	failures
 	mu       sync.Mutex
@@ -299,12 +287,4 @@ func (f *fakePulls) ChangedFiles(context.Context, api.RepoRef, int) ([]string, b
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.changed), f.truncated, nil
-}
-
-func (f *fakePulls) Reviews(context.Context, api.RepoRef, int) ([]api.Review, error) {
-	return nil, nil
-}
-
-func (f *fakePulls) TeamMember(context.Context, api.RepoRef, string, string) (bool, error) {
-	return false, nil
 }

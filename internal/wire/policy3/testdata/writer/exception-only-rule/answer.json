@@ -1,0 +1,11 @@
+{
+  "kind": "approve-until",
+  "loosens": true,
+  "note": "request #431",
+  "exception": {
+    "rule": "no-docker",
+    "from": "app",
+    "expires": "2026-11-19",
+    "why": "Request #431 is open."
+  }
+}

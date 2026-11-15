@@ -1,0 +1,28 @@
+●
+1 workflow change waits
+
+Home
+
+acme/app
+
+Needs you
+Approve the workflow change in #4.
+The map
+cmd
+core
+No layer
+Allowed dependency
+app
+Volatility: high
+util
+Volatility: low
+other
+Volatility: high
+An allowed dependency
+A requested one (with its #431)
+One a rule denies
+An exception (with its date)
+Drift
+Show the map as a list
+
+A dependency that is not drawn needs a request.

@@ -19,47 +19,55 @@ Rows marked **[default]** need an owner decision before launch.
 | Infrastructure  | OpenTofu 1.8+ (Terraform-compatible), `google` provider pinned, stacks `data` and `runtime` under [`infra/`](../infra/README.md) |
 | Logging         | `log/slog` writes JSON to stdout. Logs contain IDs, digests, outcomes, and timings                                               |
 | HTTP            | `net/http` with Go 1.22+ `ServeMux` patterns                                                                                     |
-| Crypto          | Standard library RS256 JWT, JWKS, HMAC-SHA256, AES-GCM cookies, and SHA-256 digests                                              |
-| Embedded data   | `go:embed` stores schemas, the locked manifest, the Anthropic price table, templates, and assets                                 |
+| Crypto          | Standard library RS256 JWT, JWKS, HMAC-SHA256, AES-GCM cookies, and SHA-256 digests. Passkeys: go-webauthn (Dependencies)        |
+| Embedded data   | `go:embed` stores schemas, the locked manifest, templates, and assets                                                            |
 
 ## Dependencies
 
-The only third-party module is:
+The App imports two third-party modules:
 
-| Module                      | Used in                        | Purpose                                 |
-| --------------------------- | ------------------------------ | --------------------------------------- |
-| `go.yaml.in/yaml/v3` v3.0.x | `wire/settings`, `wire/policy` | Strict YAML decoding with `KnownFields` |
+| Module                                    | Used in                                                         | Purpose                                                                                         |
+| ----------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `go.yaml.in/yaml/v3` v3.0.x               | `wire/policy3`, `wire/workflow` | Strict policy decoding; policy edits by node position; job/step Action call extraction |
+| `github.com/go-webauthn/webauthn` v0.18.2 | `control/passkey` only                                          | WebAuthn registration and assertion for the passkey of an answer (M2 D9)                        |
 
-The App has no GitHub SDK, JWT library, JSON Schema library, assertion library, or LLM SDK.
-GitHub, OIDC, Anthropic, Firestore, and metadata-server clients use `net/http`.
+go-webauthn, because a hand-written WebAuthn, CBOR and COSE verifier would be security code the App owns forever
+(M2 D9). v0.18.2 is its latest release (2026-09-19, BSD-3-Clause); `govulncheck` finds nothing the App reaches through
+it. Its own imports enter the build only through `control/passkey`: CBOR (`fxamacker/cbor`, `x448/float16`), TPM
+(`google/go-tpm`), MessagePack (`tinylib/msgp`, `philhofer/fwd`), `go-viper/mapstructure`, `google/uuid`,
+`go-webauthn/x`, `golang.org/x/crypto`, `golang.org/x/sys`, and `golang-jwt/jwt` for its metadata service, which the
+App does not configure. `internal/imports_test.go` fails when any of them is imported elsewhere.
+
+Apart from go-webauthn's own imports, the App has no GitHub SDK, JWT library, JSON Schema library, assertion library,
+or LLM SDK. GitHub, OIDC, Firestore, and metadata-server clients use `net/http`.
 
 ## Testing
 
 The tests use the standard `testing` package and table-driven cases with `t.Run`.
 
-| Area                  | Choice                                                                                                |
-| --------------------- | ----------------------------------------------------------------------------------------------------- |
-| Assertions            | Plain `if` statements with `t.Errorf` or `t.Fatalf`. Small local helpers handle structs **[default]** |
-| Full run              | `go test -race -coverprofile=coverage.out ./...` through `make test`                                  |
-| One module            | `go test -race ./internal/<path>/...`                                                                 |
-| GitHub, OIDC, and LLM | `net/http/httptest` servers behind real clients. Consumers use hand-written role fakes                |
-| Clock                 | Injected `func() time.Time`. Tests do not sleep                                                       |
-| Store                 | `store.NewMemory()`. Failure cases use a failing wrapper. Drivers run `store/storetest`               |
-| Firestore             | An `httptest` fake of the REST subset. CI also runs the driver tests against the Firestore emulator   |
-| Fixtures              | `internal/wire/testdata/` with `.expect.json` files                                                   |
-| Import rules          | Root tests run `go list -deps` against the allowed import matrix                                      |
-| Fuzzing               | `testing.F` covers strict `envelope`, `report`, `settings`, and `policy` decoders **[default]**       |
+| Area            | Choice                                                                                                                        |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Assertions      | Plain `if` statements with `t.Errorf` or `t.Fatalf`. Small local helpers handle structs **[default]**                         |
+| Full run        | `go test -race -coverprofile=coverage.out ./...` through `make test`                                                          |
+| One module      | `go test -race ./internal/<path>/...`                                                                                         |
+| GitHub and OIDC | `net/http/httptest` servers behind real clients. Consumers use hand-written role fakes                                        |
+| Clock           | Injected `func() time.Time`. Tests do not sleep                                                                               |
+| Store           | `store.NewMemory()`. Failure cases use a failing wrapper. Drivers run `store/storetest`                                       |
+| Firestore       | An `httptest` fake of the REST subset. CI also runs the driver tests against the Firestore emulator                           |
+| Fixtures        | `internal/wire/testdata/` with `.expect.json` files                                                                           |
+| Import rules    | Root tests run `go list -deps` against the allowed import matrix                                                              |
+| Passkey         | A software authenticator on go-webauthn's CBOR and COSE encoders, and the W3C WebAuthn level 3 test vectors; never a real key |
+| Fuzzing         | `testing.F` covers envelope 2 and request parsing                               |
 
 ## Frontend
 
-| Item      | Choice                                                                                                                                                         |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rendering | Svelte 5 and TypeScript, built by Vite into `internal/control/ui/spa` and embedded in the binary; an error page is the same shell                              |
-| Styles    | One stylesheet, the tokens and components of `docs/archive/design/prototypes/archfit.css`, light and dark                                                              |
-| Editor    | CodeMirror 6 (MIT), a lazy chunk of the policy page. The server checks syntax and schema on load, on Check and on save                                         |
-| Graph     | Svelte Flow (`@xyflow/svelte`, MIT) with the ELK layered layout (`elkjs`, EPL-2.0), lazy on the graph pages; ELK runs in a worker                               |
-| Licences  | The build writes the licence of every bundled npm package to `assets/licenses-<hash>.txt`, linked as `/licenses.txt`                                           |
-| Tests     | `svelte-check`, ESLint, Vitest, a bundle budget, and a Playwright smoke test with axe under the production CSP                                                 |
+| Item      | Choice                                                                                                                            |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Rendering | Svelte 5 and TypeScript, built by Vite into `internal/control/ui/spa` and embedded in the binary; an error page is the same shell |
+| Styles    | One stylesheet, the tokens and components of `docs/archive/design/prototypes/archfit.css`, light and dark                         |
+| Home map  | SVG with the ELK layered layout (`elkjs`, EPL-2.0); ELK runs in a worker |
+| Licences  | The build writes the licence of every bundled npm package to `assets/licenses-<hash>.txt`, linked as `/licenses.txt`              |
+| Tests     | `svelte-check`, ESLint, Vitest, a bundle budget, and a Playwright smoke test with axe under the production CSP                    |
 
 Node is needed only to build and check the web app (`make web`, `make web-check`, the CI job "Web app" and the image's
 `web` stage); Go builds and tests run without it. Versions are pinned in `web/package-lock.json`. The smoke test
@@ -70,22 +78,20 @@ no other origin. The one exception is the shell's per-response nonce in `style-s
 
 ## Platform seams
 
-The design isolates platform-dependent code behind three interfaces.
+Store and Queue isolate platform-dependent persistence and delivery.
 
-| Seam       | Current driver                                             | Later choice                                                                                                         |
-| ---------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `Store`    | `memory` (default), or `firestore`: Firestore over REST    | None. `CompareAndSwapAll` covers the multi-key transaction of the [cloud design](design/cloud/architecture.md#state) |
-| `Sandbox`  | `none`. Managed discovery reports that it is not available | Add an ephemeral container-job driver under `internal/control/onboarding/<driver>/`                                  |
-| `Provider` | `internal/control/assist/anthropic` over `net/http`        | Add another provider as a sibling package                                                                            |
-| Host       | Cloud Run, two services in `europe-west1`                  | Deployed. See [cloud design](design/cloud/architecture.md)                          |
-| Scheduler  | Any external scheduler calls `POST /internal/sweep`        | Chosen, not built: Cloud Scheduler and Cloud Tasks. See [cloud design](design/cloud/architecture.md#flows)           |
+| Seam      | Current driver                                             | Later choice                                                                                                         |
+| --------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `Store`   | `memory` (default), or `firestore`: Firestore over REST    | None. `CompareAndSwapAll` covers the multi-key transaction of the [cloud design](design/cloud/architecture.md#state) |
+| Host      | Cloud Run, two services in `europe-west1`                  | Deployed. See [cloud design](design/cloud/architecture.md)                                                           |
+| Scheduler | Any external scheduler calls `POST /internal/sweep`        | Chosen, not built: Cloud Scheduler and Cloud Tasks. See [cloud design](design/cloud/architecture.md#flows)           |
 
-The cloud design adds a `Queue` seam. The sandbox choice is still open.
+The v3 Sandbox seam and ARCHFIT_SANDBOX setting have been removed.
 The [hosting research](archive/research/20260918-hosting.md) is dated research, not a deployment decision.
 
 ## Conventions
 
-- Import a module by its full path, such as `.../internal/wire/report`.
+- Import a module by its full path, such as `.../internal/wire/result`.
 - Import only the packages listed under Integrations in the module specification.
 - Run `go test -race ./internal/<module path>/` and `golangci-lint run ./internal/<module path>/` for one module.
 - Use sentinel errors with `errors.Is` and `errors.As`. Wrap errors with `%w`. Do not panic outside `main`.

@@ -10,8 +10,8 @@ import (
 
 const (
 	typePullRequest       = "pull_request"
-	typePullRequestReview = "pull_request_review"
 	typeIssueComment      = "issue_comment"
+	typeIssues            = "issues"
 	typePush              = "push"
 	typeInstallation      = "installation"
 	typeInstallationRepos = "installation_repositories"
@@ -34,6 +34,7 @@ var (
 	errNoPullRequest  = errors.New("webhook: payload has no pull request number")
 	errBadHeadSHA     = errors.New("webhook: payload has no valid head SHA")
 	errNoComment      = errors.New("webhook: payload has no comment ID or author")
+	errNoIssue        = errors.New("webhook: payload has no issue number or author")
 )
 
 // actionKinds is the Mapping table for every known event type except push, which has no action.
@@ -45,13 +46,11 @@ var actionKinds = map[string]map[string]EventKind{
 		"synchronize":      PullSynchronized,
 		"closed":           PullClosed,
 	},
-	typePullRequestReview: {
-		"submitted": ReviewChanged,
-		"edited":    ReviewChanged,
-		"dismissed": ReviewChanged,
-	},
 	typeIssueComment: {
-		"created": PullCommented, // only on a pull request: payload.kind checks issue.pull_request
+		"created": PullCommented, // only on a pull request: payload.kind checks issue.pull_request; an edit is not read
+	},
+	typeIssues: {
+		"opened": IssueOpened, // never a pull request: payload.kind checks issue.pull_request
 	},
 	typeMergeGroup: {
 		"checks_requested": MergeGroupRequested,
@@ -95,7 +94,12 @@ type payload struct {
 	} `json:"pull_request"`
 	Issue struct {
 		Number      int       `json:"number"`
+		Body        string    `json:"body"`
 		PullRequest *struct{} `json:"pull_request"` // present only when the issue is a pull request
+		User        struct {
+			Login string `json:"login"`
+			Type  string `json:"type"`
+		} `json:"user"`
 	} `json:"issue"`
 	Comment struct {
 		ID   int64  `json:"id"`
@@ -112,13 +116,13 @@ type payload struct {
 		HeadSHA string `json:"head_sha"`
 		BaseRef string `json:"base_ref"` // "refs/heads/<branch>"
 	} `json:"merge_group"`
-	Reason     string `json:"reason"`
-	PusherType string `json:"pusher_type"`
-	Ref        string `json:"ref"`
-	After      string `json:"after"`
-	Deleted    bool   `json:"deleted"`
-	Forced     bool   `json:"forced"`
-	Commits    []struct {
+	Reason  string `json:"reason"`
+	Ref     string `json:"ref"`
+	Before  string `json:"before"`
+	After   string `json:"after"`
+	Deleted bool   `json:"deleted"`
+	Forced  bool   `json:"forced"`
+	Commits []struct {
 		Added    []string `json:"added"`
 		Modified []string `json:"modified"`
 		Removed  []string `json:"removed"`
@@ -182,6 +186,13 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 		ev.CommentID, ev.Author, ev.AuthorType, ev.Body = p.Comment.ID, p.Comment.User.Login, p.Comment.User.Type, p.Comment.Body
 		return ev, nil
 	}
+	if kind == IssueOpened {
+		if p.Issue.Number <= 0 || p.Issue.User.Login == "" {
+			return Event{}, errNoIssue
+		}
+		ev.Issue, ev.Author, ev.AuthorType, ev.Body = p.Issue.Number, p.Issue.User.Login, p.Issue.User.Type, p.Issue.Body
+		return ev, nil
+	}
 	switch kind {
 	case MergeGroupRequested, MergeGroupDestroyed:
 		// The group commit is a commit of this repository; base_ref names the queue's branch. Membership is read from
@@ -190,15 +201,14 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 		ev.HeadRepo = ev.Repo
 		ev.BaseRef = strings.TrimPrefix(p.MergeGroup.BaseRef, branchRefPrefix)
 		ev.GroupReason = p.Reason
-	case DefaultBranchPush, BranchPush:
+	case DefaultBranchPush:
 		ev.HeadSHA = p.After
 		ev.HeadRepo = ev.Repo
 		ev.Branch = strings.TrimPrefix(p.Ref, branchRefPrefix)
-		ev.Pusher = p.Sender.Login
-		ev.PusherType = p.PusherType
-		if kind == DefaultBranchPush {
-			ev.BaseRef = p.Repository.DefaultBranch
-			ev.ChangedPaths = p.changedPaths()
+		ev.BaseRef = p.Repository.DefaultBranch
+		ev.ChangedPaths = p.changedPaths()
+		if isSHA(p.Before) && strings.Trim(p.Before, "0") != "" {
+			ev.Before = p.Before // all zeros: the push created the branch
 		}
 	default:
 		if p.PullRequest.Number <= 0 {
@@ -220,18 +230,17 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 func (p *payload) kind(eventType string) EventKind {
 	if eventType == typePush {
 		branch, isBranch := strings.CutPrefix(p.Ref, branchRefPrefix)
-		switch {
-		case p.Deleted || !isBranch || p.Repository.DefaultBranch == "":
-			return Ignored
-		case branch == p.Repository.DefaultBranch:
-			return DefaultBranchPush
-		default:
-			return BranchPush
+		if p.Deleted || !isBranch || branch != p.Repository.DefaultBranch {
+			return Ignored // a push to another branch approves nothing and changes no trusted input
 		}
+		return DefaultBranchPush
 	}
 	if kind, ok := actionKinds[eventType][p.Action]; ok {
 		if kind == PullCommented && p.Issue.PullRequest == nil {
 			return Ignored // a comment on a plain issue
+		}
+		if kind == IssueOpened && p.Issue.PullRequest != nil {
+			return Ignored
 		}
 		return kind
 	}

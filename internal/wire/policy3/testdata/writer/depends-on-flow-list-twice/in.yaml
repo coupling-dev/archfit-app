@@ -1,0 +1,14 @@
+version: 3
+owners: [alexei-led]
+modules:
+  pkg_chaos:
+    paths: [pkg/chaos/**]
+    depends_on: [pkg_container, pkg_util]   # reviewed 2026-10-01
+  pkg_container:
+    paths: [pkg/container/**]
+  pkg_tc:
+    paths: [pkg/tc/**]
+  pkg_util:
+    paths: [pkg/util/**]
+  pkg_net:
+    paths: [pkg/net/**]

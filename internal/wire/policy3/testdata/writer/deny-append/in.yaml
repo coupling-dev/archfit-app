@@ -1,0 +1,16 @@
+version: 3
+owners: [alexei-led]
+modules:
+  pkg_tc:
+    paths: [pkg/tc/**]
+  pkg_util:
+    paths: [pkg/util/**]
+rules:
+  # Direct imports.
+  - id: no-util-to-tc
+    deny: { from: pkg_util, to: pkg_tc }
+    why: Util stays at the bottom.
+    instead: Pass a value in.
+  - id: fan-out-through-runner
+    note: Chaos actions fan out through RunOnContainers.
+    why: One place checks the target limit before injection.

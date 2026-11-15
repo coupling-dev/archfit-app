@@ -1,3 +1,5 @@
+import type { OwnerKind } from './owner';
+
 // The pages of the web app. The server serves the same shell for each, whatever the repository; every API read of a
 // repository page is authorized on its own.
 
@@ -10,13 +12,27 @@ export interface Repo {
 export type Route =
   | { kind: 'home' }
   | { kind: 'admin' }
-  | ({ kind: 'repo' | 'graph' | 'data-sharing' | 'policy' | 'decisions' } & Repo)
-  | ({ kind: 'pull' | 'pull-graph'; number: number } & Repo)
+  | ({ kind: 'repo' | 'policy' | 'passkeys' } & Repo)
+  | ({ kind: 'pull' | 'request'; number: number } & Repo)
+  | ({ kind: 'owner'; action: OwnerKind; pull: number } & Repo)
   | { kind: 'unknown' };
 
-const repoPath = /^\/r\/([^/]+)\/([^/]+)(?:(?:\/pull\/([1-9][0-9]{0,9}))?(\/graph)?|\/(data-sharing|policy|decisions))\/?$/;
+const repoPath =
+  /^\/r\/([^/]+)\/([^/]+)(?:\/pull\/([1-9][0-9]{0,9})|\/(passkeys|policy)|\/requests\/([1-9][0-9]{0,9}))?\/?$/;
 
-export function parseRoute(pathname: string): Route {
+export function parseRoute(pathname: string, search = ''): Route {
+  const owner = /^\/r\/([^/]+)\/([^/]+)\/owner\/(first|workflow|confirm|revert)\/?$/.exec(pathname);
+  if (owner) {
+    const repo = parseRoute(`/r/${owner[1]}/${owner[2]}`);
+    if (repo.kind !== 'repo') return { kind: 'unknown' };
+    const values = new URLSearchParams(search).getAll('pull');
+    if (values.length > 1 || (values.length && !/^[1-9][0-9]{0,9}$/.test(values[0]))) return { kind: 'unknown' };
+    const pull = values.length ? Number(values[0]) : 0;
+    const action = owner[3];
+    if (action !== 'first' && action !== 'workflow' && action !== 'confirm' && action !== 'revert') return { kind: 'unknown' };
+    if ((action === 'workflow' && !pull) || ((action === 'confirm' || action === 'revert') && pull)) return { kind: 'unknown' };
+    return { kind: 'owner', action, pull, owner: repo.owner, name: repo.name, fullName: repo.fullName };
+  }
   if (pathname === '/') return { kind: 'home' };
   if (pathname === '/admin') return { kind: 'admin' };
   const m = repoPath.exec(pathname);
@@ -31,10 +47,10 @@ export function parseRoute(pathname: string): Route {
   } catch {
     return { kind: 'unknown' };
   }
-  if (m[5]) return { kind: m[5] as 'data-sharing' | 'policy' | 'decisions', ...repo };
-  const graph = m[4] !== undefined;
-  if (m[3]) return { kind: graph ? 'pull-graph' : 'pull', number: Number(m[3]), ...repo };
-  return { kind: graph ? 'graph' : 'repo', ...repo };
+  if (m[4]) return { kind: m[4] as 'passkeys' | 'policy', ...repo };
+  if (m[5]) return { kind: 'request', number: Number(m[5]), ...repo };
+  if (m[3]) return { kind: 'pull', number: Number(m[3]), ...repo };
+  return { kind: 'repo', ...repo };
 }
 
 // guideURL is the user guide on GitHub: the App's pages link to it so a customer can read how it works.

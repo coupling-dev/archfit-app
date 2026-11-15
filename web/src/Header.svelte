@@ -3,14 +3,14 @@
   import { repoPage } from './lib/route';
   import { applyTheme, saveTheme, storedTheme, themes, type Theme } from './lib/theme';
 
-  // tab is the current tab of a repository page, '' on a page in no tab (a pull request page, Data sharing); pull is the
-  // pull request number on a pull request page or its graph, 0 elsewhere.
+  // tab is the current tab of a repository page, '' on a page in no tab (a pull request page); pull is the
+  // pull request number on a pull request page, 0 elsewhere.
   let {
     session,
     repo = '',
     tab = '',
     pull = 0,
-  }: { session: Session | null; repo?: string; tab?: 'overview' | 'graph' | 'policy' | 'decisions' | ''; pull?: number } = $props();
+  }: { session: Session | null; repo?: string; tab?: 'home' | 'policy' | ''; pull?: number } = $props();
 
   let theme = $state<Theme>(storedTheme());
   const themeNames: Record<Theme, string> = { auto: 'Auto', light: 'Light', dark: 'Dark' };
@@ -24,9 +24,7 @@
   const tabs = $derived(
     repo
       ? [
-          { label: 'Overview', href: repoPage(repo), current: tab === 'overview' },
-          { label: 'Architecture', href: repoPage(repo, '/graph'), current: tab === 'graph' },
-          { label: 'Decisions', href: repoPage(repo, '/decisions'), current: tab === 'decisions' },
+          { label: 'Home', href: repoPage(repo), current: tab === 'home' },
           { label: 'Policy', href: repoPage(repo, '/policy'), current: tab === 'policy' },
         ]
       : [],
@@ -46,7 +44,7 @@
       <span class="sep" aria-hidden="true">/</span>
       <span>{repo.split('/')[0]}</span>
       <span class="sep" aria-hidden="true">/</span>
-      <strong><a href={repoPage(repo)} aria-current={tab === 'overview' ? 'page' : undefined}>{repo.split('/')[1]}</a></strong>
+      <strong><a href={repoPage(repo)} aria-current={tab === 'home' ? 'page' : undefined}>{repo.split('/')[1]}</a></strong>
       {#if pull}
         <span class="sep" aria-hidden="true">/</span>
         <a href={repoPage(repo, `/pull/${pull}`)} aria-current="page">#{pull}</a>

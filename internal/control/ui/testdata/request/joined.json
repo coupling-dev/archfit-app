@@ -1,0 +1,49 @@
+{
+  "dependencies": [
+    {
+      "kind": "deny",
+      "rule": "no-util-to-app",
+      "from": "util",
+      "to": "app"
+    }
+  ],
+  "issue_href": "https://github.com/acme/app/issues/431",
+  "number": 431,
+  "state": "answered",
+  "reason": "Need the helper.",
+  "rule": "graph",
+  "from": "app",
+  "to": "util",
+  "record": "app.go:3 graph app -\u003e util\n  balance: 9/10 (min 7)\n",
+  "verified": true,
+  "balance": {
+    "value": 9,
+    "max": 10,
+    "min": 7
+  },
+  "policy": true,
+  "layers": [
+    "outer",
+    "core"
+  ],
+  "modules": [
+    {
+      "name": "app",
+      "layer": "outer",
+      "volatility": "high",
+      "depends_on": []
+    },
+    {
+      "name": "util",
+      "layer": "core",
+      "volatility": "low",
+      "depends_on": []
+    }
+  ],
+  "allowed": false,
+  "earlier": [],
+  "answer": {
+    "kind": "approve-until",
+    "until": "2026-12-10"
+  }
+}

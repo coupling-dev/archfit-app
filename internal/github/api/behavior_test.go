@@ -40,6 +40,8 @@ func pagedAny(w http.ResponseWriter, r *http.Request, total int) {
 		writeJSON(w, http.StatusOK, map[string]any{"repositories": items})
 	case strings.HasSuffix(r.URL.Path, "/check-runs"):
 		writeJSON(w, http.StatusOK, map[string]any{"check_runs": items})
+	case strings.HasSuffix(r.URL.Path, "/runs"):
+		writeJSON(w, http.StatusOK, map[string]any{"workflow_runs": items})
 	case r.URL.Path == "/user/installations":
 		writeJSON(w, http.StatusOK, map[string]any{"installations": items[:min(len(items), 1)]})
 	default:
@@ -72,9 +74,6 @@ func TestRateLimitExhaustionNeverLooksLikeData(t *testing.T) {
 		calls["Repos.ResolveRepo"] = func(ctx context.Context) (bool, error) {
 			v, err := c.ResolveRepo(ctx, "o/r")
 			return v != Repo{}, err
-		}
-		calls["Pulls.TeamMember"] = func(ctx context.Context) (bool, error) {
-			return c.TeamMember(ctx, repoA, "acme/core", "alice")
 		}
 		calls["Users.Permission"] = func(ctx context.Context) (bool, error) {
 			v, err := c.Permission(ctx, "user-token", "o/r")
@@ -126,7 +125,7 @@ func TestRateLimitExhaustionNeverLooksLikeData(t *testing.T) {
 				pagedAny(w, r, 500)
 			}
 		}))
-		lists := []string{"Repos.ListInstallations", "Repos.ListRepos", "Pulls.OpenPulls", "Pulls.ChangedFiles", "Pulls.Reviews",
+		lists := []string{"Repos.ListInstallations", "Repos.ListRepos", "Pulls.OpenPulls", "Pulls.ChangedFiles",
 			"Checks.CheckRuns", "Comments.AppComments", "Users.UserRepos"}
 		calls := reads(env.c)
 		for _, name := range lists {

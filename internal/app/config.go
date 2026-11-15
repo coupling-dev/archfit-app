@@ -22,13 +22,11 @@ const (
 	envOAuthSecretFile     = "ARCHFIT_GITHUB_OAUTH_SECRET_FILE"
 	envCookieKeyFile       = "ARCHFIT_COOKIE_KEY_FILE"
 	envOperatorTokenFile   = "ARCHFIT_OPERATOR_TOKEN_FILE"
-	envAnthropicKeyFile    = "ARCHFIT_ANTHROPIC_KEY_FILE"
 	envStore               = "ARCHFIT_STORE"
 	envFirestoreProject    = "ARCHFIT_FIRESTORE_PROJECT"
 	envFirestoreDatabase   = "ARCHFIT_FIRESTORE_DATABASE"
 	// envFirestoreEmulator is the name every Firestore client reads; the emulator prints it on start.
 	envFirestoreEmulator = "FIRESTORE_EMULATOR_HOST"
-	envSandbox           = "ARCHFIT_SANDBOX"
 	envRole              = "ARCHFIT_ROLE"
 	envQueue             = "ARCHFIT_QUEUE"
 	envTasksQueue        = "ARCHFIT_TASKS_QUEUE"
@@ -46,7 +44,6 @@ const (
 
 	storeMemory    = "memory"
 	storeFirestore = "firestore"
-	sandboxNone    = "none"
 
 	queueInline     = "inline"
 	queueCloudTasks = "cloudtasks"
@@ -57,7 +54,7 @@ const (
 	roleAll    = "all"    // one process with every route except the worker task route; the local default
 	rolePublic = "public" // intake, uploads and the UI; no /internal/* route and no operator token
 	// roleWorker serves queued webhooks, the sweep and grants, each behind the invoker identity. It builds no UI,
-	// so it reads no OAuth secret, cookie key or Anthropic key.
+	// so it reads no OAuth secret or cookie key.
 	roleWorker = "worker"
 )
 
@@ -82,12 +79,10 @@ type Config struct {
 	OAuthSecretFile     string   // ARCHFIT_GITHUB_OAUTH_SECRET_FILE; never read by the worker role
 	CookieKeyFile       string   // ARCHFIT_COOKIE_KEY_FILE; never read by the worker role
 	OperatorTokenFile   string   // ARCHFIT_OPERATOR_TOKEN_FILE; authenticates the operator routes; never read by the public role
-	AnthropicKeyFile    string   // ARCHFIT_ANTHROPIC_KEY_FILE; empty disables managed LLM; never read by the worker role
 	StoreDriver         string   // ARCHFIT_STORE, "memory" (default) or "firestore"
 	FirestoreProject    string   // ARCHFIT_FIRESTORE_PROJECT; required by "firestore"
 	FirestoreDatabase   string   // ARCHFIT_FIRESTORE_DATABASE; empty selects "(default)"
 	FirestoreEmulator   string   // FIRESTORE_EMULATOR_HOST; host:port, plain HTTP and no credentials
-	SandboxDriver       string   // ARCHFIT_SANDBOX, "none" until docs/tech-stack.md picks one
 	Role                string   // ARCHFIT_ROLE: "all" (default), "public" or "worker"
 	QueueDriver         string   // ARCHFIT_QUEUE: "inline" (local all-role default); public requires "cloudtasks"
 	TasksQueue          string   // ARCHFIT_TASKS_QUEUE: "projects/<p>/locations/<l>/queues/<q>"; cloudtasks only
@@ -114,12 +109,10 @@ func Load(getenv func(string) string) (Config, error) {
 		OAuthSecretFile:     getenv(envOAuthSecretFile),
 		CookieKeyFile:       getenv(envCookieKeyFile),
 		OperatorTokenFile:   getenv(envOperatorTokenFile),
-		AnthropicKeyFile:    getenv(envAnthropicKeyFile),
 		StoreDriver:         cmp.Or(getenv(envStore), storeMemory),
 		FirestoreProject:    getenv(envFirestoreProject),
 		FirestoreDatabase:   getenv(envFirestoreDatabase),
 		FirestoreEmulator:   getenv(envFirestoreEmulator),
-		SandboxDriver:       cmp.Or(getenv(envSandbox), sandboxNone),
 		Role:                cmp.Or(getenv(envRole), roleAll),
 		QueueDriver:         cmp.Or(getenv(envQueue), queueInline),
 		TasksQueue:          getenv(envTasksQueue),
@@ -168,7 +161,6 @@ func (c Config) validate() error {
 		{envOperatorTokenFile, c.Role == rolePublic || c.OperatorTokenFile != ""},
 		{envStore, storeDrivers[c.StoreDriver] != nil},
 		{envFirestoreProject, c.StoreDriver != storeFirestore || c.FirestoreProject != ""},
-		{envSandbox, sandboxDrivers[c.SandboxDriver] != nil},
 		// Local all-role work is inline; public intake must use the durable queue.
 		{envQueue, c.QueueDriver == queueInline && c.Role != rolePublic || c.QueueDriver == queueCloudTasks && c.Role != roleAll},
 		{envTasksQueue, !enqueuesToCloudTasks || c.TasksQueue != ""},
@@ -206,19 +198,17 @@ type secrets struct {
 	oauthSecret     []byte // nil in the worker role
 	cookieKey       []byte // nil in the worker role
 	operatorToken   []byte // nil in the public role
-	anthropicKey    []byte // nil when no key file is configured, and in the worker role
 }
 
 func loadSecrets(c Config) (secrets, error) {
 	var s secrets
 	// A role never reads a secret it does not use, even when it is configured.
-	oauthSecretFile, cookieKeyFile, anthropicKeyFile, operatorTokenFile :=
-		c.OAuthSecretFile, c.CookieKeyFile, c.AnthropicKeyFile, c.OperatorTokenFile
+	oauthSecretFile, cookieKeyFile, operatorTokenFile := c.OAuthSecretFile, c.CookieKeyFile, c.OperatorTokenFile
 	switch c.Role {
 	case rolePublic:
 		operatorTokenFile = ""
 	case roleWorker:
-		oauthSecretFile, cookieKeyFile, anthropicKeyFile = "", "", ""
+		oauthSecretFile, cookieKeyFile = "", ""
 	}
 	files := []struct {
 		env, path string
@@ -230,7 +220,6 @@ func loadSecrets(c Config) (secrets, error) {
 		{envOAuthSecretFile, oauthSecretFile, &s.oauthSecret},
 		{envCookieKeyFile, cookieKeyFile, &s.cookieKey},
 		{envOperatorTokenFile, operatorTokenFile, &s.operatorToken},
-		{envAnthropicKeyFile, anthropicKeyFile, &s.anthropicKey},
 	}
 	for _, f := range files {
 		if f.path == "" { // an optional secret, or one that the role never reads

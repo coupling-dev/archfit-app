@@ -277,14 +277,14 @@ Register the App with these settings. Keep the webhook inactive, and install it 
   work as before.
 - Organization permissions: Members read
 - Events: Pull request, Pull request review, Push, and Merge group with the Merge queues permission
-- Issue comment event: the release that brings [decision requests](../docs/user-guide.md#decision-requests-from-unattended-agents)
+- Issue comment event: the release that brings [requests](../docs/user-guide.md#answer-a-request)
   subscribes the App to it under **Permissions & events**. The code ignores the event until then; the subscription is
   part of that release's checklist and is not done yet.
 - Installable on any account (public). GitHub has no install approval, so the App approves accounts itself: it does
   nothing for an account that is neither in `ARCHFIT_APPROVED_ACCOUNTS` nor approved by an operator on `/admin`. See
-  [Who the App serves](../docs/user-guide.md#who-the-app-serves).
+  [Install and set up](../docs/user-guide.md#install-and-set-up).
 
-Why each permission is needed: [GitHub App permissions](../docs/user-guide.md#github-app-permissions).
+Why each permission is needed: [Install and set up](../docs/user-guide.md#install-and-set-up).
 
 The App was registered as installable only on `coupling-dev`. To make it public, release a version with install
 approval first, then open the App's settings on GitHub, **Advanced**, **Make public**. A public App cannot be made
@@ -487,7 +487,7 @@ The deploy workflow [`.github/workflows/deploy.yaml`](../.github/workflows/deplo
   5. Check it: `gh api /orgs/coupling-dev/installations --jq '.installations[] | select(.app_slug=="archfit-review") | {permissions, events}'`
      must show `"merge_queues": "read"` and `"merge_group"` in `events`.
   6. In each repository that uses the queue: the Archfit workflow has the `merge_group` trigger and the Action pin of
-     the release ([user guide](../docs/user-guide.md#merge-queue)), and the default branch's ruleset requires
+     the release ([user guide](../docs/user-guide.md#configure-the-ruleset)), and the default branch's ruleset requires
      `archfit/gate` and turns on **Require merge queue**.
 - **Pause processing** for an incident: `gcloud tasks queues pause archfit-webhooks --location=europe-west1`. The next
   `runtime` plan shows the queue as changed until `paused` matches.

@@ -1,0 +1,23 @@
+{
+  "status": "Set up this repository.",
+  "setup": {
+    "admitted": false,
+    "state": "first_approval",
+    "missing": [
+      "Register a passkey and approve the first policy."
+    ],
+    "first_pull": 12,
+    "rules": [
+      {
+        "code": "pull_requests",
+        "state": "warning",
+        "text": "Require a pull request before merging into the default branch."
+      },
+      {
+        "code": "gate_check",
+        "state": "warning",
+        "text": "Require archfit/gate with this App's integration_id (42)."
+      }
+    ]
+  }
+}

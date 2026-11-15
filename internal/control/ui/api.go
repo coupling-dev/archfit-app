@@ -3,6 +3,7 @@ package ui
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -76,12 +77,11 @@ func (s *server) answer(w http.ResponseWriter, r *http.Request, sc scope, next a
 }
 
 type errorJSON struct {
-	Error       string           `json:"error"`
-	Diagnostics []diagnosticJSON `json:"diagnostics,omitempty"` // the problems of a refused policy text
-	Waiting     string           `json:"waiting,omitempty"`     // the account waiting for approval: the Waiting page
+	Error   string `json:"error"`
+	Waiting string `json:"waiting,omitempty"` // the account waiting for approval: the Waiting page
 }
 
-// failJSON is fail for /api: the documented status and sentence, as JSON, and the problems of a refused policy.
+// failJSON is fail for /api: the documented status and sentence, as JSON.
 func (s *server) failJSON(w http.ResponseWriter, r *http.Request, err error) {
 	status, outcome, sentence := explain(err)
 	logOf(r).outcome = outcome
@@ -90,10 +90,6 @@ func (s *server) failJSON(w http.ResponseWriter, r *http.Request, err error) {
 	}
 	body := errorJSON{Error: sentence}
 	body.Waiting, _ = errorsAsWaiting(err)
-	var problems *policyProblems
-	if errors.As(err, &problems) {
-		body.Diagnostics = diagnosticsJSON(problems.list)
-	}
 	writeJSON(w, r, status, body)
 }
 
@@ -115,6 +111,13 @@ func decodeJSON(r *http.Request, dst any) error {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return err
+		}
+		return invalid("The request could not be read.")
+	}
+	if err := dec.Decode(new(any)); err != io.EOF {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			return err

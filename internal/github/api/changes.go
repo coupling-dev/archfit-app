@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -64,16 +65,72 @@ func (c *Client) Commit(ctx context.Context, r RepoRef, branch, message string, 
 	if err != nil {
 		return "", err
 	}
-	escapedHead, err := escapeSegment(head)
+	sha, err = c.newCommit(ctx, cr, base, head, message, files)
+	if err != nil || sha == head {
+		return sha, err
+	}
+	// force stays false: a non-fast-forward is GitHub's 422 and the caller reloads.
+	if err := c.moveRef(ctx, cr, base, escapedBranch, sha, false); err != nil {
+		return "", err
+	}
+	return sha, nil
+}
+
+// CommitOn makes one commit of files on parent, a 40-hex commit SHA: parent's tree with the files, with parent as its
+// only parent (no commit when the files change nothing: parent itself). It then points branch at it: a missing branch
+// is created; an existing one moves with force, or only as a fast-forward when force is false, so a branch that moved
+// away from parent is GitHub's 422, ErrUnprocessable, and stays where it is. Unlike Commit, the caller names the parent, so a commit
+// someone else pushed to the branch is never built on.
+func (c *Client) CommitOn(ctx context.Context, r RepoRef, branch, parent, message string, files []FileChange, force bool) (string, error) {
+	if len(files) == 0 {
+		return "", errors.New("github: commit without files")
+	}
+	if !commitSHARE.MatchString(parent) {
+		return "", errNotCommitSHA
+	}
+	cr, base, err := r.target()
 	if err != nil {
 		return "", err
 	}
-	var parent struct {
+	escapedBranch, err := escapeSegments(branch)
+	if err != nil {
+		return "", err
+	}
+	sha, err := c.newCommit(ctx, cr, base, parent, message, files)
+	if err != nil {
+		return "", err
+	}
+	head, err := c.BranchHead(ctx, r, branch)
+	switch {
+	case err == nil && head == sha:
+	case errors.Is(err, ErrNotFound):
+		k := call{cred: cr, method: http.MethodPost, route: "/repos/{r}/git/refs", url: apiURL(base+"/git/refs", nil),
+			body: map[string]string{"ref": "refs/heads/" + branch, "sha": sha}}
+		err = c.send(ctx, k, nil)
+	case err == nil:
+		if err = c.moveRef(ctx, cr, base, escapedBranch, sha, force); isStatus(err, http.StatusUnprocessableEntity) {
+			err = fmt.Errorf("%w: %w", ErrUnprocessable, err)
+		}
+	}
+	if err != nil {
+		return "", err
+	}
+	return sha, nil
+}
+
+// newCommit makes a commit of files on parent: parent's tree with the files. A tree equal to parent's makes no
+// commit, and parent is returned.
+func (c *Client) newCommit(ctx context.Context, cr cred, base, parent, message string, files []FileChange) (string, error) {
+	escapedParent, err := escapeSegment(parent)
+	if err != nil {
+		return "", err
+	}
+	var parentJSON struct {
 		Tree shaJSON `json:"tree"`
 	}
 	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/git/commits/{sha}",
-		url: apiURL(base+"/git/commits/"+escapedHead, nil)}
-	if err := c.send(ctx, k, &parent); err != nil {
+		url: apiURL(base+"/git/commits/"+escapedParent, nil)}
+	if err := c.send(ctx, k, &parentJSON); err != nil {
 		return "", err
 	}
 
@@ -96,34 +153,35 @@ func (c *Client) Commit(ctx context.Context, r RepoRef, branch, message string, 
 
 	var tree shaJSON
 	k = call{cred: cr, method: http.MethodPost, route: "/repos/{r}/git/trees", url: apiURL(base+"/git/trees", nil),
-		body: map[string]any{"base_tree": parent.Tree.SHA, "tree": entries}}
+		body: map[string]any{"base_tree": parentJSON.Tree.SHA, "tree": entries}}
 	if err := c.send(ctx, k, &tree); err != nil {
 		return "", err
 	}
-	if tree.SHA == "" || parent.Tree.SHA == "" {
+	if tree.SHA == "" || parentJSON.Tree.SHA == "" {
 		return "", k.errorf("invalid response")
 	}
-	if tree.SHA == parent.Tree.SHA {
-		return head, nil
+	if tree.SHA == parentJSON.Tree.SHA {
+		return parent, nil
 	}
 
 	var commit shaJSON
 	k = call{cred: cr, method: http.MethodPost, route: "/repos/{r}/git/commits", url: apiURL(base+"/git/commits", nil),
-		body: map[string]any{"message": message, "tree": tree.SHA, "parents": []string{head}}}
+		body: map[string]any{"message": message, "tree": tree.SHA, "parents": []string{parent}}}
 	if err := c.send(ctx, k, &commit); err != nil {
 		return "", err
 	}
 	if commit.SHA == "" {
 		return "", k.errorf("invalid response")
 	}
-	// force stays false: a non-fast-forward is GitHub's 422 and the caller reloads.
-	k = call{cred: cr, method: http.MethodPatch, route: "/repos/{r}/git/refs/heads/{branch}",
-		url:  apiURL(base+"/git/refs/heads/"+escapedBranch, nil),
-		body: map[string]any{"sha": commit.SHA, "force": false}}
-	if err := c.send(ctx, k, nil); err != nil {
-		return "", err
-	}
 	return commit.SHA, nil
+}
+
+// moveRef points the escaped branch at sha: with force, wherever it was; without, only as a fast-forward.
+func (c *Client) moveRef(ctx context.Context, cr cred, base, escapedBranch, sha string, force bool) error {
+	k := call{cred: cr, method: http.MethodPatch, route: "/repos/{r}/git/refs/heads/{branch}",
+		url:  apiURL(base+"/git/refs/heads/"+escapedBranch, nil),
+		body: map[string]any{"sha": sha, "force": force}}
+	return c.send(ctx, k, nil)
 }
 
 func (c *Client) EnsurePull(ctx context.Context, r RepoRef, p NewPull) (Pull, error) {

@@ -154,9 +154,9 @@ func TestParseMapping(t *testing.T) {
 		{"pull_request", "closed", PullClosed},
 		{"pull_request", "labeled", Ignored},
 		{"pull_request", "edited", Ignored},
-		{"pull_request_review", "submitted", ReviewChanged},
-		{"pull_request_review", "edited", ReviewChanged},
-		{"pull_request_review", "dismissed", ReviewChanged},
+		{"pull_request_review", "submitted", Ignored},
+		{"pull_request_review", "edited", Ignored},
+		{"pull_request_review", "dismissed", Ignored},
 		{"pull_request_review", "labeled", Ignored},
 		{"installation", "created", InstallationAdded},
 		{"installation", "deleted", InstallationRemoved},
@@ -166,7 +166,7 @@ func TestParseMapping(t *testing.T) {
 		{"installation_repositories", "added", InstallationAdded},
 		{"installation_repositories", "removed", ReposRemoved},
 		{"ping", "", Ignored},
-		{"issues", "opened", Ignored},
+		{"issues", "labeled", Ignored},
 		{"", "opened", Ignored},
 	}
 	for _, tt := range tests {
@@ -192,7 +192,7 @@ func TestParseMapping(t *testing.T) {
 		want    EventKind
 	}{
 		{"default branch", pushPayload("refs/heads/main", "main"), DefaultBranchPush},
-		{"other branch", pushPayload("refs/heads/feature", "main"), BranchPush},
+		{"other branch", pushPayload("refs/heads/feature", "main"), Ignored},
 		{"tag", pushPayload("refs/tags/main", "main"), Ignored},
 		{"deletion", set(pushPayload("refs/heads/main", "main"), "deleted", true), Ignored},
 	}
@@ -222,7 +222,7 @@ func TestParseFields(t *testing.T) {
 		})
 	}
 	for _, kind := range []EventKind{
-		PullOpened, PullSynchronized, PullClosed, ReviewChanged,
+		PullOpened, PullSynchronized, PullClosed,
 		DefaultBranchPush, InstallationAdded, InstallationRemoved, ReposRemoved,
 	} {
 		if !seen[kind] {

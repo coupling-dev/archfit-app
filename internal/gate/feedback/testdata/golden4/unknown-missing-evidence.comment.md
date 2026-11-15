@@ -1,0 +1,6 @@
+## Archfit: unknown, no verdict
+
+**tool** the check finished without an uploaded result
+- next: run the Archfit check again
+
+**Author:** do the `next` step of each record.

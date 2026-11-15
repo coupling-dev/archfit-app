@@ -1,6 +1,8 @@
 package internal_test
 
 import (
+	"errors"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -12,6 +14,9 @@ const (
 	modulePath = "github.com/alexei-led/archfit-app"
 	internal   = modulePath + "/internal/"
 	yamlModule = "go.yaml.in/yaml/"
+	// webauthnModule is go-webauthn, the passkey verifier of M2 D9: control/passkey alone imports it.
+	webauthnModule = "github.com/go-webauthn/webauthn/"
+	passkeyPkg     = internal + "control/passkey"
 )
 
 // goList runs `go list` at the module root and returns its non-empty output lines.
@@ -89,7 +94,7 @@ func under(pkg, path string) bool {
 
 func TestGatePathImportsNothingForbidden(t *testing.T) {
 	deps := closure(t, "./internal/gate/...")
-	if !slices.Contains(deps, internal+"gate") || !slices.Contains(deps, internal+"gate/verdict") {
+	if !slices.Contains(deps, internal+"gate") || !slices.Contains(deps, internal+"gate/ingest") {
 		t.Fatalf("the closure of ./internal/gate/... does not contain the gate packages: %v", deps)
 	}
 	forbidden := []string{"control", "app"}
@@ -110,9 +115,8 @@ func TestGatePathImportsNothingForbidden(t *testing.T) {
 // seamImplementations are the packages allowed to import the parent that declares their interface: the
 // implementations of a seam, and its conformance suite.
 var seamImplementations = map[string]string{
-	internal + "control/assist/anthropic": internal + "control/assist",
-	internal + "queue/cloudtasks":         internal + "queue",
-	internal + "queue/queuetest":          internal + "queue",
+	internal + "queue/cloudtasks": internal + "queue",
+	internal + "queue/queuetest":  internal + "queue",
 }
 
 // importGroup is one row of the allowed-import table: allowed answers for non-standard imports only.
@@ -126,7 +130,7 @@ func TestAllowedImportMatrix(t *testing.T) {
 	g := importGraph(t)
 	groups := []importGroup{
 		{"wire", func(p string) bool { return under(p, "wire") }, func(pkg, imp string) bool {
-			return strings.HasPrefix(imp, yamlModule) && (pkg == internal+"wire/settings" || pkg == internal+"wire/policy")
+			return strings.HasPrefix(imp, yamlModule) && (pkg == internal+"wire/policy3" || pkg == internal+"wire/workflow")
 		}},
 		{"store", func(p string) bool { return p == internal+"store" }, func(string, string) bool { return false }},
 		{"queue", func(p string) bool { return under(p, "queue") }, func(pkg, imp string) bool {
@@ -139,9 +143,10 @@ func TestAllowedImportMatrix(t *testing.T) {
 		{"gate", func(p string) bool { return under(p, "gate") }, func(_, imp string) bool {
 			return under(imp, "wire") || under(imp, "github") || imp == internal+"store" || under(imp, "gate")
 		}},
-		{"control", func(p string) bool { return under(p, "control") }, func(_, imp string) bool {
+		{"control", func(p string) bool { return under(p, "control") }, func(pkg, imp string) bool {
 			return under(imp, "wire") || under(imp, "github") || imp == internal+"store" ||
-				imp == internal+"gate" || under(imp, "control")
+				imp == internal+"gate" || under(imp, "control") ||
+				(pkg == passkeyPkg && strings.HasPrefix(imp, webauthnModule))
 		}},
 		{"app", func(p string) bool { return under(p, "app") }, func(string, string) bool { return true }},
 	}
@@ -205,9 +210,20 @@ func TestAllowedImportMatrix(t *testing.T) {
 
 func TestOnlyPlatformSeamsTouchPlatformSDKs(t *testing.T) {
 	g := importGraph(t)
+	// The third-party closure of control/passkey: go-webauthn and what it imports.
+	passkeyDeps := map[string]bool{}
+	for _, p := range closure(t, "./internal/control/passkey") {
+		if !strings.HasPrefix(p, modulePath) && !strings.HasPrefix(p, yamlModule) {
+			passkeyDeps[p] = true
+		}
+	}
+	if !passkeyDeps[webauthnModule+"webauthn"] {
+		t.Fatalf("control/passkey does not reach %swebauthn: the go-webauthn rule checks nothing", webauthnModule)
+	}
 	for pkg := range g.thirdParty {
-		if !strings.HasPrefix(pkg, yamlModule) {
-			t.Errorf("third-party package %s is in the build; docs/tech-stack.md allows one YAML parser only", pkg)
+		if !strings.HasPrefix(pkg, yamlModule) && !passkeyDeps[pkg] {
+			t.Errorf("third-party package %s is in the build; docs/tech-stack.md allows one YAML parser, and go-webauthn "+
+				"with its own imports through control/passkey only", pkg)
 		}
 	}
 	yamlImporters := []string{}
@@ -220,15 +236,47 @@ func TestOnlyPlatformSeamsTouchPlatformSDKs(t *testing.T) {
 				yamlImporters = append(yamlImporters, pkg)
 				continue
 			}
-			// Any other SDK belongs to a Store, Sandbox or Provider implementation package.
+			if strings.HasPrefix(imp, webauthnModule) {
+				if pkg != passkeyPkg {
+					t.Errorf("%s imports %s: go-webauthn belongs to control/passkey only", pkg, imp)
+				}
+				continue
+			}
+			// go-webauthn's own imports are in the build for it alone, also for a store driver.
+			if passkeyDeps[imp] {
+				t.Errorf("%s imports %s: go-webauthn's own imports are in the build for control/passkey only", pkg, imp)
+				continue
+			}
+			// Any other SDK belongs to a Store implementation package.
 			parent := pkg[:strings.LastIndex(pkg, "/")]
-			if parent != internal+"store" && parent != internal+"control/onboarding" && parent != internal+"control/assist" {
+			if parent != internal+"store" && parent != internal+"control/onboarding" {
 				t.Errorf("%s imports the SDK %s outside a platform seam implementation", pkg, imp)
 			}
 		}
 	}
 	slices.Sort(yamlImporters)
-	if want := []string{internal + "wire/policy", internal + "wire/settings"}; !slices.Equal(yamlImporters, want) {
+	if want := []string{internal + "wire/policy3", internal + "wire/workflow"}; !slices.Equal(yamlImporters, want) {
 		t.Errorf("YAML is imported by %v; want %v", yamlImporters, want)
+	}
+}
+
+func TestArchfit3PackagesAreRemoved(t *testing.T) {
+	g := importGraph(t)
+	for _, name := range []string{"wire/report", "wire/policy", "wire/settings", "gate/verdict", "control/ui/graph", "control/proposal"} {
+		if _, exists := g.direct[internal+name]; exists {
+			t.Errorf("legacy package still exists: %s", name)
+		}
+	}
+}
+
+func TestArchfit3UISurfacesAreRemoved(t *testing.T) {
+	for _, path := range []string{
+		"control/ui/graph", "control/ui/graphpage.go", "control/ui/pullgraph.go",
+		"control/ui/datasharing.go", "control/ui/reportcache.go", "control/ui/hints.go", "control/ui/inbox.go",
+		"control/ui/legacy.go", "control/account/consent.go",
+	} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("legacy UI surface %s: want absent, got %v", path, err)
+		}
 	}
 }

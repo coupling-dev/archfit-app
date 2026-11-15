@@ -1,4 +1,0 @@
-{
-  "producer": "synthetic: hand-written by the envelope module against envelope.v1.schema.json for the merge_group binding of docs/design/merge-queue.md",
-  "decode": "error"
-}

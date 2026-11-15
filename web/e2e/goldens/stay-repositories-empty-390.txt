@@ -1,0 +1,17 @@
+Archfit
+Auto
+Light
+Dark
+A
+@alice
+Sign out
+Repositories
+
+The stored state of each repository.
+
+No repository yet
+
+No repository is available to you through an Archfit installation yet.
+
+Documentation Third-party licences
+About this App · v0.12.0

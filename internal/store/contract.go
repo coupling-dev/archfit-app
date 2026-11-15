@@ -10,7 +10,7 @@ import (
 // Every key is stored under its tenant prefix; no operation crosses tenants.
 type Tenant int64
 
-// SystemTenant holds App-wide keys (the managed-LLM budget counter). It is never a GitHub installation ID.
+// SystemTenant holds App-wide keys (the readiness probe). It is never a GitHub installation ID.
 const SystemTenant Tenant = 0
 
 // ErrNotFound is returned by Get when the key does not exist for the tenant.

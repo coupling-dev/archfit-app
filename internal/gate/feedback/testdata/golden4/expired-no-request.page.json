@@ -1,0 +1,18 @@
+{
+  "status": "fail",
+  "status_line": "Archfit: fail, 1 error (not from this change)",
+  "records": [
+    {
+      "path": ".archfit.yaml",
+      "rule": "exception",
+      "what": "duplication pkg_tc -\u003e pkg_util expired on 2026-11-19",
+      "why": "an exception with a date fails every change after that date",
+      "next": {
+        "kind": "fix",
+        "text": "fix the code, or ask an owner to extend the exception"
+      },
+      "show_next": true
+    }
+  ],
+  "author": "fix the code and push."
+}

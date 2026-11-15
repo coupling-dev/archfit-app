@@ -7,15 +7,17 @@
   import { refused, waiting } from './lib/gate';
   import { guideURL, parseRoute, serverError } from './lib/route';
   import Admin from './pages/Admin.svelte';
-  import DataSharing from './pages/DataSharing.svelte';
-  import Decisions from './pages/Decisions.svelte';
   import Landing from './pages/Landing.svelte';
-  import Overview from './pages/Overview.svelte';
+  import Home from './pages/Home.svelte';
+  import Passkeys from './pages/Passkeys.svelte';
   import Pull from './pages/Pull.svelte';
+  import Policy from './pages/Policy.svelte';
   import Repos from './pages/Repos.svelte';
+  import Request from './pages/Request.svelte';
   import Waiting from './pages/Waiting.svelte';
+  import Owner from './pages/Owner.svelte';
 
-  const route = parseRoute(location.pathname);
+  const route = parseRoute(location.pathname, location.search);
   const here = location.pathname + location.search;
   // The server's error page is this shell with the error's sentence; it then shows instead of the route, as does a
   // repository API's 404 (lib/gate).
@@ -29,12 +31,6 @@
 
   // The page's first reads and its chunk start beside the session, so the page waits for the slowest, not their sum.
   if (!serverSentence) prefetch(route);
-  // The graph pages carry the drawing libraries and the policy page the editor: each a chunk of its own, loaded on
-  // those pages only.
-  const graphPage = route.kind === 'graph' || route.kind === 'pull-graph' ? import('./pages/Graph.svelte') : null;
-  const policyPage = route.kind === 'policy' ? import('./pages/Policy.svelte') : null;
-  for (const chunk of [graphPage, policyPage]) chunk?.catch(() => {}); // a page shown later handles the failure
-
   getJSON<Session>('/api/session').then(
     (s) => (session = s),
     (e: ApiError) => {
@@ -50,12 +46,16 @@
         ? 'Waiting for approval'
         : route.kind === 'admin'
           ? 'Installations'
-          : route.kind === 'pull' || route.kind === 'pull-graph'
-        ? `${route.fullName} #${route.number}${route.kind === 'pull-graph' ? ' graph' : ''}`
-        : route.kind === 'repo' || route.kind === 'graph'
-          ? `${route.fullName}${route.kind === 'graph' ? ' architecture' : ''}`
-          : route.kind === 'data-sharing' || route.kind === 'policy' || route.kind === 'decisions'
-            ? `${route.fullName} ${route.kind === 'policy' ? 'policy' : route.kind === 'decisions' ? 'decisions' : 'data sharing'}`
+          : route.kind === 'pull'
+        ? `${route.fullName} #${route.number}`
+        : route.kind === 'owner'
+          ? `${route.fullName} owner action`
+        : route.kind === 'request'
+          ? `${route.fullName} request #${route.number}`
+        : route.kind === 'repo'
+          ? `${route.fullName}`
+          : route.kind === 'passkeys' || route.kind === 'policy'
+            ? `${route.fullName} ${route.kind}`
             : signedOut
               ? 'Sign in'
               : 'Repositories',
@@ -74,11 +74,11 @@
   {session}
   {repo}
   tab={route.kind === 'repo'
-    ? 'overview'
-    : route.kind === 'graph' || route.kind === 'policy' || route.kind === 'decisions'
+    ? 'home'
+    : route.kind === 'policy'
       ? route.kind
       : ''}
-  pull={route.kind === 'pull' || route.kind === 'pull-graph' ? route.number : 0}
+  pull={route.kind === 'pull' ? route.number : 0}
 />
 <main class="page" id="main">
   {#if pageError}
@@ -99,29 +99,17 @@
   {:else if route.kind === 'admin'}
     <Admin {session} {here} />
   {:else if route.kind === 'repo'}
-    <Overview {route} {session} {here} />
-  {:else if route.kind === 'decisions'}
-    <Decisions {route} {here} />
-  {:else if route.kind === 'data-sharing'}
-    <DataSharing {route} {session} {here} />
+    <Home {route} {here} />
+  {:else if route.kind === 'policy'}
+    <Policy {route} {here} {session} />
+  {:else if route.kind === 'owner'}
+    <Owner {route} {session} {here} />
+  {:else if route.kind === 'request'}
+    <Request {route} {session} {here} />
+  {:else if route.kind === 'passkeys'}
+    <Passkeys {route} {session} {here} />
   {:else if route.kind === 'pull'}
-    <Pull {route} {session} {here} />
-  {:else if (route.kind === 'graph' || route.kind === 'pull-graph') && graphPage}
-    {#await graphPage}
-      <Skeleton rows={6} />
-    {:then m}
-      <m.default {route} {here} />
-    {:catch}
-      <p class="flash error" role="alert">The graph could not be loaded. Reload the page.</p>
-    {/await}
-  {:else if route.kind === 'policy' && policyPage}
-    {#await policyPage}
-      <Skeleton rows={6} />
-    {:then m}
-      <m.default {route} {session} {here} />
-    {:catch}
-      <p class="flash error" role="alert">The editor could not be loaded. Reload the page.</p>
-    {/await}
+    <Pull {route} {here} />
   {:else}
     <div class="blankslate">
       <h3>Not found</h3>

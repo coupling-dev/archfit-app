@@ -1,0 +1,42 @@
+{
+  "status": "1 workflow change waits",
+  "needs_you": [
+    {
+      "kind": "workflow",
+      "text": "Approve the workflow change in #4.",
+      "href": "/r/acme/app/owner/workflow?pull=4",
+      "pull_request": 4
+    }
+  ],
+  "map": {
+    "layers": [
+      "cmd",
+      "core",
+      ""
+    ],
+    "modules": [
+      {
+        "name": "app",
+        "layer": "cmd",
+        "volatility": "high"
+      },
+      {
+        "name": "util",
+        "layer": "core",
+        "volatility": "low"
+      },
+      {
+        "name": "other",
+        "layer": "",
+        "volatility": "high"
+      }
+    ],
+    "lines": [
+      {
+        "kind": "allowed",
+        "from": "app",
+        "to": "util"
+      }
+    ]
+  }
+}

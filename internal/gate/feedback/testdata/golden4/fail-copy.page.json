@@ -1,0 +1,20 @@
+{
+  "status": "fail",
+  "status_line": "Archfit: fail, 1 error",
+  "records": [
+    {
+      "path": "pkg/tc/interface.go",
+      "line": 12,
+      "rule": "duplication",
+      "what": "this literal already lives in pkg/util/util.go:15",
+      "why": "two copies must change together and nothing checks that they do",
+      "next": {
+        "kind": "command",
+        "text": "use pkg_util, or run: archfit request -m \"\u003cwhy a copy is needed\u003e\" --expires 2026-12-10"
+      },
+      "show_next": true
+    }
+  ],
+  "author": "reply `/archfit request \u003cwhy you need it\u003e`. Do not copy the code.",
+  "owner": "nothing to do until a request exists."
+}

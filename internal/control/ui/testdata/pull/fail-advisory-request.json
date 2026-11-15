@@ -1,0 +1,45 @@
+{
+  "record": {
+    "schema": "archfit-app.pull.v1",
+    "head_sha": "0000000000000000000000000000000000000004",
+    "run_id": 42,
+    "run_attempt": 1,
+    "payload_digest": "sha256:e2d296ba443069d0690bbbb40d811f78ceda550060f59748424bbf5f3c9d2bf7",
+    "policy_digest": "accepted",
+    "status": "fail"
+  },
+  "head_sha": "0000000000000000000000000000000000000004",
+  "run_id": 42,
+  "run_attempt": 1,
+  "status": "fail",
+  "check_status": "completed",
+  "check_conclusion": "neutral",
+  "waiting": [
+    431
+  ],
+  "view": {
+    "status": "fail",
+    "status_line": "Archfit: fail, 1 error",
+    "records": [
+      {
+        "path": "pkg/tc/netem.go",
+        "line": 12,
+        "rule": "graph",
+        "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+        "why": "a new dependency between modules needs an owner",
+        "balance": {
+          "value": 9,
+          "min": 7
+        },
+        "next": {
+          "kind": "command",
+          "text": "archfit request -m \"\u003cwhy you need it\u003e\"",
+          "note": "do not copy the code"
+        },
+        "show_next": false
+      }
+    ],
+    "author": "reply `/archfit request \u003cwhy you need it\u003e`. Do not copy the code.",
+    "owner": "nothing to do until a request exists."
+  }
+}

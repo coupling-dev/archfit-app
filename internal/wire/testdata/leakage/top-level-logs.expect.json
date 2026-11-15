@@ -1,4 +1,0 @@
-{
-  "producer": "synthetic: hand-edited from report/real-blocked-no-baseline.json (an engine v3.0.0 capture) with jq: .logs=\"2026-09-21 build log\\nLEAK-7f3a\\n\"",
-  "decode": "error"
-}

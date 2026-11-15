@@ -1,4 +1,4 @@
-// Package control is the façade of the control plane: UI, onboarding, entitlements and assist.
+// Package control is the façade of the control plane: UI, onboarding and entitlements.
 // It re-publishes the platform seams that platform packages and app may use.
 package control
 
@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/account"
-	"github.com/alexei-led/archfit-app/internal/control/assist"
+	"github.com/alexei-led/archfit-app/internal/control/answers"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
-	"github.com/alexei-led/archfit-app/internal/control/proposal"
+	"github.com/alexei-led/archfit-app/internal/control/passkey"
 	"github.com/alexei-led/archfit-app/internal/control/ui"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -23,28 +23,25 @@ import (
 
 const cookieKeyLen = 32
 
-// Deps are wired by internal/app. Sandbox and Provider may be nil: managed features then report "not available".
+// Deps are wired by internal/app.
 type Deps struct {
-	GitHub   *api.Client
-	Tokens   auth.TokenSource
-	OAuth    auth.OAuth
-	Store    store.Store
-	Receiver gate.Receiver
+	GitHub *api.Client
+	OAuth  auth.OAuth
+	Store  store.Store
 	// Admissions says which installations the App serves; Operators (GitHub user IDs) approve the others on /admin.
 	Admissions *gate.Admissions
-	// Approvals reads and records owner approvals of pull request heads for the pull request page: the gate façade.
-	Approvals gate.Approvals
-	// Decisions lists, declines and approves the decision requests of unattended agents for the pull request page.
-	Decisions gate.Decisions
-	// DecisionQueue lists the decision requests of unattended agents that wait for an owner, for the overview and the
-	// decisions page: the gate façade. It reads only.
-	DecisionQueue gate.DecisionQueue
-	Operators     []int64
-	Sandbox       Sandbox
-	Provider      Provider
-	CookieKey     []byte
-	BaseURL       string
-	Now           func() time.Time
+	// RequestViews reads a request and the preview of each answer for the request page: the gate façade. It reads only.
+	RequestViews gate.RequestViews
+	PolicyViews  gate.PolicyViews
+	// Answers records an owner's answer and carries it to the default branch: the gate façade. control/answers adds
+	// the passkey.
+	OwnerActions gate.OwnerActions
+	SetupViews   gate.SetupViews
+	Answers      gate.Answers
+	Operators    []int64
+	CookieKey    []byte
+	BaseURL      string
+	Now          func() time.Time
 }
 
 // tenantLister is the only Store method the façade calls itself.
@@ -53,21 +50,12 @@ type tenantLister interface {
 }
 
 type Control struct {
-	account   account.Account
-	repos     api.Repos
-	tenants   tenantLister
-	admit     admitter
-	ui        http.Handler
-	discovery http.Handler
-	baseline  http.Handler
-	reanchor  http.Handler
-	now       func() time.Time
-
-	// Held for the composition only; the façade never calls them.
-	consents   account.Consents
-	budget     account.Budget
-	onboarding onboarding.Onboarding
-	assist     assist.Assist
+	account account.Account
+	repos   api.Repos
+	tenants tenantLister
+	admit   admitter
+	ui      http.Handler
+	now     func() time.Time
 }
 
 func New(d Deps) (*Control, error) {
@@ -77,33 +65,31 @@ func New(d Deps) (*Control, error) {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	acct, consents, budget := account.New(d.Store)
-	proposals := proposal.New(d.GitHub, d.GitHub)
-	onb := onboarding.New(onboarding.Deps{
-		GitHub: d.GitHub, Tokens: d.Tokens, Receiver: d.Receiver, Proposals: proposals,
-		Consents: consents, Sandbox: d.Sandbox, BaseURL: d.BaseURL, Now: d.Now,
-	})
-	asst := assist.New(assist.Deps{
-		GitHub: d.GitHub, Provider: d.Provider, Consents: consents, Budget: budget,
-		Proposals: proposals, Now: d.Now,
-	})
+	acct := account.New(d.Store)
+	passkeys, err := passkey.New(passkey.Config{BaseURL: d.BaseURL}, d.Store,
+		passkey.NewOwners(d.GitHub), passkey.NewIssues(d.GitHub, d.GitHub), d.Now)
+	if err != nil {
+		return nil, fmt.Errorf("control: passkey: %w", err)
+	}
 	page, err := ui.New(ui.Deps{
+		Answers: answers.New(d.Answers, passkeys),
+		Owners:  answers.NewOwners(d.OwnerActions, passkeys), Setups: onboarding.NewSetup(d.GitHub, d.SetupViews),
 		OAuth: d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
-		Account: acct, Consents: consents, Onboarding: onb, Assist: asst, Proposals: proposals,
-		Admissions: d.Admissions, Approvals: d.Approvals, Decisions: d.Decisions, DecisionQueue: d.DecisionQueue, Operators: d.Operators, Now: d.Now,
+		Account:    acct,
+		Admissions: d.Admissions, PolicyViews: d.PolicyViews, RequestViews: d.RequestViews, Passkeys: passkeys, Operators: d.Operators, Now: d.Now,
+
+		RepoStates: gate.NewRepoStates(d.Store, d.Admissions),
+		HomeViews:  gate.NewHome(d.GitHub, d.Store, d.Admissions), PullViews: gate.NewPullViews(d.GitHub, d.Store),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("control: ui: %w", err)
 	}
-	c := newControl(acct, d.GitHub, d.Store, d.Admissions, page, onb.DiscoveryHandler(), d.Now)
-	c.baseline = onb.BaselineHandler()
-	c.reanchor = onb.ReanchorHandler()
-	c.consents, c.budget, c.onboarding, c.assist = consents, budget, onb, asst
+	c := newControl(acct, d.GitHub, d.Store, d.Admissions, page, d.Now)
 	return c, nil
 }
 
 // WorkerDeps are the dependencies of the worker façade: it handles events, the sweep and grants, and serves no UI.
-// So it takes no OAuth, no cookie key, no Receiver, no Sandbox and no Provider.
+// It takes no UI credentials.
 type WorkerDeps struct {
 	GitHub     *api.Client
 	Store      store.Store
@@ -125,7 +111,7 @@ func NewWorker(d WorkerDeps) (*Control, error) {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	acct, _, _ := account.New(d.Store)
+	acct := account.New(d.Store)
 	return &Control{account: acct, repos: d.GitHub, tenants: d.Store, admit: d.Admissions, now: d.Now}, nil
 }
 
@@ -137,29 +123,25 @@ func (d Deps) validate() error {
 		return errors.New("control: nil OAuth")
 	case d.Store == nil:
 		return errors.New("control: nil Store")
-	case d.Receiver == nil:
-		return errors.New("control: nil Receiver")
 	case d.Admissions == nil:
 		return errors.New("control: nil Admissions")
-	case d.Approvals == nil:
-		return errors.New("control: nil Approvals")
-	case d.Decisions == nil:
-		return errors.New("control: nil Decisions")
-	case d.DecisionQueue == nil:
-		return errors.New("control: nil DecisionQueue")
+	case d.PolicyViews == nil:
+		return errors.New("control: nil PolicyViews")
+	case d.RequestViews == nil:
+		return errors.New("control: nil RequestViews")
+	case d.Answers == nil:
+		return errors.New("control: nil Answers")
 	case len(d.CookieKey) != cookieKeyLen:
 		return fmt.Errorf("control: CookieKey must be %d bytes", cookieKeyLen)
 	case d.BaseURL == "":
 		return errors.New("control: empty BaseURL")
-	case d.Sandbox != nil && d.Tokens == nil:
-		return errors.New("control: Sandbox needs Tokens")
 	}
 	return nil
 }
 
 // newControl assembles the façade from already-built parts; tests pass fakes.
-func newControl(a account.Account, repos api.Repos, tenants tenantLister, admit admitter, page, discovery http.Handler, now func() time.Time) *Control {
-	return &Control{account: a, repos: repos, tenants: tenants, admit: admit, ui: recovered(page), discovery: discovery, now: now}
+func newControl(a account.Account, repos api.Repos, tenants tenantLister, admit admitter, page http.Handler, now func() time.Time) *Control {
+	return &Control{account: a, repos: repos, tenants: tenants, admit: admit, ui: recovered(page), now: now}
 }
 
 // admitter answers whether an installation's account is approved: gate.Admissions.
@@ -169,18 +151,6 @@ type admitter interface {
 
 func (c *Control) UIHandler() http.Handler { // "/"
 	return c.ui
-}
-
-func (c *Control) DiscoveryHandler() http.Handler { // POST /v1/discoveries
-	return c.discovery
-}
-
-func (c *Control) BaselineHandler() http.Handler { // POST /v1/baselines
-	return c.baseline
-}
-
-func (c *Control) ReanchorHandler() http.Handler { // POST /v1/reanchors
-	return c.reanchor
 }
 
 // recovered contains a UI panic: 500 for this request, the process and every other handler keep working.
@@ -203,20 +173,3 @@ func recovered(next http.Handler) http.Handler {
 }
 
 // Re-published platform seams. The owning child's module.md is normative.
-
-// Sandbox, DiscoveryJob and DiscoveryResult are owned by control/onboarding.
-type (
-	Sandbox         = onboarding.Sandbox
-	DiscoveryJob    = onboarding.DiscoveryJob
-	DiscoveryResult = onboarding.DiscoveryResult
-)
-
-// ErrNoSandbox is owned by control/onboarding.
-var ErrNoSandbox = onboarding.ErrNoSandbox
-
-// Provider, Prompt and Completion are owned by control/assist.
-type (
-	Provider   = assist.Provider
-	Prompt     = assist.Prompt
-	Completion = assist.Completion
-)

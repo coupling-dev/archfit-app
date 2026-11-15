@@ -1,0 +1,38 @@
+{
+  "record": {
+    "schema": "archfit-app.pull.v1",
+    "head_sha": "0000000000000000000000000000000000000004",
+    "run_id": 42,
+    "run_attempt": 1,
+    "payload_digest": "sha256:92e7fde1baf07e45c9a9df2ea46b3a4437bc9cc211aa29b71a34cfddb0f0c9b7",
+    "policy_digest": "accepted",
+    "status": "fail"
+  },
+  "head_sha": "0000000000000000000000000000000000000004",
+  "run_id": 42,
+  "run_attempt": 1,
+  "status": "fail",
+  "check_status": "completed",
+  "check_conclusion": "failure",
+  "waiting": [],
+  "view": {
+    "status": "fail",
+    "status_line": "Archfit: fail, 1 error",
+    "records": [
+      {
+        "path": "pkg/tc/interface.go",
+        "line": 12,
+        "rule": "duplication",
+        "what": "this literal already lives in pkg/util/util.go:15",
+        "why": "two copies must change together and nothing checks that they do",
+        "next": {
+          "kind": "command",
+          "text": "use pkg_util, or run: archfit request -m \"\u003cwhy a copy is needed\u003e\" --expires 2026-12-10"
+        },
+        "show_next": true
+      }
+    ],
+    "author": "reply `/archfit request \u003cwhy you need it\u003e`. Do not copy the code.",
+    "owner": "nothing to do until a request exists."
+  }
+}

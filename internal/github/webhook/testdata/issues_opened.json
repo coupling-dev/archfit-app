@@ -1,0 +1,31 @@
+{
+  "action": "opened",
+  "issue": {
+    "url": "https://api.github.com/repos/acme/shop/issues/48",
+    "id": 1003,
+    "number": 48,
+    "title": "Request: graph pkg_tc -> pkg_util",
+    "state": "open",
+    "user": {
+      "login": "worker-1",
+      "id": 9,
+      "type": "User"
+    },
+    "author_association": "COLLABORATOR",
+    "body": "/archfit request tc needs the retry helper\n\n```text\npkg_tc -> pkg_util: graph: not an allowed dependency\n  balance: 9/10 (min 7)\n```\n"
+  },
+  "repository": {
+    "id": 101,
+    "full_name": "acme/shop",
+    "private": true,
+    "default_branch": "main"
+  },
+  "sender": {
+    "login": "worker-1",
+    "id": 9,
+    "type": "User"
+  },
+  "installation": {
+    "id": 5001
+  }
+}

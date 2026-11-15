@@ -1,0 +1,15 @@
+{
+  "kind": "approve",
+  "loosens": true,
+  "note": "request #431",
+  "reformats": true,
+  "module": "pkg_chaos",
+  "dependency": "pkg_tc",
+  "then": {
+    "kind": "approve",
+    "loosens": true,
+    "note": "request #432",
+    "module": "pkg_chaos",
+    "dependency": "pkg_net"
+  }
+}

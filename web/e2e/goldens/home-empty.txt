@@ -1,0 +1,23 @@
+●
+clean
+
+Home
+
+acme/app
+
+Needs you
+
+Nothing needs you.
+
+The map
+
+No modules.
+
+An allowed dependency
+A requested one (with its #431)
+One a rule denies
+An exception (with its date)
+Drift
+Show the map as a list
+
+A dependency that is not drawn needs a request.

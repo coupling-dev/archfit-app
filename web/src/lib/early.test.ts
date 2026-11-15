@@ -9,13 +9,11 @@ afterEach(() => {
 describe('early reads', () => {
   it.each([
     ['/', ['/api/repos']],
-    ['/r/acme/app', ['/api/repos/acme/app/overview', '/api/repos/acme/app/findings']],
-    ['/r/acme/app/graph', ['/api/repos/acme/app/graph']],
+    ['/r/acme/app', ['/api/repos/acme/app/home']],
+    ['/r/acme/app/policy', ['/api/repos/acme/app/policy']],
     ['/r/acme/app/pull/4', ['/api/repos/acme/app/pulls/4']],
-    ['/r/acme/app/pull/4/graph', ['/api/repos/acme/app/pulls/4/graph']],
-    ['/r/acme/app/data-sharing', ['/api/repos/acme/app/data-sharing']],
-    ['/r/acme/app/decisions', ['/api/repos/acme/app/decisions']],
-    ['/r/acme/app/policy', []],
+    ['/r/acme/app/passkeys', ['/api/repos/acme/app/passkeys']],
+    ['/r/acme/app/requests/431', ['/api/repos/acme/app/requests/431']],
     ['/nowhere', []],
   ])('starts the first reads of %s', (path, want) => {
     expect(firstPaths(parseRoute(path))).toEqual(want);
@@ -36,7 +34,7 @@ describe('early reads', () => {
   });
 
   it('hands a failed early read to the page that takes it', async () => {
-    prefetch(parseRoute('/r/acme/app/graph'), () => Promise.reject(new Error('refused')));
-    await expect(firstJSON('/api/repos/acme/app/graph')).rejects.toThrow('refused');
+    prefetch(parseRoute('/r/acme/app/policy'), () => Promise.reject(new Error('refused')));
+    await expect(firstJSON('/api/repos/acme/app/policy')).rejects.toThrow('refused');
   });
 });

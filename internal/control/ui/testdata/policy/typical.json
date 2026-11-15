@@ -1,0 +1,111 @@
+{
+  "owners": [
+    "alexei-led"
+  ],
+  "gate": "required",
+  "layers": [
+    "core",
+    "cmd"
+  ],
+  "modules": [
+    {
+      "name": "pkg_chaos",
+      "paths": [
+        "pkg/chaos/**"
+      ],
+      "public": [
+        "pkg/chaos",
+        "pkg/chaos/cliflags"
+      ],
+      "volatility": "high",
+      "subdomain": "",
+      "layer": "core",
+      "depends_on": [
+        "pkg_container",
+        "pkg_util"
+      ]
+    },
+    {
+      "name": "pkg_tc",
+      "paths": [
+        "pkg/tc/**"
+      ],
+      "public": [
+        "pkg/tc"
+      ],
+      "volatility": "high",
+      "subdomain": "",
+      "layer": "core",
+      "depends_on": []
+    },
+    {
+      "name": "pkg_util",
+      "paths": [
+        "pkg/util/**"
+      ],
+      "public": null,
+      "volatility": "low",
+      "subdomain": "",
+      "layer": "core",
+      "depends_on": []
+    }
+  ],
+  "builtin": {
+    "graph": "ask",
+    "coupling": "deny",
+    "duplication": "ask",
+    "cycle": "deny",
+    "layers": "deny",
+    "unowned": "deny",
+    "min_balance": 7
+  },
+  "rules": [
+    {
+      "id": "no-chaos-to-runtime",
+      "deny": {
+        "from": [
+          "pkg_chaos"
+        ],
+        "to": [
+          "pkg_runtime"
+        ]
+      },
+      "not_checked": false,
+      "why": "A direct import ties a chaos action to one runtime.",
+      "instead": "Add a method to container.Client."
+    },
+    {
+      "id": "docker-sdk-in-runtime",
+      "only": {
+        "use": "github.com/docker/docker",
+        "in": [
+          "pkg_runtime"
+        ]
+      },
+      "not_checked": false,
+      "why": "One adapter owns the Docker API."
+    },
+    {
+      "id": "fan-out-through-runner",
+      "note": "Chaos actions fan out through RunOnContainers.",
+      "not_checked": true,
+      "why": "One place checks the target limit before injection."
+    }
+  ],
+  "exceptions": [
+    {
+      "rule": "duplication",
+      "from": "pkg_tc",
+      "to": "pkg_util",
+      "expires": "2026-11-19",
+      "days_left": 59,
+      "why": "Request #431 is open."
+    }
+  ],
+  "yaml": "version: 3\nowners: [alexei-led]\ngate: required              # default: advisory\nlayers: [core, cmd]         # inner first\nmodules:\n  pkg_chaos:\n    paths: [pkg/chaos/**]\n    public: [pkg/chaos, pkg/chaos/cliflags]\n    volatility: high\n    layer: core\n    depends_on: [pkg_container, pkg_util]\n  pkg_tc:\n    paths: [pkg/tc/**]\n    public: [pkg/tc]\n    volatility: high\n    layer: core\n  pkg_util:\n    paths: [pkg/util/**]\n    volatility: low\n    layer: core\nrules:\n  - id: no-chaos-to-runtime\n    deny: { from: pkg_chaos, to: pkg_runtime }\n    why: A direct import ties a chaos action to one runtime.\n    instead: Add a method to container.Client.\n  - id: docker-sdk-in-runtime\n    only: { use: github.com/docker/docker, in: [pkg_runtime] }\n    why: One adapter owns the Docker API.\n  - id: fan-out-through-runner\n    note: Chaos actions fan out through RunOnContainers.\n    why: One place checks the target limit before injection.\nexceptions:\n  - rule: duplication\n    from: pkg_tc\n    to: pkg_util\n    expires: 2026-11-19\n    why: \"Request #431 is open.\"\n",
+  "digest": "sha256:1cf7e56b7dc701c6f69fd8bacee1be2b8b1d241e2aea04bf6545b3ba3bcc05f7",
+  "edit": {
+    "available": true,
+    "reason": ""
+  }
+}

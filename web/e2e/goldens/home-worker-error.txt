@@ -1,0 +1,31 @@
+●
+1 request waits
+
+Home
+
+acme/app
+
+Needs you
+Request #431 waits.
+Show the record
+The map
+
+The map layout worker could not place the modules. The map is available as a list below.
+
+An allowed dependency
+A requested one (with its #431)
+One a rule denies
+An exception (with its date)
+Drift
+Show the map as a list
+cmd
+app · Volatility: high
+core
+util · Volatility: low
+No layer
+other · Volatility: high
+Dependencies
+app → other: Requested dependency · #431
+app → util: Allowed dependency
+
+A dependency that is not drawn needs a request.

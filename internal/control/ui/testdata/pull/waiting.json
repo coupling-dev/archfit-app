@@ -1,0 +1,44 @@
+{
+  "record": {
+    "schema": "archfit-app.pull.v1",
+    "head_sha": "0000000000000000000000000000000000000004",
+    "run_id": 42,
+    "run_attempt": 1,
+    "payload_digest": "sha256:e2d296ba443069d0690bbbb40d811f78ceda550060f59748424bbf5f3c9d2bf7",
+    "policy_digest": "accepted",
+    "status": "waiting"
+  },
+  "head_sha": "0000000000000000000000000000000000000004",
+  "run_id": 42,
+  "run_attempt": 1,
+  "status": "waiting",
+  "check_status": "in_progress",
+  "waiting": [
+    431
+  ],
+  "view": {
+    "status": "waiting",
+    "status_line": "Archfit: waiting, request #431",
+    "records": [
+      {
+        "path": "pkg/tc/netem.go",
+        "line": 12,
+        "rule": "graph",
+        "what": "pkg_tc -\u003e pkg_util is not an allowed dependency",
+        "why": "a new dependency between modules needs an owner",
+        "balance": {
+          "value": 9,
+          "min": 7
+        },
+        "next": {
+          "kind": "wait",
+          "text": "wait for an owner: #431"
+        },
+        "show_next": false,
+        "request": 431
+      }
+    ],
+    "author": "nothing to do. This check runs again when #431 is answered.",
+    "owner": "answer #431."
+  }
+}
