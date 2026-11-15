@@ -139,6 +139,29 @@ func TestSetupAdmissionFromImmutableDefaultBranchFiles(t *testing.T) {
 	}
 }
 
+func TestSetupFindsAcceptedWorkflowPullOnConvertedRepository(t *testing.T) {
+	h := newSetupHub()
+	h.files["tip"] = map[string]string{".archfit.yaml": setupPolicy}
+	h.pulls = []api.Pull{
+		{Number: 201, State: "closed", BaseRef: "main", HeadRepo: setupRepo.FullName, HeadSHA: "closed"},
+		{Number: 202, State: "open", BaseRef: "main", HeadRepo: "fork/app", HeadSHA: "fork"},
+		{Number: 203, State: "open", BaseRef: "main", HeadRepo: setupRepo.FullName, HeadSHA: "workflow-head"},
+		{Number: 204, State: "open", BaseRef: "main", HeadRepo: setupRepo.FullName, HeadSHA: "later-head"},
+	}
+	h.files["workflow-head"] = map[string]string{workflowPath: setupWorkflow(setupCommit)}
+	h.files["later-head"] = map[string]string{workflowPath: setupWorkflow(setupCommit)}
+	s := &setups{gh: h, gate: setupView{}, actionApproved: func(ref string) bool { return ref == setupCommit }}
+	out, err := s.Setup(context.Background(), setupRepo)
+	if err != nil || out.OpenPull != 203 || out.FirstPull != 0 || !out.Policy || out.Workflow || out.Admitted {
+		t.Fatalf("Setup = %+v, %v", out, err)
+	}
+	for _, read := range h.fileReads {
+		if !strings.HasPrefix(read, "tip:") && !strings.HasPrefix(read, "workflow-head:") {
+			t.Errorf("read unexpected pull head: %s", read)
+		}
+	}
+}
+
 func TestSetupTagReadFailureDoesNotAdmit(t *testing.T) {
 	h := newSetupHub()
 	h.files["tip"] = map[string]string{".archfit.yaml": setupPolicy, workflowPath: setupWorkflow("v4")}

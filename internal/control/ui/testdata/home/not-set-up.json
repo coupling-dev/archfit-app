@@ -4,6 +4,8 @@
     "admitted": false,
     "policy": false,
     "workflow": false,
+    "passkey": true,
+    "open_pull": 0,
     "state": "first_approval",
     "missing": [
       "Register a passkey and approve the first policy."

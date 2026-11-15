@@ -11,6 +11,8 @@ export interface HomeSetup {
   state: string;
   policy: boolean;
   workflow: boolean;
+  passkey: boolean;
+  open_pull: number;
   missing: string[];
   first_pull?: number;
   rules: { code: string; state: string; text: string }[];
@@ -24,6 +26,22 @@ export function setupStepState(setup: HomeSetup) {
     completed: done.filter(Boolean).length,
     approval: setup.state === 'first_approval' ? 'Action needed' : setup.state === 'approved' ? 'Done' : 'Waiting',
     gate: setup.rules.some((rule) => rule.state === 'unknown') ? 'Check with an admin' : done[3] ? 'On' : 'Action needed',
+  };
+}
+
+export function setupPullStep(setup: HomeSetup) {
+  if (setup.open_pull > 0) return { kind: 'review' as const, status: 'In review', number: setup.open_pull };
+  if (setup.first_pull !== undefined) return { kind: 'first-policy' as const, status: 'Done', number: setup.first_pull };
+  return { kind: 'create' as const, status: 'Action needed' };
+}
+
+export function setupPasskeyActions(setup: HomeSetup) {
+  const approvalNeeded = setup.state === 'first_approval';
+  return {
+    register: !setup.passkey,
+    manage: setup.passkey,
+    approve: setup.passkey && approvalNeeded,
+    approvalBlocked: !setup.passkey && approvalNeeded,
   };
 }
 
@@ -55,6 +73,10 @@ function array(v: unknown): unknown[] {
 }
 function boolean(v: unknown): boolean {
   if (typeof v !== 'boolean') throw new Error('The Home answer could not be read.');
+  return v;
+}
+function nonnegativeNumber(v: unknown): number {
+  if (typeof v !== 'number' || !Number.isSafeInteger(v) || v < 0) throw new Error('The Home answer could not be read.');
   return v;
 }
 function number(v: unknown): number {
@@ -105,6 +127,8 @@ export function readHome(value: unknown): Home {
       state: string(s.state),
       policy: boolean(s.policy),
       workflow: boolean(s.workflow),
+      passkey: boolean(s.passkey),
+      open_pull: nonnegativeNumber(s.open_pull),
       missing: array(s.missing).map(string),
       ...(s.first_pull === undefined ? {} : { first_pull: number(s.first_pull) }),
       rules: array(s.rules).map((entry) => {

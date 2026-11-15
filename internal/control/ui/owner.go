@@ -87,6 +87,8 @@ type setupJSON struct {
 	Admitted  bool               `json:"admitted"`
 	Policy    bool               `json:"policy"`
 	Workflow  bool               `json:"workflow"`
+	Passkey   bool               `json:"passkey"`
+	OpenPull  int                `json:"open_pull"`
 	State     string             `json:"state"`
 	Missing   []string           `json:"missing"`
 	FirstPull int                `json:"first_pull,omitempty"`
@@ -99,7 +101,11 @@ func (s *server) apiSetup(r *http.Request, sc scope) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	body := setupJSON{Admitted: out.Admitted, Policy: out.Policy, Workflow: out.Workflow, State: out.State, Missing: out.Missing, FirstPull: out.FirstPull, Issue: out.Issue, Rules: []setupFindingJSON{}}
+	passkeys, err := s.passkeys.List(r.Context(), sc.repo, sc.user.UserID)
+	// Home remains available when passkey inventory is temporarily unreadable; false safely asks the user to register.
+	passkey := err == nil && len(passkeys) > 0
+	body := setupJSON{Admitted: out.Admitted, Policy: out.Policy, Workflow: out.Workflow, Passkey: passkey, OpenPull: out.OpenPull,
+		State: out.State, Missing: out.Missing, FirstPull: out.FirstPull, Issue: out.Issue, Rules: []setupFindingJSON{}}
 	for _, f := range out.Rules.Findings {
 		body.Rules = append(body.Rules, setupFindingJSON{Code: f.Code, State: f.State, Text: f.Text})
 	}

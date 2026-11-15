@@ -14,11 +14,14 @@ const setupApprovedCopy = [
   'Rules reach the default branch through review, so the approval binds to exact file contents.',
   'Require the gate',
   'Turn on the ruleset so the default branch cannot change unless archfit/gate passes.',
+  'PR #203 adds the workflow — review it.',
+  'A password or a GitHub review can be replayed by a compromised account',
+  'review',
 ];
 
 for (const file of names) {
   const name = file.replace(/\.json$/, '');
-  test(`home: ${name} golden${name === 'one-request' || name === 'not-set-up' ? ' @docs' : ''}`, async ({ page }) => {
+  test(`home: ${name} golden${name === 'one-request' || name === 'workflow-review' ? ' @docs' : ''}`, async ({ page }) => {
     await docsClock(page);
     const json = fixture(name);
     const body = readHome(json);
@@ -36,21 +39,39 @@ for (const file of names) {
     if (body.setup) {
       await expect(page.getByRole('heading', { name: 'Needs you' })).toHaveCount(0);
       await expect(page.getByRole('heading', { name: 'The map' })).toHaveCount(0);
-      await expect(page.getByRole('link', { name: 'Register a passkey' })).toHaveAttribute('href', path + '/passkeys');
+      if (body.setup.passkey) {
+        await expect(page.getByRole('link', { name: 'Manage passkeys' })).toHaveAttribute('href', path + '/passkeys');
+        await expect(page.getByRole('link', { name: 'Manage passkeys' })).toHaveClass(/ghost/);
+        await expect(page.getByRole('link', { name: 'Register a passkey' })).toHaveCount(0);
+      } else {
+        await expect(page.getByRole('link', { name: 'Register a passkey' })).toHaveAttribute('href', path + '/passkeys');
+      }
       await expect(page.getByRole('heading', { name: 'Set up Archfit' })).toBeVisible();
       await expect(page.getByRole('listitem')).toHaveCount(4);
       await expect(page.getByText('The owner signs the policy with a passkey. Change one byte and the approval no longer counts.')).toBeVisible();
+      if (body.setup.open_pull > 0) {
+        await expect(page.getByRole('listitem').nth(1).getByText('In review', { exact: true })).toBeVisible();
+        await expect(page.getByText(`PR #${body.setup.open_pull} adds the workflow — review it.`)).toBeVisible();
+        await expect(page.getByRole('link', { name: `PR #${body.setup.open_pull}`, exact: true })).toHaveAttribute('href', path + '/pull/' + body.setup.open_pull);
+        await expect(page.getByRole('link', { name: `Open PR #${body.setup.open_pull}`, exact: true })).toHaveAttribute('href', `https://github.com/acme/app/pull/${body.setup.open_pull}`);
+      }
       if (body.setup.first_pull) {
         await expect(page.getByRole('listitem').nth(1).getByText('Done', { exact: true })).toBeVisible();
         await expect(page.getByText(`First policy: #${body.setup.first_pull}, open and waiting for approval.`)).toBeVisible();
       }
-      if (body.setup.state === 'first_approval')
-        await expect(page.getByRole('link', { name: 'Approve the first policy' })).toHaveAttribute('href', path + '/owner/first?pull=' + body.setup.first_pull);
+      if (body.setup.state === 'first_approval' && body.setup.passkey) {
+        const approve = page.getByRole('link', { name: 'Approve the first policy' });
+        await expect(approve).toHaveAttribute('href', path + '/owner/first' + (body.setup.first_pull ? '?pull=' + body.setup.first_pull : ''));
+        await expect(approve).toHaveClass(/primary/);
+        await expect(page.getByRole('link', { name: 'Manage passkeys' })).toHaveClass(/ghost/);
+      }
       if (!body.setup.workflow)
         await expect(page.getByText('The pull request should also add .github/workflows/archfit.yaml.')).toBeVisible();
       await expect(page.getByText('ok', { exact: true })).toHaveCount(0);
       await expect(page.getByText('unknown', { exact: true })).toHaveCount(0);
-      if (name === 'not-set-up') await docsShot(page, 'home-setup', setupApprovedCopy);
+      if (body.setup.rules.length)
+        await expect(page.getByRole('link', { name: 'Open ruleset settings' })).toHaveAttribute('href', 'https://github.com/acme/app/settings/rules');
+      if (name === 'workflow-review') await docsShot(page, 'home-setup', setupApprovedCopy);
     } else {
       for (const need of body.needs_you)
         await expect(page.getByRole('link', { name: need.text, exact: true })).toHaveAttribute('href', need.href);

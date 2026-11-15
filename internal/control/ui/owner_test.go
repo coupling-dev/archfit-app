@@ -58,11 +58,15 @@ func TestSetupAPIRequiresRepositoryReadAndReturnsExplicitState(t *testing.T) {
 			if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
 				t.Fatal(err)
 			}
-			if !body.Admitted || body.State != "outside_flow" || body.FirstPull != 12 || body.Issue != 70 || len(body.Rules) != 1 || body.Rules[0].Code != "gate_check" || body.Missing == nil {
+			if !body.Admitted || body.State != "outside_flow" || !body.Passkey || body.FirstPull != 12 || body.Issue != 70 || len(body.Rules) != 1 || body.Rules[0].Code != "gate_check" || body.Missing == nil {
 				t.Fatalf("body = %s", res.Body.String())
 			}
 			if len(e.setups.repos) != 1 || e.setups.repos[0].FullName != repoName {
 				t.Fatalf("repos = %+v", e.setups.repos)
+			}
+			calls := e.passkeys.all()
+			if len(calls) != 1 || calls[0].method != "List" || calls[0].repo.FullName != repoName || calls[0].user.ID != e.user("alice").UserID {
+				t.Fatalf("passkey list calls = %+v", calls)
 			}
 		})
 	}
@@ -80,6 +84,34 @@ func TestSetupAPIRequiresRepositoryReadAndReturnsExplicitState(t *testing.T) {
 			t.Fatal("read while signed out")
 		}
 	})
+}
+
+func TestSetupAPIPasskeyFlagIsBestEffort(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		list []passkey.Passkey
+		err  error
+		want bool
+	}{
+		{name: "no registered passkeys", list: []passkey.Passkey{}, want: false},
+		{name: "registered passkey", list: []passkey.Passkey{{ID: fakePasskeyID, Created: fakeCreated}}, want: true},
+		{name: "list error", err: context.DeadlineExceeded, want: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.passkeys.listed = tt.list
+			e.passkeys.err = tt.err
+			res := e.as("alice", permRead).get(setupAPI)
+			wantStatus(t, res, http.StatusOK)
+			var body setupJSON
+			if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Passkey != tt.want {
+				t.Fatalf("passkey = %t, want %t; body %s", body.Passkey, tt.want, res.Body.String())
+			}
+		})
+	}
 }
 
 func TestOwnerAPIsPassSignedInUserAndPasskeyBinding(t *testing.T) {
