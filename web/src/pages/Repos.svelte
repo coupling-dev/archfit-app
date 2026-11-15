@@ -66,7 +66,6 @@
                     class:neutral={!['required', 'not_required'].includes(row.enforcement)}
                   >{enforcementLabel(row.enforcement)}</span>
                 </div>
-                {#if row.enforcement_reason}<p class="muted small reason">{row.enforcement_reason}</p>{/if}
               {/if}
             </td>
             <td>
@@ -83,6 +82,7 @@
       </tbody>
     </table>
   </div>
+  <p class="muted small">Check means the App could not confirm that archfit/gate is required; ask an admin.</p>
   {#if body.truncated}
     <p class="muted small">Only the first repositories by name are listed.</p>
   {/if}

@@ -30,7 +30,7 @@ describe('repository next destination', () => {
     enforcement: 'check',
     next_step: { text: 'Open Home', href: '/r/acme/app' },
   };
-  it.each(['/r/acme/app', '/r/acme/app/pull/203', '/r/acme/app/owner/first?pull=8', '/r/acme/app/owner/first'])(
+  it.each(['/r/acme/app', '/r/acme/app/pull/203', '/r/acme/app/pull/8'])(
     'keeps the server-selected destination %s',
     (href) => {
       const next = { text: 'Continue', href };
@@ -42,6 +42,8 @@ describe('repository next destination', () => {
     '//other.example',
     '/r/other/app',
     '/r/acme/app/pull/0',
+    '/r/acme/app/owner/first',
+    '/r/acme/app/owner/first?pull=8',
     '/r/acme/app/owner/first?pull=-1',
     '/r/acme/app/owner/first?pull=8&other=x',
     '/r/acme/app/pull/203/../../other',

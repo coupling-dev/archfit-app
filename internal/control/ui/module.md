@@ -132,10 +132,12 @@ Each row separates:
 - Optional `attention`: only Setup's existing `FirstPull` / `OpenPull` PR number or first-approval state.
   Request counts are **not read**: RepoStates and Setup expose none, and Home adds GitHub reads.
   The UI says those counts are not checked here, never invents zero, and directs readers to Home.
-- `next_step`: a server-selected text/href pair to Home, the first-policy review (including its PR),
-  or the workflow PR. Setup establishes workflow presence, not owner-action eligibility, so the list
-  links to the PR rather than guessing a workflow approval action. The SPA restricts destinations
-  to these routes in the same repository.
+- `next_step`: a server-selected text/href pair to Home or a PR in the same repository.
+  First-policy and workflow PRs link to Pull, which resolves owner-action eligibility. First approval
+  without a PR links to Home, whose setup step resolves eligibility. The list never links directly
+  to an owner action page. The SPA accepts only same-repository Home and positive-number Pull routes.
+  Enforcement reasons stay in the API, but the page explains the Check chip once below the list.
+  Row-specific setup reasons remain inline.
 
 A probe error or a row beyond the probe limit retains stored evidence, omits the setup stage, and shows
 Check with a reason; stored-state failures still fail the request. Waiting installations show their own

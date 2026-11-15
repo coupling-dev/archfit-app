@@ -122,10 +122,10 @@ func applyOverviewSetup(row *overviewRow, setup onboarding.Setup) {
 	case "first_approval":
 		if setup.FirstPull > 0 {
 			row.Attention = fmt.Sprintf("PR #%d", setup.FirstPull)
-			row.NextStep = overviewNextStep{Text: "Review first policy", Href: fmt.Sprintf("%s/owner/first?pull=%d", base, setup.FirstPull)}
+			row.NextStep = overviewNextStep{Text: "Review first policy", Href: fmt.Sprintf("%s/pull/%d", base, setup.FirstPull)}
 		} else if setup.Policy && setup.Workflow {
 			row.Attention = "First approval"
-			row.NextStep = overviewNextStep{Text: "Review first policy", Href: base + "/owner/first"}
+			row.NextStep = overviewNextStep{Text: "Review first policy", Href: base}
 		} else {
 			row.NextStep = overviewNextStep{Text: "Continue setup", Href: base}
 		}

@@ -18,7 +18,7 @@
       "attention": "PR #8",
       "next_step": {
         "text": "Review first policy",
-        "href": "/r/acme/drift/owner/first?pull=8"
+        "href": "/r/acme/drift/pull/8"
       }
     },
     {

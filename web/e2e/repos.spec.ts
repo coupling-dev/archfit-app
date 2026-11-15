@@ -23,7 +23,7 @@ for (const width of [1280, 390]) {
     }
     await expect(page.getByRole('link', { name: 'Review first policy' })).toHaveAttribute(
       'href',
-      '/r/acme/drift/owner/first?pull=8',
+      '/r/acme/drift/pull/8',
     );
     await expect(page.getByRole('link', { name: 'Review workflow PR' })).toHaveAttribute(
       'href',
@@ -32,6 +32,17 @@ for (const width of [1280, 390]) {
     await expect(page.getByText('PR #203', { exact: true })).toBeVisible();
     await expect(page.getByText('The policy changed outside the approval flow.')).toBeVisible();
     await expect(page.getByText('0 requests', { exact: true })).toHaveCount(0);
+    await expect(page.locator('main a[href*="/owner/"]')).toHaveCount(0);
+    await expect(
+      page.getByText('Check means the App could not confirm that archfit/gate is required; ask an admin.', {
+        exact: true,
+      }),
+    ).toHaveCount(1);
+    await expect(
+      page.getByText('The rules do not establish whether archfit/gate is required; check with an admin.', {
+        exact: true,
+      }),
+    ).toHaveCount(0);
     await expect(page.getByText('@alice')).toBeVisible();
     await expect(page.locator('form[action="/auth/logout"] input[name="csrf"]')).toHaveValue(session.csrf);
     if (width === 390) {
@@ -76,5 +87,11 @@ test('repositories: unread setup explains Check and offers Home without a false 
   await expect(page.getByText('The App could not read setup; open Home to try again.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open Home', exact: true })).toHaveAttribute('href', '/r/acme/app');
   await expect(page.getByText('Policy approved', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('The App could not read the required-check settings.', { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText('Check means the App could not confirm that archfit/gate is required; ask an admin.', {
+      exact: true,
+    }),
+  ).toHaveCount(1);
   await expectClean(page, reposApprovedCopy);
 });

@@ -27,7 +27,7 @@ export function enforcementLabel(state: string): string {
   }
 }
 
-// Only the current repository's Home, PR and first-policy review are emitted by the list API.
+// Home and Pull resolve owner-action eligibility; the list must not bypass them.
 export function nextStep(row: RepoRow): { text: string; href: string } {
   const base = repoPage(row.full_name);
   const next = row.next_step;
@@ -35,8 +35,7 @@ export function nextStep(row: RepoRow): { text: string; href: string } {
     next &&
     next.text &&
     (next.href === base ||
-      (next.href.startsWith(base + '/') &&
-        /^(pull\/[1-9]\d*|owner\/first(?:\?pull=[1-9]\d*)?)$/.test(next.href.slice(base.length + 1))))
+      (next.href.startsWith(base + '/') && /^pull\/[1-9]\d*$/.test(next.href.slice(base.length + 1))))
   ) {
     return next;
   }
