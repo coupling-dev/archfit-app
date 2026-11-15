@@ -92,8 +92,8 @@ test('policy: unavailable edit URL remains read-only and exceptions link only to
   await open(page, path + '?edit=1', { [api]: () => [200, body] });
   await expect(page.getByText('Change control has not started.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Edit', exact: true })).toHaveCount(0);
-  await expect(page.getByText('Expires: 2026-11-19 (0 days left)')).toBeVisible();
-  await expect(page.getByText('Expires: 2026-11-18 (expired 1 day ago)')).toBeVisible();
+  await expect(page.getByText('Expires today', { exact: true })).toBeVisible();
+  await expect(page.getByText('Expired 1 day ago', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Request #431' })).toHaveAttribute('href', '/r/acme/app/requests/431');
   await expect(page.getByRole('link', { name: 'Request #7' })).toHaveCount(0);
   await expect(page.locator('main img')).toHaveCount(0);
@@ -109,14 +109,12 @@ test('policy: API failure is shown rather than an empty policy', async ({ page }
 test('policy: omitted public paths mean the whole module is public', async ({ page }) => {
   await open(page, path, { [api]: () => [200, typical] });
   const modules = page.getByRole('region', { name: 'Modules', exact: true });
-  const util = modules
-    .locator('.box-row')
-    .filter({ has: page.getByRole('heading', { name: 'pkg_util', exact: true }) });
-  const chaos = modules
-    .locator('.box-row')
-    .filter({ has: page.getByRole('heading', { name: 'pkg_chaos', exact: true }) });
-  await expect(util.locator('dd').nth(1)).toHaveText('Whole module');
-  await expect(chaos.locator('dd').nth(1)).toHaveText('pkg/chaos, pkg/chaos/cliflags');
+  const util = modules.locator('tr').filter({ has: page.getByText('pkg_util', { exact: true }) });
+  const chaos = modules.locator('tr').filter({ has: page.getByText('pkg_chaos', { exact: true }) });
+  await util.locator('summary').click();
+  await chaos.locator('summary').click();
+  await expect(util.getByText('Whole module', { exact: true })).toBeVisible();
+  await expect(chaos.getByText('pkg/chaos, pkg/chaos/cliflags', { exact: true })).toBeVisible();
 });
 
 test('policy: repeated custom rule IDs retain both rules', async ({ page }) => {
@@ -128,11 +126,14 @@ test('policy: repeated custom rule IDs retain both rules', async ({ page }) => {
     ],
   };
   await open(page, path, { [api]: () => [200, body] });
-  const rules = page.getByRole('region', { name: 'Custom rules and notes', exact: true });
-  await expect(rules.getByRole('heading', { name: 'shared-id', exact: true })).toHaveCount(1);
-  await expect(rules.getByRole('heading', { name: 'shared-id (not checked)', exact: true })).toHaveCount(1);
-  await expect(rules.getByText('Why: First reason.')).toBeVisible();
-  await expect(rules.getByText('Why: Second reason.')).toBeVisible();
+  const rules = page.getByRole('region', { name: 'Rules', exact: true });
+  const declarations = rules.locator('details').filter({ hasText: 'shared-id' });
+  await expect(declarations).toHaveCount(2);
+  await expect(declarations.nth(0).getByText('Not checked', { exact: true })).toBeVisible();
+  await expect(declarations.nth(1).getByText('Deny', { exact: true })).toBeVisible();
+  for (const detail of await declarations.all()) await detail.locator('summary').click();
+  await expect(rules.getByText('First reason.', { exact: true })).toBeVisible();
+  await expect(rules.getByText('Second reason.', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Policy file' })).toBeVisible();
 });
 
