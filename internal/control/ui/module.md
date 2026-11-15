@@ -112,7 +112,11 @@ unchanged to control/answers, which checks the view twice and binds the passkey 
 ## Repositories page
 
 `GET /api/repos` keeps installation admission separate from repository state. Unadmitted installations retain the
-waiting marker without a repository read. For admitted repositories, `gate.NewRepoStates` reads only the stored
-`v4/repo` value: no approved policy means `not set up`, then an outside-flow marker takes precedence, then the
-stored `expired`, `drift` or `clean` state. Missing, partial or unrecognised evidence is `unknown`; read errors fail
-the request. The page shows a dot and a word, with fail colour only for `expired`.
+waiting marker without a repository read. For admitted repositories, `gate.NewRepoStates` reads the stored
+`v4/repo` value first. Outside-flow markers take precedence; admitted records with stored drift evidence retain
+`expired`, `drift`, `clean` or `unknown`. Rows without an approved digest receive a read-only `Setup` probe for at
+most 25 repositories per page (8 concurrent); the probe reads a few GitHub objects, and is limited to these rows
+because approved records already have authoritative stored states. They display `no policy`, `needs workflow`,
+`awaiting approval` or `active` from the default-branch policy, workflow and approval state. A probe error falls back
+to `not set up`; stored-state read errors still fail the request. The page shows a dot and a word, with distinct
+colors for onboarding stages and fail color only for `expired`.
