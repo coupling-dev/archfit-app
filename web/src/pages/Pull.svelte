@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { homeHref, type OwnerReview } from '../lib/home';
   import Skeleton from '../components/Skeleton.svelte';
   import { explainLoad, repoAPI, type ApiError } from '../lib/api';
   import { firstJSON } from '../lib/early';
@@ -10,6 +11,7 @@
   }
   interface PullPage {
     message?: string;
+    owner_action?: OwnerReview;
     view?: { status: string; status_line: string; records: RecordLine[]; author?: string; owner?: string };
   }
 
@@ -39,6 +41,10 @@
 {:else if body.view}
   <section aria-label="Pull request">
     <h1 data-status={body.view.status}>{@render linked(body.view.status_line)}</h1>
+    {#if body.owner_action}
+      {@const href = body.owner_action.href ? homeHref(route, body.owner_action.href) : undefined}
+      {#if href}<a class="btn primary" href={href}>{body.owner_action.label}</a>{:else}<p>{body.owner_action.label}</p>{/if}
+    {/if}
     {#each body.view.records as record, i (i)}
       <div class="pull-record">
         <div>{record.path ? record.path + (record.line ? `:${record.line}` : '') + ' ' : ''}{record.rule}{record.what ? ` ${record.what}` : ''}</div>

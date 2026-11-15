@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/control/answers"
+	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/store"
 	"github.com/alexei-led/archfit-app/internal/wire/envelope"
@@ -22,7 +24,7 @@ func TestPullAPIGoldens(t *testing.T) {
 		{"pass", "pass", "pass"}, {"fail-advisory", "deny", "fail"}, {"fail-advisory-request", "graph", "fail"}, {"required-request", "graph", "fail"}, {"fail-fix", "deny", "fail"}, {"fail-ask", "graph", "fail"},
 		{"fail-copy", "duplication", "fail"}, {"next-backticks", "deny", "fail"}, {"fail-expired-exception", "expired_exception", "fail"},
 		{"unknown", "policy_differs", "unknown"}, {"waiting", "graph", "waiting"},
-		{"unknown-workflow", "pass", "unknown"}, {"unknown-outside-flow", "pass", "unknown"}, {"unknown-missing-evidence", "pass", "unknown"}, {"unpublished", "pass", "pass"}, {"superseded", "pass", "pass"}, {"no-result", "", ""}, {"missing-artifact", "pass", "pass"}, {"mismatch", "pass", "pass"}, {"pending", "pass", "pass"},
+		{"unknown-first-policy", "pass", "unknown"}, {"unknown-workflow", "pass", "unknown"}, {"unknown-workflow-viewer", "pass", "unknown"}, {"unknown-outside-flow", "pass", "unknown"}, {"unknown-missing-evidence", "pass", "unknown"}, {"unpublished", "pass", "pass"}, {"superseded", "pass", "pass"}, {"no-result", "", ""}, {"missing-artifact", "pass", "pass"}, {"mismatch", "pass", "pass"}, {"pending", "pass", "pass"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -60,7 +62,24 @@ func TestPullAPIGoldens(t *testing.T) {
 			}
 			var unknown result.Unknown
 			switch tc.name {
-			case "unknown-workflow":
+			case "unknown-first-policy":
+				unknown = result.Unknown{Path: ".archfit.yaml", Cause: "policy", What: "the first policy needs approval", Next: result.Next{Kind: "wait", Text: "an administrator approves the policy in the App"}}
+				e.owners.review = func(a answers.OwnerAction, _ gate.OwnerUser) error {
+					if a.Kind == gate.OwnerFirst && a.Pull == 4 {
+						return nil
+					}
+					return gate.ErrOwnerNotDue
+				}
+			case "unknown-workflow", "unknown-workflow-viewer":
+				e.owners.review = func(a answers.OwnerAction, _ gate.OwnerUser) error {
+					if a.Kind != gate.OwnerWorkflow {
+						return gate.ErrOwnerNotDue
+					}
+					if tc.name == "unknown-workflow-viewer" {
+						return gate.ErrOwnerNotOwner
+					}
+					return nil
+				}
 				unknown = result.Unknown{Path: ".github/workflows/archfit.yaml", Cause: "tool", What: "differs from main", Why: "a pull request runs its own workflow file", Next: result.Next{Kind: "fix", Text: "update the branch; if the pull request changes the workflow, an owner approves it in the App"}}
 			case "unknown-outside-flow":
 				unknown = result.Unknown{Path: ".archfit.yaml", Cause: "policy", What: "changed on main with no recorded approval", Why: "only owners change the policy", Next: result.Next{Kind: "wait", Text: "an owner confirms or reverts it in the App: #433"}}
@@ -107,7 +126,7 @@ func TestPullAPIGoldens(t *testing.T) {
 			}
 			res := e.as("alice", permRead).get("/api/repos/" + repoName + "/pulls/4")
 			wantStatus(t, res, http.StatusOK)
-			if words := wording.NotUsedIn(res.Body.String()); len(words) > 0 {
+			if words := wording.NotUsedIn(withoutOwnerReviewCopy(res.Body.String())); len(words) > 0 {
 				t.Fatalf("pull uses %v", words)
 			}
 			var pretty bytes.Buffer

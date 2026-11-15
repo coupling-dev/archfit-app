@@ -61,6 +61,13 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 	}
 	state := setup.(setupJSON)
 	if state.State != "approved" && state.State != "outside_flow" {
+		if state.State == "first_approval" || state.OpenPull > 0 {
+			pull := state.FirstPull
+			if pull == 0 {
+				pull = state.OpenPull
+			}
+			state.Review = s.ownerReview(r, sc, pull)
+		}
 		return homeJSON{Status: "Set up this repository.", Setup: &state}, nil
 	}
 	view, err := s.home.Home(r.Context(), sc.repo)
@@ -68,7 +75,17 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 		return nil, err
 	}
 	today := s.now().UTC().Truncate(24 * time.Hour)
-	return homeBody(view, state, sc.repo.FullName, today), nil
+	body := homeBody(view, state, sc.repo.FullName, today)
+	for i := range body.NeedsYou {
+		need := &body.NeedsYou[i]
+		if need.Kind != "workflow" {
+			continue
+		}
+		if review := s.ownerReview(r, sc, need.Pull); review != nil {
+			need.Text, need.Href = fmt.Sprintf("%s · PR #%d", review.Label, need.Pull), review.Href
+		}
+	}
+	return body, nil
 }
 
 func homeBody(view gate.HomeState, setup setupJSON, repo string, today time.Time) homeJSON {
@@ -130,8 +147,8 @@ func homeBody(view gate.HomeState, setup setupJSON, repo string, today time.Time
 		status = append(status, "expired")
 	}
 	for _, pull := range view.WorkflowPulls {
-		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "workflow", Text: fmt.Sprintf("Approve the workflow change in #%d.", pull),
-			Href: base + "/owner/workflow?pull=" + strconv.Itoa(pull), Pull: pull})
+		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "workflow", Text: fmt.Sprintf("Workflow change in #%d awaits an architecture owner.", pull),
+			Pull: pull})
 	}
 	if n := len(view.WorkflowPulls); n > 0 {
 		if n == 1 {

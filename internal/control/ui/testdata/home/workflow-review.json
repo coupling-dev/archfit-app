@@ -1,12 +1,16 @@
 {
   "status": "Set up this repository.",
   "setup": {
+    "owner_action": {
+      "label": "Review workflow change",
+      "href": "/r/acme/app/owner/workflow?pull=203"
+    },
     "admitted": false,
     "policy": true,
     "workflow": false,
     "passkey": true,
     "open_pull": 203,
-    "state": "first_approval",
+    "state": "not_admitted",
     "missing": [],
     "rules": [
       {
