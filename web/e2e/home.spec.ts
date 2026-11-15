@@ -16,7 +16,7 @@ const setupApprovedCopy = [
   'Turn on the ruleset so the default branch cannot change unless archfit/gate passes.',
   'PR #203 adds the workflow — review it.',
   'A password or a GitHub review can be replayed by a compromised account',
-  'review',
+  'In review',
   'Review workflow change',
   'Review first policy',
   'Review needed',
