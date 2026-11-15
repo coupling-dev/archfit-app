@@ -1,5 +1,5 @@
 repository: alexei-led/archfit
-revision: a287c5f1dd6c5c01a17fd8071074271ce240375f
+revision: 37dd38244081ad1159c27515cec94560f3e44e30
 # sha256 is of the file bytes, as shasum -a 256 prints it; a line per vendored file
 19bc05715e7b7de12934b01e36f456409c07139927d7494a64cd00c80a57dc78  archfit.schema.json
 a1efd1c090d4fca8e876ec6ff04182bd7bd8fb6bcb83230750d081e4a83f5832  testdata/invalid/builtin-mode-unknown.yaml

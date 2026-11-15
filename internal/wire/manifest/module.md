@@ -15,7 +15,9 @@ v4.MINOR.PATCH-rc.N, with non-placeholder image digests for linux/amd64 or linux
 one non-placeholder Action commit. Unknown fields and duplicate release/action entries are rejected.
 An empty engine list approves nothing. Invalid embedded data prevents package initialization.
 
-The current embedded list is empty until release identities are pinned. No runtime override exists.
+The embedded list approves engine v4.0.0 and Action v4.0.0. The engine image index digest is
+`sha256:8ad49e766ce3e486104077df213f2badc6ed0f66d7fe88ae377efaf6a918ccd2`; uploads use the
+platform-specific digests in the manifest, not the index digest. No runtime override exists.
 Manifest v1, measurement profiles, `Lookup`, `Current` and `EngineVersions` have been removed.
 
 ## Checks
