@@ -29,9 +29,6 @@ In review
 PR #203 adds the workflow — review it.
 
 Open PR #203
-
-The pull request should also add .github/workflows/archfit.yaml.
-
 3
 3 · Approve the first policy
 

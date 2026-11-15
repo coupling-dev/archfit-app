@@ -65,8 +65,10 @@ for (const file of names) {
         await expect(approve).toHaveClass(/primary/);
         await expect(page.getByRole('link', { name: 'Manage passkeys' })).toHaveClass(/ghost/);
       }
-      if (!body.setup.workflow)
+      if (!body.setup.workflow && body.setup.open_pull === 0)
         await expect(page.getByText('The pull request should also add .github/workflows/archfit.yaml.')).toBeVisible();
+      if (body.setup.open_pull > 0)
+        await expect(page.getByText('The pull request should also add .github/workflows/archfit.yaml.')).toHaveCount(0);
       await expect(page.getByText('ok', { exact: true })).toHaveCount(0);
       await expect(page.getByText('unknown', { exact: true })).toHaveCount(0);
       if (body.setup.rules.length)

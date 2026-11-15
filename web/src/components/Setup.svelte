@@ -51,7 +51,7 @@
                 <p>Open one pull request that adds the policy and workflow.</p>
                 <a class="btn ghost" href={`${githubRepo}/compare`}>Open a pull request on GitHub</a>
               {/if}
-              {#if !setup.workflow}<p>The pull request should also add <code>.github/workflows/archfit.yaml</code>.</p>{/if}
+              {#if !setup.workflow && setup.open_pull === 0}<p>The pull request should also add <code>.github/workflows/archfit.yaml</code>.</p>{/if}
             {:else if i === 2}
               {#if passkeyActions.register}
                 <a class="btn primary" href={repoPage(repo.fullName, '/passkeys')}>Register a passkey</a>
