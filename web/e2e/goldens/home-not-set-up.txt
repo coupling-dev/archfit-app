@@ -24,11 +24,14 @@ The policy is in the first pull request.
 
 Rules reach the default branch through review, so the approval binds to exact file contents.
 
-First policy: #12, open and waiting for approval
+Done
 
 First policy: #12, open and waiting for approval.
 
 Open the first pull request
+
+The pull request should also add .github/workflows/archfit.yaml.
+
 3
 3 · Approve the first policy
 
@@ -45,11 +48,11 @@ Turn on the ruleset so the default branch cannot change unless archfit/gate pass
 Action needed
 Default-branch changes require a pull request
 
-Require a pull request before merging into the default branch.
+Add a pull request rule to the default branch.
 
 Action needed
 The App’s archfit/gate check is required
 
-Require archfit/gate with this App's integration_id (42).
+Add the App's archfit/gate check as a required status check.
 
 Action needed

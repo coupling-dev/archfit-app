@@ -40,8 +40,14 @@ for (const file of names) {
       await expect(page.getByRole('heading', { name: 'Set up Archfit' })).toBeVisible();
       await expect(page.getByRole('listitem')).toHaveCount(4);
       await expect(page.getByText('The owner signs the policy with a passkey. Change one byte and the approval no longer counts.')).toBeVisible();
+      if (body.setup.first_pull) {
+        await expect(page.getByRole('listitem').nth(1).getByText('Done', { exact: true })).toBeVisible();
+        await expect(page.getByText(`First policy: #${body.setup.first_pull}, open and waiting for approval.`)).toBeVisible();
+      }
       if (body.setup.state === 'first_approval')
         await expect(page.getByRole('link', { name: 'Approve the first policy' })).toHaveAttribute('href', path + '/owner/first?pull=' + body.setup.first_pull);
+      if (!body.setup.workflow)
+        await expect(page.getByText('The pull request should also add .github/workflows/archfit.yaml.')).toBeVisible();
       await expect(page.getByText('ok', { exact: true })).toHaveCount(0);
       await expect(page.getByText('unknown', { exact: true })).toHaveCount(0);
       if (name === 'not-set-up') await docsShot(page, 'home-setup', setupApprovedCopy);

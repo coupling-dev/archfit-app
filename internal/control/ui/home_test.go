@@ -122,8 +122,8 @@ func TestHomeAPIGoldens(t *testing.T) {
 		{"not-set-up", homePolicy, func(_ *testing.T, e *env) {
 			e.setups.out = onboarding.Setup{State: "first_approval", FirstPull: 12, Missing: []string{"Register a passkey and approve the first policy."},
 				Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{
-					{Code: "pull_requests", State: "warning", Text: "Require a pull request before merging into the default branch."},
-					{Code: "gate_check", State: "warning", Text: "Require archfit/gate with this App's integration_id (42)."},
+					{Code: "pull_requests", State: "warning", Text: "Add a pull request rule to the default branch."},
+					{Code: "gate_check", State: "warning", Text: "Add the App's archfit/gate check as a required status check."},
 				}}}
 			e.gh.fail["BranchHead"] = errors.New("Home must return the existing setup answer without loading the map")
 		}},

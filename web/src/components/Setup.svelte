@@ -26,7 +26,7 @@
     <div class="progress" aria-label="{completed} of 4 steps done"><span>{completed} of 4 done</span><span class="bar" aria-hidden="true"><span style="width: {completed * 25}%"></span></span></div>
     <ol class="steps">
       {#each steps as step, i (step.title)}
-        {@const status = i === 0 ? done[i] ? 'Done' : 'Action needed' : i === 1 ? setup.first_pull ? `First policy: #${setup.first_pull}, open and waiting for approval` : done[i] ? 'Done' : 'Action needed' : i === 2 ? state.approval : state.gate}
+        {@const status = i === 0 ? done[i] ? 'Done' : 'Action needed' : i === 1 ? done[i] ? 'Done' : 'Action needed' : i === 2 ? state.approval : state.gate}
         <li class:done={done[i]} class:now={!done[i] && (i === 0 || done[i - 1])}>
           <span class="number" aria-hidden="true">{done[i] ? '✓' : i + 1}</span>
           <div class="step-copy"><h3>{i + 1} · {step.title}</h3><p>{step.text}</p></div>
@@ -39,6 +39,7 @@
               {#if !setup.policy && !setup.first_pull}<p>Commit the policy and workflow, then open a pull request.</p>{/if}
             {:else if i === 1}
               {#if setup.first_pull}<p>First policy: #{setup.first_pull}, open and waiting for approval.</p><a class="btn ghost" href={repoPage(repo.fullName, '/pull/' + setup.first_pull)}>Open the first pull request</a>{:else}<p>Open one pull request with the policy and workflow.</p>{/if}
+              {#if !setup.workflow}<p>The pull request should also add <code>.github/workflows/archfit.yaml</code>.</p>{/if}
             {:else if i === 2}
               {#if setup.state === 'first_approval'}<a class="btn" href={repoPage(repo.fullName, '/owner/first' + (setup.first_pull ? '?pull=' + setup.first_pull : ''))}>Approve the first policy</a>{/if}
               <a class="btn ghost" href={repoPage(repo.fullName, '/passkeys')}>Register a passkey</a>
