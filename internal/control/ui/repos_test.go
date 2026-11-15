@@ -156,7 +156,7 @@ func TestReposOnboardingStagesAreBoundedAndErrorsFallBack(t *testing.T) {
 	e.setups.byRepo = map[string]onboarding.Setup{
 		"acme/stage-00": {Policy: false},
 		"acme/stage-01": {Policy: true, Workflow: false},
-		"acme/stage-02": {Policy: true, Workflow: true, State: "first_approval"},
+		"acme/stage-02": {Policy: true, Workflow: true, Admitted: true, State: "first_approval"},
 		"acme/stage-03": {Policy: true, Workflow: true, Admitted: true, State: "approved"},
 	}
 	e.setups.errors = map[string]error{"acme/stage-04": errors.New("GitHub unavailable")}

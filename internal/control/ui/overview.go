@@ -94,7 +94,7 @@ func repoSetupStage(setup onboarding.Setup) string {
 		return "no policy"
 	case !setup.Workflow:
 		return "needs workflow"
-	case setup.Admitted || setup.State == "approved":
+	case setup.State == "approved":
 		return "active"
 	default:
 		return "awaiting approval"

@@ -117,6 +117,7 @@ waiting marker without a repository read. For admitted repositories, `gate.NewRe
 `expired`, `drift`, `clean` or `unknown`. Rows without an approved digest receive a read-only `Setup` probe for at
 most 25 repositories per page (8 concurrent); the probe reads a few GitHub objects, and is limited to these rows
 because approved records already have authoritative stored states. They display `no policy`, `needs workflow`,
-`awaiting approval` or `active` from the default-branch policy, workflow and approval state. A probe error falls back
+`awaiting approval` or `active` from the default-branch policy, workflow and approval state. `Setup.Admitted` only means
+the policy and workflow are present; only `Setup.State == "approved"` means the owner approved the policy. A probe error falls back
 to `not set up`; stored-state read errors still fail the request. The page shows a dot and a word, with distinct
 colors for onboarding stages and fail color only for `expired`.
