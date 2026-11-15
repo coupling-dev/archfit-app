@@ -14,6 +14,8 @@ The checked-in [release manifest](../internal/wire/manifest/manifest4.json) appr
 
 The App's setup API reads the policy and workflow at one default-branch commit and reports admission, first approval and ruleset advice. It does not change GitHub rulesets. Home shows this setup information before the first approval. A proposed policy or workflow is labelled as present in its PR, not yet on the default branch. Unavailable ruleset features do not block setup progress; unknown settings still need an administrator to check them. Setup progress is not an enforcement verdict.
 
+The setup heading shows one **Next** action. Amber chips need action, neutral chips indicate waiting or an unavailable feature, and green chips mark completed steps. **Review PR #N** opens an existing pull request on GitHub; the separate PR link opens its App page. The owner action notes that approval needs your passkey. An administrator must enable the required check in the repository settings: the App cannot change rulesets without Administration permission.
+
 For a workflow change, an owner named in the approved policy can follow **Review workflow change** from Home or the pull page. Being a repository administrator alone does not qualify. You can read either review before registering a passkey; the final approval still requires one.
 
 ## Repositories

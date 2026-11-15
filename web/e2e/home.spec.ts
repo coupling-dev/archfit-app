@@ -13,7 +13,8 @@ const fixture = (name: string) => JSON.parse(readFileSync(new URL(name + '.json'
 const setupApprovedCopy = [
   'Rules reach the default branch through review, so the approval binds to exact file contents.',
   'Require the gate',
-  'Turn on the ruleset so the default branch cannot change unless archfit/gate passes.',
+  'Next: review the pull request',
+  'Review PR #203',
   'PR #203 adds the workflow — review it.',
   'A password or a GitHub review can be replayed by a compromised account',
   'In review',
@@ -52,13 +53,34 @@ for (const file of names) {
       }
       await expect(page.getByRole('heading', { name: 'Set up Archfit' })).toBeVisible();
       await expect(page.getByRole('listitem')).toHaveCount(4);
+      const chips = page.locator('.setup .chip');
+      for (const chip of await chips.all()) {
+        const status = await chip.innerText();
+        const tone = ['Done', 'On'].includes(status)
+          ? 'good'
+          : ['In review', 'Waiting', 'Not available'].includes(status)
+            ? 'neutral'
+            : 'attention';
+        await expect(chip).toHaveClass(new RegExp(tone));
+      }
+      await expect(
+        page.getByText(
+          'The App cannot change repository rulesets without Administration permission. An administrator must turn on the required check in the repository settings.',
+        ),
+      ).toBeVisible();
+      await expect(
+        page.getByText(
+          'This step turns green once archfit/gate is required and the applicable rules below are checked.',
+        ),
+      ).toBeVisible();
       await expect(page.getByText('The owner signs the policy with a passkey. Change one byte and the approval no longer counts.')).toBeVisible();
       if (body.setup.open_pull > 0) {
         await expect(page.getByRole('listitem').nth(1).getByText('In review', { exact: true })).toBeVisible();
         await expect(page.getByText(`PR #${body.setup.open_pull} adds the workflow — review it.`)).toBeVisible();
         await expect(page.getByRole('link', { name: `PR #${body.setup.open_pull}`, exact: true })).toHaveAttribute('href', path + '/pull/' + body.setup.open_pull);
-        await expect(page.getByRole('link', { name: `Open PR #${body.setup.open_pull}`, exact: true })).toHaveAttribute('href', `https://github.com/acme/app/pull/${body.setup.open_pull}`);
+        await expect(page.getByRole('link', { name: `Review PR #${body.setup.open_pull}`, exact: true })).toHaveAttribute('href', `https://github.com/acme/app/pull/${body.setup.open_pull}`);
       }
+      if (body.setup.open_pull > 0) await expect(page.getByText('This opens GitHub to read the change; nothing needs to be created here.')).toBeVisible();
       if (body.setup.first_pull) {
         await expect(page.getByRole('listitem').nth(1).getByText('Done', { exact: true })).toBeVisible();
         await expect(page.getByText(`First policy: #${body.setup.first_pull}, open and waiting for approval. The workflow is present in this PR.`)).toBeVisible();
@@ -67,6 +89,7 @@ for (const file of names) {
         const review = page.getByRole('link', { name: body.setup.owner_action.label, exact: true });
         await expect(review).toHaveAttribute('href', body.setup.owner_action.href);
         await expect(review).toHaveClass(/primary/);
+        await expect(review.locator('..').getByText('This needs your passkey.', { exact: true })).toBeVisible();
       }
       if (!body.setup.workflow && body.setup.open_pull === 0 && !body.setup.first_pull)
         await expect(page.getByText('The pull request should also add .github/workflows/archfit.yaml.')).toBeVisible();
@@ -210,6 +233,7 @@ test('home: ineligible viewer gets a role handoff without an owner-action link',
   await open(page, path, { [api]: () => [200, body] });
   await expect(page.getByText(body.setup.owner_action.label, { exact: true })).toBeVisible();
   await expect(page.locator('main a[href*="/owner/"]')).toHaveCount(0);
+  await expect(page.getByText('This needs your passkey.', { exact: true })).toHaveCount(0);
   await expectPageText(page, 'home-first-policy-viewer');
   await expectClean(page, [...setupApprovedCopy, body.setup.owner_action.label]);
 });
@@ -226,4 +250,38 @@ test('home: an unavailable rule does not block setup completion, an unknown rule
   await expect(page.getByLabel('2 of 4 steps done')).toBeVisible();
   await expect(page.getByText('Check with an admin', { exact: true })).toBeVisible();
   await expectClean(page, setupApprovedCopy);
+});
+
+for (const [name, setup, next] of [
+  ['missing-policy', { policy: false, open_pull: 0, owner_action: undefined }, 'Next: add the policy'],
+  ['review', {}, 'Next: review the pull request'],
+  ['approval', { first_pull: 12, open_pull: 0 }, 'Next: approve the workflow with your passkey'],
+  ['required-check', { first_pull: 12, open_pull: 0, state: 'approved', owner_action: undefined }, 'Next: turn on the required check'],
+  ['complete', { first_pull: 12, open_pull: 0, state: 'approved', owner_action: undefined, rules: [{ code: 'gate_check', state: 'ok', text: '' }] }, 'Setup is complete.'],
+] as const) {
+  test('home: setup next action for ' + name, async ({ page }) => {
+    const body = fixture('workflow-review');
+    Object.assign(body.setup, setup);
+    await open(page, path, { [api]: () => [200, body] });
+    await expect(page.locator('.setup .box-head p').first()).toHaveText(next);
+  });
+}
+
+test('home: setup chips use semantic colours in both themes', async ({ page }) => {
+  const body = fixture('workflow-review');
+  body.setup.rules.push({ code: 'administrator_bypass', state: 'unknown', text: '' });
+  await open(page, path, { [api]: () => [200, body] });
+  for (const [theme, good, attention, neutral] of [
+    ['light', 'rgb(218, 251, 225)', 'rgb(255, 248, 197)', 'rgb(239, 242, 245)'],
+    ['dark', 'rgba(46, 160, 67, 0.15)', 'rgba(187, 128, 9, 0.15)', 'rgba(101, 108, 118, 0.2)'],
+  ] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await expect(page.locator('.setup .chip').filter({ hasText: /^Done$/ })).toHaveCSS('background-color', good);
+    await expect(page.locator('.setup .chip').filter({ hasText: /^Review needed$/ })).toHaveCSS('background-color', attention);
+    await expect(page.locator('.setup .chip').filter({ hasText: /^Check$/ })).toHaveCSS('background-color', attention);
+    await expect(page.locator('.setup .chip').filter({ hasText: /^In review$/ })).toHaveCSS('background-color', neutral);
+  }
+  delete body.setup.owner_action;
+  await page.reload();
+  await expect(page.locator('.setup .chip').filter({ hasText: /^Waiting$/ })).toHaveClass(/neutral/);
 });

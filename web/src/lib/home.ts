@@ -29,6 +29,8 @@ export function setupStepState(setup: HomeSetup) {
   return {
     done,
     completed: done.filter(Boolean).length,
+    next: !done[0] ? 'Next: add the policy' : !done[1] ? 'Next: review the pull request' :
+      !done[2] ? 'Next: approve the workflow with your passkey' : !done[3] ? 'Next: turn on the required check' : 'Setup is complete.',
     approval: setup.owner_action?.href ? 'Review needed' : setup.state === 'first_approval' ? 'Action needed' : setup.state === 'approved' ? 'Done' : 'Waiting',
     gate: setup.rules.some((rule) => rule.state === 'unknown') ? 'Check with an admin' : done[3] ? 'On' : 'Action needed',
   };
@@ -38,6 +40,12 @@ export function setupPullStep(setup: HomeSetup) {
   if (setup.open_pull > 0) return { kind: 'review' as const, status: 'In review', number: setup.open_pull };
   if (setup.first_pull !== undefined) return { kind: 'first-policy' as const, status: 'Done', number: setup.first_pull };
   return { kind: 'create' as const, status: 'Action needed' };
+}
+
+export function setupChipClass(status: string): 'good' | 'attention' | 'neutral' {
+  if (status === 'Done' || status === 'On') return 'good';
+  if (status === 'In review' || status === 'Waiting' || status === 'Not available') return 'neutral';
+  return 'attention';
 }
 
 export function setupRuleStatus(state: string): string {

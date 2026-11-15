@@ -7,6 +7,8 @@ Continue setup
 View policy
 Set up Archfit
 
+Next: approve the workflow with your passkey
+
 Policy approval and required-check settings are separate. Complete the applicable steps below.
 
 2 of 4 done
@@ -43,9 +45,12 @@ Why a passkey?
 4
 4 · Require the gate
 
-Turn on the ruleset so the default branch cannot change unless archfit/gate passes.
+The App cannot change repository rulesets without Administration permission. An administrator must turn on the required check in the repository settings.
 
 Action needed
+
+This step turns green once archfit/gate is required and the applicable rules below are checked.
+
 Open ruleset settings
 Default-branch changes require a pull request
 

@@ -30,7 +30,7 @@
     {#if body}
       <div class="row">
         {#if reviewHref && body.setup?.owner_action}
-          <a class="btn primary" href={reviewHref}>{body.setup.owner_action.label}</a>
+          <div><a class="btn primary" href={reviewHref}>{body.setup.owner_action.label}</a><p class="muted">This needs your passkey.</p></div>
         {:else if body.setup}
           <a class="btn primary" href="#setup-title">Continue setup</a>
         {:else if body.needs_you.length}

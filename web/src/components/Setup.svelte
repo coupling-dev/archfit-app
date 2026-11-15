@@ -1,13 +1,13 @@
 <script lang="ts">
   import { repoPage, type Repo } from '../lib/route';
-  import { homeHref, setupPullStep, setupRuleStatus, setupStepState, type HomeSetup } from '../lib/home';
+  import { homeHref, setupChipClass, setupPullStep, setupRuleStatus, setupStepState, type HomeSetup } from '../lib/home';
 
   let { setup, repo, showOwnerAction = true }: { setup: HomeSetup; repo: Repo; showOwnerAction?: boolean } = $props();
   const steps = [
     { title: 'Add the policy', text: 'Your architecture rules live in .archfit.yaml, in the repository.' },
     { title: 'Open a pull request', text: 'Rules reach the default branch through review, so the approval binds to exact file contents.' },
     { title: 'Approve the policy and workflow', text: 'The owner signs the policy with a passkey. Change one byte and the approval no longer counts.' },
-    { title: 'Require the gate', text: 'Turn on the ruleset so the default branch cannot change unless archfit/gate passes.' },
+    { title: 'Require the gate', text: 'The App cannot change repository rulesets without Administration permission. An administrator must turn on the required check in the repository settings.' },
   ];
   const passkeyReason = 'The gate protects the rules themselves. A password or a GitHub review can be replayed by a compromised account, and in a one-person repository a self-review proves nothing. A passkey stays on your device, works only on this site, and signs the exact bytes of the policy and workflow. Any later edit needs a new approval.';
   let state = $derived(setupStepState(setup));
@@ -24,7 +24,7 @@
 </script>
 
 <section class="box setup" aria-labelledby="setup-title">
-  <div class="box-head"><div><h2 id="setup-title">Set up Archfit</h2><p>Policy approval and required-check settings are separate. Complete the applicable steps below.</p></div></div>
+  <div class="box-head"><div><h2 id="setup-title">Set up Archfit</h2><p>{state.next}</p><p>Policy approval and required-check settings are separate. Complete the applicable steps below.</p></div></div>
   <div class="box-body">
     <div class="progress" aria-label="{completed} of 4 steps done"><span>{completed} of 4 done</span><span class="bar" aria-hidden="true"><span style="width: {completed * 25}%"></span></span></div>
     <ol class="steps">
@@ -33,7 +33,7 @@
         <li class:done={done[i]} class:now={!done[i] && (i === 0 || done[i - 1])}>
           <span class="number" aria-hidden="true">{done[i] ? '✓' : i + 1}</span>
           <div class="step-copy"><h3>{i + 1} · {step.title}</h3><p>{step.text}</p></div>
-          <span class="chip" class:good={done[i]}>{status}</span>
+          <span class="chip" class:good={setupChipClass(status) === 'good'} class:attention={setupChipClass(status) === 'attention'} class:neutral={setupChipClass(status) === 'neutral'}>{status}</span>
           <div class="step-body">
             {#if i === 0}
               {#if setup.policy}<p>The policy is on the default branch. <a href={repoPage(repo.fullName, '/policy')}>View the policy</a></p>
@@ -43,7 +43,8 @@
             {:else if i === 1}
               {#if pullStep.kind === 'review'}
                 <p><a href={repoPage(repo.fullName, '/pull/' + pullStep.number)}>PR #{pullStep.number}</a> adds the workflow — review it.</p>
-                <a class="btn ghost" href={`${githubRepo}/pull/${pullStep.number}`}>Open PR #{pullStep.number}</a>
+                <a class="btn ghost" href={`${githubRepo}/pull/${pullStep.number}`}>Review PR #{pullStep.number}</a>
+                <p>This opens GitHub to read the change; nothing needs to be created here.</p>
               {:else if pullStep.kind === 'first-policy'}
                 <p>First policy: #{setup.first_pull}, open and waiting for approval. The workflow is present in this PR.</p>
                 <a class="btn ghost" href={repoPage(repo.fullName, '/pull/' + setup.first_pull)}>Open the first pull request</a>
@@ -54,7 +55,7 @@
               {#if !setup.workflow && setup.open_pull === 0 && !setup.first_pull}<p>The pull request should also add <code>.github/workflows/archfit.yaml</code>.</p>{/if}
             {:else if i === 2}
               {#if setup.owner_action}
-                {#if reviewHref}{#if showOwnerAction}<a class="btn primary" href={reviewHref}>{setup.owner_action.label}</a>{/if}
+                {#if reviewHref}{#if showOwnerAction}<a class="btn primary" href={reviewHref}>{setup.owner_action.label}</a><p>This needs your passkey.</p>{/if}
                 {:else}<p>{setup.owner_action.label}</p>{/if}
               {/if}
               {#if !setup.passkey}
@@ -65,10 +66,11 @@
               {/if}
               <details><summary>Why a passkey?</summary><p>{passkeyReason}</p></details>
             {:else}
+              <p>This step turns green once archfit/gate is required and the applicable rules below are checked.</p>
               <div class="rules">
                 <a class="btn ghost" href={`${githubRepo}/settings/rules`}>Open ruleset settings</a>
                 {#each setup.rules as rule, ri (`${rule.code}-${ri}`)}
-                  <div class="rule"><div><div class="rule-title">{rule.code === 'pull_requests' ? 'Default-branch changes require a pull request' : rule.code === 'gate_check' ? "The App’s archfit/gate check is required" : rule.code === 'administrator_bypass' ? 'Administrator bypass' : rule.code === 'policy_push' ? 'Policy-push restriction' : rule.text}</div>{#if rule.state !== 'ok'}<p>{ruleExplanation(rule)}</p>{/if}</div><span class="chip" class:good={rule.state === 'ok'}>{setupRuleStatus(rule.state)}</span></div>
+                  <div class="rule"><div><div class="rule-title">{rule.code === 'pull_requests' ? 'Default-branch changes require a pull request' : rule.code === 'gate_check' ? "The App’s archfit/gate check is required" : rule.code === 'administrator_bypass' ? 'Administrator bypass' : rule.code === 'policy_push' ? 'Policy-push restriction' : rule.text}</div>{#if rule.state !== 'ok'}<p>{ruleExplanation(rule)}</p>{/if}</div><span class="chip" class:good={rule.state === 'ok'} class:attention={rule.state !== 'ok' && rule.state !== 'not_applicable'} class:neutral={rule.state === 'not_applicable'}>{setupRuleStatus(rule.state)}</span></div>
                 {:else}<p>No ruleset settings are available.</p>{/each}
               </div>
             {/if}
@@ -93,7 +95,9 @@
   .step-copy h3 { margin: 0 0 3px; font-size: 15px; }
   .step-copy p, .step-body p { margin: 0; color: var(--fg-muted); }
   .chip { align-self: start; border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 600; background: var(--bg-subtle); }
-  .chip.good { background: var(--success-subtle); color: var(--success); }
+  .chip.good { background: var(--success-subtle); color: var(--success); border-color: var(--success-border); }
+  .chip.attention { background: var(--attention-subtle); color: var(--attention); border-color: var(--attention-border); }
+  .chip.neutral { background: var(--neutral-subtle); color: var(--fg-muted); }
   .step-body { grid-column: 2 / 4; margin-top: 4px; }
   .step-body p + p { margin-top: 8px; }
   .btn { display: inline-block; margin: 4px 8px 4px 0; }
