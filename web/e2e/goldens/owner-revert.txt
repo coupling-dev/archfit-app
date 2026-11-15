@@ -22,6 +22,6 @@ Confirm with your passkey
 
 Your passkey confirms exactly the change shown above. Nothing is approved until this step finishes.
 
-No passkey yet? Register a passkey to return here after registration.
+Manage your passkeys
 
 Revert the policy
