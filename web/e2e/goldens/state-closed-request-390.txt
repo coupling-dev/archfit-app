@@ -10,6 +10,10 @@ Rule graph · app -> util
 
 Request #431 on GitHub
 
+Answer
+
+No answer is open. The request on GitHub names the owner who answered and the passkey used.
+
 Record
 
 Balance: 9/10 (min 7)
@@ -43,7 +47,3 @@ util: Layer core · Volatility low
 Earlier answers 0
 
 No earlier answer about these modules.
-
-Answer
-
-No answer is open. The request on GitHub names the owner who answered and the passkey used.
