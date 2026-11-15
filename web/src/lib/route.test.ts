@@ -4,6 +4,8 @@ import { parseRoute, repoPage, safeHref, serverError, signInHref } from './route
 describe('parseRoute', () => {
   it.each([
     ['/', { kind: 'home' }],
+    ['/repos', { kind: 'unknown' }],
+    ['/repos/', { kind: 'unknown' }],
     ['/admin', { kind: 'admin' }],
     ['/admin/x', { kind: 'unknown' }],
     ['/r/acme/app', { kind: 'repo', owner: 'acme', name: 'app', fullName: 'acme/app' }],

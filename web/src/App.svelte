@@ -124,6 +124,7 @@
 </main>
 <footer class="app-footer">
   <a href={guideURL}>Documentation</a>
+  <span class="footer-separator" aria-hidden="true">·</span>
   <a href="/licenses.txt">Third-party licences</a>
   {#if session}<About build={session.build} />{/if}
 </footer>

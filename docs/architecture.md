@@ -63,7 +63,7 @@ The public role serves `/health`, `/ready`, GitHub webhooks, the upload, OAuth a
 ### UI routes
 
 The shell serves these routes. Repository pages require sign-in. Each page reads its repository data from an authorized API, not from the shell.
-The repository route prefix below is `/r/{owner}/{repo}`; API paths use `/api/repos/{owner}/{repo}`.
+The repository list has the canonical page URL `/`. `/repos` is an unknown page, not an alias. The repository route prefix below is `/r/{owner}/{repo}`; API paths use `/api/repos/{owner}/{repo}`.
 
 | Page route                    | Page data and actions                                                                                             |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |

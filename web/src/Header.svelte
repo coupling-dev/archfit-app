@@ -39,6 +39,7 @@
     </svg>
     Archfit
   </a>
+  {#if session}<a href="/">Repositories</a>{/if}
   {#if repo}
     <nav class="crumbs" aria-label="Breadcrumb">
       <span class="sep" aria-hidden="true">/</span>

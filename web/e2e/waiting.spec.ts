@@ -7,7 +7,7 @@ test('waiting: a repository of an account no operator approved shows the pitch a
   page,
 }) => {
   await open(page, '/r/octo/tool');
-  await expect(page.getByRole('heading', { name: 'Architecture checks on every pull request' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Check pull requests against your architecture policy' })).toBeVisible();
   await expect(page.getByRole('status').getByText('Your installation on octo is waiting for approval.')).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Repository' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Sign in with GitHub' })).toHaveCount(0);

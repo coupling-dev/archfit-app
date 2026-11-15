@@ -1,0 +1,58 @@
+●
+Set up this repository.
+
+Home
+
+acme/app
+
+Set up Archfit
+
+Policy approval and required-check settings are separate. Complete the applicable steps below.
+
+2 of 4 done
+✓
+1 · Add the policy
+
+Your architecture rules live in .archfit.yaml, in the repository.
+
+Done
+
+A version 3 policy is proposed in PR #12; it is not yet on the default branch.
+
+✓
+2 · Open a pull request
+
+Rules reach the default branch through review, so the approval binds to exact file contents.
+
+Done
+
+First policy: #12, open and waiting for approval. The workflow is present in this PR.
+
+Open the first pull request
+3
+3 · Approve the policy and workflow
+
+The owner signs the policy with a passkey. Change one byte and the approval no longer counts.
+
+Review needed
+Review first policy Manage passkeys
+Why a passkey?
+4
+4 · Require the gate
+
+Turn on the ruleset so the default branch cannot change unless archfit/gate passes.
+
+Check with an admin
+Open ruleset settings
+The App’s archfit/gate check is required
+On
+Policy-push restriction
+
+Not available: this applies only to organization-owned private or internal repositories.
+
+Not available
+Administrator bypass
+
+The App cannot read administrator bypass without Administration permission. An admin must confirm the bypass list is intentional.
+
+Check
