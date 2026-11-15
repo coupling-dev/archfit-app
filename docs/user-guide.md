@@ -2,7 +2,7 @@
 
 This guide is for repository administrators and policy owners using Archfit 4. The App checks changes against `.archfit.yaml` on the protected default branch. It records owner answers and carries policy changes in a pull request. See [architecture](architecture.md) for the trust boundary and failure handling.
 
-> **Current release limitation:** The checked-in manifest has no approved engines. Until a release populates it, the App cannot admit an engine identity.
+The checked-in [release manifest](../internal/wire/manifest/manifest4.json) approves engine v4.0.0 and Action v4.0.0 by their exact identities.
 
 ## Install and set up
 

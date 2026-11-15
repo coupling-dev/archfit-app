@@ -1,5 +1,5 @@
 repository: github.com/alexei-led/archfit
-commit: 513e72ba842c1a9475f6310e93ea06d9722bd5d4
+commit: 37dd38244081ad1159c27515cec94560f3e44e30
 from: archfit.result.schema.json <- archfit.result.schema.json
 from: testdata/result/ <- internal/model/result/testdata/
 from: testdata/record/ <- internal/output/record/testdata/

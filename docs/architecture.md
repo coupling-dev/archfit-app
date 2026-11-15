@@ -20,7 +20,7 @@ For owner procedures, see the [user guide](user-guide.md). For deployment, see [
 
 The envelope fields and result are self-reported. The App compares them with GitHub authority, the locked manifest and protected inputs; it does not prove that the engine's analysis is correct. Invalid payloads, mismatches, unsupported events and forks become unknown, not a neutral or skipped verdict. Stale attempts and moved heads are rejected. The App reads schema 3 `.archfit.yaml` from the target/default-branch authority and checks its exact-byte digest, the approved policy state and workflow identity. It does not trust policy supplied by the pull-request head.
 
-The checked-in [manifest](../internal/wire/manifest/manifest4.json) currently has no approved engines. The release must populate the manifest before an engine identity can be admitted. An HTTP 200 upload response means accepted, not passed.
+The checked-in [manifest](../internal/wire/manifest/manifest4.json) approves engine v4.0.0 and Action v4.0.0 by their exact identities. An HTTP 200 upload response means accepted, not passed.
 
 ## Feedback
 

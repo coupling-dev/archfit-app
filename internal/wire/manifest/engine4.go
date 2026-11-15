@@ -17,8 +17,7 @@ import (
 const ActionRepository = "alexei-led/archfit-action"
 
 // manifest4.json lists the Archfit 4 engines the App approves: per release, the image digest of each platform and
-// the archfit-action commits that run it. It has no measurement profile. It ships empty until the first engine 4
-// release candidate is pinned (M2 tasks 29 and 30), so until then no envelope 2 upload has an approved engine.
+// the archfit-action commits that run it. It has no measurement profile.
 //
 //go:embed manifest4.json
 var manifest4JSON []byte

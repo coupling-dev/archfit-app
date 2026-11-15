@@ -31,15 +31,30 @@ func engineDoc(t *testing.T, version int, engines []row) []byte {
 	return data
 }
 
-func TestEmbeddedManifest4IsValidAndEmpty(t *testing.T) {
+func TestEmbeddedManifest4PinsRelease(t *testing.T) {
 	table, err := parseEngines(manifest4JSON)
 	if err != nil {
 		t.Fatalf("embedded manifest4.json: %v", err)
 	}
-	// No engine 4 release exists yet: until the release tasks pin one, no envelope 2 upload has an approved engine.
-	if len(table.identities) != 0 || len(table.actions) != 0 {
-		t.Errorf("manifest 4 approves %d identities and %d Action commits; change this test with module.md when the first release row lands",
-			len(table.identities), len(table.actions))
+	want := []Identity{
+		{EngineVersion: "v4.0.0", Platform: platformAMD64, ImageDigest: "sha256:3edf066717390ef79f8ae42974c62ccbd93a5bb6b9bc571cbf1dcf9c9ae0fc26"},
+		{EngineVersion: "v4.0.0", Platform: platformARM64, ImageDigest: "sha256:c4959b487404d1ad08dda10329d2cbde7e143e1301d523dce81b1f6aa96d129a"},
+	}
+	if len(table.identities) != len(want) || len(table.actions) != 1 {
+		t.Errorf("manifest approves %d identities and %d Action commits, want 2 and 1", len(table.identities), len(table.actions))
+	}
+	for _, id := range want {
+		if !table.identities[id] || !EngineApproved(id) {
+			t.Errorf("release identity not approved: %+v", id)
+		}
+	}
+	const action = "70d7292097b9238f33ee3ca71e923e37592297f4"
+	if !table.actions[action] || !ActionApproved(action) {
+		t.Error("release Action commit not approved")
+	}
+	index := Identity{EngineVersion: "v4.0.0", Platform: platformAMD64, ImageDigest: "sha256:8ad49e766ce3e486104077df213f2badc6ed0f66d7fe88ae377efaf6a918ccd2"}
+	if EngineApproved(index) {
+		t.Error("image index digest must not be approved as a platform digest")
 	}
 }
 
