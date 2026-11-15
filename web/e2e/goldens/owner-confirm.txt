@@ -1,9 +1,13 @@
-unknown: the policy changed outside the flow.
-
 Confirm the policy
+
+acme/app
+
+unknown: the policy changed outside the flow.
 
 This makes the current policy the approved policy.
 
+Read the change
+View policy
 The policy change
 --- a/.archfit.yaml
 +++ b/.archfit.yaml

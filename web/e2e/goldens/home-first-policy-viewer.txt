@@ -1,10 +1,10 @@
-●
-Set up this repository.
-
 Home
 
 acme/app
 
+Set up this repository.
+Continue setup
+View policy
 Set up Archfit
 
 Policy approval and required-check settings are separate. Complete the applicable steps below.

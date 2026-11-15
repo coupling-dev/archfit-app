@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Status from '../components/Status.svelte';
   import { homeHref, type OwnerReview } from '../lib/home';
   import Skeleton from '../components/Skeleton.svelte';
   import { explainLoad, repoAPI, type ApiError } from '../lib/api';
@@ -24,6 +25,8 @@
     );
   }
   load();
+  const reviewHref = $derived(body?.owner_action?.href ? homeHref(route, body.owner_action.href) : undefined);
+  const github = $derived(`https://github.com/${encodeURIComponent(route.owner)}/${encodeURIComponent(route.name)}/pull/${route.number}`);
   const requestNumbers = $derived(new Set(body?.view?.records.map((record) => record.request).filter((n) => n !== undefined)));
   const pieces = (s: string, authored: boolean) => (authored ? s.replaceAll('`', '') : s).split(/(#[1-9][0-9]*)/g);
 </script>
@@ -34,17 +37,29 @@
   {/each}
 {/snippet}
 
-{#if failure}
-  <div class="flash error" role="alert"><h1>{failure}</h1></div>
-{:else if !body}
-  <Skeleton rows={2} box={false} />
-{:else if body.view}
-  <section aria-label="Pull request">
-    <h1 data-status={body.view.status}>{@render linked(body.view.status_line)}</h1>
-    {#if body.owner_action}
-      {@const href = body.owner_action.href ? homeHref(route, body.owner_action.href) : undefined}
-      {#if href}<a class="btn primary" href={href}>{body.owner_action.label}</a>{:else}<p>{body.owner_action.label}</p>{/if}
+<div class="page-head">
+  <div class="stack-sm page-identity">
+    <h1>Pull request #{route.number}</h1>
+    <p class="lede">{route.fullName}</p>
+    {#if failure}<p class="flash error" role="alert">{failure}</p>
+    {:else if body?.view}
+      <Status state={body.view.status} tone={body.view.status === 'pass' ? 'success' : body.view.status === 'fail' ? 'danger' : body.view.status === 'waiting' ? 'attention' : 'neutral'}>{@render linked(body.view.status_line)}</Status>
+    {:else if body}<Status>{body.message}</Status>{/if}
+    {#if body}
+      {#if body.owner_action && !reviewHref}<p>{body.owner_action.label}</p>{/if}
+      <div class="row">
+        {#if reviewHref && body.owner_action}<a class="btn primary" href={reviewHref}>{body.owner_action.label}</a>{/if}
+        <a class="btn" class:primary={!reviewHref} href={github}>Pull request #{route.number} on GitHub</a>
+        <a class="btn" href={repoPage(route.fullName, '/policy')}>View policy</a>
+      </div>
     {/if}
+  </div>
+</div>
+
+{#if !body && !failure}
+  <Skeleton rows={2} box={false} />
+{:else if body?.view}
+  <section aria-label="Pull request">
     {#each body.view.records as record, i (i)}
       <div class="pull-record">
         <div>{record.path ? record.path + (record.line ? `:${record.line}` : '') + ' ' : ''}{record.rule}{record.what ? ` ${record.what}` : ''}</div>
@@ -57,15 +72,9 @@
     {#if body.view.author}<p>Author: {@render linked(body.view.author, true)}</p>{/if}
     {#if body.view.owner}<p>Owner: {@render linked(body.view.owner, true)}</p>{/if}
   </section>
-{:else}
-  <h1>{body.message}</h1>
 {/if}
 
 <style>
 a { text-decoration: underline; }
-  h1[data-status]::before { content: ''; display: inline-block; inline-size: .5em; block-size: .5em; border-radius: 50%; background: currentColor; margin-inline-end: .5em; }
-  h1[data-status='pass'] { color: var(--success); }
-  h1[data-status='fail'] { color: var(--danger); }
-  h1[data-status='waiting'] { color: var(--attention); }
   .pull-record { margin-block: 1rem; overflow-wrap: anywhere; }
 </style>

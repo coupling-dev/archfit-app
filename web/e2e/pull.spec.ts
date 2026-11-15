@@ -8,7 +8,7 @@ for (const state of states) {
     await docsClock(page);
     const body = JSON.parse(readFileSync(new URL(`../../internal/control/ui/testdata/pull/${state}.json`, import.meta.url), 'utf8')) as object;
     await open(page, '/r/acme/app/pull/4', { 'GET /api/repos/acme/app/pulls/4': () => [200, body] });
-    await expect(page.locator('main section, main h1').last()).toBeVisible();
+    await expect(page.locator('.page-head .status')).toBeVisible();
     await expectPageText(page, `pull-${state}`);
     if (state === 'waiting') await docsShot(page, 'pull');
     const approvedCopy = ['Review workflow change', 'Review first policy', 'An architecture owner named in the approved policy can review this.'];
@@ -26,8 +26,8 @@ for (const state of states) {
       await expect(page.getByText('An architecture owner named in the approved policy can review this.', { exact: true })).toBeVisible();
     }
     if (state === 'waiting') await expect(page.getByRole('link', { name: '#431' }).first()).toHaveAttribute('href', '/r/acme/app/requests/431');
-    if (state === 'fail-advisory-request') await expect(page.locator('main h1')).toHaveText('Archfit: fail, 1 error');
-    if (state === 'required-request') await expect(page.locator('main h1')).toHaveText('Archfit: waiting, request #431');
+    if (state === 'fail-advisory-request') await expect(page.locator('.page-head .status')).toHaveText('Archfit: fail, 1 error');
+    if (state === 'required-request') await expect(page.locator('.page-head .status')).toHaveText('Archfit: waiting, request #431');
     if (state === 'next-backticks') await expect(page.getByText('next: git show `git rev-parse HEAD`')).toBeVisible();
     if (state === 'unknown-outside-flow') await expect(page.locator('main a[href*="/requests/"]')).toHaveCount(0);
   });
@@ -37,10 +37,8 @@ test('pull page and comment use the same lines', async ({ page }) => {
   const body = JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/pull/waiting.json', import.meta.url), 'utf8')) as object;
   const comment = readFileSync(new URL('../../internal/gate/feedback/testdata/golden4/waiting.comment.md', import.meta.url), 'utf8');
   await open(page, '/r/acme/app/pull/4', { 'GET /api/repos/acme/app/pulls/4': () => [200, body] });
-  await expect(page.locator('section[aria-label="Pull request"] h1')).toBeVisible();
-  const lines = await page.locator('section[aria-label="Pull request"]').evaluate((section) =>
-    Array.from(section.querySelectorAll('h1, .pull-record > div, p')).map((el) => (el as HTMLElement).innerText),
-  );
+  await expect(page.locator('.page-head .status')).toBeVisible();
+  const lines = await page.locator('.page-head .status, section[aria-label="Pull request"] .pull-record > div, section[aria-label="Pull request"] p').allInnerTexts();
   const expected = comment.split('\n').filter((line) => line !== '').map((line) =>
     line.replace(/^## /, '').replace(/^- /, '').replaceAll('**', '').replaceAll('`', '').replaceAll('&lt;', '<'),
   );

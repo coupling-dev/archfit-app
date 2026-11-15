@@ -2,7 +2,7 @@
   import { repoPage, type Repo } from '../lib/route';
   import { homeHref, setupPullStep, setupRuleStatus, setupStepState, type HomeSetup } from '../lib/home';
 
-  let { setup, repo }: { setup: HomeSetup; repo: Repo } = $props();
+  let { setup, repo, showOwnerAction = true }: { setup: HomeSetup; repo: Repo; showOwnerAction?: boolean } = $props();
   const steps = [
     { title: 'Add the policy', text: 'Your architecture rules live in .archfit.yaml, in the repository.' },
     { title: 'Open a pull request', text: 'Rules reach the default branch through review, so the approval binds to exact file contents.' },
@@ -54,7 +54,7 @@
               {#if !setup.workflow && setup.open_pull === 0 && !setup.first_pull}<p>The pull request should also add <code>.github/workflows/archfit.yaml</code>.</p>{/if}
             {:else if i === 2}
               {#if setup.owner_action}
-                {#if reviewHref}<a class="btn primary" href={reviewHref}>{setup.owner_action.label}</a>
+                {#if reviewHref}{#if showOwnerAction}<a class="btn primary" href={reviewHref}>{setup.owner_action.label}</a>{/if}
                 {:else}<p>{setup.owner_action.label}</p>{/if}
               {/if}
               {#if !setup.passkey}

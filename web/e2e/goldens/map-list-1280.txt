@@ -1,10 +1,10 @@
-●
-1 request waits
-
 Home
 
 acme/app
 
+1 request waits
+See what needs you
+View policy
 Needs you
 Request #415 waits.
 Show the record

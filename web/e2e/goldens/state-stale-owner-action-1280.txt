@@ -1,10 +1,9 @@
 Owner action
 
-acme/app
+acme/app · PR #7
 
 This approval is not needed
-
-Open current setup or policy to see what to do next.
-
 View current setup
 View policy
+
+Open current setup or policy to see what to do next.

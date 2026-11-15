@@ -22,7 +22,9 @@ Open `/` after signing in to choose a repository or continue setup. The **Reposi
 
 ## Home and the map
 
-Open `/r/<owner>/<repo>` for **Home**. The status line comes first. **Needs you** lists open requests,
+Open `/r/<owner>/<repo>` for **Home**. Home, Pull and Owner pages start with one title and repository identity,
+then the status and a row of next actions. Home puts the eligible setup review link here; otherwise it links to
+setup, **Needs you**, or policy. **Needs you** lists open requests,
 exceptions near their date, drift and owner actions. Each item opens its page. A request's record folds away.
 Before the first policy is approved, Home shows the setup steps, what is missing and the ruleset advice
 instead of the map. Owner actions open the pages below.
@@ -105,8 +107,9 @@ The App accepts a `merge_group` upload and binds it to GitHub queue authority. R
 
 ## Owner actions
 
-Each page starts with the status, shows the App's diff of the actual files, and has one main action.
-That action asks for your passkey before it submits. **Show the files and their SHA-256s** opens
+Each page names the action and repository (and PR when present), then shows the status and **Read the change**.
+This primary link only navigates to the displayed diff; it does not approve anything. The confirmation remains
+after the files and asks for your passkey before it submits. **Show the files and their SHA-256s** opens
 all input files and their immutable commit refs. GitHub issue links and direct loads use the same pages.
 
 | Action                                                 | Path after `/r/<owner>/<repo>`  |

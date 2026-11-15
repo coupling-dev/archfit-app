@@ -67,7 +67,7 @@ for (const name of ['first', 'first-pull', 'workflow', 'confirm', 'revert', 'rev
       },
     });
     await expect(page.getByRole('heading', { level: 1, name: body.main_action })).toBeVisible();
-    await expect(page.locator('.lede')).toHaveText(body.status);
+    await expect(page.locator('.page-head .status')).toHaveText(body.status);
     await expect(page.locator('main button')).toHaveCount(1);
     expect(writes).toEqual([]);
     await expectPageText(page, 'owner-' + name);

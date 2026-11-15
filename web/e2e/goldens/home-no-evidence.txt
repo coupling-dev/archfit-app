@@ -1,10 +1,9 @@
-●
-repository state is not known
-
 Home
 
 acme/app
 
+repository state is not known
+View policy
 Needs you
 
 Nothing needs you.

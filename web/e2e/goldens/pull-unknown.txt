@@ -1,4 +1,10 @@
+Pull request #4
+
+acme/app
+
 Archfit: unknown, no verdict
+Pull request #4 on GitHub
+View policy
 .archfit.yaml policy differs from origin/main
 why: only owners change the policy
 next: git checkout origin/main -- .archfit.yaml

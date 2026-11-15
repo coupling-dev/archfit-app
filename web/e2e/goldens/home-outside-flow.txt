@@ -1,10 +1,10 @@
-●
-policy changed outside the flow
-
 Home
 
 acme/app
 
+policy changed outside the flow
+See what needs you
+View policy
 Needs you
 Confirm the policy changed outside the flow.
 Revert the policy changed outside the flow.

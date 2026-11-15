@@ -3,8 +3,7 @@ Owner action
 acme/app
 
 No policy confirmation needed
-
-Open current setup or policy to see what to do next.
-
 View current setup
 View policy
+
+Open current setup or policy to see what to do next.

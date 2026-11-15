@@ -228,6 +228,9 @@ svg text { fill: currentColor; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 1px solid var(--border-muted); }
+.page-identity { min-width: 0; width: 100%; overflow-wrap: anywhere; }
+.page-identity .btn { max-width: 100%; white-space: normal; text-align: center; }
+.page-identity .status { align-self: flex-start; }
 .page-head .lede { color: var(--fg-muted); margin-top: 4px; max-width: 72ch; }
 
 /* ---------- Box (bordered list) ---------- */
