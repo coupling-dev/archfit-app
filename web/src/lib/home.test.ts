@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { homeHref, readHome } from './home';
+import { homeHref, readHome, setupRuleStatus, setupStepState } from './home';
 import { mapLines, lineLabel } from '../components/map/model';
 
 describe('Home boundary', () => {
@@ -64,5 +64,23 @@ describe('map rules', () => {
       expect(lineLabel(selected[0])).toBe(labels[n - 1]);
     }
     expect(mapLines([...lines].reverse())).toEqual([lines[4]]);
+  });
+});
+
+
+describe('setup step labels and progress', () => {
+  const base = { state: 'not_admitted', policy: false, workflow: false, missing: [], rules: [] };
+  it.each([
+    ['ok', 'On'], ['unknown', 'Check'], ['not_applicable', 'Not available'], ['warning', 'Action needed'],
+  ])('maps rule state %s to %s', (state, label) => expect(setupRuleStatus(state)).toBe(label));
+
+  it('derives progress from policy, first pull, approval and rules', () => {
+    expect(setupStepState({ ...base, policy: true, rules: [{ code: 'x', state: 'ok', text: '' }] })).toEqual({
+      done: [true, false, false, true], completed: 2, approval: 'Waiting', gate: 'On',
+    });
+    expect(setupStepState({ ...base, first_pull: 12, state: 'first_approval', rules: [{ code: 'admin', state: 'unknown', text: '' }] })).toEqual({
+      done: [true, true, false, false], completed: 2, approval: 'Action needed', gate: 'Check with an admin',
+    });
+    expect(setupStepState({ ...base, policy: true, state: 'approved', rules: [{ code: 'x', state: 'ok', text: '' }] }).completed).toBe(3);
   });
 });

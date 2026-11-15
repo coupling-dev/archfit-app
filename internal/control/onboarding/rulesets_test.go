@@ -68,9 +68,9 @@ func TestRulesetBypassReadBack(t *testing.T) {
 		{"app always bypasses", "always", &[]api.BypassActor{}, "warning", "warning", "No administrator bypass"},
 		{"app bypasses on pulls", "pull_requests_only", &[]api.BypassActor{}, "warning", "warning", "No administrator bypass"},
 		{"unknown app bypass", "", &[]api.BypassActor{}, "unknown", "warning", "No administrator bypass"},
-		{"unreadable administrator", "never", nil, "", "unknown", "if the ruleset lists one"},
-		{"repository administrator", "never", &[]api.BypassActor{{ID: 5, Type: "RepositoryRole", Mode: "always"}}, "", "ok", "emergency path"},
-		{"organization administrator", "never", &[]api.BypassActor{{Type: "OrganizationAdmin", Mode: "always"}}, "", "ok", "emergency path"},
+		{"unreadable administrator", "never", nil, "", "unknown", "An admin must confirm the bypass list is intentional"},
+		{"repository administrator", "never", &[]api.BypassActor{{ID: 5, Type: "RepositoryRole", Mode: "always"}}, "", "ok", "for emergencies"},
+		{"organization administrator", "never", &[]api.BypassActor{{Type: "OrganizationAdmin", Mode: "always"}}, "", "ok", "for emergencies"},
 		{"review bypass is not emergency", "never", &[]api.BypassActor{{ID: 5, Type: "RepositoryRole", Mode: "pull_request"}}, "", "warning", "No administrator bypass"},
 	}
 	for _, tt := range tests {

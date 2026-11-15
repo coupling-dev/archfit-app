@@ -2,7 +2,6 @@ package onboarding
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
@@ -26,12 +25,12 @@ func (s *setups) rules(ctx context.Context, r api.Repo) RulesetReport {
 	}
 	branch, err := s.gh.BranchPolicy(ctx, r.RepoRef, r.DefaultBranch)
 	if err != nil {
-		add("branch_rules", "unknown", "Default-branch rules are unknown/unreadable.")
+		add("branch_rules", "unknown", "The App cannot read the default-branch rules.")
 		return report
 	}
 	app, err := s.gh.AppIntegrationID(ctx)
 	if err != nil {
-		add("integration", "unknown", "The App integration_id is unknown/unreadable.")
+		add("integration", "unknown", "The App integration ID is not available.")
 		return report
 	}
 	pulls, check := false, false
@@ -42,7 +41,7 @@ func (s *setups) rules(ctx context.Context, r api.Repo) RulesetReport {
 		case "pull_request":
 			pulls = true
 			if rule.Parameters.Approvals > 0 {
-				add("approvals", "warning", "Required approvals are greater than zero; GitHub reviews are separate from Archfit owner approval.")
+				add("approvals", "warning", "GitHub requires pull request approvals. These are separate from the Archfit owner approval.")
 			}
 		case "required_status_checks":
 			for _, c := range rule.Parameters.Checks {
@@ -55,16 +54,16 @@ func (s *setups) rules(ctx context.Context, r api.Repo) RulesetReport {
 	if pulls {
 		add("pull_requests", "ok", "Default-branch changes require a pull request.")
 	} else {
-		add("pull_requests", "warning", "Require a pull request before merging into the default branch.")
+		add("pull_requests", "warning", "Default-branch changes do not require a pull request.")
 	}
 	if check {
-		add("gate_check", "ok", "archfit/gate is required with this App's integration_id.")
+		add("gate_check", "ok", "The App's archfit/gate check is required.")
 	} else {
-		add("gate_check", "warning", "Require archfit/gate with this App's integration_id ("+strconv.FormatInt(app, 10)+").")
+		add("gate_check", "warning", "Require the App's archfit/gate check.")
 	}
 	sets, err := s.gh.ListRulesets(ctx, r.RepoRef)
 	if err != nil {
-		add("rulesets", "unknown", "Rulesets and administrator bypass are unknown/unreadable.")
+		add("rulesets", "unknown", "The App cannot read rulesets or administrator bypass.")
 		return report
 	}
 	pushSupported := r.OwnerType == "Organization" && (r.Visibility == "private" || r.Visibility == "internal")
@@ -82,10 +81,10 @@ func (s *setups) rules(ctx context.Context, r api.Repo) RulesetReport {
 		if relevant[rs.ID] && rs.Target == "branch" {
 			branchSets++
 			if rs.CanBypass == "always" || rs.CanBypass == "pull_requests_only" {
-				add("app_bypass", "warning", "The App can bypass branch ruleset "+rs.Name+"; remove its bypass to keep GitHub enforcement effective.")
+				add("app_bypass", "warning", "The App can bypass the branch ruleset "+rs.Name+"; remove its bypass to keep GitHub enforcement effective.")
 			}
 			if rs.CanBypass == "" {
-				add("app_bypass", "unknown", "The App's bypass ability for branch ruleset "+rs.Name+" is unknown/unreadable.")
+				add("app_bypass", "unknown", "The App's bypass access for the branch ruleset "+rs.Name+" cannot be read.")
 			}
 			admin := false
 			if rs.BypassActors == nil {
@@ -117,7 +116,7 @@ func (s *setups) rules(ctx context.Context, r api.Repo) RulesetReport {
 				case "always":
 					add("policy_push_bypass", "ok", "The App can bypass policy push ruleset "+rs.Name+" to write approved policy proposals.")
 				case "":
-					add("policy_push_bypass", "unknown", "The App's bypass ability for policy push ruleset "+rs.Name+" is unknown/unreadable.")
+					add("policy_push_bypass", "unknown", "The App's bypass ability for policy push ruleset "+rs.Name+" cannot be read.")
 				default:
 					add("policy_push_bypass", "warning", "Allow the App to always bypass policy push ruleset "+rs.Name+" so it can write approved policy proposals.")
 				}
@@ -126,21 +125,21 @@ func (s *setups) rules(ctx context.Context, r api.Repo) RulesetReport {
 	}
 	switch {
 	case unreadable || adminUnknown:
-		add("administrator_bypass", "unknown", "Administrator bypass is unknown/unreadable; the App has no Administration permission. An administrator bypass, if the ruleset lists one, is the emergency path. Ask an administrator to check it.")
+		add("administrator_bypass", "unknown", "The App cannot read administrator bypass without Administration permission. An admin must confirm the bypass list is intentional.")
 	case branchSets > 0 && adminAll:
-		add("administrator_bypass", "ok", "An administrator bypass is listed for every applicable branch ruleset as the emergency path.")
+		add("administrator_bypass", "ok", "Every applicable branch ruleset lists an administrator bypass for emergencies.")
 	default:
-		add("administrator_bypass", "warning", "No administrator bypass covers every applicable branch ruleset. An administrator bypass, if the ruleset lists one, is the emergency path.")
+		add("administrator_bypass", "warning", "No administrator bypass covers every applicable branch ruleset.")
 	}
 	switch {
 	case !pushSupported:
-		add("policy_push", "not_applicable", "A push ruleset for .archfit.yaml is available only for organization-owned private or internal repositories.")
+		add("policy_push", "not_applicable", "Policy-push restriction is available only for organization-owned private or internal repositories.")
 	case unreadable:
-		add("policy_push", "unknown", "The .archfit.yaml push ruleset is unknown/unreadable.")
+		add("policy_push", "unknown", "The .archfit.yaml push ruleset cannot be read.")
 	case push:
 		add("policy_push", "ok", "An active push ruleset restricts .archfit.yaml.")
 	default:
-		add("policy_push", "warning", "Add an active push ruleset restricting .archfit.yaml; use the administrator bypass only as the emergency path.")
+		add("policy_push", "warning", "Add an active push ruleset for .archfit.yaml. Keep administrator bypass for emergencies.")
 	}
 	return report
 }

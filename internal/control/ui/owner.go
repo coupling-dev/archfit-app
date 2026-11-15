@@ -85,6 +85,8 @@ type setupFindingJSON struct {
 }
 type setupJSON struct {
 	Admitted  bool               `json:"admitted"`
+	Policy    bool               `json:"policy"`
+	Workflow  bool               `json:"workflow"`
 	State     string             `json:"state"`
 	Missing   []string           `json:"missing"`
 	FirstPull int                `json:"first_pull,omitempty"`
@@ -97,7 +99,7 @@ func (s *server) apiSetup(r *http.Request, sc scope) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	body := setupJSON{Admitted: out.Admitted, State: out.State, Missing: out.Missing, FirstPull: out.FirstPull, Issue: out.Issue, Rules: []setupFindingJSON{}}
+	body := setupJSON{Admitted: out.Admitted, Policy: out.Policy, Workflow: out.Workflow, State: out.State, Missing: out.Missing, FirstPull: out.FirstPull, Issue: out.Issue, Rules: []setupFindingJSON{}}
 	for _, f := range out.Rules.Findings {
 		body.Rules = append(body.Rules, setupFindingJSON{Code: f.Code, State: f.State, Text: f.Text})
 	}

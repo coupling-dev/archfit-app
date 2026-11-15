@@ -5,16 +5,51 @@ Home
 
 acme/app
 
-Set up this repository
-Run archfit init in the repository to write the policy, workflow file and instructions for agents.
-Read the policy and open one pull request.
-Install the App, register a passkey, and approve the first policy.
-Turn on the ruleset settings below.
+Set up Archfit
 
-First policy: #12
+Four steps to enforcement. Until step 4, Archfit only advises.
 
-What is missing
-Register a passkey and approve the first policy.
-Ruleset settings
-● warning: Require a pull request before merging into the default branch.
-● warning: Require archfit/gate with this App's integration_id (42).
+2 of 4 done
+✓
+1 · Add the policy
+
+Your architecture rules live in .archfit.yaml, in the repository.
+
+Done
+
+The policy is in the first pull request.
+
+✓
+2 · Open a pull request
+
+Rules reach the default branch through review, so the approval binds to exact file contents.
+
+First policy: #12, open and waiting for approval
+
+First policy: #12, open and waiting for approval.
+
+Open the first pull request
+3
+3 · Approve the first policy
+
+The owner signs the policy with a passkey. Change one byte and the approval no longer counts.
+
+Action needed
+Approve the first policy Register a passkey
+Why a passkey?
+4
+4 · Require the gate
+
+Turn on the ruleset so the default branch cannot change unless archfit/gate passes.
+
+Action needed
+Default-branch changes require a pull request
+
+Require a pull request before merging into the default branch.
+
+Action needed
+The App’s archfit/gate check is required
+
+Require archfit/gate with this App's integration_id (42).
+
+Action needed

@@ -34,7 +34,7 @@ func newHomeEnv(t *testing.T, pol string) *env {
 	}
 	e := newEnv(t)
 	e.now = time.Date(2026, 11, 10, 23, 45, 0, 0, time.UTC)
-	e.setups.out = onboarding.Setup{Admitted: true, State: "approved", Missing: []string{}}
+	e.setups.out = onboarding.Setup{Admitted: true, Policy: true, Workflow: true, State: "approved", Missing: []string{}}
 	e.gh.setFile(repoName, mainBranch, ".archfit.yaml", pol)
 	e.gh.setFile(repoName, mainBranch, workflow, "the target workflow")
 	homePut(t, e, "repo", map[string]any{

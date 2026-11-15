@@ -9,10 +9,31 @@ export interface HomeNeed {
 }
 export interface HomeSetup {
   state: string;
+  policy: boolean;
+  workflow: boolean;
   missing: string[];
   first_pull?: number;
   rules: { code: string; state: string; text: string }[];
 }
+
+export function setupStepState(setup: HomeSetup) {
+  const done = [setup.policy || setup.first_pull !== undefined, setup.first_pull !== undefined,
+    setup.state === 'approved', setup.rules.length > 0 && setup.rules.every((rule) => rule.state === 'ok')];
+  return {
+    done,
+    completed: done.filter(Boolean).length,
+    approval: setup.state === 'first_approval' ? 'Action needed' : setup.state === 'approved' ? 'Done' : 'Waiting',
+    gate: setup.rules.some((rule) => rule.state === 'unknown') ? 'Check with an admin' : done[3] ? 'On' : 'Action needed',
+  };
+}
+
+export function setupRuleStatus(state: string): string {
+  if (state === 'ok') return 'On';
+  if (state === 'unknown') return 'Check';
+  if (state === 'not_applicable') return 'Not available';
+  return 'Action needed';
+}
+
 export interface Home {
   status: string;
   needs_you: HomeNeed[];
@@ -30,6 +51,10 @@ function string(v: unknown): string {
 }
 function array(v: unknown): unknown[] {
   if (!Array.isArray(v)) throw new Error('The Home answer could not be read.');
+  return v;
+}
+function boolean(v: unknown): boolean {
+  if (typeof v !== 'boolean') throw new Error('The Home answer could not be read.');
   return v;
 }
 function number(v: unknown): number {
@@ -78,6 +103,8 @@ export function readHome(value: unknown): Home {
     const s = object(v.setup);
     home.setup = {
       state: string(s.state),
+      policy: boolean(s.policy),
+      workflow: boolean(s.workflow),
       missing: array(s.missing).map(string),
       ...(s.first_pull === undefined ? {} : { first_pull: number(s.first_pull) }),
       rules: array(s.rules).map((entry) => {
