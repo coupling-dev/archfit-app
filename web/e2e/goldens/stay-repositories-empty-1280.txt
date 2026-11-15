@@ -7,7 +7,7 @@ A
 Sign out
 Repositories
 
-The stored state of each repository.
+Onboarding and policy state for each repository.
 
 No repository yet
 

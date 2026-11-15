@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/control/answers"
@@ -14,12 +15,23 @@ import (
 )
 
 type fakeSetups struct {
-	out   onboarding.Setup
-	repos []api.Repo
+	mu     sync.Mutex
+	out    onboarding.Setup
+	repos  []api.Repo
+	byRepo map[string]onboarding.Setup
+	errors map[string]error
 }
 
 func (f *fakeSetups) Setup(_ context.Context, r api.Repo) (onboarding.Setup, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.repos = append(f.repos, r)
+	if err := f.errors[r.FullName]; err != nil {
+		return onboarding.Setup{}, err
+	}
+	if setup, ok := f.byRepo[r.FullName]; ok {
+		return setup, nil
+	}
 	return f.out, nil
 }
 
