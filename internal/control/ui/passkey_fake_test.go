@@ -33,9 +33,10 @@ type passkeyCall struct {
 
 // fakePasskeys answers every call with success unless err is set, and records what it got.
 type fakePasskeys struct {
-	mu    sync.Mutex
-	err   error
-	calls []passkeyCall
+	mu     sync.Mutex
+	err    error
+	listed []passkey.Passkey
+	calls  []passkeyCall
 }
 
 func (f *fakePasskeys) record(c passkeyCall) error {
@@ -86,6 +87,9 @@ func (f *fakePasskeys) Redeem(context.Context, api.Repo, int64, string, passkey.
 func (f *fakePasskeys) List(_ context.Context, r api.Repo, userID int64) ([]passkey.Passkey, error) {
 	if err := f.record(passkeyCall{method: "List", repo: r, user: passkey.User{ID: userID}}); err != nil {
 		return nil, err
+	}
+	if f.listed != nil {
+		return slices.Clone(f.listed), nil
 	}
 	return []passkey.Passkey{{ID: fakePasskeyID, Created: fakeCreated}}, nil
 }

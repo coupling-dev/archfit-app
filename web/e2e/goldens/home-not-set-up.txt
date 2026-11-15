@@ -38,7 +38,7 @@ The pull request should also add .github/workflows/archfit.yaml.
 The owner signs the policy with a passkey. Change one byte and the approval no longer counts.
 
 Action needed
-Approve the first policy Register a passkey
+Approve the first policy Manage passkeys
 Why a passkey?
 4
 4 · Require the gate
@@ -46,6 +46,7 @@ Why a passkey?
 Turn on the ruleset so the default branch cannot change unless archfit/gate passes.
 
 Action needed
+Open ruleset settings
 Default-branch changes require a pull request
 
 Add a pull request rule to the default branch.

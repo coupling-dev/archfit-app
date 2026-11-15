@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { homeHref, readHome, setupRuleStatus, setupStepState } from './home';
+import { homeHref, readHome, setupPasskeyActions, setupPullStep, setupRuleStatus, setupStepState } from './home';
 import { mapLines, lineLabel } from '../components/map/model';
 
 describe('Home boundary', () => {
   it('rejects an unreadable or incomplete answer instead of showing clean', () => {
-    for (const body of [null, {}, { status: 12 }, { status: 'clean', map: {} }, { status: 'clean', needs_you: [{}] }])
+    const missingPasskey = { status: 'clean', needs_you: [], setup: { state: 'approved', policy: true, workflow: true, missing: [], rules: [] } };
+    for (const body of [null, {}, { status: 12 }, { status: 'clean', map: {} }, { status: 'clean', needs_you: [{}] }, missingPasskey])
       expect(() => readHome(body)).toThrow('The Home answer could not be read.');
   });
 
@@ -69,10 +70,28 @@ describe('map rules', () => {
 
 
 describe('setup step labels and progress', () => {
-  const base = { state: 'not_admitted', policy: false, workflow: false, missing: [], rules: [] };
+  const base = { state: 'not_admitted', policy: false, workflow: false, passkey: false, open_pull: 0, missing: [], rules: [] };
   it.each([
     ['ok', 'On'], ['unknown', 'Check'], ['not_applicable', 'Not available'], ['warning', 'Action needed'],
   ])('maps rule state %s to %s', (state, label) => expect(setupRuleStatus(state)).toBe(label));
+
+  it('derives the three pull-request step branches', () => {
+    expect(setupPullStep(base)).toEqual({ kind: 'create', status: 'Action needed' });
+    expect(setupPullStep({ ...base, first_pull: 12 })).toEqual({ kind: 'first-policy', status: 'Done', number: 12 });
+    expect(setupPullStep({ ...base, open_pull: 203 })).toEqual({ kind: 'review', status: 'In review', number: 203 });
+  });
+
+  it('chooses passkey registration or approval actions from passkey and setup state', () => {
+    expect(setupPasskeyActions({ ...base, state: 'first_approval' })).toEqual({
+      register: true, manage: false, approve: false, approvalBlocked: true,
+    });
+    expect(setupPasskeyActions({ ...base, state: 'first_approval', passkey: true })).toEqual({
+      register: false, manage: true, approve: true, approvalBlocked: false,
+    });
+    expect(setupPasskeyActions({ ...base, state: 'approved', passkey: true })).toEqual({
+      register: false, manage: true, approve: false, approvalBlocked: false,
+    });
+  });
 
   it('derives progress from policy, first pull, approval and rules', () => {
     expect(setupStepState({ ...base, policy: true, rules: [{ code: 'x', state: 'ok', text: '' }] })).toEqual({
@@ -80,6 +99,9 @@ describe('setup step labels and progress', () => {
     });
     expect(setupStepState({ ...base, first_pull: 12, state: 'first_approval', rules: [{ code: 'admin', state: 'unknown', text: '' }] })).toEqual({
       done: [true, true, false, false], completed: 2, approval: 'Action needed', gate: 'Check with an admin',
+    });
+    expect(setupStepState({ ...base, policy: true, open_pull: 203 })).toEqual({
+      done: [true, false, false, false], completed: 1, approval: 'Waiting', gate: 'Action needed',
     });
     expect(setupStepState({ ...base, policy: true, state: 'approved', rules: [{ code: 'x', state: 'ok', text: '' }] }).completed).toBe(3);
   });

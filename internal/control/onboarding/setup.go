@@ -17,6 +17,7 @@ type Setup struct {
 	Admitted  bool
 	Policy    bool   // valid schema 3 policy on the default branch
 	Workflow  bool   // accepted Archfit workflow on the default branch
+	OpenPull  int    // open pull request adding an accepted workflow; 0 when none
 	State     string // not_admitted, first_approval, approved, outside_flow
 	Missing   []string
 	FirstPull int // onboarding PR needing approval; 0 for an already-converted repository
@@ -75,6 +76,25 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 	out.Policy = valid
 	out.Workflow = workflow
 	out.Admitted = valid && workflow
+	if valid && !workflow {
+		pulls, err := s.gh.OpenPulls(ctx, r.RepoRef)
+		if err != nil {
+			return out, err
+		}
+		for _, p := range pulls {
+			if p.State != "open" || p.BaseRef != r.DefaultBranch || !strings.EqualFold(p.HeadRepo, r.FullName) {
+				continue
+			}
+			accepted, err := s.workflowAt(ctx, r, p.HeadSHA)
+			if err != nil {
+				return out, err
+			}
+			if accepted {
+				out.OpenPull = p.Number
+				break
+			}
+		}
+	}
 	switch {
 	case state.OutsideFlow || valid && state.ApprovedDigest != "" && state.ApprovedDigest != digest:
 		out.State = "outside_flow"

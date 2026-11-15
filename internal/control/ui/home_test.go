@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
+	"github.com/alexei-led/archfit-app/internal/control/passkey"
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -33,6 +34,7 @@ func newHomeEnv(t *testing.T, pol string) *env {
 		t.Fatal(err)
 	}
 	e := newEnv(t)
+	e.passkeys.listed = []passkey.Passkey{{ID: fakePasskeyID, Created: fakeCreated}}
 	e.now = time.Date(2026, 11, 10, 23, 45, 0, 0, time.UTC)
 	e.setups.out = onboarding.Setup{Admitted: true, Policy: true, Workflow: true, State: "approved", Missing: []string{}}
 	e.gh.setFile(repoName, mainBranch, ".archfit.yaml", pol)
@@ -47,7 +49,7 @@ func newHomeEnv(t *testing.T, pol string) *env {
 		t.Fatal(err)
 	}
 	e.handler = newHandler(Deps{Account: e.acct,
-		Admissions: e.admit, HomeViews: gate.NewHome(e.gh, e.store, e.admit), Setups: e.setups, Now: clock,
+		Admissions: e.admit, HomeViews: gate.NewHome(e.gh, e.store, e.admit), Setups: e.setups, Passkeys: e.passkeys, Now: clock,
 	}, github{files: e.gh, pulls: e.gh, users: e.gh, installs: e.gh}, sessions, testWeb)
 	return e
 }
@@ -119,6 +121,13 @@ func TestHomeAPIGoldens(t *testing.T) {
 			e.setups.out.Issue = 73
 		}},
 		{"deny-request", homePolicy + homeDeny, func(t *testing.T, e *env) { homeRequest(t, e, "open") }},
+		{"workflow-review", homePolicy, func(_ *testing.T, e *env) {
+			e.setups.out = onboarding.Setup{Policy: true, OpenPull: 203, State: "first_approval", Missing: []string{},
+				Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{
+					{Code: "pull_requests", State: "warning", Text: "Add a pull request rule to the default branch."},
+					{Code: "gate_check", State: "warning", Text: "Add the App's archfit/gate check as a required status check."},
+				}}}
+		}},
 		{"not-set-up", homePolicy, func(_ *testing.T, e *env) {
 			e.setups.out = onboarding.Setup{State: "first_approval", FirstPull: 12, Missing: []string{"Register a passkey and approve the first policy."},
 				Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{

@@ -1,0 +1,56 @@
+●
+Set up this repository.
+
+Home
+
+acme/app
+
+Set up Archfit
+
+Four steps to enforcement. Until step 4, Archfit only advises.
+
+1 of 4 done
+✓
+1 · Add the policy
+
+Your architecture rules live in .archfit.yaml, in the repository.
+
+Done
+
+The policy is on the default branch. View the policy
+
+2
+2 · Open a pull request
+
+Rules reach the default branch through review, so the approval binds to exact file contents.
+
+In review
+
+PR #203 adds the workflow — review it.
+
+Open PR #203
+3
+3 · Approve the first policy
+
+The owner signs the policy with a passkey. Change one byte and the approval no longer counts.
+
+Action needed
+Approve the first policy Manage passkeys
+Why a passkey?
+4
+4 · Require the gate
+
+Turn on the ruleset so the default branch cannot change unless archfit/gate passes.
+
+Action needed
+Open ruleset settings
+Default-branch changes require a pull request
+
+Add a pull request rule to the default branch.
+
+Action needed
+The App’s archfit/gate check is required
+
+Add the App's archfit/gate check as a required status check.
+
+Action needed
