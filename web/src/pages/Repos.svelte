@@ -18,7 +18,7 @@
 <div class="page-head">
   <div>
     <h1>Repositories</h1>
-    <p class="lede">The stored state of each repository.</p>
+    <p class="lede">Onboarding and policy state for each repository.</p>
   </div>
 </div>
 
@@ -41,7 +41,14 @@
         {#each body.repos as row (row.full_name)}
           <tr>
             <td><a href={repoPage(row.full_name)}>{row.full_name}</a></td>
-            <td><span class="status" class:danger={row.state === 'expired'} class:neutral={row.state !== 'expired'}>{row.state}</span></td>
+            <td><span
+              class="status"
+              class:danger={row.state === 'expired'}
+              class:attention={row.state === 'no policy' || row.state === 'needs workflow'}
+              class:accent={row.state === 'awaiting approval'}
+              class:success={row.state === 'active'}
+              class:neutral={!['expired', 'no policy', 'needs workflow', 'awaiting approval', 'active'].includes(row.state)}
+              >{row.state}</span></td>
           </tr>
         {/each}
       </tbody>

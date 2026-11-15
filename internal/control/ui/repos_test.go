@@ -3,13 +3,16 @@ package ui
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
+	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/wire/wording"
 )
 
@@ -141,4 +144,38 @@ func TestReposAllStatesGolden(t *testing.T) {
 	res := e.signIn("alice").get("/api/repos")
 	wantStatus(t, res, http.StatusOK)
 	checkReposGolden(t, "all-states", res)
+}
+
+func TestReposOnboardingStagesAreBoundedAndErrorsFallBack(t *testing.T) {
+	e := newEnv(t)
+	for i := 0; i < 30; i++ {
+		name := fmt.Sprintf("acme/stage-%02d", i)
+		e.addRepo(name, installA, int64(200+i))
+		e.grant("alice", name, permRead)
+	}
+	e.setups.byRepo = map[string]onboarding.Setup{
+		"acme/stage-00": {Policy: false},
+		"acme/stage-01": {Policy: true, Workflow: false},
+		"acme/stage-02": {Policy: true, Workflow: true, Admitted: true, State: "first_approval"},
+		"acme/stage-03": {Policy: true, Workflow: true, Admitted: true, State: "approved"},
+	}
+	e.setups.errors = map[string]error{"acme/stage-04": errors.New("GitHub unavailable")}
+	res := e.signIn("alice").get("/api/repos")
+	wantStatus(t, res, http.StatusOK)
+	body := decodeAs[overviewBody](t, res)
+	want := []string{"no policy", "needs workflow", "awaiting approval", "active", "not set up"}
+	for i, state := range want {
+		if body.Repos[i].State != state {
+			t.Errorf("%s state = %q, want %q", body.Repos[i].FullName, body.Repos[i].State, state)
+		}
+	}
+	if len(e.setups.repos) != maxSetupProbes {
+		t.Fatalf("Setup calls = %d, want cap %d", len(e.setups.repos), maxSetupProbes)
+	}
+	sort.Slice(e.setups.repos, func(i, j int) bool { return e.setups.repos[i].FullName < e.setups.repos[j].FullName })
+	for i, repo := range e.setups.repos {
+		if want := fmt.Sprintf("acme/stage-%02d", i); repo.FullName != want {
+			t.Errorf("Setup probe %d = %s, want %s", i, repo.FullName, want)
+		}
+	}
 }

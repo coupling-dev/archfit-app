@@ -4,11 +4,15 @@ import (
 	"net/http"
 	"sort"
 	"sync"
+
+	"github.com/alexei-led/archfit-app/internal/control/onboarding"
+	"github.com/alexei-led/archfit-app/internal/gate"
 )
 
 const (
 	maxOverviewRepos = 100
 	parallelLookups  = 8
+	maxSetupProbes   = 25
 )
 
 type overviewRow struct {
@@ -22,7 +26,7 @@ type overviewBody struct {
 	Truncated bool          `json:"truncated"`
 }
 
-// apiRepos lists the signed-in user's repositories with their stored repository state.
+// apiRepos lists repositories with cheap stored state and a bounded onboarding probe for not-set-up rows.
 func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 	repos, err := s.gh.users.UserRepos(r.Context(), sc.user.Token)
 	if err != nil {
@@ -59,5 +63,40 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 			return nil, err
 		}
 	}
+
+	// Setup reads a few GitHub objects per repository. Probe only the first 25 sorted rows that need setup;
+	// approved-digest rows already have authoritative stored state and need no GitHub reads.
+	probes := 0
+	for i, repo := range repos {
+		if !admitted[repo.InstallationID] || body.Repos[i].State != gate.RepoNotSetUp || probes >= maxSetupProbes {
+			continue
+		}
+		probes++
+		wg.Add(1)
+		slots <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-slots }()
+			setup, err := s.setups.Setup(r.Context(), repo)
+			if err != nil {
+				return // retain the stored "not set up" state; one GitHub failure must not break the list.
+			}
+			body.Repos[i].State = repoSetupStage(setup)
+		}()
+	}
+	wg.Wait()
 	return body, nil
+}
+
+func repoSetupStage(setup onboarding.Setup) string {
+	switch {
+	case !setup.Policy:
+		return "no policy"
+	case !setup.Workflow:
+		return "needs workflow"
+	case setup.State == "approved":
+		return "active"
+	default:
+		return "awaiting approval"
+	}
 }
