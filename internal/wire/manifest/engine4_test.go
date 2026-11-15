@@ -37,8 +37,8 @@ func TestEmbeddedManifest4PinsRelease(t *testing.T) {
 		t.Fatalf("embedded manifest4.json: %v", err)
 	}
 	want := []Identity{
-		{EngineVersion: "v4.0.0", Platform: platformAMD64, ImageDigest: "sha256:3edf066717390ef79f8ae42974c62ccbd93a5bb6b9bc571cbf1dcf9c9ae0fc26"},
-		{EngineVersion: "v4.0.0", Platform: platformARM64, ImageDigest: "sha256:c4959b487404d1ad08dda10329d2cbde7e143e1301d523dce81b1f6aa96d129a"},
+		{EngineVersion: "v4.0.0", Platform: platformAMD64, ImageDigest: "sha256:be1eac8f73513c6d0ef4ff17a78255629e4e4bc2d1b3e044b49afcbfdd6aac29"},
+		{EngineVersion: "v4.0.0", Platform: platformARM64, ImageDigest: "sha256:3ac782cb5acd177ab1225ce5f68d8b77acea71d0a0cf724c8ecd429cc180fbff"},
 	}
 	if len(table.identities) != len(want) || len(table.actions) != 1 {
 		t.Errorf("manifest approves %d identities and %d Action commits, want 2 and 1", len(table.identities), len(table.actions))
@@ -48,7 +48,7 @@ func TestEmbeddedManifest4PinsRelease(t *testing.T) {
 			t.Errorf("release identity not approved: %+v", id)
 		}
 	}
-	const action = "70d7292097b9238f33ee3ca71e923e37592297f4"
+	const action = "9669571b7b25e3f37fd7f1d99d7b89741c6c95d6"
 	if !table.actions[action] || !ActionApproved(action) {
 		t.Error("release Action commit not approved")
 	}
