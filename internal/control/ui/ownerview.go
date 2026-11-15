@@ -41,6 +41,7 @@ type ownerViewJSON struct {
 	Status       string              `json:"status"`
 	Note         string              `json:"note"`
 	MainAction   string              `json:"main_action"`
+	Passkey      bool                `json:"passkey"`
 	ActionDigest string              `json:"action_digest"`
 	Digest       string              `json:"digest"`
 	Head         string              `json:"head"`
@@ -89,7 +90,10 @@ func (s *server) apiOwnerView(r *http.Request, sc scope) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	b := ownerViewJSON{Kind: v.Kind, Pull: v.Pull, Status: v.Status, Note: v.Note, MainAction: v.MainAction,
+	passkeys, err := s.passkeys.List(r.Context(), sc.repo, sc.user.UserID)
+	// Keep the review available if inventory is unreadable, as on the setup page.
+	passkey := err == nil && len(passkeys) > 0
+	b := ownerViewJSON{Kind: v.Kind, Pull: v.Pull, Status: v.Status, Note: v.Note, MainAction: v.MainAction, Passkey: passkey,
 		ActionDigest: v.ActionDigest, Digest: v.Digest, Head: v.Head, Base: v.Base, Tip: v.Tip, Approved: v.Approved,
 		Files: []ownerFileJSON{}, Diffs: []ownerDiffJSON{}, Proposals: []ownerProposalJSON{}}
 	for _, f := range v.Files {

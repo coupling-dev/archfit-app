@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/alexei-led/archfit-app/internal/control/passkey"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
 	"github.com/alexei-led/archfit-app/internal/wire/wording"
@@ -104,6 +106,41 @@ func TestOwnerViewAPIGoldens(t *testing.T) {
 			}
 			if len(e.owners.actions) != 1 || e.owners.actions[0].Kind != tt.kind || e.owners.actions[0].Pull != tt.pull || e.owners.repos[0].FullName != repoName {
 				t.Fatalf("wrong scope: %+v, %+v", e.owners.actions, e.owners.repos)
+			}
+		})
+	}
+}
+
+func TestOwnerViewAPIPasskeyFlagIsBestEffort(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		list []passkey.Passkey
+		err  error
+		want bool
+	}{
+		{name: "no registered passkeys", list: []passkey.Passkey{}, want: false},
+		{name: "registered passkey", list: []passkey.Passkey{{ID: fakePasskeyID, Created: fakeCreated}}, want: true},
+		{name: "list error", err: context.DeadlineExceeded, want: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.owners.view = ownerFixture(gate.OwnerFirst, 0, false)
+			e.passkeys.listed = tt.list
+			e.passkeys.err = tt.err
+			res := e.as("alice", permRead).get(ownerAPI + "first/view")
+			wantStatus(t, res, http.StatusOK)
+			var body struct {
+				Passkey *bool `json:"passkey"`
+			}
+			if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Passkey == nil || *body.Passkey != tt.want {
+				t.Fatalf("want passkey = %t; body %s", tt.want, res.Body.String())
+			}
+			calls := e.passkeys.all()
+			if len(calls) != 1 || calls[0].method != "List" || calls[0].repo.FullName != repoName || calls[0].user.ID != e.user("alice").UserID {
+				t.Fatalf("wrong passkey scope: %+v", calls)
 			}
 		})
 	}

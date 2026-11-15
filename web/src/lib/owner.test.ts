@@ -22,6 +22,14 @@ describe('owner views', () => {
   it.each([null, {}, { status: 'unknown', files: [], diffs: [] }])('refuses malformed JSON: %j', (raw) => {
     expect(() => readOwnerView(raw, route)).toThrow('The owner action could not be read.');
   });
+  it.each([true, false])('reads the passkey flag: %s', (passkey) => {
+    const raw = { ...(fixture('first') as object), passkey };
+    expect(readOwnerView(raw, route).passkey).toBe(passkey);
+  });
+  it.each([undefined, null, 'false', 1])('refuses a malformed passkey flag: %j', (passkey) => {
+    const raw = { ...(fixture('first') as object), passkey };
+    expect(() => readOwnerView(raw, route)).toThrow('The owner action could not be read.');
+  });
   it('refuses another action or pull', () => {
     expect(() => readOwnerView(fixture('first'), { ...route, action: 'confirm' })).toThrow();
     expect(() => readOwnerView(fixture('first'), { ...route, pull: 7 })).toThrow();
