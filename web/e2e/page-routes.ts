@@ -4,7 +4,7 @@ export const pageRoutes = [
   { kind: 'admin', path: '/admin', heading: 'Installations' },
   { kind: 'repo', path: '/r/acme/app', heading: 'Home' },
   { kind: 'policy', path: '/r/acme/app/policy', heading: 'Policy' },
-  { kind: 'pull', path: '/r/acme/app/pull/4', heading: 'Archfit: pass' },
+  { kind: 'pull', path: '/r/acme/app/pull/4', heading: 'Pull request #4' },
   { kind: 'request', path: '/r/acme/app/requests/431', heading: 'Request #431' },
   { kind: 'owner', path: '/r/acme/app/owner/first', heading: 'Approve the first policy' },
   { kind: 'owner', path: '/r/acme/app/owner/workflow?pull=7', heading: 'Approve the workflow' },

@@ -1,11 +1,14 @@
-unknown: the workflow changed.
-
 Approve the workflow change
+
+acme/app · PR #7
+
+unknown: the workflow changed.
 
 This approves the policy and workflow at this pull request's head.
 
+Read the change
 Pull request #7 on GitHub
-
+View policy
 The workflow change
 --- a/.github/workflows/archfit.yaml
 +++ b/.github/workflows/archfit.yaml

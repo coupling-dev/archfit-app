@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Status from '../components/Status.svelte';
   import Skeleton from '../components/Skeleton.svelte';
   import { ApiError, explain, explainLoad, getJSON, postJSON, repoAPI, type Session } from '../lib/api';
   import { ownerViewPath, outcomeText, readOwnerView, type OwnerOutcome, type OwnerRoute, type OwnerView } from '../lib/owner';
@@ -52,30 +53,38 @@
   }
 </script>
 
-{#if failure || unavailable}
-  <div class="page-head"><div><h1>Owner action</h1><p class="lede">{route.fullName}</p></div></div>
-  <section class="box"><div class="box-body stack-sm">
-    {#if unavailable}<h2>{unavailable}</h2><p>Open current setup or policy to see what to do next.</p>
-    {:else}<p class="flash error" role="alert">{failure}</p>{/if}
+<div class="page-head">
+  <div class="stack-sm page-identity">
+    <h1>{view?.main_action ?? 'Owner action'}</h1>
+    <p class="lede">{route.fullName}{route.pull ? ` · PR #${route.pull}` : ''}</p>
+    {#if unavailable}<h2><Status>{unavailable}</Status></h2>
+    {:else if failure}<p class="flash error" role="alert">{failure}</p>
+    {:else if outcome}<p role="status"><Status>{outcomeText(route.action, outcome)}</Status></p>
+    {:else if view}<Status>{view.status}</Status>{/if}
+    {#if view}<p>{view.note}</p>{/if}
     <div class="row">
-      {#if retry}<a class="btn" href={here}>Try again</a>{/if}
-      {#if recovery}
-        <a class="btn" href={repoPage(route.fullName)}>View current setup</a>
+      {#if failure || unavailable}
+        {#if retry}<a class="btn primary" href={here}>Try again</a>{/if}
+        {#if recovery}
+          <a class="btn" class:primary={!retry} href={repoPage(route.fullName)}>View current setup</a>
+          <a class="btn" href={repoPage(route.fullName, '/policy')}>View policy</a>
+        {/if}
+      {:else if view}
+        {#if outcome}<a class="btn primary" href={repoPage(route.fullName)}>View current setup</a>
+        {:else if stale}<a class="btn primary" href={here}>Reload the change</a>
+        {:else}<a class="btn primary" href={view.diffs.length ? '#diff-0' : '#passkey'}>Read the change</a>{/if}
+        {#if view.pull_request}<a class="btn" href={`${github}/pull/${view.pull_request}`}>Pull request #{view.pull_request} on GitHub</a>{/if}
         <a class="btn" href={repoPage(route.fullName, '/policy')}>View policy</a>
       {/if}
     </div>
-  </div></section>
-{:else if !view}
-  <Skeleton rows={5} />
-{:else}
-  <div class="page-head">
-    <div class="stack-sm">
-      <p class="lede">{view.status}</p>
-      <h1>{view.main_action}</h1>
-      <p>{view.note}</p>
-      {#if view.pull_request}<p><a href={`${github}/pull/${view.pull_request}`}>Pull request #{view.pull_request} on GitHub</a></p>{/if}
-    </div>
   </div>
+</div>
+
+{#if unavailable}
+  <p>Open current setup or policy to see what to do next.</p>
+{:else if !view && !failure}
+  <Skeleton rows={5} />
+{:else if view}
 
   {#each view.diffs as diff, i (diff.title)}
     <section class="box" aria-labelledby={`diff-${i}`}>
@@ -112,7 +121,6 @@
   </details>
 
   {#if outcome}
-    <p class="flash" role="status">{outcomeText(route.action, outcome)}</p>
     {#if outcome.pull_request}
       <p><a href={`${github}/pull/${outcome.pull_request}`}>Open pull request #{outcome.pull_request}</a></p>
     {/if}
@@ -125,8 +133,8 @@
         <p>Your passkey confirms exactly the change shown above. Nothing is approved until this step finishes.</p>
         <p class="small">No passkey yet? <a href={repoPage(route.fullName, '/passkeys?return=' + encodeURIComponent(here))}>Register a passkey</a> to return here after registration.</p>
         {#if actionError}<p class="flash error" role="alert">{actionError}</p>{/if}
-        {#if stale}<p><a href={here}>Reload the change</a> · <a href={repoPage(route.fullName)}>View current setup</a></p>{/if}
-        <div><button class="btn primary" type="submit" disabled={busy || stale}>{busy ? 'Waiting for your passkey and the App…' : view.main_action}</button></div>
+        {#if stale}<p><a href={repoPage(route.fullName)}>View current setup</a></p>{/if}
+        <div><button class="btn" type="submit" disabled={busy || stale}>{busy ? 'Waiting for your passkey and the App…' : view.main_action}</button></div>
       </form>
     </section>
   {/if}

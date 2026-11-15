@@ -1,11 +1,14 @@
-unknown: the workflow changed.
-
 Approve the workflow change
+
+acme/app · PR #7
+
+unknown: the workflow changed.
 
 This approves the policy and workflow at this pull request's head.
 
+Reload the change
 Pull request #7 on GitHub
-
+View policy
 The workflow change
 --- a/.github/workflows/archfit.yaml
 +++ b/.github/workflows/archfit.yaml
@@ -31,6 +34,6 @@ No passkey yet? Register a passkey to return here after registration.
 
 The change moved since you looked. Reload it and confirm again with your passkey.
 
-Reload the change · View current setup
+View current setup
 
 Approve the workflow change

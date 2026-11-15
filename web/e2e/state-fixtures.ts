@@ -62,7 +62,7 @@ export const stateFixtures: StateFixture[] = [
     path: '/r/acme/app/pull/4',
     api: '/api/repos/acme/app/pulls/4',
     reply: [200, fixture('pull/no-result')],
-    heading: 'No result yet.',
+    heading: 'Pull request #4',
     text: 'No result yet.',
   },
   {
@@ -86,7 +86,7 @@ export const stateFixtures: StateFixture[] = [
     path: '/r/acme/app/pull/4',
     api: '/api/repos/acme/app/pulls/4',
     reply: [200, fixture('pull/unknown-workflow-viewer')],
-    heading: 'Archfit: unknown, no verdict',
+    heading: 'Pull request #4',
     text: 'An architecture owner named in the approved policy can review this.',
     approvedCopy: ['An architecture owner named in the approved policy can review this.'],
   },

@@ -1,10 +1,9 @@
-●
-clean
-
 Home
 
 acme/app
 
+clean
+View policy
 Needs you
 
 Nothing needs you.

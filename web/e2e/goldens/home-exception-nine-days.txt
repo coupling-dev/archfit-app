@@ -1,10 +1,9 @@
-●
-1 exception expires in 9 days
-
 Home
 
 acme/app
 
+1 exception expires in 9 days
+View policy
 Needs you
 
 Nothing needs you.

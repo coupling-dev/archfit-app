@@ -1,11 +1,14 @@
-unknown: the first policy needs approval.
-
 Approve the first policy
+
+acme/app · PR #7
+
+unknown: the first policy needs approval.
 
 There is no approved policy yet. Approving makes every line below the approved policy.
 
+Read the change
 Pull request #7 on GitHub
-
+View policy
 The first policy
 --- a/.archfit.yaml
 +++ b/.archfit.yaml

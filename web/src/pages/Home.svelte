@@ -1,11 +1,12 @@
 <script lang="ts">
+  import Status from '../components/Status.svelte';
   import Map from '../components/map/Map.svelte';
   import Setup from '../components/Setup.svelte';
   import Skeleton from '../components/Skeleton.svelte';
   import { explainLoad, repoAPI, type ApiError } from '../lib/api';
   import { firstJSON } from '../lib/early';
   import { homeHref, readHome, type Home } from '../lib/home';
-  import { type Repo } from '../lib/route';
+  import { repoPage, type Repo } from '../lib/route';
 
   let { route, here }: { route: Repo; here: string } = $props();
   let body = $state<Home | null>(null);
@@ -17,18 +18,32 @@
   );
   }
   load();
+  const reviewHref = $derived(body?.setup?.owner_action?.href ? homeHref(route, body.setup.owner_action.href) : undefined);
 </script>
 
-{#if failure}
-  <p class="flash error" role="alert">{failure}</p>
-{:else if !body}
-  <Skeleton rows={5} />
-{:else}
-  <p class="home-status"><span aria-hidden="true">●</span> {body.status}</p>
-{/if}
-<div class="page-head"><div><h1>Home</h1><p class="muted">{route.fullName}</p></div></div>
+<div class="page-head">
+  <div class="stack-sm page-identity">
+    <h1>Home</h1>
+    <p class="lede">{route.fullName}</p>
+    {#if failure}<p class="flash error" role="alert">{failure}</p>
+    {:else if body}<Status>{body.status}</Status>{/if}
+    {#if body}
+      <div class="row">
+        {#if reviewHref && body.setup?.owner_action}
+          <a class="btn primary" href={reviewHref}>{body.setup.owner_action.label}</a>
+        {:else if body.setup}
+          <a class="btn primary" href="#setup-title">Continue setup</a>
+        {:else if body.needs_you.length}
+          <a class="btn primary" href="#home-needs">See what needs you</a>
+        {/if}
+        <a class="btn" class:primary={!body.setup && !body.needs_you.length} href={repoPage(route.fullName, '/policy')}>View policy</a>
+      </div>
+    {/if}
+  </div>
+</div>
+{#if !body && !failure}<Skeleton rows={5} />{/if}
 {#if body?.setup}
-  <Setup setup={body.setup} repo={route} />
+  <Setup setup={body.setup} repo={route} showOwnerAction={!reviewHref} />
 {:else if body}
   <section class="box" aria-labelledby="home-needs">
     <div class="box-head"><h2 id="home-needs">Needs you</h2></div>
@@ -50,7 +65,6 @@
 
 <style>
   a { text-decoration: underline; text-underline-offset: 2px; }
-  .home-status { display: flex; align-items: baseline; gap: 8px; overflow-wrap: anywhere; }
   section { margin-top: 16px; min-width: 0; }
   .box-row { overflow-wrap: anywhere; }
   details { margin-top: 8px; }

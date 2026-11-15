@@ -1,10 +1,10 @@
-●
-Set up this repository.
-
 Home
 
 acme/app
 
+Set up this repository.
+Review workflow change
+View policy
 Set up Archfit
 
 Policy approval and required-check settings are separate. Complete the applicable steps below.
@@ -35,7 +35,7 @@ Open PR #203
 The owner signs the policy with a passkey. Change one byte and the approval no longer counts.
 
 Review needed
-Review workflow change Manage passkeys
+Manage passkeys
 Why a passkey?
 4
 4 · Require the gate
