@@ -16,6 +16,10 @@ The App's setup API reads the policy and workflow at one default-branch commit a
 
 For a workflow change, an owner named in the approved policy can follow **Review workflow change** from Home or the pull page. Being a repository administrator alone does not qualify. You can read either review before registering a passkey; the final approval still requires one.
 
+## Repositories
+
+Open `/` after signing in to choose a repository or continue setup. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows Not found with a link back to `/`.
+
 ## Home and the map
 
 Open `/r/<owner>/<repo>` for **Home**. The status line comes first. **Needs you** lists open requests,

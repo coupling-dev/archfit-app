@@ -1,0 +1,124 @@
+Policy
+
+acme/app · Rules, exceptions and allowed dependencies.
+
+View source
+Edit
+Policy owners
+alexei-led
+Layers · inner first
+layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_
+Check mode · configured
+required
+Approval
+Not provided
+
+Live enforcement and approval evidence are not provided by this response.
+
+1
+Modules
+Declared boundaries
+9
+Blocking rules
+Configured ask / deny
+4
+Exceptions
+No recorded expiry has passed
+0
+Expiring in 30 days
+Includes today
+Search policy
+
+Expand a row for details.
+
+Rules
+
+Read the rule before changing an import. Expand for why and what to use instead.
+
+View source
+Module dependencies
+graph
+Ask owner
+Coupling
+coupling
+Deny
+Duplication
+duplication
+Ask owner
+Module cycles
+cycle
+Deny
+Layer direction
+layers
+Deny
+Module coverage
+unowned
+Deny
+no-container-to-chaos
+Deny
+no-chaos-to-runtime
+Deny
+no-util-to-domain
+Deny
+Exceptions
+
+Follow the supplied request to resolve or replace an exception.
+
+Rule / boundary	Owner	Expiry	Request
+duplication
+
+cmd → pkg_chaos
+
+Reason
+Not provided
+Not provided
+Not provided
+duplication
+
+cmd → pkg_runtime
+
+Reason
+Not provided
+Not provided
+Not provided
+duplication
+
+pkg_chaos → pkg_runtime
+
+Reason
+Not provided
+Not provided
+Not provided
+duplication
+
+pkg_container → pkg_runtime
+
+Reason
+Not provided
+Not provided
+Not provided
+Bars show days remaining within a 30-day window, not exception age. Expired records are not active exceptions.
+Modules
+
+Inspect paths and allowed dependencies. The graph is a secondary view.
+
+Module / paths	Layer	Allowed dependencies
+module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_
+Public
+cmd
+Volatility
+low
+Subdomain
+supporting
+
+module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_/**
+
+layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_layer_
+module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_module_
+Show graph All 1 modules
+Policy file
+Copy digest
+
+Digest: sha256:9965602be855e855a4e8f7967277a01753a7ec9a4038d2991504f45186910815
+
+Show raw YAML

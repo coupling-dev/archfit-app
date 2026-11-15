@@ -7,10 +7,10 @@
 <div class="pitch">
   <div class="pitch-hero">
     {@render top()}
-    <h1>Architecture checks on every pull request</h1>
+    <h1>Check pull requests against your architecture policy</h1>
     <p>
-      Archfit checks each change against your policy: modules, allowed dependencies, rules and exceptions.
-      Workers fix errors or ask with a request. Owners approve or reject.
+      Your policy defines modules, allowed dependencies, rules and exceptions.
+      Authors fix errors or open a request. Owners approve or reject requests.
     </p>
   </div>
 
@@ -32,25 +32,25 @@
         <span>A request is a GitHub issue. An owner answers in Archfit; approval changes the policy by pull request.</span>
       </li>
     </ol>
-    <p class="pitch-privacy"><strong>Your code never leaves your CI.</strong></p>
+    <p class="pitch-privacy">CI checks your code. The App reads reports and policy files to show results and owner requests.</p>
   </section>
 
   <section class="stack-sm" aria-labelledby="pitch-status">
-    <h2 id="pitch-status">One status for each change</h2>
+    <h2 id="pitch-status">What the check says</h2>
     <div class="box">
-      <div class="box-row pitch-check"><span class="status success">pass</span><span>The change adds nothing a rule forbids.</span></div>
-      <div class="box-row pitch-check"><span class="status danger">fail</span><span>Fix the code, or ask, as the error says.</span></div>
-      <div class="box-row pitch-check"><span class="status attention">waiting</span><span>An open request covers the errors. Wait for the owner.</span></div>
-      <div class="box-row pitch-check"><span class="status neutral">unknown</span><span>No verdict: evidence is missing or the policy differs from the protected one.</span></div>
+      <div class="box-row pitch-check"><span class="status success">Pass</span><span>The checked change meets the policy.</span></div>
+      <div class="box-row pitch-check"><span class="status danger">Fail</span><span>Fix the code, or ask, as the error says.</span></div>
+      <div class="box-row pitch-check"><span class="status attention">Waiting for owner</span><span>An open request covers the errors. Wait for the owner.</span></div>
+      <div class="box-row pitch-check"><span class="status neutral">No verdict</span><span>Evidence is missing or the policy differs from the protected one. This is not a pass.</span></div>
     </div>
   </section>
 
   <details>
     <summary>How the policy stays protected</summary>
     <p>
-      Only owners can loosen the policy. Approval needs a passkey, and takes effect when the policy pull request merges.
-      A policy changed outside the flow makes every change unknown.
-      An expired exception that still covers an error makes every change fail.
+      An owner uses a passkey to approve a policy change. The policy changes when its pull request merges.
+      A policy changed outside this flow needs an owner to confirm or revert it.
+      An expired exception does not allow an error in a checked change.
     </p>
   </details>
 </div>

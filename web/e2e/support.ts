@@ -20,7 +20,7 @@ export type Handlers = Record<string, (body: Record<string, unknown>, url: URL) 
 
 // open answers /api from handlers (a session by default, "Not found." for anything else), opens path, and returns the
 // writes the page sent, in order.
-export async function open(page: Page, path: string, handlers: Handlers): Promise<Request[]> {
+export async function open(page: Page, path: string, handlers: Handlers, readOnly = false): Promise<Request[]> {
   const writes: Request[] = [];
   await page.route('**/api/**', async (route) => {
     const req = route.request();
@@ -33,6 +33,17 @@ export async function open(page: Page, path: string, handlers: Handlers): Promis
     const [status, json] = handle ? await handle(post ? req.postDataJSON() : {}, url) : [404, { error: 'Not found.' }];
     await route.fulfill({ status, json });
   });
+  if (readOnly) {
+    // Registered last, before navigation: no API handler or auth form can send a write.
+    await page.route('**/*', async (route) => {
+      const request = route.request();
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method())) {
+        writes.push(request);
+        return route.abort('blockedbyclient');
+      }
+      return route.fallback();
+    });
+  }
   await page.addInitScript(() => {
     const seen: string[] = [];
     (window as unknown as { cspViolations: string[] }).cspViolations = seen;

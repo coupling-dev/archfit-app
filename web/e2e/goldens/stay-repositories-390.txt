@@ -1,5 +1,6 @@
 Skip to main content
 Archfit
+Repositories
 Auto
 Light
 Dark
@@ -86,5 +87,5 @@ Open Home
 
 Check means the App could not confirm that archfit/gate is required; ask an admin.
 
-Documentation Third-party licences
+Documentation · Third-party licences
 About this App · v0.12.0

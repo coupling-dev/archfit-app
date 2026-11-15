@@ -1,5 +1,6 @@
 Skip to main content
 Archfit
+Repositories
 Auto
 Light
 Dark
@@ -10,5 +11,5 @@ This page cannot be shown
 
 Not found. See your repositories.
 
-Documentation Third-party licences
+Documentation · Third-party licences
 About this App · v0.12.0

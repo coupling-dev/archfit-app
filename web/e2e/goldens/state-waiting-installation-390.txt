@@ -1,0 +1,35 @@
+Waiting for approval · octo
+Check pull requests against your architecture policy
+
+Your policy defines modules, allowed dependencies, rules and exceptions. Authors fix errors or open a request. Owners approve or reject requests.
+
+⏳
+Your installation on octo is waiting for approval.
+
+Archfit is in private beta, and we approve installations by hand. Until then nothing runs and nothing is posted on your pull requests. Nothing to do now: this page changes once it is approved.
+
+How approval works
+
+How it works
+1
+Write the policy
+Keep modules, allowed dependencies, rules and exceptions in .archfit.yaml.
+2
+Check each change
+Your CI runs Archfit. The check and comment show each error and the next step.
+3
+Ask the owner
+A request is a GitHub issue. An owner answers in Archfit; approval changes the policy by pull request.
+
+CI checks your code. The App reads reports and policy files to show results and owner requests.
+
+What the check says
+Pass
+The checked change meets the policy.
+Fail
+Fix the code, or ask, as the error says.
+Waiting for owner
+An open request covers the errors. Wait for the owner.
+No verdict
+Evidence is missing or the policy differs from the protected one. This is not a pass.
+How the policy stays protected

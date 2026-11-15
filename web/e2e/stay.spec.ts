@@ -27,14 +27,14 @@ const cases: { name: string; path: string; ready: string; mock?: Mock; keyboard:
   {
     name: 'sign-in',
     path: '/',
-    ready: 'Architecture checks on every pull request',
+    ready: 'Check pull requests against your architecture policy',
     mock: { signedIn: false },
     keyboard: 'Sign in with GitHub',
   },
   {
     name: 'waiting',
     path: '/r/octo/tool',
-    ready: 'Architecture checks on every pull request',
+    ready: 'Check pull requests against your architecture policy',
     keyboard: 'How approval works',
   },
   { name: 'admin', path: '/admin', ready: 'Installations', mock: { operator: true }, keyboard: 'Approve octo' },

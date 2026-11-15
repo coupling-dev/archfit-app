@@ -12,4 +12,5 @@ export const pageRoutes = [
   { kind: 'owner', path: '/r/acme/app/owner/revert', heading: 'Revert the policy' },
   { kind: 'passkeys', path: '/r/acme/app/passkeys', heading: 'Passkeys' },
   { kind: 'unknown', path: '/not-a-page', heading: 'This page cannot be shown' },
+  { kind: 'unknown', path: '/repos', heading: 'This page cannot be shown' },
 ];

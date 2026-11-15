@@ -1,5 +1,6 @@
 Skip to main content
 Archfit
+Repositories
 Auto
 Light
 Dark
@@ -14,5 +15,5 @@ No repository yet
 
 No repository is available to you through an Archfit installation yet.
 
-Documentation Third-party licences
+Documentation · Third-party licences
 About this App · v0.12.0
