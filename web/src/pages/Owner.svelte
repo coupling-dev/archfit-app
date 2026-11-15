@@ -2,6 +2,7 @@
   import Skeleton from '../components/Skeleton.svelte';
   import { ApiError, explain, explainLoad, getJSON, postJSON, repoAPI, type Session } from '../lib/api';
   import { ownerViewPath, outcomeText, readOwnerView, type OwnerOutcome, type OwnerRoute, type OwnerView } from '../lib/owner';
+  import { canRetryRead, ownerUnavailable } from '../lib/recovery';
   import { confirm } from '../lib/passkey';
   import { repoPage } from '../lib/route';
   import { passkeyFailure } from '../lib/webauthn';
@@ -11,6 +12,9 @@
   const github = $derived(`https://github.com/${encodeURIComponent(route.owner)}/${encodeURIComponent(route.name)}`);
   let view = $state<OwnerView | null>(null);
   let failure = $state('');
+  let unavailable = $state('');
+  let retry = $state(false);
+  let recovery = $state(false);
   let actionError = $state('');
   let busy = $state(false);
   let stale = $state(false);
@@ -19,7 +23,12 @@
   function load() {
     getJSON<unknown>(api(ownerViewPath(route))).then(
     (raw) => { view = readOwnerView(raw, route); },
-  ).catch((e: unknown) => { failure = e instanceof ApiError ? explainLoad(e, here) : e instanceof Error ? e.message : 'The owner action could not be read. Reload the page.'; });
+    ).catch((e: unknown) => {
+      retry = canRetryRead(e);
+      recovery = !(e instanceof ApiError) || e.status === 409;
+      unavailable = ownerUnavailable(e, route.action, route.pull);
+      if (!unavailable) failure = e instanceof ApiError ? explainLoad(e, here) : e instanceof Error ? e.message : 'The owner action could not be read. Reload the page.';
+    });
   }
   load();
 
@@ -43,9 +52,19 @@
   }
 </script>
 
-{#if failure}
-  <h1>Owner action</h1>
-  <p class="flash error" role="alert">{failure}</p>
+{#if failure || unavailable}
+  <div class="page-head"><div><h1>Owner action</h1><p class="lede">{route.fullName}</p></div></div>
+  <section class="box"><div class="box-body stack-sm">
+    {#if unavailable}<h2>{unavailable}</h2><p>Open current setup or policy to see what to do next.</p>
+    {:else}<p class="flash error" role="alert">{failure}</p>{/if}
+    <div class="row">
+      {#if retry}<a class="btn" href={here}>Try again</a>{/if}
+      {#if recovery}
+        <a class="btn" href={repoPage(route.fullName)}>View current setup</a>
+        <a class="btn" href={repoPage(route.fullName, '/policy')}>View policy</a>
+      {/if}
+    </div>
+  </div></section>
 {:else if !view}
   <Skeleton rows={5} />
 {:else}
@@ -104,9 +123,9 @@
         <input type="hidden" name="view_digest" value={view.digest} />
         <input type="hidden" name="digest" value={view.action_digest} />
         <p>Your passkey confirms exactly the change shown above. Nothing is approved until this step finishes.</p>
-        <p class="small">No passkey yet? <a href={repoPage(route.fullName, '/passkeys')}>Register a passkey</a>, then reload this page.</p>
+        <p class="small">No passkey yet? <a href={repoPage(route.fullName, '/passkeys?return=' + encodeURIComponent(here))}>Register a passkey</a> to return here after registration.</p>
         {#if actionError}<p class="flash error" role="alert">{actionError}</p>{/if}
-        {#if stale}<p><a href={here}>Reload the change</a></p>{/if}
+        {#if stale}<p><a href={here}>Reload the change</a> · <a href={repoPage(route.fullName)}>View current setup</a></p>{/if}
         <div><button class="btn primary" type="submit" disabled={busy || stale}>{busy ? 'Waiting for your passkey and the App…' : view.main_action}</button></div>
       </form>
     </section>

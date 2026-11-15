@@ -130,11 +130,36 @@ the displayed view; it does not remove this residual window or prove that the ow
 that is not valid UTF-8 cannot be displayed or acted on from these pages; use the existing M2 owner-action
 API flow referenced by the GitHub issue instead.
 
+### Unavailable policy or owner action
+
+If the policy cannot be read, **View current setup** leads back to Home. The Policy page does not infer
+whether the policy is missing, invalid, or still being prepared in a first-policy PR. An unavailable
+editor leaves the policy read-only and shows the server's reason. It does not ask you to fix YAML
+just because setup has not finished.
+
+An old owner-action link can show **This approval is not needed**, **No policy confirmation needed**,
+or **Nothing to revert**. Follow **View current setup** or **View policy** instead of repeatedly reloading
+that action. A changed artifact still prevents submission; **Reload the change** fetches the new contents
+before you confirm anything. Policy and Owner read/service failures offer **Try again**; not-found and stale-action states do not.
+
+**Page not available** uses the same message for a missing resource and one your account cannot access.
+Its **Repositories** link returns to `/`; no repository-specific recovery link is shown.
+
 ## Register a passkey
 
 ![Passkeys page](images/passkeys.png)
 
-Open `/r/<owner>/<repo>/passkeys` after signing in. A policy owner can register a passkey; before the first policy, a repository administrator can register one. Follow the browser's registration prompt. Registration opens a GitHub issue notifying the user and owners. A second passkey and each removal require an existing passkey. The App uses user verification for the assertion; it does not prove that the owner read the request.
+Open `/r/<owner>/<repo>/passkeys` after signing in. Passkeys belong to your account in this App installation, not just the repository used to register them. They do not grant access or an owner role in other repositories. A policy owner can register a passkey; before the first policy, a repository administrator can register one. Follow the browser's registration prompt. Registration opens a GitHub issue notifying the user and owners. A second passkey and each removal require an existing passkey. The App uses user verification for the assertion; it does not prove that the owner read the request.
+
+Removing your last passkey requires a confirmation with an existing passkey and notifies the owners. The warning beside **Remove** explains that you must register a new key before confirming another approval.
+
+The Owner and Policy editor links preserve their return path. After successful registration, the App returns to that page, where you must still read and confirm the action. The passkey page also accepts `?return=` with an encoded same-repository request, owner action, or policy-editor path. Other destinations are ignored; failed registration never redirects.
+
+## Installation administration
+
+Operators use `/admin` to admit or revoke installations, separately from policy approval. **Managed by configuration** means the row cannot be approved or revoked here; an operator must change the App settings by pull request. Revocation help appears only when at least one row can be revoked. Revocation still asks for confirmation and stops checks from the account's next event; existing GitHub checks remain.
+
+Repository names become App links only when the signed-in user's repository list grants access. Installation visibility alone does not grant repository access. An empty or unreadable access list leaves names as text.
 
 ## Answer a request
 

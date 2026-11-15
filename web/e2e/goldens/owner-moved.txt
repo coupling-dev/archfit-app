@@ -27,10 +27,10 @@ Confirm with your passkey
 
 Your passkey confirms exactly the change shown above. Nothing is approved until this step finishes.
 
-No passkey yet? Register a passkey, then reload this page.
+No passkey yet? Register a passkey to return here after registration.
 
 The change moved since you looked. Reload it and confirm again with your passkey.
 
-Reload the change
+Reload the change · View current setup
 
 Approve the workflow change

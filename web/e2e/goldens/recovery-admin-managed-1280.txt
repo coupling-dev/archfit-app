@@ -1,0 +1,13 @@
+Installations
+
+Approve an account to let Archfit run on its repositories. Until then nothing runs and nothing is posted.
+
+Waiting 0
+
+No installation is waiting.
+
+Approved 1
+A
+alexei-led User Managed by configuration
+An operator must change the App settings by pull request; this page cannot change them. · 1 repository
+ccgram

@@ -33,7 +33,7 @@ test('admin: an operator approves a waiting account and revokes one after asking
 
 test("admin: anyone else gets the API's Not found", async ({ page }) => {
   await open(page, '/admin');
-  await expect(page.getByRole('heading', { name: 'This page cannot be shown' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Page not available' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Admin' })).toHaveCount(0);
   await expectNoNotUsedWord(page);
 });
