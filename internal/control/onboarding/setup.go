@@ -15,6 +15,8 @@ import (
 // Setup is derived from default-branch files, GitHub's rules and recorded approvals.
 type Setup struct {
 	Admitted  bool
+	Policy    bool   // valid schema 3 policy on the default branch
+	Workflow  bool   // accepted Archfit workflow on the default branch
 	State     string // not_admitted, first_approval, approved, outside_flow
 	Missing   []string
 	FirstPull int // onboarding PR needing approval; 0 for an already-converted repository
@@ -57,19 +59,21 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 		return out, err
 	}
 	if !valid {
-		out.Missing = append(out.Missing, "Add a schema 3 .archfit.yaml on the default branch.")
+		out.Missing = append(out.Missing, "The default branch has no version 3 policy.")
 	}
 	workflow, err := s.workflowAt(ctx, r, tip)
 	if err != nil {
 		return out, err
 	}
 	if !workflow {
-		out.Missing = append(out.Missing, "Add .github/workflows/archfit.yaml using an Action commit listed in manifest 4, or a tag resolving to one.")
+		out.Missing = append(out.Missing, "The default branch has no Archfit workflow (or it uses an Action commit the App does not accept).")
 	}
 	state, err := s.gate.SetupState(ctx, r)
 	if err != nil {
 		return out, err
 	}
+	out.Policy = valid
+	out.Workflow = workflow
 	out.Admitted = valid && workflow
 	switch {
 	case state.OutsideFlow || valid && state.ApprovedDigest != "" && state.ApprovedDigest != digest:

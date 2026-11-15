@@ -120,7 +120,7 @@ func TestSetupAdmissionFromImmutableDefaultBranchFiles(t *testing.T) {
 			}
 			s := &setups{gh: h, gate: setupView{}, actionApproved: func(ref string) bool { return ref == setupCommit }}
 			out, err := s.Setup(context.Background(), setupRepo)
-			if err != nil || out.Admitted != tt.admitted || len(out.Missing) != tt.missing {
+			if err != nil || out.Admitted != tt.admitted || out.Policy != (tt.policy == setupPolicy) || len(out.Missing) != tt.missing {
 				t.Fatalf("Setup = %+v, %v", out, err)
 			}
 			want := "not_admitted"

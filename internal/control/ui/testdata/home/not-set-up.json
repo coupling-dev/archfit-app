@@ -2,6 +2,8 @@
   "status": "Set up this repository.",
   "setup": {
     "admitted": false,
+    "policy": false,
+    "workflow": false,
     "state": "first_approval",
     "missing": [
       "Register a passkey and approve the first policy."

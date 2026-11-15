@@ -10,10 +10,15 @@ const names = readdirSync(fixtures)
   .filter((n) => n.endsWith('.json'))
   .sort();
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(name + '.json', fixtures), 'utf8'));
+const setupApprovedCopy = [
+  'Rules reach the default branch through review, so the approval binds to exact file contents.',
+  'Require the gate',
+  'Turn on the ruleset so the default branch cannot change unless archfit/gate passes.',
+];
 
 for (const file of names) {
   const name = file.replace(/\.json$/, '');
-  test(`home: ${name} golden${name === 'one-request' ? ' @docs' : ''}`, async ({ page }) => {
+  test(`home: ${name} golden${name === 'one-request' || name === 'not-set-up' ? ' @docs' : ''}`, async ({ page }) => {
     await docsClock(page);
     const json = fixture(name);
     const body = readHome(json);
@@ -31,14 +36,22 @@ for (const file of names) {
     if (body.setup) {
       await expect(page.getByRole('heading', { name: 'Needs you' })).toHaveCount(0);
       await expect(page.getByRole('heading', { name: 'The map' })).toHaveCount(0);
-      await expect(page.getByRole('link', { name: 'register a passkey' })).toHaveAttribute('href', path + '/passkeys');
+      await expect(page.getByRole('link', { name: 'Register a passkey' })).toHaveAttribute('href', path + '/passkeys');
+      await expect(page.getByRole('heading', { name: 'Set up Archfit' })).toBeVisible();
+      await expect(page.getByRole('listitem')).toHaveCount(4);
+      await expect(page.getByText('The owner signs the policy with a passkey. Change one byte and the approval no longer counts.')).toBeVisible();
+      if (body.setup.state === 'first_approval')
+        await expect(page.getByRole('link', { name: 'Approve the first policy' })).toHaveAttribute('href', path + '/owner/first?pull=' + body.setup.first_pull);
+      await expect(page.getByText('ok', { exact: true })).toHaveCount(0);
+      await expect(page.getByText('unknown', { exact: true })).toHaveCount(0);
+      if (name === 'not-set-up') await docsShot(page, 'home-setup', setupApprovedCopy);
     } else {
       for (const need of body.needs_you)
         await expect(page.getByRole('link', { name: need.text, exact: true })).toHaveAttribute('href', need.href);
     }
     await expectPageText(page, 'home-' + name);
     if (name === 'one-request') await docsShot(page, 'home');
-    await expectClean(page);
+    await expectClean(page, body.setup ? setupApprovedCopy : []);
     if (body.map) {
       await page.getByText('Show the map as a list', { exact: true }).focus();
       await page.keyboard.press('Enter');

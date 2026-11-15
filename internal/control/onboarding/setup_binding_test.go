@@ -81,7 +81,7 @@ func TestSetupFirstApprovalAndGateBindingAgree(t *testing.T) {
 			g := gate.New(gate.Deps{GitHub: api.New(setupTokens{}, hc), Store: mem, Admissions: gate.NewAdmissions(mem, []string{"acme"})})
 			s := &setups{gh: h, gate: g, actionApproved: func(ref string) bool { return ref == setupCommit }}
 			out, err := s.Setup(context.Background(), setupRepo)
-			if err != nil || out.State != "first_approval" || out.FirstPull != tt.first || len(out.Missing) != tt.missing || out.Admitted != (tt.policyAtTip && tt.workflowAtTip) {
+			if err != nil || out.State != "first_approval" || out.FirstPull != tt.first || len(out.Missing) != tt.missing || out.Admitted != (tt.policyAtTip && tt.workflowAtTip) || out.Policy != tt.policyAtTip || out.Workflow != tt.workflowAtTip {
 				t.Fatalf("Setup = %+v, %v", out, err)
 			}
 			digest, err := g.OwnerDigest(context.Background(), gate.Target{Repo: setupRepo}, gate.OwnerAction{Kind: gate.OwnerFirst, Pull: out.FirstPull})

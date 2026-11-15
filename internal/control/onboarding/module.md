@@ -19,7 +19,7 @@ An unlisted full commit SHA is rejected without tag lookup: GitHub prefers a com
 `Setup.State` is `not_admitted`, `first_approval`, `approved`, or `outside_flow`. A policy without an approved
 digest remains `first_approval`, not approved, even when the workflow is missing (admission stays false). A same-repository open PR into the default branch can supply
 the policy and workflow for the first approval only when no schema 3 policy is on the default branch; `FirstPull`
-identifies it. A default branch that already has a schema 3 policy uses `FirstPull=0`, regardless of its workflow. The gate owns recorded state through `SetupViews`; the first-approval transactions in
+identifies it. Setup also reports whether the policy and accepted workflow are present on the default branch for the Home stepper. A default branch that already has a schema 3 policy uses `FirstPull=0`, regardless of its workflow. The gate owns recorded state through `SetupViews`; the first-approval transactions in
 `gate/records.First` and `ApproveCurrent` own the `v4/repos` entry. Setup never adds the entry itself.
 
 Ruleset guidance is separate from admission. It reads effective branch rules and inherited rulesets, reports
