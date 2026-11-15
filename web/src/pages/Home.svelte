@@ -43,7 +43,7 @@
   {#if body.map}
     <section class="box" aria-labelledby="home-map">
       <div class="box-head"><h2 id="home-map">The map</h2></div>
-      <div class="box-body"><Map model={body.map} /></div>
+      <div class="box-body"><Map model={body.map} repo={route.fullName} /></div>
     </section>
   {:else}<p>The map is not available.</p>{/if}
 {/if}

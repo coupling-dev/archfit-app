@@ -36,9 +36,13 @@ instead of the map. Owner actions open the pages below.
 | Red solid | Drift. |
 
 When several kinds apply to a pair, only one is drawn, in this order: drift, a rule denies it, requested, exception,
-allowed. A dependency that is not drawn needs a request. **Show the map as a list** opens the same modules and
-dependencies as text. At phone width, scroll inside the map box. Focus it and use the arrow keys to scroll by keyboard.
-If the layout worker fails, Home says so and the list is still available.
+allowed. Dependencies not allowed by this policy need a request. **Show the map as a list** opens dependencies
+and modules as text, with links to the actual requests. Below 720px, the list opens first and the diagram stays
+behind **Show the map as a diagram**. On wider screens, the diagram opens fitted to its box; the list keeps
+full-size labels available. If the layout worker fails, Home says so and the list is still available.
+
+Use **Skip to main content** (the first keyboard link) to bypass the header. Theme and action controls have
+larger hit areas on narrow screens and touch devices. Request fields use the selected light or dark theme.
 
 ## Policy
 

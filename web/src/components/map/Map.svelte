@@ -1,10 +1,19 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { repoPage } from '../../lib/route';
   import { layoutMap, type MapLayout } from './layout';
   import { lineLabel, mapLayers, mapLines, type MapModel } from './model';
 
-  // Reused by task 6: <Map model={{ layers, modules: [from, to], lines }} />.
-  // The parent supplies only policy module/line data; this component owns layout, SVG, legend and the list fold.
-  let { model }: { model: MapModel } = $props();
+  let { model, repo }: { model: MapModel; repo: string } = $props();
+  let listOpen = $state(false);
+  let diagramOpen = $state(true);
+
+  onMount(() => {
+    // Set defaults once: resizing must not undo the reader's disclosure choices.
+    const narrow = window.matchMedia('(width < 720px)').matches;
+    listOpen = narrow;
+    diagramOpen = !narrow;
+  });
   const id = $props.id();
   let placed = $state<MapLayout | null>(null);
   let failure = $state('');
@@ -17,12 +26,31 @@
     if (model.modules.length) {
       layoutMap(model, controller.signal).then(
         (p) => { if (!controller.signal.aborted) placed = p; },
-        () => { if (!controller.signal.aborted) failure = 'The map layout worker could not place the modules. The map is available as a list below.'; },
+        () => { if (!controller.signal.aborted) failure = 'The map layout worker could not place the modules. The map is available as a list above.'; },
       );
     }
     return () => controller.abort();
   });
 </script>
+
+<details class="map-list" bind:open={listOpen}>
+  <summary>Show the map as a list</summary>
+  <h3>Dependencies</h3>
+  <ul>{#each lines as line (line)}
+    <li>{line.from} → {line.to}:
+      {#if line.kind === 'requested' && line.request}
+        Requested dependency · <a class="inline" href={repoPage(repo, `/requests/${line.request}`)}>#{line.request}</a>
+      {:else}{lineLabel(line)}{/if}
+    </li>
+  {:else}<li>None.</li>{/each}</ul>
+  {#each mapLayers(model) as layer (layer)}
+    {@const modules = model.modules.filter((m) => m.layer === layer)}
+    {#if modules.length}
+      <h3>{layer || 'No layer'}</h3>
+      <ul>{#each modules as m (m.name)}<li>{m.name} · Volatility: {m.volatility}</li>{/each}</ul>
+    {/if}
+  {/each}
+</details>
 
 {#if failure}
   <p class="flash error" role="alert">{failure}</p>
@@ -31,9 +59,10 @@
 {:else if !placed}
   <p role="status">Placing the modules…</p>
 {:else}
-  <!-- Scrollable maps need keyboard focus even though the SVG itself is read-only. -->
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div class="map-scroll" role="region" aria-label="Module map; scroll to see the whole map" tabindex="0">
+  <details class="map-diagram" bind:open={diagramOpen}>
+    <summary>Show the map as a diagram</summary>
+    <p class="muted small">Diagram fitted to this box. Use the list above for full-size dependency labels.</p>
+  <div class="map-canvas">
     <svg width={placed.width} height={placed.height} viewBox={`0 0 ${placed.width} ${placed.height}`} role="img" aria-labelledby={id + '-title'}>
       <title id={id + '-title'}>Modules by layer and their dependencies</title>
       <defs>
@@ -62,33 +91,29 @@
       {/each}
     </svg>
   </div>
-{/if}
 
 <ul class="map-legend" aria-label="Map legend">
   <li><span class="sample allowed" aria-hidden="true"></span>An allowed dependency</li>
-  <li><span class="sample requested" aria-hidden="true"></span>A requested one (with its #431)</li>
+  <li><span class="sample requested" aria-hidden="true"></span>A requested dependency</li>
   <li><span class="sample deny" aria-hidden="true"></span>One a rule denies</li>
   <li><span class="sample exception" aria-hidden="true"></span>An exception (with its date)</li>
   <li><span class="sample drift" aria-hidden="true"></span>Drift</li>
 </ul>
+  </details>
+{/if}
 
-<details>
-  <summary>Show the map as a list</summary>
-  {#each mapLayers(model) as layer (layer)}
-    {@const modules = model.modules.filter((m) => m.layer === layer)}
-    {#if modules.length}
-      <h3>{layer || 'No layer'}</h3>
-      <ul>{#each modules as m (m.name)}<li>{m.name} · Volatility: {m.volatility}</li>{/each}</ul>
-    {/if}
-  {/each}
-  <h3>Dependencies</h3>
-  <ul>{#each lines as line (line)}<li>{line.from} → {line.to}: {lineLabel(line)}</li>{:else}<li>None.</li>{/each}</ul>
-</details>
-<p class="muted map-note">A dependency that is not drawn needs a request.</p>
+<p class="muted map-note">Dependencies not allowed by this policy need a request.</p>
 
 <style>
-  .map-scroll { max-width: 100%; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
-  svg { display: block; font: 14px var(--font); color: var(--fg); }
+  .map-canvas { border: 1px solid var(--border); border-radius: var(--radius); margin-top: 8px; }
+  svg { display: block; max-width: 100%; height: auto; font: 14px var(--font); color: var(--fg); }
+  .map-list { overflow-wrap: anywhere; }
+  summary { cursor: pointer; }
+  .map-list a { display: inline-block; }
+  .map-diagram > p { margin-top: 8px; }
+  @media (width < 720px), (pointer: coarse) {
+    .map-list a { min-height: 44px; min-width: 44px; padding-block: 12px; }
+  }
   text { fill: currentColor; }
   .map-band rect { fill: var(--bg-subtle); stroke: var(--border-muted); }
   .map-band text { font-size: 12px; font-weight: 600; }

@@ -70,6 +70,7 @@
   });
 </script>
 
+<a class="skip-link" href="#main">Skip to main content</a>
 <Header
   {session}
   {repo}
@@ -80,7 +81,7 @@
       : ''}
   pull={route.kind === 'pull' ? route.number : 0}
 />
-<main class="page" id="main">
+<main class="page" id="main" tabindex="-1">
   {#if pageError}
     <div class="blankslate">
       <h1>This page cannot be shown</h1>

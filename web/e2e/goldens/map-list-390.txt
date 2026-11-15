@@ -1,0 +1,24 @@
+●
+1 request waits
+
+Home
+
+acme/app
+
+Needs you
+Request #415 waits.
+Show the record
+The map
+Show the map as a list
+Dependencies
+app → other: Requested dependency · #415
+app → util: Allowed dependency
+cmd
+app · Volatility: high
+core
+util · Volatility: low
+No layer
+other · Volatility: high
+Show the map as a diagram
+
+Dependencies not allowed by this policy need a request.
