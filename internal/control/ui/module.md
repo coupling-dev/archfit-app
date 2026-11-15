@@ -111,13 +111,41 @@ unchanged to control/answers, which checks the view twice and binds the passkey 
 
 ## Repositories page
 
-`GET /api/repos` keeps installation admission separate from repository state. Unadmitted installations retain the
-waiting marker without a repository read. For admitted repositories, `gate.NewRepoStates` reads the stored
-`v4/repo` value first. Outside-flow markers take precedence; admitted records with stored drift evidence retain
-`expired`, `drift`, `clean` or `unknown`. Rows without an approved digest receive a read-only `Setup` probe for at
-most 25 repositories per page (8 concurrent); the probe reads a few GitHub objects, and is limited to these rows
-because approved records already have authoritative stored states. They display `no policy`, `needs workflow`,
-`awaiting approval` or `active` from the default-branch policy, workflow and approval state. `Setup.Admitted` only means
-the policy and workflow are present; only `Setup.State == "approved"` means the owner approved the policy. A probe error falls back
-to `not set up`; stored-state read errors still fail the request. The page shows a dot and a word, with distinct
-colors for onboarding stages and fail color only for `expired`.
+`GET /api/repos` lists at most 100 accessible repositories in name order. Unadmitted installations retain
+the waiting marker without a repository read. `gate.NewRepoStates` supplies the retained `state` field from
+stored `v4/repo` evidence; the SPA does not treat that field as readiness.
+
+The existing read-only `Setup` probe now covers the first 25 admitted rows regardless of stored state,
+with at most 8 concurrent probes. This is the only GitHub read path added to the cheap stored-state read;
+no Home, owner-view, or additional pull lookup runs. Expanding eligibility can increase actual reads on
+pages containing approved repositories, but the 25-row/8-parallel bounds are unchanged.
+
+Each row separates:
+- `setup_stage`: `not_started`, `first_approval`, `workflow_review`, or `policy_approved`.
+  `FirstPull` identifies a first policy even when the default branch has none. `OpenPull` with policy
+  present and workflow absent identifies workflow review, before first-approval state. Both files and
+  `State == "approved"` are needed for Policy approved. Outside-flow or inconsistent approval facts
+  omit the stage and explain Check in `setup_reason`; they never become Policy approved.
+- `enforcement`: `required` only for the Setup rules report's `gate_check: ok`;
+  `not_required` for `gate_check: warning` plus `pull_requests: ok`; otherwise `check` with
+  `enforcement_reason`. Policy mode and unrelated rules findings do not determine this field.
+- Optional `attention`: only Setup's existing `FirstPull` / `OpenPull` PR number or first-approval state.
+  Request counts are **not read**: RepoStates and Setup expose none, and Home adds GitHub reads.
+  The UI says those counts are not checked here, never invents zero, and directs readers to Home.
+- `next_step`: a server-selected text/href pair to Home, the first-policy review (including its PR),
+  or the workflow PR. Setup establishes workflow presence, not owner-action eligibility, so the list
+  links to the PR rather than guessing a workflow approval action. The SPA restricts destinations
+  to these routes in the same repository.
+
+A probe error or a row beyond the probe limit retains stored evidence, omits the setup stage, and shows
+Check with a reason; stored-state failures still fail the request. Waiting installations show their own
+approval status, not repository readiness. The desktop table has Repository, Setup, Needs attention,
+and Next step columns; mobile has labelled cards with one destination each.
+
+`overview_test.go` covers stages/destinations and the rules-state matrix; `repos_test.go` covers admission,
+bounds, errors and JSON fixtures consumed by Playwright. `web/src/lib/repos.test.ts` tests vocabulary and
+destination restrictions. `web/e2e/repos.spec.ts` checks both widths, accessibility and CSP. The existing
+`stay.spec.ts` text goldens cover both widths without OS-specific pixel comparisons. Set
+`ARCHFIT_DOCS_SHOTS=1` when running the Repos spec to regenerate the reference images in `docs/images/`.
+The audit explicitly requires “Needs attention”, “Workflow review” and “Review …” navigation labels;
+wording checks allow only those exact phrases on this page, retaining the legacy check elsewhere.

@@ -7,15 +7,50 @@ A
 Sign out
 Repositories
 
-Onboarding and policy state for each repository.
+Choose a repository or continue setup.
 
-Repository	State
-acme/clean	clean
-acme/drift	drift
-acme/expired	expired
-acme/not-set-up	no policy
-acme/outside-flow	policy changed outside the flow
-acme/unknown	unknown
-octo/tool	waiting for approval
+Required check is separate from policy approval. Open Home for requests and other owner decisions; those counts are not checked here.
+
+Repository	Setup	Needs attention	Next step
+acme/clean	Policy approved
+Required check:
+Required
+	Not checked here	Open Home
+acme/drift	First approval
+Required check:
+Not required
+	PR #8	Review first policy
+acme/expired	Policy approved
+Required check:
+Check
+
+The rules do not establish whether archfit/gate is required; check with an admin.
+
+	Not checked here	Open Home
+acme/not-set-up	Not started
+Required check:
+Check
+
+The rules do not establish whether archfit/gate is required; check with an admin.
+
+	Not checked here	Continue setup
+acme/outside-flow	Check
+
+The policy changed outside the approval flow.
+
+Required check:
+Check
+
+The rules do not establish whether archfit/gate is required; check with an admin.
+
+	Not checked here	Open Home
+acme/unknown	Workflow review
+Required check:
+Check
+
+The rules do not establish whether archfit/gate is required; check with an admin.
+
+	PR #203	Review workflow PR
+octo/tool	Waiting for installation approval	Installation approval	Open Home
 Documentation Third-party licences
 About this App · v0.12.0

@@ -7,16 +7,93 @@ A
 Sign out
 Repositories
 
-Onboarding and policy state for each repository.
+Choose a repository or continue setup.
 
-Repository	State
-acme/clean	clean
-acme/drift	drift
-acme/expired	expired
-acme/not-set-up	no policy
-acme/outside-flow	policy changed outside the flow
-acme/unknown	unknown
-octo/tool	waiting for approval
+Required check is separate from policy approval. Open Home for requests and other owner decisions; those counts are not checked here.
+
+Repository
+acme/clean
+Setup
+Policy approved
+Required check:
+Required
+Needs attention
+Not checked here
+Next step
+Open Home
+Repository
+acme/drift
+Setup
+First approval
+Required check:
+Not required
+Needs attention
+PR #8
+Next step
+Review first policy
+Repository
+acme/expired
+Setup
+Policy approved
+Required check:
+Check
+
+The rules do not establish whether archfit/gate is required; check with an admin.
+
+Needs attention
+Not checked here
+Next step
+Open Home
+Repository
+acme/not-set-up
+Setup
+Not started
+Required check:
+Check
+
+The rules do not establish whether archfit/gate is required; check with an admin.
+
+Needs attention
+Not checked here
+Next step
+Continue setup
+Repository
+acme/outside-flow
+Setup
+Check
+
+The policy changed outside the approval flow.
+
+Required check:
+Check
+
+The rules do not establish whether archfit/gate is required; check with an admin.
+
+Needs attention
+Not checked here
+Next step
+Open Home
+Repository
+acme/unknown
+Setup
+Workflow review
+Required check:
+Check
+
+The rules do not establish whether archfit/gate is required; check with an admin.
+
+Needs attention
+PR #203
+Next step
+Review workflow PR
+Repository
+octo/tool
+Setup
+Waiting for installation approval
+Needs attention
+Installation approval
+Next step
+Open Home
 
 Only the first repositories by name are listed.
 

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { open, type Mock } from './fixtures';
+import { open, reposApprovedCopy, type Mock } from './fixtures';
 import { expectClean, expectNoNotUsedWord, docsClock, docsShot } from './support';
 
 const reposGolden = (name: string) =>
@@ -68,7 +68,9 @@ const cases: { name: string; path: string; ready: string; mock?: Mock; keyboard:
 
 for (const width of [1280, 390]) {
   for (const c of cases) {
-    test(`pages that stay: ${c.name} whole-page text at ${width}px${c.name === 'passkeys' && width === 1280 ? ' @docs' : ''}`, async ({ page }) => {
+    test(`pages that stay: ${c.name} whole-page text at ${width}px${c.name === 'passkeys' && width === 1280 ? ' @docs' : ''}`, async ({
+      page,
+    }) => {
       await docsClock(page);
       await page.setViewportSize({ width, height: 900 });
       await open(page, c.path, c.mock);
@@ -77,12 +79,14 @@ for (const width of [1280, 390]) {
       await expect(page.locator('body')).toContainText('Documentation');
       expect(await page.locator('body').innerText()).toMatchSnapshot(`stay-${c.name}-${width}.txt`);
       if (c.name === 'passkeys' && width === 1280) await docsShot(page, 'passkeys');
-      await expectClean(page);
+      await expectClean(page, c.path === '/' && c.name.startsWith('repositories') ? reposApprovedCopy : []);
 
-      const target = page.getByRole(
-        c.keyboard.startsWith('Approve') || c.keyboard === 'Add a passkey' ? 'button' : 'link',
-        { name: c.keyboard, exact: true },
-      );
+      const target = page
+        .getByRole(c.keyboard.startsWith('Approve') || c.keyboard === 'Add a passkey' ? 'button' : 'link', {
+          name: width === 390 && c.keyboard === 'acme/clean' ? 'Open Home' : c.keyboard,
+          exact: true,
+        })
+        .first();
       for (let i = 0; i < 30; i++) {
         await page.keyboard.press('Tab');
         if (await target.evaluate((el) => el === document.activeElement)) break;
@@ -93,7 +97,7 @@ for (const width of [1280, 390]) {
       for (const detail of await page.locator('details').all()) {
         await detail.locator('summary').click();
       }
-      await expectNoNotUsedWord(page);
+      await expectNoNotUsedWord(page, c.path === '/' && c.name.startsWith('repositories') ? reposApprovedCopy : []);
     });
   }
 }
