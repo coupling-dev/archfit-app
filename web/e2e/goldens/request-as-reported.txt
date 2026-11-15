@@ -17,6 +17,11 @@ Balance: 9/10 (min 7), as reported
 pkg/tc/netem.go:12 graph pkg_tc -> pkg_util is not an allowed dependency
   balance: 9/10 (min 7)
 The map
+Show the map as a list
+Show the map as a diagram
+
+Diagram fitted to this box. Use the list above for full-size dependency labels.
+
 adapters
 No layer
 Requested dependency · #431
@@ -25,13 +30,12 @@ Volatility: high
 pkg_util
 Volatility: low
 An allowed dependency
-A requested one (with its #431)
+A requested dependency
 One a rule denies
 An exception (with its date)
 Drift
-Show the map as a list
 
-A dependency that is not drawn needs a request.
+Dependencies not allowed by this policy need a request.
 
 Why the balance
 
@@ -82,7 +86,7 @@ Answer
 
 Approve and approve until a date loosen the policy: your passkey confirms them. Your passkeys
 
- Merge later: keep the policy pull request open, so the next answers join it
+Merge later: keep the policy pull request open, so the next answers join it
 Approve and merge
 The exception ends on
 Approve until a date

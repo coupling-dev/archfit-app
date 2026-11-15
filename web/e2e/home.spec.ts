@@ -80,7 +80,6 @@ for (const file of names) {
     }
     await expectPageText(page, 'home-' + name);
     if (name === 'one-request') await docsShot(page, 'home');
-    await expectClean(page, body.setup ? setupApprovedCopy : []);
     if (body.map) {
       await page.getByText('Show the map as a list', { exact: true }).focus();
       await page.keyboard.press('Enter');
@@ -88,6 +87,7 @@ for (const file of names) {
         await expect(page.locator('details li').filter({ hasText: m.name + ' · Volatility:' })).toBeVisible();
       await expectNoNotUsedWord(page);
     }
+    await expectClean(page, body.setup ? setupApprovedCopy : []);
     expect(reads).toEqual(['/api/repos/acme/app/home']);
     expect(writes).toEqual([]);
   });
@@ -138,15 +138,15 @@ test('home: empty map is explicit', async ({ page }) => {
   await expectClean(page);
 });
 
-test('home: scrolling stays inside the map at phone width, and bands stay in order', async ({ page }) => {
+test('home: phone map starts as a list, the diagram fits, and bands stay in order', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, path, { [api]: () => [200, fixture('one-request')] });
-  const scroll = page.getByRole('region', { name: 'Module map; scroll to see the whole map' });
-  await expect(scroll).toBeVisible();
-  expect(await scroll.evaluate((el) => el.scrollWidth)).toBeGreaterThan(await scroll.evaluate((el) => el.clientWidth));
-  await scroll.focus();
-  await page.keyboard.press('ArrowRight');
-  await expect.poll(() => scroll.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+  const diagram = page.getByRole('img', { name: 'Modules by layer and their dependencies' });
+  await expect(page.getByText('app → other: Requested dependency · #431', { exact: true })).toBeVisible();
+  await expect(diagram).toBeHidden();
+  await page.getByText('Show the map as a diagram', { exact: true }).click();
+  await expect(diagram).toBeVisible();
+  expect(await diagram.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThan(390);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   const ys = await page.locator('.map-node rect').evaluateAll((nodes) => nodes.map((n) => Number(n.getAttribute('y'))));
   expect(ys[0]).toBeLessThan(ys[1]);

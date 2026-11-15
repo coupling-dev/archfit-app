@@ -10,14 +10,14 @@ Needs you
 Nothing needs you.
 
 The map
+Show the map as a list
 
 No modules.
 
 An allowed dependency
-A requested one (with its #431)
+A requested dependency
 One a rule denies
 An exception (with its date)
 Drift
-Show the map as a list
 
-A dependency that is not drawn needs a request.
+Dependencies not allowed by this policy need a request.

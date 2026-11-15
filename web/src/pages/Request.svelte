@@ -153,7 +153,7 @@
   {#if body.modules.length}
     <section class="box" aria-labelledby="modules">
       <div class="box-head"><h2 id="modules">The map</h2></div>
-      <div class="box-body"><Map model={requestMap(body)} /></div>
+      <div class="box-body"><Map model={requestMap(body)} repo={route.fullName} /></div>
     </section>
     <section class="box" aria-labelledby="balance-why">
       <div class="box-head"><h2 id="balance-why">Why the balance</h2></div>
@@ -218,14 +218,14 @@
           Approve and approve until a date loosen the policy: your passkey confirms them.
           <a class="inline" href={repoPage(route.fullName, '/passkeys')}>Your passkeys</a>
         </p>
-        <label class="small"><input type="checkbox" bind:checked={mergeLater} disabled={busy} /> Merge later: keep the policy
+        <label class="small form-choice"><input type="checkbox" bind:checked={mergeLater} disabled={busy} /> Merge later: keep the policy
           pull request open, so the next answers join it</label>
         <div class="stack-sm">
           <button class="btn primary" type="button" disabled={busy} onclick={() => answer('approve')}>Approve and merge</button>
         </div>
         <div class="stack-sm">
           <label for="until">The exception ends on</label>
-          <input id="until" type="date" bind:value={until} disabled={busy} onchange={() => preview('approve-until')} />
+          <input class="form-control" id="until" type="date" bind:value={until} disabled={busy} onchange={() => preview('approve-until')} />
           <div>
             <button
               class="btn"
@@ -237,7 +237,7 @@
         </div>
         <div class="stack-sm">
           <label for="instead">What to do instead</label>
-          <textarea id="instead" rows="3" maxlength="500" bind:value={instead} disabled={busy} onchange={() => preview('reject')}
+          <textarea class="form-control" id="instead" rows="3" maxlength="500" bind:value={instead} disabled={busy} onchange={() => preview('reject')}
           ></textarea>
           <div>
             <button class="btn" type="button" disabled={busy || !instead.trim()} onclick={() => answer('reject')}>Reject</button>

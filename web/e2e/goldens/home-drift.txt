@@ -8,6 +8,11 @@ acme/app
 Needs you
 Drift on the default branch.
 The map
+Show the map as a list
+Show the map as a diagram
+
+Diagram fitted to this box. Use the list above for full-size dependency labels.
+
 cmd
 core
 No layer
@@ -20,10 +25,9 @@ Volatility: low
 other
 Volatility: high
 An allowed dependency
-A requested one (with its #431)
+A requested dependency
 One a rule denies
 An exception (with its date)
 Drift
-Show the map as a list
 
-A dependency that is not drawn needs a request.
+Dependencies not allowed by this policy need a request.
