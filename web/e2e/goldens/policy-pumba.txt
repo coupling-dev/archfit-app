@@ -1,152 +1,147 @@
 Policy
 
-acme/app · default branch
+acme/app · Rules, exceptions and allowed dependencies.
 
+View source
 Edit
-Policy settings
-Check mode
-required
-Owners
+Policy owners
 alexei-led
-Layers, inner first
-core, cmd
+Layers · inner first
+core · cmd
+Check mode · configured
+required
+Approval
+Not provided
+
+Live enforcement and approval evidence are not provided by this response.
+
+6
 Modules
-cmd
-Paths
-cmd/**
-Public
-cmd
-Volatility
-low
-Subdomain
-supporting
-Layer
-cmd
-Allowed dependencies
-pkg_chaos, pkg_container, pkg_runtime
-pkg_chaos
-Paths
-pkg/chaos/**
-Public
-pkg/chaos, pkg/chaos/cliflags, pkg/chaos/*/cmd
-Volatility
-high
-Subdomain
-core
-Layer
-core
-Allowed dependencies
-pkg_container, pkg_util
-pkg_container
-Paths
-pkg/container/**
-Public
-pkg/container
-Volatility
-medium
-Subdomain
-core
-Layer
-core
-Allowed dependencies
-None
-pkg_runtime
-Paths
-pkg/runtime/**
-Public
-pkg/runtime/*
-Volatility
-high
-Subdomain
-core
-Layer
-core
-Allowed dependencies
-pkg_container, pkg_tc
-pkg_tc
-Paths
-pkg/tc/**
-Public
-pkg/tc
-Volatility
-high
-Subdomain
-core
-Layer
-core
-Allowed dependencies
-None
-pkg_util
-Paths
-pkg/util/**
-Public
-pkg/util
-Volatility
-low
-Subdomain
-supporting
-Layer
-core
-Allowed dependencies
-None
-Built-in rules
-Graph
-ask
-Coupling
-deny
-Duplication
-ask
-Cycle
-deny
-Layers
-deny
-Unowned
-deny
-Minimum balance
-7
-Custom rules and notes
-no-container-to-chaos
-
-Deny: pkg_container → pkg_chaos
-
-Why: pkg/container is the domain model that chaos consumes. Importing chaos inverts the dependency and couples the model to every chaos action.
-
-Instead: Move the shared type or value into pkg/container, and import it from pkg/chaos.
-
-no-chaos-to-runtime
-
-Deny: pkg_chaos → pkg_runtime
-
-Why: Chaos says what to do through the container.Client interface; runtime adapters say how. A direct import bypasses the interface and ties chaos actions to one runtime.
-
-Instead: Add the method to a container.Client sub-interface in pkg/container/client.go, and implement it in the runtime adapters.
-
-no-util-to-domain
-
-Deny: pkg_util → pkg_chaos
-
-Why: pkg/util must stay domain-agnostic so any package can use it without pulling in chaos behavior.
-
-Instead: Keep code that needs chaos types in pkg/chaos; give pkg/util functions plain values.
-
+Declared boundaries
+9
+Blocking rules
+Configured ask / deny
+4
 Exceptions
-duplication: cmd → pkg_chaos
+No recorded expiry has passed
+0
+Expiring in 30 days
+Includes today
+Search policy
 
-The error existed when archfit init wrote this policy.
+Expand a row for details.
 
-duplication: cmd → pkg_runtime
+Rules
 
-The error existed when archfit init wrote this policy.
+Read the rule before changing an import. Expand for why and what to use instead.
 
-duplication: pkg_chaos → pkg_runtime
+View source
+Module dependencies
+graph
+Ask owner
+Coupling
+coupling
+Deny
+Duplication
+duplication
+Ask owner
+Module cycles
+cycle
+Deny
+Layer direction
+layers
+Deny
+Module coverage
+unowned
+Deny
+no-container-to-chaos
+Deny
+no-chaos-to-runtime
+Deny
+no-util-to-domain
+Deny
+Exceptions
 
-The error existed when archfit init wrote this policy.
+Follow the supplied request to resolve or replace an exception.
 
-duplication: pkg_container → pkg_runtime
+Rule / boundary	Owner	Expiry	Request
+duplication
 
-The error existed when archfit init wrote this policy.
+cmd → pkg_chaos
 
+Reason
+	Not provided	
+Not provided
+	Not provided
+duplication
+
+cmd → pkg_runtime
+
+Reason
+	Not provided	
+Not provided
+	Not provided
+duplication
+
+pkg_chaos → pkg_runtime
+
+Reason
+	Not provided	
+Not provided
+	Not provided
+duplication
+
+pkg_container → pkg_runtime
+
+Reason
+	Not provided	
+Not provided
+	Not provided
+Bars show days remaining within a 30-day window, not exception age. Expired records are not active exceptions.
+Modules
+
+Inspect paths and allowed dependencies. The graph is a secondary view.
+
+Module / paths	Layer	Allowed dependencies
+
+cmd
+
+cmd/**
+
+	cmd	pkg_chaos, pkg_container, pkg_runtime
+
+pkg_chaos
+
+pkg/chaos/**
+
+	core	pkg_container, pkg_util
+
+pkg_container
+
+pkg/container/**
+
+	core	None
+
+pkg_runtime
+
+pkg/runtime/**
+
+	core	pkg_container, pkg_tc
+
+pkg_tc
+
+pkg/tc/**
+
+	core	None
+
+pkg_util
+
+pkg/util/**
+
+	core	None
+Show graph All 6 modules
 Policy file
+Copy digest
 
 Digest: sha256:9965602be855e855a4e8f7967277a01753a7ec9a4038d2991504f45186910815
 
