@@ -2,32 +2,81 @@
   "repos": [
     {
       "full_name": "acme/clean",
-      "state": "clean"
+      "state": "clean",
+      "setup_stage": "policy_approved",
+      "enforcement": "required",
+      "next_step": {
+        "text": "Open Home",
+        "href": "/r/acme/clean"
+      }
     },
     {
       "full_name": "acme/drift",
-      "state": "drift"
+      "state": "drift",
+      "setup_stage": "first_approval",
+      "enforcement": "not_required",
+      "attention": "PR #8",
+      "next_step": {
+        "text": "Review first policy",
+        "href": "/r/acme/drift/pull/8"
+      }
     },
     {
       "full_name": "acme/expired",
-      "state": "expired"
+      "state": "expired",
+      "setup_stage": "policy_approved",
+      "enforcement": "check",
+      "enforcement_reason": "The rules do not establish whether archfit/gate is required; check with an admin.",
+      "next_step": {
+        "text": "Open Home",
+        "href": "/r/acme/expired"
+      }
     },
     {
       "full_name": "acme/not-set-up",
-      "state": "no policy"
+      "state": "not set up",
+      "setup_stage": "not_started",
+      "enforcement": "check",
+      "enforcement_reason": "The rules do not establish whether archfit/gate is required; check with an admin.",
+      "next_step": {
+        "text": "Continue setup",
+        "href": "/r/acme/not-set-up"
+      }
     },
     {
       "full_name": "acme/outside-flow",
-      "state": "policy changed outside the flow"
+      "state": "policy changed outside the flow",
+      "setup_reason": "The policy changed outside the approval flow.",
+      "enforcement": "check",
+      "enforcement_reason": "The rules do not establish whether archfit/gate is required; check with an admin.",
+      "next_step": {
+        "text": "Open Home",
+        "href": "/r/acme/outside-flow"
+      }
     },
     {
       "full_name": "acme/unknown",
-      "state": "unknown"
+      "state": "unknown",
+      "setup_stage": "workflow_review",
+      "enforcement": "check",
+      "enforcement_reason": "The rules do not establish whether archfit/gate is required; check with an admin.",
+      "attention": "PR #203",
+      "next_step": {
+        "text": "Review workflow PR",
+        "href": "/r/acme/unknown/pull/203"
+      }
     },
     {
       "full_name": "octo/tool",
       "waiting": true,
-      "state": "waiting for approval"
+      "state": "waiting for approval",
+      "setup_reason": "Installation approval is pending.",
+      "enforcement": "check",
+      "enforcement_reason": "Required-check settings were not read.",
+      "next_step": {
+        "text": "Open Home",
+        "href": "/r/octo/tool"
+      }
     }
   ],
   "truncated": false

@@ -7,7 +7,12 @@ export interface HomeNeed {
   href: string;
   record?: string;
 }
+export interface OwnerReview {
+  label: string;
+  href?: string;
+}
 export interface HomeSetup {
+  owner_action?: OwnerReview;
   state: string;
   policy: boolean;
   workflow: boolean;
@@ -20,11 +25,11 @@ export interface HomeSetup {
 
 export function setupStepState(setup: HomeSetup) {
   const done = [setup.policy || setup.first_pull !== undefined, setup.first_pull !== undefined,
-    setup.state === 'approved', setup.rules.length > 0 && setup.rules.every((rule) => rule.state === 'ok')];
+    setup.state === 'approved', setup.rules.length > 0 && setup.rules.every((rule) => rule.state === 'ok' || rule.state === 'not_applicable')];
   return {
     done,
     completed: done.filter(Boolean).length,
-    approval: setup.state === 'first_approval' ? 'Action needed' : setup.state === 'approved' ? 'Done' : 'Waiting',
+    approval: setup.owner_action?.href ? 'Review needed' : setup.state === 'first_approval' ? 'Action needed' : setup.state === 'approved' ? 'Done' : 'Waiting',
     gate: setup.rules.some((rule) => rule.state === 'unknown') ? 'Check with an admin' : done[3] ? 'On' : 'Action needed',
   };
 }
@@ -33,16 +38,6 @@ export function setupPullStep(setup: HomeSetup) {
   if (setup.open_pull > 0) return { kind: 'review' as const, status: 'In review', number: setup.open_pull };
   if (setup.first_pull !== undefined) return { kind: 'first-policy' as const, status: 'Done', number: setup.first_pull };
   return { kind: 'create' as const, status: 'Action needed' };
-}
-
-export function setupPasskeyActions(setup: HomeSetup) {
-  const approvalNeeded = setup.state === 'first_approval';
-  return {
-    register: !setup.passkey,
-    manage: setup.passkey,
-    approve: setup.passkey && approvalNeeded,
-    approvalBlocked: !setup.passkey && approvalNeeded,
-  };
 }
 
 export function setupRuleStatus(state: string): string {
@@ -82,6 +77,11 @@ function nonnegativeNumber(v: unknown): number {
 function number(v: unknown): number {
   if (typeof v !== 'number' || !Number.isSafeInteger(v) || v < 1) throw new Error('The Home answer could not be read.');
   return v;
+}
+
+export function readOwnerReview(value: unknown): OwnerReview {
+  const v = object(value);
+  return { label: string(v.label), ...(v.href === undefined ? {} : { href: string(v.href) }) };
 }
 
 export function readHome(value: unknown): Home {
@@ -124,6 +124,7 @@ export function readHome(value: unknown): Home {
   if (v.setup !== undefined) {
     const s = object(v.setup);
     home.setup = {
+      ...(s.owner_action === undefined ? {} : { owner_action: readOwnerReview(s.owner_action) }),
       state: string(s.state),
       policy: boolean(s.policy),
       workflow: boolean(s.workflow),
@@ -151,9 +152,9 @@ export function homeHref(repo: Repo, href: string): string | undefined {
   const local = /^\/r\/([^/]+)\/([^/]+)(\/.*)$/.exec(href);
   if (local && sameRepo(local[1], local[2])) {
     const suffix = local[3];
-    if (/^\/(?:policy|owner\/(?:confirm|revert))$/.test(suffix) ||
+    if (/^\/(?:policy|owner\/(?:first|confirm|revert))$/.test(suffix) ||
         /^\/requests\/[1-9][0-9]{0,9}$/.test(suffix) ||
-        /^\/owner\/workflow\?pull=[1-9][0-9]{0,9}$/.test(suffix))
+        /^\/owner\/(?:first|workflow)\?pull=[1-9][0-9]{0,9}$/.test(suffix))
       return repoPage(repo.fullName, suffix);
   }
   const issue = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/issues\/([1-9][0-9]{0,9})$/.exec(href);

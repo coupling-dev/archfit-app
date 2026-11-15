@@ -1,6 +1,10 @@
 {
   "status": "Set up this repository.",
   "setup": {
+    "owner_action": {
+      "label": "Review first policy",
+      "href": "/r/acme/app/owner/first?pull=12"
+    },
     "admitted": false,
     "policy": false,
     "workflow": false,

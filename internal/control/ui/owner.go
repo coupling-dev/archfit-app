@@ -84,6 +84,7 @@ type setupFindingJSON struct {
 	Text  string `json:"text"`
 }
 type setupJSON struct {
+	Review    *reviewJSON        `json:"owner_action,omitempty"`
 	Admitted  bool               `json:"admitted"`
 	Policy    bool               `json:"policy"`
 	Workflow  bool               `json:"workflow"`

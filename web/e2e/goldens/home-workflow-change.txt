@@ -6,7 +6,7 @@ Home
 acme/app
 
 Needs you
-Approve the workflow change in #4.
+Review workflow change · PR #4
 The map
 Show the map as a list
 Show the map as a diagram

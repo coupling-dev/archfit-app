@@ -16,7 +16,11 @@ const setupApprovedCopy = [
   'Turn on the ruleset so the default branch cannot change unless archfit/gate passes.',
   'PR #203 adds the workflow — review it.',
   'A password or a GitHub review can be replayed by a compromised account',
-  'review',
+  'In review',
+  'Review workflow change',
+  'Review first policy',
+  'Review needed',
+  'A passkey is needed to approve, but not to read the review.',
 ];
 
 for (const file of names) {
@@ -57,17 +61,16 @@ for (const file of names) {
       }
       if (body.setup.first_pull) {
         await expect(page.getByRole('listitem').nth(1).getByText('Done', { exact: true })).toBeVisible();
-        await expect(page.getByText(`First policy: #${body.setup.first_pull}, open and waiting for approval.`)).toBeVisible();
+        await expect(page.getByText(`First policy: #${body.setup.first_pull}, open and waiting for approval. The workflow is present in this PR.`)).toBeVisible();
       }
-      if (body.setup.state === 'first_approval' && body.setup.passkey) {
-        const approve = page.getByRole('link', { name: 'Approve the first policy' });
-        await expect(approve).toHaveAttribute('href', path + '/owner/first' + (body.setup.first_pull ? '?pull=' + body.setup.first_pull : ''));
-        await expect(approve).toHaveClass(/primary/);
-        await expect(page.getByRole('link', { name: 'Manage passkeys' })).toHaveClass(/ghost/);
+      if (body.setup.owner_action?.href) {
+        const review = page.getByRole('link', { name: body.setup.owner_action.label, exact: true });
+        await expect(review).toHaveAttribute('href', body.setup.owner_action.href);
+        await expect(review).toHaveClass(/primary/);
       }
-      if (!body.setup.workflow && body.setup.open_pull === 0)
+      if (!body.setup.workflow && body.setup.open_pull === 0 && !body.setup.first_pull)
         await expect(page.getByText('The pull request should also add .github/workflows/archfit.yaml.')).toBeVisible();
-      if (body.setup.open_pull > 0)
+      if (body.setup.open_pull > 0 || body.setup.first_pull)
         await expect(page.getByText('The pull request should also add .github/workflows/archfit.yaml.')).toHaveCount(0);
       await expect(page.getByText('ok', { exact: true })).toHaveCount(0);
       await expect(page.getByText('unknown', { exact: true })).toHaveCount(0);
@@ -85,9 +88,9 @@ for (const file of names) {
       await page.keyboard.press('Enter');
       for (const m of body.map.modules)
         await expect(page.locator('details li').filter({ hasText: m.name + ' · Volatility:' })).toBeVisible();
-      await expectNoNotUsedWord(page);
+      await expectNoNotUsedWord(page, ['Review workflow change']);
     }
-    await expectClean(page, body.setup ? setupApprovedCopy : []);
+    await expectClean(page, body.setup ? setupApprovedCopy : ['Review workflow change']);
     expect(reads).toEqual(['/api/repos/acme/app/home']);
     expect(writes).toEqual([]);
   });
@@ -98,7 +101,7 @@ test('home: request opens its page and the record folds away', async ({ page }) 
   await expect(page.getByText('cmd/run.go:12:', { exact: false })).toBeHidden();
   await page.getByText('Show the record', { exact: true }).click();
   await expect(page.locator('pre')).toContainText('balance: 9/10 (min 7)');
-  await expectNoNotUsedWord(page);
+  await expectNoNotUsedWord(page, ['Review workflow change']);
   await page.route('**/api/repos/acme/app/requests/431', (r) =>
     r.fulfill({ status: 404, json: { error: 'Not found.' } }),
   );
@@ -165,7 +168,7 @@ test('home: SVG keeps request/date labels and only one kind per pair', async ({ 
     await expect(page.locator('.map-edge.' + kind)).toContainText(label);
     await expect(page.locator('.map-edge')).toHaveCount(2);
     await expect(page.locator('.map-edge.allowed')).toHaveCount(1);
-    await expectNoNotUsedWord(page);
+    await expectNoNotUsedWord(page, ['Review workflow change']);
   }
 });
 
@@ -184,4 +187,43 @@ test('home: unknown and cross-repository links stay text, and API text is escape
   await expect(page.getByRole('link', { name: 'Unknown page' })).toHaveCount(0);
   await expect(page.locator('main img')).toHaveCount(0);
   await expectClean(page);
+});
+
+for (const first of [true, false]) {
+  test(`home: ${first ? 'first policy' : 'workflow'} review does not require an existing passkey`, async ({ page }) => {
+    const body = fixture(first ? 'not-set-up' : 'workflow-review');
+    body.setup.passkey = false;
+    await open(page, path, { [api]: () => [200, body] });
+    const link = page.getByRole('link', { name: body.setup.owner_action.label, exact: true });
+    await expect(link).toHaveAttribute('href', body.setup.owner_action.href);
+    await expect(link).not.toHaveAttribute('aria-disabled');
+    await expect(page.getByRole('link', { name: 'Register a passkey' })).toBeVisible();
+    await link.focus();
+    await expect(link).toBeFocused();
+    await expectClean(page, setupApprovedCopy);
+  });
+}
+
+test('home: ineligible viewer gets a role handoff without an owner-action link', async ({ page }) => {
+  const body = fixture('not-set-up');
+  body.setup.owner_action = { label: 'A repository administrator named as an architecture owner in the proposed policy can review this.' };
+  await open(page, path, { [api]: () => [200, body] });
+  await expect(page.getByText(body.setup.owner_action.label, { exact: true })).toBeVisible();
+  await expect(page.locator('main a[href*="/owner/"]')).toHaveCount(0);
+  await expectPageText(page, 'home-first-policy-viewer');
+  await expectClean(page, [...setupApprovedCopy, body.setup.owner_action.label]);
+});
+
+test('home: an unavailable rule does not block setup completion, an unknown rule does', async ({ page }) => {
+  const body = fixture('not-set-up');
+  body.setup.rules = [{ code: 'gate_check', state: 'ok', text: '' }, { code: 'policy_push', state: 'not_applicable', text: '' }];
+  await open(page, path, { [api]: () => [200, body] });
+  await expect(page.getByLabel('3 of 4 steps done')).toBeVisible();
+  await expect(page.getByRole('listitem').nth(3).getByText('Action needed', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Not available', { exact: true })).toBeVisible();
+  body.setup.rules.push({ code: 'administrator_bypass', state: 'unknown', text: '' });
+  await page.reload();
+  await expect(page.getByLabel('2 of 4 steps done')).toBeVisible();
+  await expect(page.getByText('Check with an admin', { exact: true })).toBeVisible();
+  await expectClean(page, setupApprovedCopy);
 });

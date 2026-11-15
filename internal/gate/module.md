@@ -87,6 +87,9 @@ Its view digest covers repository identity, refs, exact file bytes and SHA-256s,
 First approval uses an empty approved baseline; the entire policy is shown as additions.
 A revert includes the exact result with open answers re-applied, and binds the App proposal and
 every ordered approval input. `ActionDigest` remains the unchanged M2 binding.
+`OwnerActions.OwnerReview` verifies that view and reuses the approval service's existing eligibility
+check without redeeming a passkey or writing. It refuses first/workflow heads already approved;
+workflow authority comes from the digest-checked approved policy, never from proposed owners.
 
 ## Request page view
 

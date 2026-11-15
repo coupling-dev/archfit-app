@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
@@ -38,6 +39,12 @@ func TestReposGoldens(t *testing.T) {
 			if tt.record != nil {
 				tt.record["schema"] = "archfit-app.repo.v1"
 				homePut(t, e, "repo", tt.record)
+			}
+			if tt.record["approved_digest"] != nil {
+				e.setups.out = onboarding.Setup{Policy: true, Workflow: true, State: "approved"}
+			}
+			if tt.record["outside_flow"] != nil {
+				e.setups.out.State = "outside_flow"
 			}
 			if tt.listed {
 				e.grant("alice", repoName, permRead)
@@ -85,7 +92,9 @@ func TestReposUnreadableRecordIsAnError(t *testing.T) {
 
 func checkReposGolden(t *testing.T, name string, response *httptest.ResponseRecorder) {
 	t.Helper()
-	if words := wording.NotUsedIn(response.Body.String()); len(words) != 0 {
+	// P0.2 explicitly names these navigation actions; retain the wording check for all other copy.
+	copy := strings.NewReplacer("Review first policy", "", "Review workflow PR", "").Replace(response.Body.String())
+	if words := wording.NotUsedIn(copy); len(words) != 0 {
 		t.Fatalf("repositories use %v: %s", words, response.Body.String())
 	}
 	var pretty bytes.Buffer
@@ -135,6 +144,13 @@ func TestReposAllStatesGolden(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	e.setups.byRepo = map[string]onboarding.Setup{
+		"acme/clean":        {Policy: true, Workflow: true, State: "approved", Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{{Code: "gate_check", State: "ok"}}}},
+		"acme/drift":        {State: "first_approval", FirstPull: 8, Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{{Code: "gate_check", State: "warning"}, {Code: "pull_requests", State: "ok"}}}},
+		"acme/expired":      {Policy: true, Workflow: true, State: "approved"},
+		"acme/outside-flow": {Policy: true, Workflow: true, State: "outside_flow"},
+		"acme/unknown":      {Policy: true, OpenPull: 203, State: "first_approval"},
+	}
 	e.addRepo("octo/tool", installC, 51)
 	e.grant("alice", "octo/tool", permRead)
 	// Unadmitted data must never be read, even when it would fail decoding.
@@ -144,6 +160,9 @@ func TestReposAllStatesGolden(t *testing.T) {
 	res := e.signIn("alice").get("/api/repos")
 	wantStatus(t, res, http.StatusOK)
 	checkReposGolden(t, "all-states", res)
+	if len(e.setups.repos) != 6 {
+		t.Fatalf("Setup calls = %d, want all six admitted rows only", len(e.setups.repos))
+	}
 }
 
 func TestReposOnboardingStagesAreBoundedAndErrorsFallBack(t *testing.T) {
@@ -163,10 +182,16 @@ func TestReposOnboardingStagesAreBoundedAndErrorsFallBack(t *testing.T) {
 	res := e.signIn("alice").get("/api/repos")
 	wantStatus(t, res, http.StatusOK)
 	body := decodeAs[overviewBody](t, res)
-	want := []string{"no policy", "needs workflow", "awaiting approval", "active", "not set up"}
+	want := []string{"not_started", "not_started", "first_approval", "policy_approved", ""}
 	for i, state := range want {
-		if body.Repos[i].State != state {
-			t.Errorf("%s state = %q, want %q", body.Repos[i].FullName, body.Repos[i].State, state)
+		if body.Repos[i].SetupStage != state {
+			t.Errorf("%s stage = %q, want %q", body.Repos[i].FullName, body.Repos[i].SetupStage, state)
+		}
+	}
+	for _, i := range []int{4, 25, 29} {
+		row := body.Repos[i]
+		if row.SetupStage != "" || row.SetupReason == "" || row.Enforcement != "check" || row.EnforcementReason == "" || row.State != "not set up" {
+			t.Errorf("unread setup %d = %+v", i, row)
 		}
 	}
 	if len(e.setups.repos) != maxSetupProbes {

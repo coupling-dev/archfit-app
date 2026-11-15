@@ -1,19 +1,19 @@
 <script lang="ts">
   import { repoPage, type Repo } from '../lib/route';
-  import { setupPasskeyActions, setupPullStep, setupRuleStatus, setupStepState, type HomeSetup } from '../lib/home';
+  import { homeHref, setupPullStep, setupRuleStatus, setupStepState, type HomeSetup } from '../lib/home';
 
   let { setup, repo }: { setup: HomeSetup; repo: Repo } = $props();
   const steps = [
     { title: 'Add the policy', text: 'Your architecture rules live in .archfit.yaml, in the repository.' },
     { title: 'Open a pull request', text: 'Rules reach the default branch through review, so the approval binds to exact file contents.' },
-    { title: 'Approve the first policy', text: 'The owner signs the policy with a passkey. Change one byte and the approval no longer counts.' },
+    { title: 'Approve the policy and workflow', text: 'The owner signs the policy with a passkey. Change one byte and the approval no longer counts.' },
     { title: 'Require the gate', text: 'Turn on the ruleset so the default branch cannot change unless archfit/gate passes.' },
   ];
   const passkeyReason = 'The gate protects the rules themselves. A password or a GitHub review can be replayed by a compromised account, and in a one-person repository a self-review proves nothing. A passkey stays on your device, works only on this site, and signs the exact bytes of the policy and workflow. Any later edit needs a new approval.';
   let state = $derived(setupStepState(setup));
   let done = $derived(state.done);
   let completed = $derived(state.completed);
-  let passkeyActions = $derived(setupPasskeyActions(setup));
+  let reviewHref = $derived(setup.owner_action?.href ? homeHref(repo, setup.owner_action.href) : undefined);
   let pullStep = $derived(setupPullStep(setup));
   let githubRepo = $derived(`https://github.com/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`);
   function ruleExplanation(rule: HomeSetup['rules'][number]): string {
@@ -24,7 +24,7 @@
 </script>
 
 <section class="box setup" aria-labelledby="setup-title">
-  <div class="box-head"><div><h2 id="setup-title">Set up Archfit</h2><p>Four steps to enforcement. Until step 4, Archfit only advises.</p></div></div>
+  <div class="box-head"><div><h2 id="setup-title">Set up Archfit</h2><p>Policy approval and required-check settings are separate. Complete the applicable steps below.</p></div></div>
   <div class="box-body">
     <div class="progress" aria-label="{completed} of 4 steps done"><span>{completed} of 4 done</span><span class="bar" aria-hidden="true"><span style="width: {completed * 25}%"></span></span></div>
     <ol class="steps">
@@ -37,27 +37,30 @@
           <div class="step-body">
             {#if i === 0}
               {#if setup.policy}<p>The policy is on the default branch. <a href={repoPage(repo.fullName, '/policy')}>View the policy</a></p>
-              {:else if setup.first_pull}<p>The policy is in the first pull request.</p>
-              {:else}<pre class="command"><code>archfit init</code></pre><p>This creates the policy (or converts v2 files) and adds its agent block to AGENTS.md. It does not write the workflow.</p>{/if}
+              {:else if setup.first_pull}<p>A version 3 policy is proposed in PR #{setup.first_pull}; it is not yet on the default branch.</p>
+              {:else}<p>The default branch has no version 3 policy.</p><pre class="command"><code>archfit init</code></pre><p>This creates the policy (or converts v2 files) and adds its agent block to AGENTS.md. It does not write the workflow.</p>{/if}
               {#if !setup.policy && !setup.first_pull}<p>Commit the policy and workflow, then open a pull request.</p>{/if}
             {:else if i === 1}
               {#if pullStep.kind === 'review'}
                 <p><a href={repoPage(repo.fullName, '/pull/' + pullStep.number)}>PR #{pullStep.number}</a> adds the workflow — review it.</p>
                 <a class="btn ghost" href={`${githubRepo}/pull/${pullStep.number}`}>Open PR #{pullStep.number}</a>
               {:else if pullStep.kind === 'first-policy'}
-                <p>First policy: #{setup.first_pull}, open and waiting for approval.</p>
+                <p>First policy: #{setup.first_pull}, open and waiting for approval. The workflow is present in this PR.</p>
                 <a class="btn ghost" href={repoPage(repo.fullName, '/pull/' + setup.first_pull)}>Open the first pull request</a>
               {:else}
                 <p>Open one pull request that adds the policy and workflow.</p>
                 <a class="btn ghost" href={`${githubRepo}/compare`}>Open a pull request on GitHub</a>
               {/if}
-              {#if !setup.workflow && setup.open_pull === 0}<p>The pull request should also add <code>.github/workflows/archfit.yaml</code>.</p>{/if}
+              {#if !setup.workflow && setup.open_pull === 0 && !setup.first_pull}<p>The pull request should also add <code>.github/workflows/archfit.yaml</code>.</p>{/if}
             {:else if i === 2}
-              {#if passkeyActions.register}
-                <a class="btn primary" href={repoPage(repo.fullName, '/passkeys')}>Register a passkey</a>
-                {#if passkeyActions.approvalBlocked}<a class="btn ghost disabled" aria-disabled="true" tabindex="-1" href={repoPage(repo.fullName, '/owner/first' + (setup.first_pull ? '?pull=' + setup.first_pull : ''))} onclick={(event) => event.preventDefault()}>Approve the first policy</a><p>Register a passkey first.</p>{/if}
+              {#if setup.owner_action}
+                {#if reviewHref}<a class="btn primary" href={reviewHref}>{setup.owner_action.label}</a>
+                {:else}<p>{setup.owner_action.label}</p>{/if}
+              {/if}
+              {#if !setup.passkey}
+                <a class="btn ghost" href={repoPage(repo.fullName, '/passkeys')}>Register a passkey</a>
+                <p>A passkey is needed to approve, but not to read the review.</p>
               {:else}
-                {#if passkeyActions.approve}<a class="btn primary" href={repoPage(repo.fullName, '/owner/first' + (setup.first_pull ? '?pull=' + setup.first_pull : ''))}>Approve the first policy</a>{/if}
                 <a class="btn ghost" href={repoPage(repo.fullName, '/passkeys')}>Manage passkeys</a>
               {/if}
               <details><summary>Why a passkey?</summary><p>{passkeyReason}</p></details>
@@ -94,7 +97,6 @@
   .step-body { grid-column: 2 / 4; margin-top: 4px; }
   .step-body p + p { margin-top: 8px; }
   .btn { display: inline-block; margin: 4px 8px 4px 0; }
-  .btn.disabled { opacity: .55; cursor: not-allowed; }
   details { margin-top: 8px; }
   summary { cursor: pointer; }
   details p { margin-top: 8px !important; }

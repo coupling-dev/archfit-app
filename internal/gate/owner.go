@@ -27,6 +27,7 @@ import (
 // the first approval of an onboarding pull request or of the policy already on the default branch, the approval of a
 // changed workflow file, and the confirm or revert of a policy changed outside the flow. *Gate implements it.
 type OwnerActions interface {
+	OwnerReview(ctx context.Context, t Target, a OwnerAction, u OwnerUser) error
 	OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerView, error)
 	// OwnerDigest is the change digest of action a now: the owner's passkey step-up is bound to it, with the action's
 	// kind as its action.
@@ -92,6 +93,16 @@ var (
 	ErrRevertMoved       = proposals.ErrMoved
 	ErrRevertNotOwner    = proposals.ErrNotOwner
 )
+
+// OwnerReview checks review availability and the existing approval eligibility rules.
+// The view verifies protected-policy and proposed-file digests before eligibility is checked.
+func (g *Gate) OwnerReview(ctx context.Context, t Target, a OwnerAction, u OwnerUser) error {
+	v, err := g.OwnerView(ctx, t, a)
+	if err != nil {
+		return err
+	}
+	return g.approvals.Review(ctx, t.Repo, a, u, v.ActionDigest)
+}
 
 // OwnerDigest is the change digest of action a of t's repository.
 func (g *Gate) OwnerDigest(ctx context.Context, t Target, a OwnerAction) (string, error) {
