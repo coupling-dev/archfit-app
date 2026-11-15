@@ -158,7 +158,7 @@ describe('page route parity', () => {
   });
 
   it('rejects a spec that no longer calls the words helper', () => {
-    expect(parity(server, client, spec.replace('await expectNoNotUsedWord(page);', ''))).toContain(
+    expect(parity(server, client, spec.replace(/await expectNoNotUsedWord\([^;]+\);/, ''))).toContain(
       'kind has no words-checked spec: home',
     );
   });

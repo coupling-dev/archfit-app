@@ -7,7 +7,7 @@ A
 Sign out
 Repositories
 
-Onboarding and policy state for each repository.
+Choose a repository or continue setup.
 
 No repository yet
 

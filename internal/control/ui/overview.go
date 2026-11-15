@@ -1,12 +1,12 @@
 package ui
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 	"sync"
 
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
-	"github.com/alexei-led/archfit-app/internal/gate"
 )
 
 const (
@@ -16,9 +16,20 @@ const (
 )
 
 type overviewRow struct {
-	FullName string `json:"full_name"`
-	Waiting  bool   `json:"waiting,omitempty"` // no operator approved its installation: no state is read
-	State    string `json:"state"`
+	FullName          string           `json:"full_name"`
+	Waiting           bool             `json:"waiting,omitempty"` // no operator approved its installation: no state is read
+	State             string           `json:"state"`             // retained stored evidence, not a readiness verdict
+	SetupStage        string           `json:"setup_stage,omitempty"`
+	SetupReason       string           `json:"setup_reason,omitempty"`
+	Enforcement       string           `json:"enforcement"`
+	EnforcementReason string           `json:"enforcement_reason,omitempty"`
+	Attention         string           `json:"attention,omitempty"`
+	NextStep          overviewNextStep `json:"next_step"`
+}
+
+type overviewNextStep struct {
+	Text string `json:"text"`
+	Href string `json:"href"`
 }
 
 type overviewBody struct {
@@ -26,7 +37,7 @@ type overviewBody struct {
 	Truncated bool          `json:"truncated"`
 }
 
-// apiRepos lists repositories with cheap stored state and a bounded onboarding probe for not-set-up rows.
+// apiRepos lists stored evidence separately from a bounded read of setup and required-check facts.
 func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 	repos, err := s.gh.users.UserRepos(r.Context(), sc.user.Token)
 	if err != nil {
@@ -44,7 +55,8 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 	var wg sync.WaitGroup
 	for i, repo := range repos {
 		if !admitted[repo.InstallationID] {
-			body.Repos[i] = overviewRow{FullName: repo.FullName, Waiting: true, State: stateWaiting}
+			body.Repos[i] = uncheckedOverviewRow(repo.FullName, stateWaiting, "Installation approval is pending.")
+			body.Repos[i].Waiting = true
 			continue
 		}
 		wg.Add(1)
@@ -54,7 +66,7 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 			defer func() { <-slots }()
 			state, err := s.repoStates.RepoState(r.Context(), repo)
 			failures[i] = err
-			body.Repos[i] = overviewRow{FullName: repo.FullName, State: state}
+			body.Repos[i] = uncheckedOverviewRow(repo.FullName, state, "Setup was not checked in this list; open Home to check.")
 		}()
 	}
 	wg.Wait()
@@ -64,11 +76,11 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 		}
 	}
 
-	// Setup reads a few GitHub objects per repository. Probe only the first 25 sorted rows that need setup;
-	// approved-digest rows already have authoritative stored state and need no GitHub reads.
+	// Stored drift state says nothing about setup or required checks. Reuse the existing bounded Setup probe
+	// for the first 25 admitted rows, including approved records; never add a second GitHub read path.
 	probes := 0
 	for i, repo := range repos {
-		if !admitted[repo.InstallationID] || body.Repos[i].State != gate.RepoNotSetUp || probes >= maxSetupProbes {
+		if !admitted[repo.InstallationID] || probes >= maxSetupProbes {
 			continue
 		}
 		probes++
@@ -79,24 +91,84 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 			defer func() { <-slots }()
 			setup, err := s.setups.Setup(r.Context(), repo)
 			if err != nil {
-				return // retain the stored "not set up" state; one GitHub failure must not break the list.
+				body.Repos[i].SetupReason = "The App could not read setup; open Home to try again."
+				body.Repos[i].EnforcementReason = "The App could not read the required-check settings."
+				return // retain stored evidence; one GitHub failure must not break the list.
 			}
-			body.Repos[i].State = repoSetupStage(setup)
+			applyOverviewSetup(&body.Repos[i], setup)
 		}()
 	}
 	wg.Wait()
 	return body, nil
 }
 
-func repoSetupStage(setup onboarding.Setup) string {
+func uncheckedOverviewRow(name, state, reason string) overviewRow {
+	return overviewRow{
+		FullName: name, State: state, SetupReason: reason,
+		Enforcement: "check", EnforcementReason: "Required-check settings were not read.",
+		NextStep: overviewNextStep{Text: "Open Home", Href: "/r/" + name},
+	}
+}
+
+func applyOverviewSetup(row *overviewRow, setup onboarding.Setup) {
+	row.SetupStage, row.SetupReason = repoSetupStage(setup)
+	row.Enforcement, row.EnforcementReason = repoEnforcement(setup.Rules)
+	base := "/r/" + row.FullName
+	switch row.SetupStage {
+	case "workflow_review":
+		row.Attention = fmt.Sprintf("PR #%d", setup.OpenPull)
+		// Setup establishes an accepted workflow in a PR, not owner-action eligibility.
+		row.NextStep = overviewNextStep{Text: "Review workflow PR", Href: fmt.Sprintf("%s/pull/%d", base, setup.OpenPull)}
+	case "first_approval":
+		if setup.FirstPull > 0 {
+			row.Attention = fmt.Sprintf("PR #%d", setup.FirstPull)
+			row.NextStep = overviewNextStep{Text: "Review first policy", Href: fmt.Sprintf("%s/pull/%d", base, setup.FirstPull)}
+		} else if setup.Policy && setup.Workflow {
+			row.Attention = "First approval"
+			row.NextStep = overviewNextStep{Text: "Review first policy", Href: base}
+		} else {
+			row.NextStep = overviewNextStep{Text: "Continue setup", Href: base}
+		}
+	case "not_started":
+		row.NextStep = overviewNextStep{Text: "Continue setup", Href: base}
+	}
+}
+
+func repoSetupStage(setup onboarding.Setup) (stage, reason string) {
 	switch {
+	case setup.State == "outside_flow":
+		return "", "The policy changed outside the approval flow."
+	case setup.Policy && !setup.Workflow && setup.OpenPull > 0:
+		return "workflow_review", ""
+	case setup.FirstPull > 0 || setup.State == "first_approval":
+		return "first_approval", ""
+	case setup.Policy && setup.Workflow && setup.State == "approved":
+		return "policy_approved", ""
+	case setup.State != "" && setup.State != "not_admitted":
+		return "", "The setup facts do not establish a current policy approval."
 	case !setup.Policy:
-		return "no policy"
-	case !setup.Workflow:
-		return "needs workflow"
-	case setup.State == "approved":
-		return "active"
+		return "not_started", ""
 	default:
-		return "awaiting approval"
+		return "not_started", "Continue setup to add the workflow and approve the policy."
+	}
+}
+
+func repoEnforcement(report onboarding.RulesetReport) (state, reason string) {
+	var gateState, pullState string
+	for _, finding := range report.Findings {
+		switch finding.Code {
+		case "gate_check":
+			gateState = finding.State
+		case "pull_requests":
+			pullState = finding.State
+		}
+	}
+	switch {
+	case gateState == "ok":
+		return "required", ""
+	case gateState == "warning" && pullState == "ok":
+		return "not_required", ""
+	default:
+		return "check", "The rules do not establish whether archfit/gate is required; check with an admin."
 	}
 }

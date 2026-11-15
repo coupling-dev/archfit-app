@@ -2,7 +2,14 @@
   "repos": [
     {
       "full_name": "acme/app",
-      "state": "no policy"
+      "state": "not set up",
+      "setup_reason": "The policy changed outside the approval flow.",
+      "enforcement": "check",
+      "enforcement_reason": "The rules do not establish whether archfit/gate is required; check with an admin.",
+      "next_step": {
+        "text": "Open Home",
+        "href": "/r/acme/app"
+      }
     }
   ],
   "truncated": false

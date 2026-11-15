@@ -45,7 +45,7 @@ export async function open(page: Page, path: string, handlers: Handlers): Promis
 
 export async function expectNoNotUsedWord(page: Page, approvedCopy: string[] = []) {
   let text = await page.locator('body').innerText();
-  for (const phrase of approvedCopy) text = text.replace(phrase, ' ');
+  for (const phrase of approvedCopy) text = text.replaceAll(phrase, ' ');
   expect(notUsedIn(text)).toEqual([]);
 }
 
