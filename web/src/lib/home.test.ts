@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { homeHref, readHome, readOwnerReview, setupPullStep, setupRuleStatus, setupStepState } from './home';
+import { homeHref, readHome, readOwnerReview, setupChipClass, setupPullStep, setupRuleStatus, setupStepState } from './home';
 import { mapLines, lineLabel } from '../components/map/model';
 
 describe('Home boundary', () => {
@@ -77,6 +77,30 @@ describe('setup step labels and progress', () => {
     ['ok', 'On'], ['unknown', 'Check'], ['not_applicable', 'Not available'], ['warning', 'Action needed'],
   ])('maps rule state %s to %s', (state, label) => expect(setupRuleStatus(state)).toBe(label));
 
+  it.each([
+    ['Action needed', 'attention'],
+    ['Review needed', 'attention'],
+    ['Check', 'attention'],
+    ['Check with an admin', 'attention'],
+    ['In review', 'neutral'],
+    ['Waiting', 'neutral'],
+    ['Not available', 'neutral'],
+    ['Done', 'good'],
+    ['On', 'good'],
+  ])('gives %s a %s chip', (status, tone) => expect(setupChipClass(status)).toBe(tone));
+
+  it.each([
+    [base, 'Next: add the policy'],
+    [{ ...base, policy: true }, 'Next: review the pull request'],
+    [{ ...base, policy: true, open_pull: 203 }, 'Next: review the pull request'],
+    [{ ...base, first_pull: 12 }, 'Next: approve the workflow with your passkey'],
+    [{ ...base, first_pull: 12, state: 'approved' }, 'Next: turn on the required check'],
+    [
+      { ...base, first_pull: 12, state: 'approved', rules: [{ code: 'gate_check', state: 'ok', text: '' }] },
+      'Setup is complete.',
+    ],
+  ])('shows one next action for %j', (setup, next) => expect(setupStepState(setup).next).toBe(next));
+
   it('derives the three pull-request step branches', () => {
     expect(setupPullStep(base)).toEqual({ kind: 'create', status: 'Action needed' });
     expect(setupPullStep({ ...base, first_pull: 12 })).toEqual({ kind: 'first-policy', status: 'Done', number: 12 });
@@ -85,13 +109,13 @@ describe('setup step labels and progress', () => {
 
   it('derives progress from policy, first pull, approval and rules', () => {
     expect(setupStepState({ ...base, policy: true, rules: [{ code: 'x', state: 'ok', text: '' }] })).toEqual({
-      done: [true, false, false, true], completed: 2, approval: 'Waiting', gate: 'On',
+      done: [true, false, false, true], completed: 2, approval: 'Waiting', gate: 'On', next: 'Next: review the pull request',
     });
     expect(setupStepState({ ...base, first_pull: 12, state: 'first_approval', rules: [{ code: 'admin', state: 'unknown', text: '' }] })).toEqual({
-      done: [true, true, false, false], completed: 2, approval: 'Action needed', gate: 'Check with an admin',
+      done: [true, true, false, false], completed: 2, approval: 'Action needed', gate: 'Check with an admin', next: 'Next: approve the workflow with your passkey',
     });
     expect(setupStepState({ ...base, policy: true, open_pull: 203 })).toEqual({
-      done: [true, false, false, false], completed: 1, approval: 'Waiting', gate: 'Action needed',
+      done: [true, false, false, false], completed: 1, approval: 'Waiting', gate: 'Action needed', next: 'Next: review the pull request',
     });
     expect(setupStepState({ ...base, policy: true, state: 'approved', rules: [{ code: 'x', state: 'ok', text: '' }] }).completed).toBe(3);
   });
