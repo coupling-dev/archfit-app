@@ -2,7 +2,7 @@ import type { MapModel } from '../components/map/model';
 // The words and rules of the request page (design 10.4, 12.3). The server decides who may answer and checks every
 // answer again; these helpers only say what the page shows and keep a button off until its field is filled.
 
-import type { AnswerKind, PullEffect, RequestEarlier, RequestModule, RequestView } from './api';
+import type { AnswerKind, Preview, PullEffect, RequestEarlier, RequestModule, RequestView } from './api';
 
 // loosens is true for an answer that loosens the policy: it needs the owner's passkey (design 9.2). A reject does not.
 export function loosens(kind: AnswerKind): boolean {
@@ -23,6 +23,27 @@ export function answerProblem(kind: AnswerKind, until: string, instead: string):
   if (kind === 'approve-until' && !isDate(until)) return 'Choose the date the exception ends.';
   if (kind === 'reject' && !instead.trim()) return 'Write what to do instead.';
   return '';
+}
+
+// Confirmation describes the policy PR, never a promise that the affected code PR passes or merges.
+export function decisionState(kind: AnswerKind, preview: Preview | undefined, later: boolean) {
+  const ready = preview?.answer === kind;
+  const changesPolicy = ready && !!preview.diff;
+  const mergeLater = changesPolicy && later;
+  const verb = kind === 'reject' ? 'Reject' : kind === 'approve-until' ? 'Approve until date' : 'Approve';
+  return {
+    ready,
+    changesPolicy,
+    mergeLater,
+    confirm: !changesPolicy
+      ? `${verb} with${kind === 'reject' ? 'out a passkey' : ' passkey'}`
+      : `${verb} and ${mergeLater ? 'keep policy PR open' : 'merge policy PR'}`,
+    effect: !changesPolicy
+      ? 'This records your answer without changing .archfit.yaml.'
+      : mergeLater
+        ? 'This answer records the policy change in a pull request and keeps it open. The change takes effect only when that pull request merges.'
+        : 'This answer records the policy change in a pull request and attempts to merge it. If GitHub refuses, the policy pull request stays open.',
+  };
 }
 
 // balanceText is the balance as design 5 writes it, "9/10 (min 7)", and says when the CLI reported it.

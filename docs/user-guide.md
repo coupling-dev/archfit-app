@@ -167,11 +167,11 @@ Repository names become App links only when the signed-in user's repository list
 
 A worker can comment `/archfit request <reason>` on a pull request, or file a request through the CLI. The App creates or joins request issues. CLI-filed measurements are marked **as reported**, not verified.
 
-1. Open `/r/<owner>/<repo>/requests/<number>`. Read the status, reason and record with its balance, then the two-module map and declared volatility. Numbers without a confirming pull request remain **as reported**.
-2. Preview the policy change and affected pull requests.
-3. Read earlier answers, then choose **Approve and merge**, **Approve until a date**, or **Reject** with what to do instead. An expiry date must be in the future and at most 365 days away.
-4. Confirm an approval with your passkey. Reject does not require a passkey.
-5. Check the result. The App attempts to merge the policy pull request unless you chose merge later. If GitHub refuses, the pull request remains open. A merge-later answer takes effect when that pull request merges.
+1. Open `/r/<owner>/<repo>/requests/<number>`. Read the reason and follow the request issue link for its discussion. The record, map, declared volatility and earlier answers remain below the decision panel. Numbers without a confirming pull request remain **as reported**.
+2. Choose **Approve**, **Approve until a date**, or **Reject**. Approval previews load on opening the page. For a dated approval or rejection, enter the expiry date or what to do instead, then select **Preview**. An expiry date must be in the future and at most 365 days away.
+3. Review the selected answer's diff, exception date and affected pull requests beside its confirmation button. Each affected PR links to Archfit and GitHub. Editing an input removes its old preview and confirmation until you preview again. Previewing, changing your selection and leaving the page do not submit an answer.
+4. If the answer changes policy, choose whether to **Keep the policy pull request open**. This applies to rejection rules too. The confirmation label states whether the App will attempt to merge or keep the policy PR open. Answers with no policy change have no merge control.
+5. Confirm the selected answer. Approvals require your passkey; rejection does not. Check the result: if GitHub refuses a merge, the policy PR stays open. A change kept open takes effect only when that PR merges. The affected code PRs are not merged by answering, and a cleared error is not a passing check.
 
 An answered request shows its recorded answer and links to the GitHub issue that names the owner and passkey. Older records without an approval pointer show the issue link only, with no answer buttons.
 

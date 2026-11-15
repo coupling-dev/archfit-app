@@ -104,6 +104,8 @@ export async function open(page: Page, path: string, mock: Mock = {}) {
     switch (url.pathname) {
       case '/api/repos/acme/app/policy':
         return json(200, fixture('policy/typical'));
+      case '/api/repos/acme/app/requests/431/preview':
+        return json(200, { answer: 'approve', diff: '', policy_digest: 'd'.repeat(64), loosens: true, pulls: [] });
       case '/api/repos/acme/app/requests/431':
         return json(200, fixture('request/open'));
       case '/api/session':

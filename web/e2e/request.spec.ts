@@ -1,5 +1,16 @@
 import { expect, test, type Page } from '@playwright/test';
-import { assertion, authenticator, ceremony, expectClean, expectPageText, open, origin, docsClock, docsShot, type Handlers } from './support';
+import {
+  assertion,
+  authenticator,
+  ceremony,
+  expectClean,
+  expectPageText,
+  open,
+  origin,
+  docsClock,
+  docsShot,
+  type Handlers,
+} from './support';
 
 const path = '/r/acme/app/requests/431';
 const api = '/api/repos/acme/app';
@@ -8,6 +19,7 @@ const digest = 'd'.repeat(64);
 
 // request is GET /api/repos/acme/app/requests/431 in the shape of requestJSON (internal/control/ui/requests.go).
 const request = {
+  issue_href: 'https://github.com/acme/app/issues/431',
   number: 431,
   state: 'open',
   reason: 'netem needs the retry helper of pkg_util to apply a rule again after a container restart.',
@@ -141,7 +153,7 @@ test('request: the reason, the record with its balance, the two modules, the pre
     'href',
     'https://github.com/acme/app/issues/431',
   );
-  const record = page.getByRole('region', { name: 'Record' });
+  const record = page.getByRole('region', { name: 'Record', exact: true });
   await expect(record).toContainText('Balance: 9/10 (min 7)');
   await expect(record.locator('pre')).toHaveText(request.record);
   const map = page.getByRole('region', { name: 'The map' });
@@ -151,22 +163,20 @@ test('request: the reason, the record with its balance, the two modules, the pre
   await expect(why).toContainText('Layer adapters · Volatility high');
   await expect(why).toContainText('Volatility low · subdomain generic');
 
-  const shown = page.getByRole('region', { name: 'Preview' });
+  const shown = answerBox(page);
   await expect(shown.getByLabel('Approve: the change to .archfit.yaml')).toContainText(
     '+      - pkg_util # request #431',
   );
-  await expect(shown.getByLabel('Approve until a date: the change to .archfit.yaml')).toContainText(
-    'expires: 2026-12-01',
-  );
-  await expect(shown.getByLabel('Approve: open pull requests').getByRole('listitem')).toHaveText([
+  await expect(shown.getByRole('button', { name: 'Approve and merge policy PR' })).toBeVisible();
+  await expect(shown.getByLabel('Approve: open pull requests').getByRole('listitem').locator('p')).toHaveText([
     '#12 (waiting), waits on this request: clears 1 error, 0 errors left',
     '#15 (fail): clears 1 error, 2 errors left',
   ]);
-  await expect(shown).toContainText('Write what to do instead to see what this answer writes.');
+  await expect(shown.getByRole('link', { name: 'PR #12 in Archfit' })).toHaveAttribute('href', '/r/acme/app/pull/12');
   await expect(page.getByRole('region', { name: /^Earlier answers/ })).toContainText(
     'Exception to graph for pkg_tc -> pkg_util until 2026-10-01. Why: Until the port lands.',
   );
-  expect(reads.sort()).toEqual(['?answer=approve', '?answer=approve-until']);
+  expect(reads).toEqual(['?answer=approve']);
   expect(writes).toEqual([]);
   await expectClean(page);
 });
@@ -181,7 +191,7 @@ test('request: Approve and merge takes the digest, a passkey step-up for it, the
     path,
     owner({ pull_request: 77, state: 'merged', merge: 'c'.repeat(40), notice }, id).handlers,
   );
-  await answerBox(page).getByRole('button', { name: 'Approve and merge' }).click();
+  await answerBox(page).getByRole('button', { name: 'Approve and merge policy PR' }).click();
   await expect(answerBox(page).locator('.flash.success')).toContainText(notice);
   await expect(answerBox(page).getByRole('link', { name: 'Policy pull request #77' })).toHaveAttribute(
     'href',
@@ -211,15 +221,16 @@ test('request: Approve until a date sends the date and "merge later", and the pr
   const { handlers, reads } = owner({ pull_request: 77, state: 'later', notice }, id);
   const writes = await open(page, path, handlers);
   const box = answerBox(page);
-  await expect(box.getByRole('button', { name: 'Approve until a date' })).toBeDisabled();
+  await box.getByRole('radio', { name: 'Approve until a date', exact: true }).check();
+  await expect(box.getByRole('button', { name: 'Preview approve until a date' })).toBeDisabled();
   await box.getByLabel('The exception ends on').fill('2027-01-15');
-  await box.getByLabel('The exception ends on').blur();
+  await box.getByRole('button', { name: 'Preview approve until a date' }).click();
   await expect(page.getByLabel('Approve until a date: the change to .archfit.yaml')).toContainText(
     'expires: 2027-01-15',
   );
   expect(reads).toContain('?answer=approve-until&until=2027-01-15');
-  await box.getByLabel(/Merge later/).check();
-  await box.getByRole('button', { name: 'Approve until a date' }).click();
+  await box.getByLabel('Keep the policy pull request open').check();
+  await box.getByRole('button', { name: 'Approve until date and keep policy PR open' }).click();
   await expect(box.locator('.flash.success')).toContainText(notice);
   expect(writes[0].postDataJSON()).toEqual({ answer: 'approve-until', until: '2027-01-15', merge_later: true });
   expect(writes[1].postDataJSON()).toEqual({ action: 'approve-until', request: 431, digest });
@@ -239,17 +250,18 @@ test('request: Reject sends what to do instead and "merge later", and needs no p
   });
   const writes = await open(page, path, handlers);
   const box = answerBox(page);
-  await expect(box.getByRole('button', { name: 'Reject' })).toBeDisabled();
+  await box.getByRole('radio', { name: 'Reject', exact: true }).check();
+  await expect(box.getByRole('button', { name: 'Preview reject' })).toBeDisabled();
   await box.getByLabel('What to do instead').fill('Add a retry method to container.Client.');
-  await box.getByLabel('What to do instead').blur();
+  await box.getByRole('button', { name: 'Preview reject' }).click();
   await expect(page.getByLabel('Reject: the change to .archfit.yaml')).toContainText(
     'instead: Add a retry method to container.Client.',
   );
-  await expect(page.getByRole('region', { name: 'Preview' })).toContainText('Tightens the policy: no passkey needed.');
+  await expect(box).toContainText('Tightens the policy: no passkey needed.');
   expect(reads).toContain('?answer=reject&instead=Add+a+retry+method+to+container.Client.');
   // Merge later holds the policy pull request open for a reject too: the server merges at once without it.
-  await box.getByLabel(/Merge later/).check();
-  await box.getByRole('button', { name: 'Reject' }).click();
+  await box.getByLabel('Keep the policy pull request open').check();
+  await box.getByRole('button', { name: 'Reject and keep policy PR open' }).click();
   await expect(box.locator('.flash.success')).toBeVisible();
   expect(paths(writes)).toEqual([`${req}/answer`]);
   expect(writes[0].postDataJSON()).toEqual({
@@ -266,18 +278,23 @@ test('request: a refused step-up is the server sentence, nothing is answered, an
   handlers[`POST ${api}/passkeys/step-up`] = () => [409, { error: 'Register a passkey first.' }];
   const writes = await open(page, path, handlers);
   const box = answerBox(page);
-  await box.getByRole('button', { name: 'Approve and merge' }).click();
+  await box.getByRole('button', { name: 'Approve and merge policy PR' }).click();
   await expect(box.getByRole('alert')).toHaveText('Register a passkey first.');
-  await expect(box.getByRole('link', { name: 'Your passkeys' })).toHaveAttribute('href', '/r/acme/app/passkeys');
+  await expect(box.getByRole('link', { name: 'Your passkeys' })).toHaveAttribute(
+    'href',
+    '/r/acme/app/passkeys?return=' + encodeURIComponent(path),
+  );
   expect(paths(writes)).toEqual([`${req}/answer/digest`, `${api}/passkeys/step-up`]);
-  await expect(box.getByRole('button', { name: 'Approve and merge' })).toBeEnabled();
+  await expect(box.getByRole('button', { name: 'Approve and merge policy PR' })).toBeEnabled();
   await expectClean(page);
 });
 
 test('request: numbers as reported say so; a closed request offers no answer', async ({ page }) => {
   await open(page, path, { [`GET ${req}`]: () => [200, { ...request, verified: false }] });
   await expect(page.locator('.lede')).toContainText('Its numbers are as reported: no pull request confirmed them yet.');
-  await expect(page.getByRole('region', { name: 'Record' })).toContainText('Balance: 9/10 (min 7), as reported');
+  await expect(page.getByRole('region', { name: 'Record', exact: true })).toContainText(
+    'Balance: 9/10 (min 7), as reported',
+  );
 
   await page.unrouteAll();
   await open(page, path, { [`GET ${req}`]: () => [200, { ...request, state: 'closed' }] });
@@ -296,8 +313,25 @@ test('request: a request that does not exist is the API sentence, with no reposi
 for (const [name, data] of [
   ['open', request],
   ['as-reported', { ...request, verified: false }],
-  ['joined', { ...request, state: 'answered', dependencies: [{ kind: 'exception', from: 'pkg_tc', to: 'pkg_util', rule: 'graph', expires: '2027-01-15' }], answer: { kind: 'approve-until', until: '2027-01-15' } }],
-  ['answered', { ...request, state: 'answered', modules: request.modules.map((m) => m.name === 'pkg_tc' ? { ...m, depends_on: ['pkg_util'] } : m), dependencies: [{ kind: 'deny', from: 'pkg_tc', to: 'pkg_util', rule: 'no-tc-to-util' }], answer: { kind: 'reject', instead: 'Use a port.' } }],
+  [
+    'joined',
+    {
+      ...request,
+      state: 'answered',
+      dependencies: [{ kind: 'exception', from: 'pkg_tc', to: 'pkg_util', rule: 'graph', expires: '2027-01-15' }],
+      answer: { kind: 'approve-until', until: '2027-01-15' },
+    },
+  ],
+  [
+    'answered',
+    {
+      ...request,
+      state: 'answered',
+      modules: request.modules.map((m) => (m.name === 'pkg_tc' ? { ...m, depends_on: ['pkg_util'] } : m)),
+      dependencies: [{ kind: 'deny', from: 'pkg_tc', to: 'pkg_util', rule: 'no-tc-to-util' }],
+      answer: { kind: 'reject', instead: 'Use a port.' },
+    },
+  ],
 ] as const) {
   test(`request: ${name} text golden on direct load${name === 'open' ? ' @docs' : ''}`, async ({ page }) => {
     await docsClock(page);
@@ -309,8 +343,13 @@ for (const [name, data] of [
       await expect(answerBox(page).getByRole('button')).toHaveCount(0);
       await expect(page.locator('.map-edge.' + (data.answer.kind === 'reject' ? 'deny' : 'exception'))).toHaveCount(1);
       await expect(page.locator('.map-edge.allowed')).toHaveCount(0);
-      await expect(answerBox(page)).toContainText(data.answer.kind === 'reject' ? 'Rejected. What to do instead: Use a port.' : 'Approved until 2027-01-15.');
-      await expect(page.getByRole('link', { name: 'Request #431 on GitHub' })).toHaveAttribute('href', 'https://github.com/acme/app/issues/431');
+      await expect(answerBox(page)).toContainText(
+        data.answer.kind === 'reject' ? 'Rejected. What to do instead: Use a port.' : 'Approved until 2027-01-15.',
+      );
+      await expect(page.getByRole('link', { name: 'Request #431 on GitHub' })).toHaveAttribute(
+        'href',
+        'https://github.com/acme/app/issues/431',
+      );
     }
     await expectPageText(page, 'request-' + name);
     if (name === 'open') await docsShot(page, 'request');
@@ -324,4 +363,129 @@ test('request: old answered record links to issue without inventing an answer', 
   await expect(answerBox(page)).not.toContainText('Approved.');
   await expect(answerBox(page).getByRole('button')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Request #431 on GitHub' })).toBeVisible();
+});
+
+for (const width of [390, 1280]) {
+  for (const [kind, title, verb] of [
+    ['approve', 'Approve', 'Approve'],
+    ['approve-until', 'Approve until a date', 'Approve until date'],
+    ['reject', 'Reject', 'Reject'],
+  ] as const) {
+    test(`request: decision ${kind} at ${width} @docs`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await docsClock(page);
+      const writes = await open(page, path, owner({}).handlers);
+      const box = answerBox(page);
+      await box.getByRole('radio', { name: title, exact: true }).check();
+      if (kind === 'approve-until') await box.getByLabel('The exception ends on').fill('2027-01-15');
+      if (kind === 'reject') await box.getByLabel('What to do instead').fill('Use a port.');
+      if (kind !== 'approve') await box.getByRole('button', { name: 'Preview ' + title.toLowerCase() }).click();
+      const decision = box.getByRole('region', { name: title, exact: true });
+      await expect(decision.getByLabel(title + ': the change to .archfit.yaml')).toBeVisible();
+      await expect(decision.getByRole('button', { name: verb + ' and merge policy PR' })).toBeVisible();
+      await expect(box.locator('button.primary')).toHaveCount(1);
+      await expect(decision.getByRole('link', { name: 'PR #12 in Archfit' })).toHaveAttribute(
+        'href',
+        '/r/acme/app/pull/12',
+      );
+      await expect(decision.getByRole('link', { name: 'PR #12 on GitHub' })).toHaveAttribute(
+        'href',
+        'https://github.com/acme/app/pull/12',
+      );
+      await expect(page.getByRole('link', { name: 'Request #431 on GitHub' })).toHaveAttribute(
+        'href',
+        request.issue_href,
+      );
+      await decision.getByLabel('Keep the policy pull request open').check();
+      await expect(decision.getByRole('button', { name: verb + ' and keep policy PR open' })).toBeVisible();
+      await expect(decision).toContainText('The change takes effect only when that pull request merges.');
+      await expect(decision).toContainText('These code pull requests are not merged by this answer.');
+      const target = await decision.getByRole('button').boundingBox();
+      if (width === 390) expect(target?.height).toBeGreaterThanOrEqual(44);
+      await expect(page.locator('.map-node')).toHaveCount(2);
+      await docsShot(page, `request-${kind}-${width}`);
+      await expectClean(page);
+      expect(writes).toEqual([]);
+      await decision.getByRole('link', { name: 'PR #12 in Archfit' }).click();
+      await expect(page).toHaveURL(/\/pull\/12$/);
+      expect(writes).toEqual([]);
+    });
+  }
+}
+
+test('request: editing discards the preview and a late read cannot restore it', async ({ page }) => {
+  const { handlers } = owner({});
+  let release: (() => void) | undefined;
+  handlers[`GET ${req}/preview`] = async (_, url) => {
+    if (url.searchParams.get('answer') === 'reject')
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    return preview(url);
+  };
+  const writes = await open(page, path, handlers);
+  const box = answerBox(page);
+  await box.getByRole('radio', { name: 'Reject', exact: true }).check();
+  await box.getByLabel('What to do instead').fill('Old alternative');
+  await box.getByRole('button', { name: 'Preview reject' }).click();
+  await expect.poll(() => !!release).toBe(true);
+  await box.getByLabel('What to do instead').fill('New alternative');
+  const completed = page.waitForResponse((response) => response.url().includes('instead=Old'));
+  release?.();
+  await (await completed).finished();
+  await expect(box.getByLabel('Reject: the change to .archfit.yaml')).toHaveCount(0);
+  await expect(box.locator('button.primary')).toHaveCount(0);
+  handlers[`GET ${req}/preview`] = (_, url) => preview(url);
+  await box.getByRole('button', { name: 'Preview reject' }).click();
+  await expect(box.getByLabel('Reject: the change to .archfit.yaml')).toContainText('New alternative');
+  await box.getByLabel('What to do instead').fill('');
+  await expect(box.locator('button.primary')).toHaveCount(0);
+  expect(writes).toEqual([]);
+});
+
+test('request: no policy change hides merge control and does not submit its stale value', async ({ page }) => {
+  const { handlers } = owner({ notice: 'Answered. The policy needs no new line for it.' });
+  handlers[`GET ${req}/preview`] = (_, url) =>
+    url.searchParams.get('answer') === 'reject'
+      ? [200, { answer: 'reject', diff: '', policy_digest: digest, loosens: false, pulls: [] }]
+      : preview(url);
+  const writes = await open(page, path, handlers);
+  const box = answerBox(page);
+  await box.getByLabel('Keep the policy pull request open').check();
+  await box.getByRole('radio', { name: 'Reject', exact: true }).check();
+  await box.getByLabel('What to do instead').fill('Use a port.');
+  await box.getByRole('button', { name: 'Preview reject' }).click();
+  await expect(box.getByLabel('Keep the policy pull request open')).toHaveCount(0);
+  await expect(box).toContainText('This records your answer without changing .archfit.yaml.');
+  await expectClean(page);
+  await box.getByRole('button', { name: 'Reject without a passkey' }).click();
+  await expect(box.locator('.flash.success')).toBeVisible();
+  expect(writes.map((write) => write.postDataJSON())).toEqual([{ answer: 'reject', instead: 'Use a port.' }]);
+});
+
+test('request: missing or unsafe issue destination is not invented', async ({ page }) => {
+  await open(page, path, {
+    [`GET ${req}`]: () => [200, { ...request, state: 'closed', issue_href: 'https://other.example/issues/431' }],
+  });
+  await expect(page.getByRole('link', { name: 'Request #431 on GitHub' })).toHaveCount(0);
+});
+
+test('request: failed preview cannot confirm; retry and a changed date require a fresh preview', async ({ page }) => {
+  const { handlers } = owner({});
+  handlers[`GET ${req}/preview`] = () => [503, { error: 'Preview unavailable.' }];
+  const writes = await open(page, path, handlers);
+  const box = answerBox(page);
+  await expect(box.getByRole('alert')).toContainText('Preview unavailable.');
+  await expect(box.locator('button.primary')).toHaveCount(0);
+  handlers[`GET ${req}/preview`] = (_, url) => preview(url);
+  await box.getByRole('button', { name: 'Preview approve', exact: true }).click();
+  await expect(box.getByRole('button', { name: 'Approve and merge policy PR' })).toBeVisible();
+  await box.getByRole('radio', { name: 'Approve until a date', exact: true }).check();
+  await box.getByLabel('The exception ends on').fill('2027-01-15');
+  await box.getByRole('button', { name: 'Preview approve until a date' }).click();
+  await expect(box.getByLabel('Approve until a date: the change to .archfit.yaml')).toContainText('2027-01-15');
+  await box.getByLabel('The exception ends on').fill('2027-02-15');
+  await expect(box.locator('button.primary')).toHaveCount(0);
+  await expect(box.getByLabel('Approve until a date: the change to .archfit.yaml')).toHaveCount(0);
+  expect(writes).toEqual([]);
 });
