@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { expectClean, expectPageText, open, docsClock, docsShot } from './support';
 
-const states = ['pass', 'fail-advisory', 'fail-advisory-request', 'required-request', 'fail-fix', 'fail-ask', 'fail-copy', 'next-backticks', 'fail-expired-exception', 'unknown', 'unknown-workflow', 'unknown-outside-flow', 'unknown-missing-evidence', 'waiting', 'unpublished', 'superseded', 'no-result', 'missing-artifact', 'mismatch', 'pending'];
+const states = ['pass', 'fail-advisory', 'fail-advisory-request', 'required-request', 'fail-fix', 'fail-ask', 'fail-copy', 'next-backticks', 'fail-expired-exception', 'unknown', 'unknown-first-policy', 'unknown-workflow', 'unknown-workflow-viewer', 'unknown-outside-flow', 'unknown-missing-evidence', 'waiting', 'unpublished', 'superseded', 'no-result', 'missing-artifact', 'mismatch', 'pending'];
 for (const state of states) {
   test(`pull request: ${state}${state === 'waiting' ? ' @docs' : ''}`, async ({ page }) => {
     await docsClock(page);
@@ -11,7 +11,20 @@ for (const state of states) {
     await expect(page.locator('main section, main h1').last()).toBeVisible();
     await expectPageText(page, `pull-${state}`);
     if (state === 'waiting') await docsShot(page, 'pull');
-    await expectClean(page);
+    const approvedCopy = ['Review workflow change', 'Review first policy', 'An architecture owner named in the approved policy can review this.'];
+    await expectClean(page, approvedCopy);
+    if (state === 'unknown-workflow' || state === 'unknown-first-policy') {
+      const first = state === 'unknown-first-policy';
+      const link = page.getByRole('link', { name: first ? 'Review first policy' : 'Review workflow change', exact: true });
+      await expect(link).toHaveAttribute('href', '/r/acme/app/owner/' + (first ? 'first' : 'workflow') + '?pull=4');
+      await expect(link).toHaveClass(/primary/);
+      await link.focus();
+      await expect(link).toBeFocused();
+    }
+    if (state === 'unknown-workflow-viewer') {
+      await expect(page.locator('main a[href*="/owner/"]')).toHaveCount(0);
+      await expect(page.getByText('An architecture owner named in the approved policy can review this.', { exact: true })).toBeVisible();
+    }
     if (state === 'waiting') await expect(page.getByRole('link', { name: '#431' }).first()).toHaveAttribute('href', '/r/acme/app/requests/431');
     if (state === 'fail-advisory-request') await expect(page.locator('main h1')).toHaveText('Archfit: fail, 1 error');
     if (state === 'required-request') await expect(page.locator('main h1')).toHaveText('Archfit: waiting, request #431');

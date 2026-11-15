@@ -1,0 +1,6 @@
+Archfit: unknown, no verdict
+Review first policy
+.archfit.yaml policy the first policy needs approval
+next: an administrator approves the policy in the App
+
+Author: do the next step of each record.

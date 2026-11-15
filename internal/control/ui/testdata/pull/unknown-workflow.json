@@ -32,5 +32,9 @@
       }
     ],
     "author": "do the `next` step of each record."
+  },
+  "owner_action": {
+    "label": "Review workflow change",
+    "href": "/r/acme/app/owner/workflow?pull=4"
   }
 }

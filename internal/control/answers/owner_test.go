@@ -103,3 +103,8 @@ func (g *ownerGate) OwnerView(_ context.Context, target gate.Target, a gate.Owne
 	g.viewCalls++
 	return g.view, g.err
 }
+
+func (g *ownerGate) OwnerReview(_ context.Context, target gate.Target, a gate.OwnerAction, u gate.OwnerUser) error {
+	g.target, g.action, g.in.User = target, a, u
+	return g.err
+}

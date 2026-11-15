@@ -73,7 +73,13 @@ For an approved repository the response has `status`, optional `needs_you` rows,
 `kind`, `text`, `href`, and the applicable request, pull, rule, modules, expiry date, days left or request record.
 Requests link to `/r/{o}/{n}/requests/{number}`. Drift and expiry link to their GitHub issue, falling back to
 Policy before the sweep opens one. Owner actions link to `/r/{o}/{n}/owner/{workflow|confirm|revert}`;
-workflow links include `?pull={number}`. These links do not authorize an action; the owner API does that again.
+workflow links include `?pull={number}`. First-policy and workflow links are resolved with
+`Owners.OwnerReview`: first approval requires an administrator also named in the proposed policy;
+workflow approval requires an owner of the approved policy. Setup includes an optional `owner_action`
+with `label` and eligible `href`; an ineligible viewer gets a named-role handoff without `href`.
+A passkey is required to approve, not to follow the review link. These links do not authorize an action;
+the owner API checks again on submission. Setup progress excludes `not_applicable` rules but never
+counts `unknown` as complete. Policy and workflow presence on a PR is distinct from the default branch.
 
 The map has `layers` (outer first, an empty-string band last for modules without a layer), `modules`
 (name, layer, effective volatility), and `lines` (kind, from, to, optional rule, request or expiry date).
@@ -94,7 +100,10 @@ If the outside-flow policy is missing or invalid, Home omits the map and confirm
 `GET /api/repos/{o}/{n}/pulls/{number}` authorizes repository read and admission before calling the gate pull
 read façade. It returns the current pull record, check state, waiting requests and shared feedback page form,
 or a single no-result, untrusted-result or pending-publication line. The browser uses only text and constructs
-request links from the current route and request numbers. There is no pull graph endpoint.
+request links from the current route and request numbers. Unknown results also resolve an optional
+`owner_action` using the same first-policy/workflow eligibility check as Home, not the report's prose.
+It contains a plain review label and link, or a role handoff without a link. Failed authority reads
+never produce a link, and the displayed verdict remains unchanged. There is no pull graph endpoint.
 ## Owner action views
 
 `GET /api/repos/{o}/{n}/owner/{first|workflow|confirm|revert}/view` returns the read-only owner

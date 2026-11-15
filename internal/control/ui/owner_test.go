@@ -36,6 +36,7 @@ func (f *fakeSetups) Setup(_ context.Context, r api.Repo) (onboarding.Setup, err
 }
 
 type fakeOwners struct {
+	review  func(answers.OwnerAction, gate.OwnerUser) error
 	repos   []api.Repo
 	users   []gate.OwnerUser
 	actions []answers.OwnerAction
@@ -267,4 +268,11 @@ func TestOwnerAPIPreservesBothDisplayedBindings(t *testing.T) {
 	if a.Digest != "sha256:original" || a.ViewDigest != "sha256:view" || a.Token != "view-token" {
 		t.Fatalf("bindings = %+v", a)
 	}
+}
+
+func (f *fakeOwners) OwnerReview(_ context.Context, _ api.Repo, a answers.OwnerAction, u gate.OwnerUser) error {
+	if f.review != nil {
+		return f.review(a, u)
+	}
+	return gate.ErrOwnerNotDue
 }
