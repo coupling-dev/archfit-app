@@ -1,10 +1,19 @@
 <script lang="ts">
   import Skeleton from '../components/Skeleton.svelte';
-  import { explain, explainLoad, getJSON, postJSON, type AdminBody, type ApiError, type Installation, type Notice, type Session } from '../lib/api';
+  import { explain, explainLoad, getJSON, postJSON, type AdminBody, type ApiError, type Installation, type Notice, type Session, type Repos } from '../lib/api';
+
+  import { repoPage } from '../lib/route';
 
   // Admin is the operators' page: approve an account so Archfit runs for it, or revoke it. The server answers 404 to
   // anyone else, so a non-operator sees "Not found" here as on any unknown page.
   let { session, here }: { session: Session; here: string } = $props();
+
+  let accessible = $state<string[]>([]);
+  // Installation visibility is not repository access. A failed/truncated list never grants more links.
+  getJSON<Repos>('/api/repos').then(
+    (b) => { accessible = b.repos.filter((r) => !r.waiting).map((r) => r.full_name); },
+    () => { accessible = []; },
+  );
 
   let body = $state<AdminBody | null>(null);
   let failure = $state('');
@@ -61,7 +70,9 @@
   {:else if row.repos.length}
     <ul class="chips" aria-label="Repositories of {row.account}">
       {#each row.repos as r (r.name)}
-        <li class="chip" class:priv={r.private}>{r.name}{r.private ? ' · private' : ''}</li>
+        <li class="chip" class:priv={r.private}>
+          {#if accessible.includes(`${row.account}/${r.name}`)}<a href={repoPage(`${row.account}/${r.name}`)}>{r.name}</a>{:else}{r.name}{/if}{r.private ? ' · private' : ''}
+        </li>
       {/each}
     </ul>
   {/if}
@@ -88,9 +99,10 @@
           <span class="muted small">· installed {day(row.installed_at)}</span>
           {@render repos(row)}
         </div>
-        <button class="btn sm primary" type="button" disabled={busy !== 0} onclick={() => act(row, 'approve')}>
+        {#if row.auto}<span class="label">Managed by configuration</span>
+        {:else}<button class="btn sm primary" type="button" disabled={busy !== 0} onclick={() => act(row, 'approve')}>
           Approve<span class="sr-only"> {row.account}</span>
-        </button>
+        </button>{/if}
       </div>
     {:else}
       <p class="box-row muted">No installation is waiting.</p>
@@ -105,9 +117,9 @@
         <div>
           <strong>{row.account}</strong>
           <span class="label">{row.type}</span>
-          {#if row.auto}<span class="label">auto</span>{/if}
+          {#if row.auto}<span class="label">Managed by configuration</span>{/if}
           <div class="muted small">
-            {#if row.auto}From the App settings{:else}Approved by {row.approved_by} on {day(row.approved_at ?? '')}{/if}
+            {#if row.auto}An operator must change the App settings by pull request; this page cannot change them.{:else}Approved by {row.approved_by} on {day(row.approved_at ?? '')}{/if}
             · {repoCount(row)}
           </div>
           {@render repos(row)}
@@ -129,9 +141,8 @@
     {:else}
       <p class="box-row muted">None.</p>
     {/each}
-    <div class="box-foot">
-      Revoke stops Archfit from the account's next event on. Checks already on GitHub stay. Accounts marked "auto" change
-      by pull request.
-    </div>
+    {#if body.approved.some((row) => !row.auto)}
+      <div class="box-foot">Revoke stops Archfit from the account's next event on. Checks already on GitHub stay.</div>
+    {/if}
   </section>
 {/if}

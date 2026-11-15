@@ -1,0 +1,113 @@
+Policy
+
+acme/app · default branch
+
+View source
+Policy editor unavailable
+
+Change control has not started.
+
+The policy below is read-only.
+
+View current setup
+Policy owners
+alexei-led
+Layers · inner first
+core · cmd
+Check mode · configured
+required
+Approval
+Not provided
+
+Live enforcement and approval evidence are not provided by this response.
+
+3
+Modules
+Declared boundaries
+8
+Blocking rules
+Configured ask / deny
+1
+Exceptions
+No recorded expiry has passed
+0
+Expiring in 30 days
+Includes today
+Search policy
+
+Expand a row for details.
+
+Rules
+
+Read the rule before changing an import. Expand for why and what to use instead.
+
+View source
+Module dependencies
+graph
+Ask owner
+Coupling
+coupling
+Deny
+Duplication
+duplication
+Ask owner
+Module cycles
+cycle
+Deny
+Layer direction
+layers
+Deny
+Module coverage
+unowned
+Deny
+no-chaos-to-runtime
+Deny
+docker-sdk-in-runtime
+Deny
+fan-out-through-runner
+Not checked
+Exceptions
+
+Follow the supplied request to resolve or replace an exception.
+
+Rule / boundary	Owner	Expiry	Request
+duplication
+
+pkg_tc → pkg_util
+
+Reason
+	Not provided	
+Expires in 59 days
+2026-11-19
+	Not provided
+Bars show days remaining within a 30-day window, not exception age. Expired records are not active exceptions.
+Modules
+
+Inspect paths and allowed dependencies. The graph is a secondary view.
+
+Module / paths	Layer	Allowed dependencies
+
+pkg_chaos
+
+pkg/chaos/**
+
+	core	pkg_container, pkg_util
+
+pkg_tc
+
+pkg/tc/**
+
+	core	None
+
+pkg_util
+
+pkg/util/**
+
+	core	None
+Show graph All 3 modules
+Policy file
+Copy digest
+
+Digest: sha256:1cf7e56b7dc701c6f69fd8bacee1be2b8b1d241e2aea04bf6545b3ba3bcc05f7
+
+Show raw YAML

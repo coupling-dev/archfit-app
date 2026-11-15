@@ -2,6 +2,7 @@
   import Skeleton from '../components/Skeleton.svelte';
   import PolicyRead from '../components/PolicyRead.svelte';
   import { explain, explainLoad, postJSON, repoAPI, type ApiError, type Policy, type Session, type Answered } from '../lib/api';
+  import { canRetryRead, policyReadFailure } from '../lib/recovery';
   import { confirm } from '../lib/passkey';
   import { passkeyFailure } from '../lib/webauthn';
   import { firstJSON } from '../lib/early';
@@ -18,12 +19,19 @@
   let answered = $state<Answered | null>(null);
   let body = $state<Policy | null>(null);
   let failure = $state('');
+  let retry = $state(false);
+  let recovery = $state(false);
   let showSource = $state(false);
 
   function load() {
+    failure = ''; retry = recovery = false;
     firstJSON<Policy>(api(editing ? 'policy?edit=1' : 'policy')).then(
       (b) => { body = b; yaml = b.edit.file ?? ''; },
-      (e: ApiError) => (failure = explainLoad(e, here)),
+      (e: ApiError) => {
+        retry = canRetryRead(e);
+        recovery = e.status === 409;
+        failure = explainLoad(e, here) ? policyReadFailure(e) : '';
+      },
     );
   }
   load();
@@ -73,14 +81,16 @@
     {#if body && !(editing && body.edit.available)}<a class="btn" href="#raw" onclick={() => showSource = true}>View source</a>{/if}
     {#if body?.edit.available && !editing}
       <a class="btn primary" href={repoPage(route.fullName, '/policy?edit=1')}>Edit</a>
-    {:else if body && !body.edit.available}
-      <p class="muted">{body.edit.reason}</p>
     {/if}
   </div>
 </div>
 
 {#if failure}
-  <p class="flash error" role="alert">{failure}</p>
+  <section class="box" aria-label="Policy unavailable"><div class="box-body stack-sm">
+    <p class="flash error" role="alert">{failure}</p>
+    {#if retry}<a class="btn" href={here}>Try again</a>{/if}
+    {#if recovery}<a class="btn" href={repoPage(route.fullName)}>View current setup</a>{/if}
+  </div></section>
 {:else if !body}
   <Skeleton rows={5} />
 {:else if editing && body.edit.available}
@@ -110,10 +120,18 @@
       {/if}
       {#if answered?.state === 'void'}<p class="flash error" role="alert">{answered.notice}</p>
       {:else if answered}<p class="flash success" role="status">{answered.notice}</p>{/if}
-      <p><a href={repoPage(route.fullName, '/passkeys')}>Your passkeys</a> · <a href={repoPage(route.fullName, '/policy')}>Back to policy</a></p>
+      <p><a href={repoPage(route.fullName, '/passkeys?return=' + encodeURIComponent(here))}>Your passkeys</a> · <a href={repoPage(route.fullName, '/policy')}>Back to policy</a></p>
     </div>
   </section>
 {:else}
+  {#if !body.edit.available}
+    <section class="box" aria-labelledby="editor-unavailable"><div class="box-body stack-sm">
+      <h2 id="editor-unavailable">Policy editor unavailable</h2>
+      <p>{body.edit.reason}</p>
+      <p>The policy below is read-only.</p>
+      <a class="btn" href={repoPage(route.fullName)}>View current setup</a>
+    </div></section>
+  {/if}
   <PolicyRead policy={body} bind:showSource />
 {/if}
 
