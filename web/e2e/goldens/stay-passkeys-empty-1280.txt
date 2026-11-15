@@ -17,6 +17,8 @@ Passkeys
 
 You have no passkey in this App installation yet.
 
+Use these passkeys across repositories in this installation where you are a policy owner. A passkey does not grant repository access or an owner role.
+
 Your passkeys 0
 Add a passkey
 

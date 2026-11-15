@@ -1,3 +1,8 @@
 Owner action
 
+acme/app
+
 The owner action could not be read. Reload the page.
+
+View current setup
+View policy

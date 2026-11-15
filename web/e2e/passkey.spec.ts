@@ -147,3 +147,70 @@ test('passkeys: a device that already holds a passkey of the user does not make 
   await expect(p.getByRole('listitem')).toHaveCount(1);
   await expectNoNotUsedWord(p);
 });
+
+for (const width of [390, 1280]) {
+  test(`passkeys: scope and last-key warning stay beside removal at ${width}px @docs`, async ({ page: p }) => {
+    const { docsClock, docsShot } = await import('./support');
+    await docsClock(p);
+    await p.setViewportSize({ width, height: 900 });
+    await open(p, page, registry([{ id: 'passkey-one', created }]).handlers);
+    await expect(p.getByText('Use these passkeys across repositories', { exact: false })).toBeVisible();
+    const row = p.getByRole('listitem');
+    await expect(row.getByText('This is your last passkey', { exact: false })).toBeVisible();
+    const remove = row.getByRole('button', { name: 'Remove', exact: true });
+    await expect(remove).toHaveAccessibleDescription(/must register a new one/);
+    for (let i = 0; i < 30; i++) {
+      await p.keyboard.press('Tab');
+      if (await remove.evaluate((el) => el === document.activeElement)) break;
+    }
+    await expect(remove).toBeFocused();
+    expect(await remove.evaluate((el) => el.matches(':focus-visible'))).toBe(true);
+    await docsShot(p, `recovery/passkeys-last-${width}`);
+    await p.keyboard.press('Enter');
+    await expect(row.getByRole('button', { name: 'Confirm removal' })).toHaveAccessibleDescription(/last passkey/);
+    await expectClean(p);
+  });
+
+  for (const destination of ['/r/acme/app/requests/415', '/r/acme/app/owner/first?pull=8', '/r/acme/app/policy?edit=1']) {
+    test(`passkeys: registration returns to ${destination} at ${width}px`, async ({ page: p }) => {
+      await p.setViewportSize({ width, height: 900 });
+      await authenticator(p);
+      const list: Listed[] = [];
+      const writes = await open(p, page + '?return=' + encodeURIComponent(destination), registry(list).handlers);
+      const back = p.getByRole('link', { name: /^Back to / });
+      await expect(back).toHaveAttribute('href', destination);
+      const add = p.getByRole('button', { name: 'Add a passkey' });
+      await add.focus();
+      await p.keyboard.press('Enter');
+      await expect(p).toHaveURL(origin + destination);
+      expect(writes.map((w) => new URL(w.url()).pathname)).toEqual([`${api}/register`, `${api}/register/finish`]);
+    });
+  }
+
+  test(`passkeys: failed registration stays at the initiating page at ${width}px`, async ({ page: p }) => {
+    await p.setViewportSize({ width, height: 900 });
+    await authenticator(p);
+    const path = page + '?return=' + encodeURIComponent('/r/acme/app/requests/415');
+    const { handlers } = registry([]);
+    handlers[`POST ${api}/register/finish`] = () => [503, { error: 'The App did not answer. Try again in a minute.' }];
+    await open(p, path, handlers);
+    await p.getByRole('button', { name: 'Add a passkey' }).click();
+    await expect(p.getByRole('alert')).toContainText('The App did not answer.');
+    await expect(p).toHaveURL(origin + path);
+    await expect(p.getByRole('link', { name: 'Back to request' })).toBeVisible();
+    await expectClean(p);
+  });
+}
+
+for (const destination of ['https://evil.test', '//evil.test', '/r/acme/other/requests/415', '/auth/logout']) {
+  test(`passkeys: unsafe return ${destination} is neither linked nor followed`, async ({ page: p }) => {
+    await authenticator(p);
+    const path = page + '?return=' + encodeURIComponent(destination);
+    await open(p, path, registry([]).handlers);
+    await expect(p.getByRole('heading', { name: 'Passkeys', exact: true })).toBeVisible();
+    await expect(p.getByRole('link', { name: /^Back to / })).toHaveCount(0);
+    await p.getByRole('button', { name: 'Add a passkey' }).click();
+    await expect(p.getByRole('status')).toContainText('Passkey registered.');
+    await expect(p).toHaveURL(origin + path);
+  });
+}

@@ -113,7 +113,7 @@ export const stateFixtures: StateFixture[] = [
     api: '/api/repos/acme/app/owner/workflow/view',
     reply: [409, { error: 'The repository no longer needs this action. Reload the page.' }],
     heading: 'Owner action',
-    text: 'The repository no longer needs this action. Reload the page.',
+    text: 'This approval is not needed',
   },
   {
     name: 'long-names',

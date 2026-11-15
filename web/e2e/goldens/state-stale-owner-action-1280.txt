@@ -1,3 +1,10 @@
 Owner action
 
-The repository no longer needs this action. Reload the page.
+acme/app
+
+This approval is not needed
+
+Open current setup or policy to see what to do next.
+
+View current setup
+View policy

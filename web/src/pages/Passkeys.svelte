@@ -3,6 +3,7 @@
   import { explain, explainLoad, getJSON, repoAPI, type ApiError, type Passkey, type Passkeys, type Session } from '../lib/api';
   import { firstJSON } from '../lib/early';
   import { addPasskey, removePasskey } from '../lib/passkey';
+  import { passkeyReturn } from '../lib/passkey-return';
   import { type Repo } from '../lib/route';
   import { passkeyFailure } from '../lib/webauthn';
 
@@ -10,6 +11,7 @@
   // removal are confirmed with a passkey the user already has.
   let { route, session, here }: { route: Repo; session: Session; here: string } = $props();
 
+  const returnTo = $derived(passkeyReturn(route.fullName, new URLSearchParams(window.location.search).get('return')));
   const api = (suffix: string) => repoAPI(route.owner, route.name, suffix);
 
   let list = $state<Passkey[] | null>(null);
@@ -28,11 +30,12 @@
   }
   load(true);
 
-  async function run(step: () => Promise<{ notice?: string }>) {
+  async function run(step: () => Promise<{ notice?: string }>, returnAfter = false) {
     busy = true;
     notice = error = '';
     try {
       notice = (await step()).notice ?? '';
+      if (returnAfter && returnTo) { location.assign(returnTo); return; }
       load();
     } catch (e) {
       error = passkeyFailure(e) ?? explain(e as ApiError, here);
@@ -42,7 +45,7 @@
     }
   }
 
-  const add = () => run(() => addPasskey(api, session.csrf, (list?.length ?? 0) > 0));
+  const add = () => run(() => addPasskey(api, session.csrf, (list?.length ?? 0) > 0), true);
   const remove = (id: string) => run(() => removePasskey(api, session.csrf, id));
   const day = (iso: string) => iso.slice(0, 10);
 </script>
@@ -61,6 +64,8 @@
           ? `You have ${list.length} ${list.length === 1 ? 'passkey' : 'passkeys'} in this App installation.`
           : 'You have no passkey in this App installation yet.'}
       </p>
+      <p>Use these passkeys across repositories in this installation where you are a policy owner. A passkey does not grant repository access or an owner role.</p>
+      {#if returnTo}<a href={returnTo}>Back to {returnTo.includes('/requests/') ? 'request' : returnTo.includes('/policy') ? 'policy' : 'approval'}</a>{/if}
     </div>
   </div>
 
@@ -85,14 +90,17 @@
               Passkey {i + 1} <code class="muted">{p.id.slice(0, 8)}</code> · added {day(p.created)} ·
               {p.last_used ? `last used ${day(p.last_used)}` : 'not used yet'}
             </span>
+            <div class="stack-sm">
+            {#if list.length === 1}<p class="small" id="last-key">This is your last passkey in this installation. Removing it means you must register a new one before you can confirm another approval. The owners will be notified.</p>{/if}
             {#if removing === p.id}
               <span class="btn-group">
-                <button class="btn sm" type="button" disabled={busy} onclick={() => remove(p.id)}>Confirm removal</button>
+                <button class="btn sm" type="button" aria-describedby={list.length === 1 ? 'last-key' : undefined} disabled={busy} onclick={() => remove(p.id)}>Confirm removal</button>
                 <button class="btn sm" type="button" disabled={busy} onclick={() => (removing = '')}>Keep it</button>
               </span>
             {:else}
-              <button class="btn sm" type="button" disabled={busy} onclick={() => (removing = p.id)}>Remove</button>
+              <button class="btn sm" type="button" aria-describedby={list.length === 1 ? 'last-key' : undefined} disabled={busy} onclick={() => (removing = p.id)}>Remove</button>
             {/if}
+            </div>
           </li>
         {/each}
       </ul>

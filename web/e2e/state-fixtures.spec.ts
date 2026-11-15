@@ -41,6 +41,13 @@ for (const width of [390, 1280]) {
         await expect(page.locator('main button')).toHaveCount(0);
         await expect(page.locator('main a[href*="/owner/"]')).toHaveCount(0);
       }
+      if (state.name === 'stale-owner-action') {
+        await expect(page.getByRole('heading', { level: 2, name: 'This approval is not needed' })).toBeVisible();
+        await expect(page.getByRole('link', { name: 'View current setup', exact: true })).toHaveAttribute('href', '/r/acme/app');
+        await expect(page.getByRole('link', { name: 'View policy', exact: true })).toHaveAttribute('href', '/r/acme/app/policy');
+        await expect(page.getByRole('link', { name: 'Try again', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('alert')).toHaveCount(0);
+      }
       if (state.name === 'unknown-ruleset') {
         await expect(page.getByLabel('2 of 4 steps done')).toBeVisible();
         await expect(page.getByText('Not available', { exact: true })).toBeVisible();

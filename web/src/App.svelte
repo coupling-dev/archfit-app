@@ -23,6 +23,7 @@
   // repository API's 404 (lib/gate).
   const serverSentence = serverError(document.querySelector('meta[name="app-error"]')?.getAttribute('content'));
   const pageError = $derived(serverSentence || $refused);
+  const notFound = $derived(!!$refused || serverSentence === 'Not found.' || route.kind === 'unknown');
 
   // loading, then the signed-in session, signed out (401), or a failure to show.
   let session = $state<Session | null>(null);
@@ -40,8 +41,9 @@
   );
 
   const title = $derived(
-    pageError
-      ? 'Error'
+    notFound
+      ? 'Page not available'
+      : pageError ? 'Page could not be loaded'
       : $waiting
         ? 'Waiting for approval'
         : route.kind === 'admin'
@@ -82,10 +84,17 @@
   pull={route.kind === 'pull' ? route.number : 0}
 />
 <main class="page" id="main" tabindex="-1">
-  {#if pageError}
+  {#if notFound}
     <div class="blankslate">
-      <h1>This page cannot be shown</h1>
-      <p>{pageError} <a href="/">See your repositories.</a></p>
+      <h1>Page not available</h1>
+      <p>This page does not exist or is not available to your account.</p>
+      <a class="btn" href="/">Repositories</a>
+    </div>
+  {:else if pageError}
+    <div class="blankslate">
+      <h1>Page could not be loaded</h1>
+      <p>{pageError}</p>
+      <a href="/">Repositories</a>
     </div>
   {:else if $waiting}
     <Waiting account={$waiting} />
@@ -111,11 +120,6 @@
     <Passkeys {route} {session} {here} />
   {:else if route.kind === 'pull'}
     <Pull {route} {here} />
-  {:else}
-    <div class="blankslate">
-      <h3>Not found</h3>
-      <p>This page does not exist. <a href="/">See your repositories.</a></p>
-    </div>
   {/if}
 </main>
 <footer class="app-footer">

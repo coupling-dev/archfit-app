@@ -56,13 +56,13 @@ const cases: { name: string; path: string; ready: string; mock?: Mock; keyboard:
     },
     keyboard: 'Add a passkey',
   },
-  { name: 'error', path: '/r/acme/hidden', ready: 'This page cannot be shown', keyboard: 'See your repositories.' },
+  { name: 'error', path: '/r/acme/hidden', ready: 'Page not available', keyboard: 'Repositories' },
   {
     name: 'server-error',
     path: '/r/acme/hidden',
-    ready: 'This page cannot be shown',
+    ready: 'Page not available',
     mock: { serverError: { status: 404, sentence: 'Not found.' } },
-    keyboard: 'See your repositories.',
+    keyboard: 'Repositories',
   },
 ];
 

@@ -21,6 +21,6 @@ Confirm with your passkey
 
 Your passkey confirms exactly the change shown above. Nothing is approved until this step finishes.
 
-No passkey yet? Register a passkey, then reload this page.
+No passkey yet? Register a passkey to return here after registration.
 
 Approve the first policy
