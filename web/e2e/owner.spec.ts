@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import {
@@ -10,7 +11,7 @@ import {
   open,
   origin,
 } from './support';
-import { readOwnerView, type OwnerKind } from '../src/lib/owner';
+import { readOwnerView, type OwnerFile, type OwnerKind } from '../src/lib/owner';
 
 const root = '/r/acme/app/owner/';
 const api = '/api/repos/acme/app/';
@@ -67,13 +68,18 @@ for (const name of ['first', 'first-pull', 'workflow', 'confirm', 'revert', 'rev
       },
     });
     await expect(page.getByRole('heading', { level: 1, name: body.main_action })).toBeVisible();
-    await expect(page.locator('.page-head .status')).toHaveText(body.status);
+    await expect(page.locator('.page-head .status')).toHaveText(
+      body.kind === 'workflow' ? 'unknown — no verdict until this workflow change is approved.' : body.status,
+    );
     await expect(page.locator('main button')).toHaveCount(1);
     expect(writes).toEqual([]);
     await expectPageText(page, 'owner-' + name);
     await expectClean(page);
-    await page.getByText('Show the files and their SHA-256s', { exact: true }).click();
-    await expect(page.getByText(body.files[0].digest, { exact: true })).toBeVisible();
+    await page.getByText('Full files and approval details', { exact: true }).click();
+    const fingerprint = page.getByText(body.files[0].digest, { exact: true });
+    await expect(fingerprint).toBeHidden();
+    await fingerprint.locator('..').locator('..').getByText('Technical details', { exact: true }).click();
+    await expect(fingerprint).toBeVisible();
     await expectNoNotUsedWord(page);
     await page.getByRole('button', { name: body.main_action, exact: true }).focus();
     await page.keyboard.press('Enter');
@@ -88,6 +94,120 @@ for (const name of ['first', 'first-pull', 'workflow', 'confirm', 'revert', 'rev
     ]);
     await expectClean(page);
   });
+}
+
+for (const changed of [false, true]) {
+  for (const width of [390, 1280]) {
+    test(`owner: workflow with ${changed ? 'changed' : 'unchanged'} policy at ${width}px`, async ({
+      page,
+    }, testInfo) => {
+      const body = fixture('workflow');
+      body.tip = '1'.repeat(40);
+      body.base = '2'.repeat(40);
+      body.head = '3'.repeat(40);
+      body.approved = '4'.repeat(40);
+      const policy = '.archfit.yaml';
+      const workflow = '.github/workflows/archfit.yaml';
+      const file = (role: string, ref: string, path: string, text: string): OwnerFile => ({
+        role,
+        ref,
+        path,
+        text,
+        missing: false,
+        digest: 'sha256:' + createHash('sha256').update(text).digest('hex'),
+      });
+      const base = 'version: 3\nowners: [alice]\n';
+      const head = changed ? base + '# proposed policy\n' : base;
+      body.files = [
+        file('approved', body.approved, policy, 'version: 3\nowners: [alice, bob]\n'),
+        file('base', body.base, policy, base),
+        file('head', body.head, policy, head),
+        file('workflow-base', body.tip, workflow, 'name: old\n'),
+        file('workflow-head', body.head, workflow, 'name: archfit\n'),
+      ];
+      body.diffs[1].text = changed
+        ? '--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -1,2 +1,3 @@\n version: 3\n owners: [alice]\n+# proposed policy\n'
+        : '';
+      await page.setViewportSize({ width, height: 900 });
+      const writes = await open(page, root + 'workflow?pull=7', {
+        [`GET ${api}owner/workflow/view`]: () => [200, body],
+      });
+      await expect(
+        page.getByText('unknown — no verdict until this workflow change is approved.', { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByText(
+          'This pull request changes the workflow that runs Archfit. The App cannot use its result without your approval.',
+          { exact: true },
+        ),
+      ).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Read the change' })).toHaveCount(0);
+      await expect(page.locator('main a.btn, main .primary')).toHaveCount(0);
+      const confirm = page.getByRole('button', { name: body.main_action, exact: true });
+      await expect(page.locator('main button')).toHaveCount(1);
+      await expect(confirm).toBeEnabled();
+      expect(await confirm.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgb(31, 136, 61)');
+      await expect(page.getByRole('link', { name: 'Pull request #7 on GitHub' })).toHaveAttribute(
+        'href',
+        'https://github.com/acme/app/pull/7',
+      );
+      await expect(page.getByRole('link', { name: 'View policy' })).toHaveAttribute('href', '/r/acme/app/policy');
+      await expect(page.getByRole('heading', { name: 'Workflow — ' + workflow })).toBeVisible();
+      await expect(page.getByText('Compared with the default branch at 1111111.')).toBeVisible();
+      const policyBlock = page
+        .getByRole('heading', { name: 'Policy — ' + policy })
+        .locator('..')
+        .locator('..');
+      await expect(policyBlock).toContainText(
+        `${changed ? 'Compared with' : 'Unchanged from'} this pull request's base at 2222222. These policy bytes are included in this approval.`,
+      );
+      await expect(policyBlock.getByRole('region')).toHaveCount(changed ? 1 : 0);
+      await expect(page.getByText('already approved', { exact: false })).toHaveCount(0);
+      await expect(page.getByText('Approve the workflow and policy shown for PR #7 at commit 3333333.')).toBeVisible();
+      const workflowDiff = page.getByRole('region', { name: `Diff: The workflow change (${workflow})` });
+      await expect(workflowDiff.locator('.hunk')).toHaveText('@@ -1,1 +1,1 @@\n');
+      await expect(workflowDiff.locator('.addition')).toHaveText('+name: archfit\n');
+      await expect(workflowDiff.locator('.deletion')).toHaveText('-name: old\n');
+      expect(await workflowDiff.textContent()).toBe(body.diffs[0].text);
+      const lineTops = await workflowDiff
+        .locator('.diff-line')
+        .evaluateAll((lines) => lines.map((line) => line.getBoundingClientRect().top));
+      expect(lineTops.every((top, index) => index === 0 || top > lineTops[index - 1])).toBe(true);
+      await workflowDiff.focus();
+      await expect(workflowDiff).toBeFocused();
+      await expectPageText(page, `owner-workflow-${changed ? 'changed' : 'unchanged'}-${width}`);
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme });
+        await page.screenshot({ path: testInfo.outputPath(`owner-${colorScheme}.png`), fullPage: true });
+      }
+      await page.getByText('Full files and approval details', { exact: true }).click();
+      await expect(page.getByRole('heading', { level: 2, name: policy, exact: true })).toHaveCount(1);
+      await expect(page.getByRole('heading', { level: 2, name: workflow, exact: true })).toHaveCount(1);
+      for (const version of ['Default branch', 'Pull request base', 'Pull request', 'Previously approved']) {
+        await expect(
+          page.getByRole('heading', { name: new RegExp('^' + version + ' — commit') }).first(),
+        ).toBeVisible();
+      }
+      const policyHead = page.getByRole('region', { name: 'File: Pull request .archfit.yaml', exact: true });
+      expect(await policyHead.textContent()).toBe(head);
+      const policyHeadSection = policyHead.locator('..');
+      await expect(policyHeadSection.getByText(body.files[2].digest, { exact: true })).toBeHidden();
+      await policyHeadSection.getByText('Technical details', { exact: true }).click();
+      await expect(policyHeadSection.getByText(body.files[2].digest, { exact: true })).toBeVisible();
+      await page.getByText('Why a passkey?', { exact: true }).click();
+      await expect(
+        page.getByText(
+          'GitHub sign-in identifies your account. An agent can also use that account. Your passkey adds a separate confirmation for these file versions. Read both files before you confirm. Approval does not mean the check passed.',
+          { exact: true },
+        ),
+      ).toBeVisible();
+      await expect(
+        page.getByText('If your passkey is unavailable, use a second registered passkey.', { exact: true }),
+      ).toBeVisible();
+      expect(writes).toEqual([]);
+      await expectClean(page);
+    });
+  }
 }
 
 for (const passkey of [true, false]) {
@@ -149,13 +269,16 @@ test('owner: unsafe policy text stays text, and phone width stays inside the pag
   body.diffs[0].text += '+# <img src=x onerror=alert(1)>\n';
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, root + 'first', { [`GET ${api}owner/first/view`]: () => [200, body] });
-  await expect(page.getByRole('region', { name: 'Diff: The first policy (.archfit.yaml)' })).toContainText('<img src=x onerror=alert(1)>');
+  await expect(page.getByRole('region', { name: 'Diff: The first policy (.archfit.yaml)' })).toContainText(
+    '<img src=x onerror=alert(1)>',
+  );
   await expect(page.locator('main img')).toHaveCount(0);
   await expectClean(page);
 });
 
 test('owner: unreadable file gives the GitHub fallback and no action', async ({ page }) => {
-  const sentence = 'This file cannot be displayed, so it cannot be approved here. Use the existing owner flow on the GitHub issue.';
+  const sentence =
+    'This file cannot be displayed, so it cannot be approved here. Use the existing owner flow on the GitHub issue.';
   await open(page, root + 'revert', { [`GET ${api}owner/revert/view`]: () => [409, { error: sentence }] });
   await expect(page.getByRole('alert')).toHaveText(sentence);
   await expect(page.locator('main button')).toHaveCount(0);

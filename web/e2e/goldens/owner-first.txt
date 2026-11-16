@@ -6,22 +6,34 @@ unknown: the first policy needs approval.
 
 There is no approved policy yet. Approving makes every line below the approved policy.
 
-Read the change
 View policy
 The first policy
+
++ Added
+- Removed
+
 --- a/.archfit.yaml
+
 +++ b/.archfit.yaml
+
 @@ -0,0 +1,5 @@
+
 +version: 3
+
 +owners: [alice]
+
 +modules:
+
 +  app:
+
 +    paths: [cmd/**]
 
-Show the files and their SHA-256s
+Full files and approval details
 Confirm with your passkey
 
 Your passkey confirms exactly the change shown above. Nothing is approved until this step finishes.
+
+Why a passkey?
 
 Manage your passkeys
 

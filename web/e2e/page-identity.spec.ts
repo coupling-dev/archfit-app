@@ -83,9 +83,15 @@ for (const width of [390, 1280]) {
       await expect(head.locator('.lede')).toContainText('acme/app');
       const status = head.locator('.status');
       await expect(status).toContainText(body.view?.status_line ?? body.status);
-      await expect(page.locator('main .primary')).toHaveCount(1);
       const actions = head.locator('.row a');
-      await expect(actions.first()).toHaveClass(/primary/);
+      if (name === 'owner') {
+        await expect(page.locator('main .primary')).toHaveCount(0);
+        await expect(page.locator('main button.approval')).toHaveCount(1);
+        await expect(actions.first()).not.toHaveClass(/btn/);
+      } else {
+        await expect(page.locator('main .primary')).toHaveCount(1);
+        await expect(actions.first()).toHaveClass(/primary/);
+      }
       const headingBox = await head.locator('h1').boundingBox();
       const statusBox = await status.boundingBox();
       const actionBox = await actions.first().boundingBox();
@@ -97,9 +103,15 @@ for (const width of [390, 1280]) {
         await expect(actions.nth(i)).toBeFocused();
       }
       if (name === 'owner') {
-        await actions.first().click();
-        await expect(page).toHaveURL(/#diff-0$/);
-        await expect(page.getByRole('button', { name: body.main_action, exact: true })).toBeEnabled();
+        await expect(actions.first()).toHaveAttribute('href', '/r/acme/app/policy');
+        await expect(page.getByRole('link', { name: 'Read the change' })).toHaveCount(0);
+        const approval = page.getByRole('button', { name: body.main_action, exact: true });
+        await expect(approval).toBeEnabled();
+        const approvalBox = await approval.boundingBox();
+        const diffBox = await page
+          .getByRole('region', { name: 'Diff: The first policy (.archfit.yaml)' })
+          .boundingBox();
+        expect(approvalBox!.y).toBeGreaterThan(diffBox!.y + diffBox!.height);
       }
       await expectClean(page, approvedCopy);
       await docsShot(page, `page-identity/${name}-${width}`, approvedCopy);

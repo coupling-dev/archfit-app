@@ -117,6 +117,44 @@ export function readOwnerView(value: unknown, route: OwnerRoute): OwnerView {
   };
 }
 
+export function ownerFileVersion(role: string): string {
+  switch (role) {
+    case 'approved':
+      return 'Previously approved';
+    case 'base':
+      return 'Pull request base';
+    case 'head':
+    case 'workflow-head':
+      return 'Pull request';
+    case 'current':
+    case 'outside':
+    case 'workflow-base':
+      return 'Default branch';
+    case 'result':
+      return 'Proposed result';
+    default:
+      return 'File version';
+  }
+}
+
+export function ownerDiffLines(text: string) {
+  let inHunk = false;
+  return (text.match(/[^\n]*\n|[^\n]+$/g) ?? []).map((line) => {
+    let kind = 'context';
+    if (line.startsWith('@')) {
+      inHunk = true;
+      kind = 'hunk';
+    } else if (!inHunk && (line.startsWith('--- ') || line.startsWith('+++ '))) {
+      kind = 'header';
+    } else if (line.startsWith('+')) {
+      kind = 'addition';
+    } else if (line.startsWith('-')) {
+      kind = 'deletion';
+    }
+    return { text: line, kind };
+  });
+}
+
 export function ownerViewPath(route: OwnerRoute): string {
   return `owner/${route.action}/view${route.pull ? '?pull=' + route.pull : ''}`;
 }

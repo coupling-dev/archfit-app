@@ -6,31 +6,53 @@ unknown: the policy changed outside the flow.
 
 This restores the approved policy. It keeps the approved answers in #12.
 
-Read the change
 View policy
 The policy to restore
+
++ Added
+- Removed
+
 --- a/.archfit.yaml
+
 +++ b/.archfit.yaml
+
 @@ -3,3 +3,3 @@
+
  modules:
+
    app:
+
 -    paths: [cmd/**]
+
 +    paths: [cmd/**, pkg/**]
 
 Approved answers kept on the approved policy
+
++ Added
+- Removed
+
 --- a/.archfit.yaml
+
 +++ b/.archfit.yaml
+
 @@ -3,3 +3,5 @@
+
  modules:
+
    app:
+
      paths: [cmd/**]
+
 +    depends_on:
+
 +      - util  # request #431
 
-Show the files and their SHA-256s
+Full files and approval details
 Confirm with your passkey
 
 Your passkey confirms exactly the change shown above. Nothing is approved until this step finishes.
+
+Why a passkey?
 
 Manage your passkeys
 

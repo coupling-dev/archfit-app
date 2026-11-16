@@ -1,12 +1,60 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { readOwnerView, ownerViewPath, outcomeText, type OwnerKind } from './owner';
+import { readOwnerView, ownerViewPath, outcomeText, ownerFileVersion, ownerDiffLines, type OwnerKind } from './owner';
 
 const route = { action: 'first' as const, pull: 0, owner: 'acme', name: 'app', fullName: 'acme/app' };
 const fixture = (name: string): unknown =>
   JSON.parse(
     readFileSync(new URL(`../../../internal/control/ui/testdata/owner/${name}.json`, import.meta.url), 'utf8'),
   );
+
+describe('owner file presentation', () => {
+  it.each([
+    ['approved', 'Previously approved'],
+    ['base', 'Pull request base'],
+    ['head', 'Pull request'],
+    ['workflow-base', 'Default branch'],
+    ['workflow-head', 'Pull request'],
+    ['current', 'Default branch'],
+    ['outside', 'Default branch'],
+    ['result', 'Proposed result'],
+    ['unrecognized', 'File version'],
+  ])('labels %s as %s', (role, label) => {
+    expect(ownerFileVersion(role)).toBe(label);
+  });
+
+  it('preserves unified diff bytes and distinguishes headers from changed content', () => {
+    const text =
+      '--- a/file\n+++ b/file\n@@ -1,3 +1,3 @@\n same\n--- content\n+++ content\n@@ -9 +9 @@\n-old\r\n+new\n\\ No newline at end of file';
+    const lines = ownerDiffLines(text);
+    expect(lines.map((line) => line.kind)).toEqual([
+      'header',
+      'header',
+      'hunk',
+      'context',
+      'deletion',
+      'addition',
+      'hunk',
+      'deletion',
+      'addition',
+      'context',
+    ]);
+    expect(lines.map((line) => line.text).join('')).toBe(text);
+  });
+
+  it('does not discard unrecognized lines or invent changes for an empty diff', () => {
+    expect(ownerDiffLines('')).toEqual([]);
+    expect(ownerDiffLines('Line endings: LF → CRLF\n')).toEqual([
+      { text: 'Line endings: LF → CRLF\n', kind: 'context' },
+    ]);
+    expect(ownerDiffLines('@ hunk\n+added\n-removed\n context\n')).toEqual([
+      { text: '@ hunk\n', kind: 'hunk' },
+      { text: '+added\n', kind: 'addition' },
+      { text: '-removed\n', kind: 'deletion' },
+      { text: ' context\n', kind: 'context' },
+    ]);
+  });
+});
 
 describe('owner views', () => {
   it.each(['first', 'first-pull', 'workflow', 'confirm', 'revert', 'revert-answers'])(
