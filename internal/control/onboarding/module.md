@@ -22,6 +22,13 @@ the policy and workflow for the first approval only when no schema 3 policy is o
 identifies it. Setup also reports whether the policy and accepted workflow are present on the default branch for the Home stepper. A default branch that already has a schema 3 policy uses `FirstPull=0`, regardless of its workflow. The gate owns recorded state through `SetupViews`; the first-approval transactions in
 `gate/records.First` and `ApproveCurrent` own the `v4/repos` entry. Setup never adds the entry itself.
 
+`Setup.Approval` separates an exact-head signature from activation: `needed`,
+`approved_pending_merge`, `active`, `stale`, or `unknown`. The gate read side shares Review's
+head/policy/workflow digest predicate. It also reads outstanding proposals after a PR leaves the open
+list, so an unprocessed merge stays pending rather than prompting another signature. Read failures
+stay unknown. Only matching approved policy and accepted workflow on the default branch, with no
+outstanding approval, become active. This summary never changes approval or gate decisions.
+
 Ruleset guidance is separate from admission. It reads effective branch rules and inherited rulesets, reports
 pull-request enforcement, warns on required GitHub reviews, and requires `archfit/gate` with this App's
 `integration_id`. It warns when `current_user_can_bypass` allows the App to bypass a branch ruleset. A policy

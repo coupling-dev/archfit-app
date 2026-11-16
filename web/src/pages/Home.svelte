@@ -5,7 +5,7 @@
   import Skeleton from '../components/Skeleton.svelte';
   import { explainLoad, repoAPI, type ApiError } from '../lib/api';
   import { firstJSON } from '../lib/early';
-  import { homeHref, readHome, type Home } from '../lib/home';
+  import { approvalNeedsReview, ownerReviewLabel, homeHref, readHome, type Home } from '../lib/home';
   import { repoPage, type Repo } from '../lib/route';
 
   let { route, here }: { route: Repo; here: string } = $props();
@@ -18,7 +18,7 @@
   );
   }
   load();
-  const reviewHref = $derived(body?.setup?.owner_action?.href ? homeHref(route, body.setup.owner_action.href) : undefined);
+  const reviewHref = $derived(body?.setup && approvalNeedsReview(body.setup) && body.setup.owner_action?.href ? homeHref(route, body.setup.owner_action.href) : undefined);
 </script>
 
 <div class="page-head">
@@ -30,7 +30,7 @@
     {#if body}
       <div class="row">
         {#if reviewHref && body.setup?.owner_action}
-          <a class="btn" href={reviewHref} aria-describedby="home-review-note">{body.setup.owner_action.label}</a>
+          <a class="btn" href={reviewHref} aria-describedby="home-review-note">{ownerReviewLabel(body.setup)}</a>
         {:else if body.setup}
           <a class="btn primary" href="#setup-title">Continue setup</a>
         {/if}
@@ -45,7 +45,8 @@
 {#if !body && !failure}<Skeleton rows={5} />{/if}
 {#if body?.setup}
   <Setup setup={body.setup} repo={route} showOwnerAction={!reviewHref} />
-{:else if body}
+{/if}
+{#if body && (!body.setup || body.setup.state === 'approved' || body.setup.state === 'outside_flow')}
   <section class="box" aria-labelledby="home-needs">
     <div class="box-head"><h2 id="home-needs">Needs you</h2></div>
     {#each body.needs_you as need, i (i)}

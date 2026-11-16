@@ -120,6 +120,9 @@ func TestSetupAPIPasskeyFlagIsBestEffort(t *testing.T) {
 			if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
 				t.Fatal(err)
 			}
+			if body.PasskeyKnown != (tt.err == nil) {
+				t.Fatalf("passkey_known = %t, error %v", body.PasskeyKnown, tt.err)
+			}
 			if body.Passkey != tt.want {
 				t.Fatalf("passkey = %t, want %t; body %s", body.Passkey, tt.want, res.Body.String())
 			}

@@ -14,6 +14,7 @@ import (
 
 // Setup is derived from default-branch files, GitHub's rules and recorded approvals.
 type Setup struct {
+	Approval  gate.ApprovalSummary
 	Admitted  bool
 	Policy    bool   // valid schema 3 policy on the default branch
 	Workflow  bool   // accepted Archfit workflow on the default branch
@@ -133,6 +134,17 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 			out.FirstPull = p.Number
 			break
 		}
+	}
+	action := gate.OwnerAction{Kind: gate.OwnerFirst, Pull: out.FirstPull}
+	if state.ApprovedDigest != "" && out.State != "approved" {
+		action = gate.OwnerAction{Kind: gate.OwnerWorkflow, Pull: out.OpenPull}
+	}
+	if out.State == "outside_flow" {
+		action = gate.OwnerAction{Kind: gate.OwnerConfirm}
+	}
+	out.Approval = s.gate.SetupApproval(ctx, r, action)
+	if out.State == "approved" && out.Approval.Status == gate.ApprovalNeeded {
+		out.Approval.Status = gate.ApprovalActive
 	}
 	out.Rules = s.rules(ctx, r)
 	return out, nil

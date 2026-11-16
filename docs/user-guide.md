@@ -9,14 +9,24 @@ The checked-in [release manifest](../internal/wire/manifest/manifest4.json) appr
 1. Install the GitHub App for the repository. An account not on the operator's approved list waits for operator admission.
 2. Put a schema 3 `.archfit.yaml` and `.github/workflows/archfit.yaml` in the repository. Read them before the first approval. The App does not generate these files.
 3. Sign in to the App and register a passkey as a repository administrator. See [Register a passkey](#register-a-passkey).
-4. A repository administrator named as an owner in the proposed policy must approve the first policy with a passkey. The owner action supports a same-repository open pull request when the default branch has no schema 3 policy, or the current default-branch policy otherwise. Follow **Review first policy** from Home or the pull page. The App resolves the correct destination for eligible viewers; other viewers see which role can act.
+4. A repository administrator named as an owner in the proposed policy must approve the first policy with a passkey. The owner action supports a same-repository open pull request when the default branch has no schema 3 policy, or the current default-branch policy otherwise. Follow **Review and approve** from Home when you have a passkey, or **Review proposed files** without one. The pull page uses **Review first policy**. The App resolves the correct destination for eligible viewers; other viewers see which role can act.
 5. Configure the branch ruleset below and verify the workflow and engine are approved in the App's release manifest.
 
-The App's setup API reads the policy and workflow at one default-branch commit and reports admission, first approval and ruleset advice. It does not change GitHub rulesets. Home shows this setup information before the first approval. A proposed policy or workflow is labelled as present in its PR, not yet on the default branch. Unavailable ruleset features do not block setup progress; unknown settings still need an administrator to check them. Setup progress is not an enforcement verdict.
+The App's setup API reads the policy and workflow at one default-branch commit and reports admission, first approval and ruleset advice. It does not change GitHub rulesets. Home keeps setup visible until the applicable required-check settings are confirmed, even after owner approval. A proposed policy or workflow is labelled as present in its PR, not yet on the default branch. Unavailable ruleset features do not block setup progress; unknown settings still need an administrator to check them. Setup progress is not an enforcement verdict.
+
+**Owner approval** distinguishes a signed PR from active default-branch files. **Approved for PR #N.
+Waiting for merge.** means the current head and both file digests match the recorded signature; no
+second approval is offered. After a known merge, **Approval recorded; checking activation** remains
+until push processing confirms activation. A changed head needs a new review. **Could not confirm
+approval** is not success. A first approval of an existing default-branch policy can take effect without
+a PR merge. **Require the gate** remains actionable independently of these approval stages.
+
+With no passkey, **Register a passkey to approve** does not prevent reading the review. An unreadable
+passkey inventory is shown separately from an empty inventory. **Manage passkeys** is a secondary link.
 
 The setup heading shows one **Next** action. Amber chips need action, neutral chips indicate waiting or an unavailable feature, and green chips mark completed steps. **Policy and workflow pull request** is complete when an existing setup PR is **Ready for review**. It is also complete when both files are already present on the default branch. This step does not mean that the PR is approved or merged. **View PR #N on GitHub** opens an existing workflow PR. The separate PR link opens its App page. When no setup PR exists and files are missing, **Create a pull request on GitHub** opens the compare page. An administrator must enable the required check in the repository settings: the App cannot change rulesets without Administration permission.
 
-For a workflow change, an owner named in the approved policy can follow **Review workflow change** from Home or the pull page. Being a repository administrator alone does not qualify. You can read either review before registering a passkey; the final approval still requires one.
+For a workflow change, an owner named in the approved policy can follow the review action from Home or **Review workflow change** from the pull page. Being a repository administrator alone does not qualify. You can read either review before registering a passkey; the final approval still requires one.
 
 ## Repositories
 
@@ -36,13 +46,13 @@ instead of the map. Owner actions open the pages below.
 
 **The map** shows modules by layer, outer first, with each module's volatility. The legend shows five kinds:
 
-| Line | Meaning |
-| --- | --- |
-| Solid | An allowed dependency. |
-| Dashed | A requested dependency, with its request number. |
+| Line           | Meaning                                                               |
+| -------------- | --------------------------------------------------------------------- |
+| Solid          | An allowed dependency.                                                |
+| Dashed         | A requested dependency, with its request number.                      |
 | Heavy dash-dot | A dependency a rule denies, when an open request or error touches it. |
-| Dotted | An exception, with its date. |
-| Red solid | Drift. |
+| Dotted         | An exception, with its date.                                          |
+| Red solid      | Drift.                                                                |
 
 When several kinds apply to a pair, only one is drawn, in this order: drift, a rule denies it, requested, exception,
 allowed. Dependencies not allowed by this policy need a request. **Show the map as a list** opens dependencies
@@ -223,6 +233,7 @@ For example, the comment for this fixture says:
 ## Archfit: waiting, request #431
 
 `pkg/tc/netem.go:12` **graph** pkg_tc -> pkg_util is not an allowed dependency
+
 - why: a new dependency between modules needs an owner
 - balance: 9/10 (min 7)
 
@@ -241,10 +252,10 @@ An accepted default-branch result that reports drift opens or updates an `archfi
 | Situation                                  | Action                                                                                                           |
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
 | The check is `unknown`                     | Read its reason and restore the named authority or input. Unknown is not a pass.                                 |
-| A policy changed outside the approval flow | An owner must confirm or revert it with a passkey. Read the issue and the policy before acting.                |
+| A policy changed outside the approval flow | An owner must confirm or revert it with a passkey. Read the issue and the policy before acting.                  |
 | A workflow changed                         | An owner must approve the workflow change with a passkey unless only the Action ref moved to an approved commit. |
-| A request shows **as reported**            | Treat its measurements as a claim. Read the source and a current pull-request result.                          |
+| A request shows **as reported**            | Treat its measurements as a claim. Read the source and a current pull-request result.                            |
 | The App cannot confirm a ruleset or bypass | Ask a repository administrator to inspect the ruleset in GitHub.                                                 |
-| A passkey prompt fails or the policy moved | Start the action again and read the new preview. A step-up is bound to one action and expires.                 |
+| A passkey prompt fails or the policy moved | Start the action again and read the new preview. A step-up is bound to one action and expires.                   |
 
 For operators, see [configuration](architecture.md#configuration) and [cloud operations](design/cloud/operations.md).

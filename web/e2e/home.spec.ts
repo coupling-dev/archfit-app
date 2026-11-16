@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { expectClean, expectNoNotUsedWord, expectPageText, open, docsClock, docsShot } from './support';
-import { readHome } from '../src/lib/home';
+import { readHome, ownerReviewLabel } from '../src/lib/home';
 
 const path = '/r/acme/app';
 const api = 'GET /api/repos/acme/app/home';
@@ -19,6 +19,12 @@ const setupApprovedCopy = [
   'Review first policy',
   'Review needed',
   'A passkey is needed to approve, but not to read the review.',
+  'Next: review owner approval',
+  'Review and approve',
+  'Review proposed files',
+  'Review the proposed files before approving.',
+  'PR #203 changed after approval. Review the new head.',
+  'Could not read your passkeys. Review is still available; try again before approving.',
 ];
 
 for (const file of names) {
@@ -41,24 +47,50 @@ for (const file of names) {
     if (body.map)
       await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toBeVisible();
     if (body.setup) {
-      await expect(page.getByRole('heading', { name: 'Needs you' })).toHaveCount(0);
-      await expect(page.getByRole('heading', { name: 'The map' })).toHaveCount(0);
+      if (!['approved', 'outside_flow'].includes(body.setup.state)) {
+        await expect(page.getByRole('heading', { name: 'Needs you' })).toHaveCount(0);
+        await expect(page.getByRole('heading', { name: 'The map' })).toHaveCount(0);
+      }
       if (body.setup.passkey) {
         await expect(page.getByRole('link', { name: 'Manage passkeys' })).toHaveAttribute('href', path + '/passkeys');
-        await expect(page.getByRole('link', { name: 'Manage passkeys' })).toHaveClass(/ghost/);
-        await expect(page.getByRole('link', { name: 'Register a passkey' })).toHaveCount(0);
+        await expect(page.getByRole('link', { name: 'Manage passkeys' })).not.toHaveClass(/btn/);
+        await expect(page.getByRole('link', { name: 'Register a passkey to approve' })).toHaveCount(0);
       } else {
-        await expect(page.getByRole('link', { name: 'Register a passkey' })).toHaveAttribute(
+        await expect(page.getByRole('link', { name: 'Register a passkey to approve' })).toHaveAttribute(
           'href',
           path + '/passkeys',
         );
       }
       await expect(page.getByRole('heading', { name: 'Set up Archfit' })).toBeVisible();
-      await expect(page.getByRole('listitem')).toHaveCount(4);
+      await expect(page.getByRole('heading', { name: '3 · Owner approval', exact: true })).toBeVisible();
+      const approval = body.setup.approval;
+      if (approval.status === 'approved_pending_merge' || approval.status === 'unknown') {
+        await expect(page.locator('main a[href*="/owner/"]')).toHaveCount(0);
+        await expect(page.getByRole('link', { name: 'Review and approve', exact: true })).toHaveCount(0);
+      }
+      if (approval.status === 'approved_pending_merge') {
+        await expect(page.locator('.steps > li').nth(2)).toHaveClass(/done/);
+        await expect(
+          page.getByText(
+            approval.merged
+              ? 'Approval recorded; checking activation'
+              : `Approved for PR #${approval.pull_request}. Waiting for merge.`,
+            { exact: true },
+          ),
+        ).toBeVisible();
+      }
+      if (approval.status === 'stale') {
+        await expect(
+          page.getByText(`PR #${approval.pull_request} changed after approval. Review the new head.`, { exact: true }),
+        ).toBeVisible();
+        await expect(page.locator('.steps > li').nth(2)).not.toHaveClass(/done/);
+      }
+      if (approval.status === 'unknown') await expect(page.locator('.steps > li').nth(2)).not.toHaveClass(/done/);
+      await expect(page.locator('.steps > li')).toHaveCount(4);
       const chips = page.locator('.setup .chip');
       for (const chip of await chips.all()) {
         const status = await chip.innerText();
-        const tone = ['Done', 'On', 'Ready for review'].includes(status)
+        const tone = ['Done', 'On', 'Signed', 'Ready for review'].includes(status)
           ? 'good'
           : ['Waiting', 'Not available'].includes(status)
             ? 'neutral'
@@ -96,7 +128,7 @@ for (const file of names) {
         ).toBeVisible();
       }
       if (body.setup.owner_action?.href) {
-        const review = page.getByRole('link', { name: body.setup.owner_action.label, exact: true });
+        const review = page.getByRole('link', { name: ownerReviewLabel(body.setup), exact: true });
         await expect(review).toHaveAttribute('href', body.setup.owner_action.href);
         await expect(review).not.toHaveClass(/primary/);
         await expect(review).toHaveAccessibleDescription('Approval needs your passkey.');
@@ -126,7 +158,7 @@ for (const file of names) {
       await page.keyboard.press('Enter');
       for (const m of body.map.modules)
         await expect(page.locator('details li').filter({ hasText: m.name + ' · Volatility:' })).toBeVisible();
-      await expectNoNotUsedWord(page, ['Review workflow change']);
+      await expectNoNotUsedWord(page, body.setup ? setupApprovedCopy : ['Review workflow change']);
     }
     await expectClean(page, body.setup ? setupApprovedCopy : ['Review workflow change']);
     expect(reads).toEqual(['/api/repos/acme/app/home']);
@@ -232,10 +264,10 @@ for (const first of [true, false]) {
     const body = fixture(first ? 'not-set-up' : 'workflow-review');
     body.setup.passkey = false;
     await open(page, path, { [api]: () => [200, body] });
-    const link = page.getByRole('link', { name: body.setup.owner_action.label, exact: true });
+    const link = page.getByRole('link', { name: ownerReviewLabel(body.setup), exact: true });
     await expect(link).toHaveAttribute('href', body.setup.owner_action.href);
     await expect(link).not.toHaveAttribute('aria-disabled');
-    await expect(page.getByRole('link', { name: 'Register a passkey' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Register a passkey to approve' })).toBeVisible();
     await link.focus();
     await expect(link).toBeFocused();
     await expectClean(page, setupApprovedCopy);
@@ -250,7 +282,7 @@ test('home: ineligible viewer gets a role handoff without an owner-action link',
   await open(page, path, { [api]: () => [200, body] });
   await expect(page.getByText(body.setup.owner_action.label, { exact: true })).toBeVisible();
   await expect(page.locator('main a[href*="/owner/"]')).toHaveCount(0);
-  await expect(page.getByText('This needs your passkey.', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Approval needs your passkey.', { exact: true })).toHaveCount(0);
   await expectPageText(page, 'home-first-policy-viewer');
   await expectClean(page, [...setupApprovedCopy, body.setup.owner_action.label]);
 });
@@ -275,11 +307,17 @@ test('home: an unavailable rule does not block setup completion, an unknown rule
 for (const [name, setup, next] of [
   ['missing-policy', { policy: false, open_pull: 0, owner_action: undefined }, 'Next: add the policy'],
   ['create', { open_pull: 0, owner_action: undefined }, 'Next: create the pull request'],
-  ['existing-workflow-pr', {}, 'Next: approve the workflow with your passkey'],
-  ['approval', { first_pull: 12, open_pull: 0 }, 'Next: approve the workflow with your passkey'],
+  ['existing-workflow-pr', {}, 'Next: review owner approval'],
+  ['approval', { first_pull: 12, open_pull: 0 }, 'Next: review owner approval'],
   [
     'required-check',
-    { first_pull: 12, open_pull: 0, state: 'approved', owner_action: undefined },
+    {
+      first_pull: 12,
+      open_pull: 0,
+      state: 'approved',
+      approval: { status: 'active', kind: 'first' },
+      owner_action: undefined,
+    },
     'Next: turn on the required check',
   ],
   [
@@ -288,6 +326,7 @@ for (const [name, setup, next] of [
       first_pull: 12,
       open_pull: 0,
       state: 'approved',
+      approval: { status: 'active', kind: 'first' },
       owner_action: undefined,
       rules: [{ code: 'gate_check', state: 'ok', text: '' }],
     },
@@ -381,5 +420,10 @@ test('home: setup chips use semantic colours in both themes', async ({ page }) =
   }
   delete body.setup.owner_action;
   await page.reload();
-  await expect(page.locator('.setup .chip').filter({ hasText: /^Waiting$/ })).toHaveClass(/neutral/);
+  await expect(
+    page
+      .locator('.setup .chip')
+      .filter({ hasText: /^Action needed$/ })
+      .first(),
+  ).toHaveClass(/attention/);
 });

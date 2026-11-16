@@ -79,7 +79,7 @@ func TestHomeResolvesReviewForSetupAndApprovedRepositories(t *testing.T) {
 			t.Run(state+map[bool]string{true: "/owner", false: "/viewer"}[allowed], func(t *testing.T) {
 				e := newHomeEnv(t, homePolicy)
 				if state != "approved" {
-					e.setups.out = onboarding.Setup{State: state, FirstPull: 4}
+					e.setups.out = onboarding.Setup{State: state, FirstPull: 4, Approval: gate.ApprovalSummary{Status: gate.ApprovalNeeded, Kind: gate.OwnerFirst, Pull: 4}}
 					if state == "not_admitted" {
 						e.setups.out.FirstPull, e.setups.out.OpenPull = 0, 4
 					}
