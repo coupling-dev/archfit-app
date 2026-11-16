@@ -24,7 +24,7 @@ a PR merge. **Require the gate** remains actionable independently of these appro
 With no passkey, **Register a passkey to approve** does not prevent reading the review. An unreadable
 passkey inventory is shown separately from an empty inventory. **Manage passkeys** is a secondary link.
 
-The setup heading shows one **Next** action. Amber chips need action, neutral chips indicate waiting or an unavailable feature, and green chips mark completed steps. **Review PR #N** opens an existing pull request on GitHub; the separate PR link opens its App page. The owner action notes that approval needs your passkey. An administrator must enable the required check in the repository settings: the App cannot change rulesets without Administration permission.
+The setup heading shows one **Next** action. Amber chips need action, neutral chips indicate waiting or an unavailable feature, and green chips mark completed steps. **Policy and workflow pull request** is complete when an existing setup PR is **Ready for review**. It is also complete when both files are already present on the default branch. This step does not mean that the PR is approved or merged. **View PR #N on GitHub** opens an existing workflow PR. The separate PR link opens its App page. When no setup PR exists and files are missing, **Create a pull request on GitHub** opens the compare page. An administrator must enable the required check in the repository settings: the App cannot change rulesets without Administration permission.
 
 For a workflow change, an owner named in the approved policy can follow the review action from Home or **Review workflow change** from the pull page. Being a repository administrator alone does not qualify. You can read either review before registering a passkey; the final approval still requires one.
 
@@ -35,8 +35,9 @@ Open `/` after signing in to choose a repository or continue setup. The **Reposi
 ## Home and the map
 
 Open `/r/<owner>/<repo>` for **Home**. Home, Pull and Owner pages start with one title and repository identity,
-then the status and a row of next actions. Home puts the eligible setup review link here; otherwise it links to
-setup, **Needs you**, or policy. **Needs you** lists open requests,
+then the status and a row of next actions. Home puts the eligible setup review link beside **View policy**.
+Otherwise it links to setup or policy. The review link opens a read-only page. The note below the row says that
+approval needs your passkey. **Needs you** appears directly below setup-free Home pages and lists open requests,
 exceptions near their date, drift and owner actions. Each item opens its page. A request's record folds away.
 Before the first policy is approved, Home shows the setup steps, what is missing and the ruleset advice
 instead of the map. Owner actions open the pages below.

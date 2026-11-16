@@ -38,7 +38,7 @@ export interface HomeSetup {
 export function setupStepState(setup: HomeSetup) {
   const done = [
     setup.policy || setup.first_pull !== undefined,
-    setup.first_pull !== undefined || setup.open_pull > 0 || (setup.policy && setup.workflow),
+    setupPullStep(setup).kind !== 'create',
     setup.approval.status === 'active' || setup.approval.status === 'approved_pending_merge',
     setup.rules.length > 0 && setup.rules.every((rule) => rule.state === 'ok' || rule.state === 'not_applicable'),
   ];
@@ -48,7 +48,7 @@ export function setupStepState(setup: HomeSetup) {
     next: !done[0]
       ? 'Next: add the policy'
       : !done[1]
-        ? 'Next: review the pull request'
+        ? 'Next: create the pull request'
         : !done[2]
           ? 'Next: review owner approval'
           : !done[3]
@@ -95,17 +95,16 @@ export function approvalNeedsReview(setup: HomeSetup): boolean {
 }
 
 export function setupPullStep(setup: HomeSetup) {
-  if (setup.policy && setup.workflow && !setup.open_pull && !setup.first_pull)
-    return { kind: 'present' as const, status: 'Done' };
-  if (setup.open_pull > 0) return { kind: 'review' as const, status: 'In review', number: setup.open_pull };
+  if (setup.open_pull > 0) return { kind: 'review' as const, status: 'Ready for review', number: setup.open_pull };
   if (setup.first_pull !== undefined)
-    return { kind: 'first-policy' as const, status: 'Done', number: setup.first_pull };
+    return { kind: 'first-policy' as const, status: 'Ready for review', number: setup.first_pull };
+  if (setup.policy && setup.workflow) return { kind: 'current' as const, status: 'Done' };
   return { kind: 'create' as const, status: 'Action needed' };
 }
 
 export function setupChipClass(status: string): 'good' | 'attention' | 'neutral' {
-  if (status === 'Done' || status === 'On' || status === 'Signed') return 'good';
-  if (status === 'In review' || status === 'Waiting' || status === 'Not available') return 'neutral';
+  if (status === 'Done' || status === 'On' || status === 'Signed' || status === 'Ready for review') return 'good';
+  if (status === 'Waiting' || status === 'Not available') return 'neutral';
   return 'attention';
 }
 

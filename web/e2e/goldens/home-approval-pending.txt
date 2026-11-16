@@ -22,18 +22,15 @@ Done
 The policy is on the default branch. View the policy
 
 ✓
-2 · Open a pull request
+2 · Policy and workflow pull request
 
 Rules reach the default branch through review, so the approval binds to exact file contents.
 
-In review
+Ready for review
 
-PR #203 adds the workflow — review it.
+PR #203 adds the workflow.
 
-Review PR #203
-
-This opens GitHub to read the change; nothing needs to be created here.
-
+View PR #203 on GitHub
 ✓
 3 · Owner approval
 

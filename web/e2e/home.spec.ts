@@ -13,11 +13,8 @@ const fixture = (name: string) => JSON.parse(readFileSync(new URL(name + '.json'
 const setupApprovedCopy = [
   'Rules reach the default branch through review, so the approval binds to exact file contents.',
   'Require the gate',
-  'Next: review the pull request',
-  'Review PR #203',
-  'PR #203 adds the workflow — review it.',
+  'Ready for review',
   'A password or a GitHub review can be replayed by a compromised account',
-  'In review',
   'Review workflow change',
   'Review first policy',
   'Review needed',
@@ -93,9 +90,9 @@ for (const file of names) {
       const chips = page.locator('.setup .chip');
       for (const chip of await chips.all()) {
         const status = await chip.innerText();
-        const tone = ['Done', 'On', 'Signed'].includes(status)
+        const tone = ['Done', 'On', 'Signed', 'Ready for review'].includes(status)
           ? 'good'
-          : ['In review', 'Waiting', 'Not available'].includes(status)
+          : ['Waiting', 'Not available'].includes(status)
             ? 'neutral'
             : 'attention';
         await expect(chip).toHaveClass(new RegExp(tone));
@@ -114,33 +111,27 @@ for (const file of names) {
         page.getByText('The owner signs the policy with a passkey. Change one byte and the approval no longer counts.'),
       ).toBeVisible();
       if (body.setup.open_pull > 0) {
-        await expect(page.getByRole('listitem').nth(1).getByText('In review', { exact: true })).toBeVisible();
-        await expect(page.getByText(`PR #${body.setup.open_pull} adds the workflow — review it.`)).toBeVisible();
+        await expect(page.getByRole('listitem').nth(1).getByText('Ready for review', { exact: true })).toBeVisible();
+        await expect(page.getByText(`PR #${body.setup.open_pull} adds the workflow.`)).toBeVisible();
         await expect(page.getByRole('link', { name: `PR #${body.setup.open_pull}`, exact: true })).toHaveAttribute(
           'href',
           path + '/pull/' + body.setup.open_pull,
         );
         await expect(
-          page.getByRole('link', { name: `Review PR #${body.setup.open_pull}`, exact: true }),
+          page.getByRole('link', { name: `View PR #${body.setup.open_pull} on GitHub`, exact: true }),
         ).toHaveAttribute('href', `https://github.com/acme/app/pull/${body.setup.open_pull}`);
       }
-      if (body.setup.open_pull > 0)
-        await expect(
-          page.getByText('This opens GitHub to read the change; nothing needs to be created here.'),
-        ).toBeVisible();
       if (body.setup.first_pull) {
-        await expect(page.getByRole('listitem').nth(1).getByText('Done', { exact: true })).toBeVisible();
+        await expect(page.getByRole('listitem').nth(1).getByText('Ready for review', { exact: true })).toBeVisible();
         await expect(
-          page.getByText(
-            `First policy: #${body.setup.first_pull}, open and waiting for approval. The workflow is present in this PR.`,
-          ),
+          page.getByText(`PR #${body.setup.first_pull} proposes the first policy and workflow.`),
         ).toBeVisible();
       }
       if (body.setup.owner_action?.href) {
         const review = page.getByRole('link', { name: ownerReviewLabel(body.setup), exact: true });
         await expect(review).toHaveAttribute('href', body.setup.owner_action.href);
-        await expect(review).toHaveClass(/primary/);
-        await expect(review.locator('..').getByText('Approval needs your passkey.', { exact: true })).toBeVisible();
+        await expect(review).not.toHaveClass(/primary/);
+        await expect(review).toHaveAccessibleDescription('Approval needs your passkey.');
       }
       if (!body.setup.workflow && body.setup.open_pull === 0 && !body.setup.first_pull)
         await expect(page.getByText('The pull request should also add .github/workflows/archfit.yaml.')).toBeVisible();
@@ -155,6 +146,8 @@ for (const file of names) {
         );
       if (name === 'workflow-review') await docsShot(page, 'home-setup', setupApprovedCopy);
     } else {
+      await expect(page.getByRole('link', { name: 'See what needs you' })).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'Needs you' })).toBeVisible();
       for (const need of body.needs_you)
         await expect(page.getByRole('link', { name: need.text, exact: true })).toHaveAttribute('href', need.href);
     }
@@ -313,7 +306,8 @@ test('home: an unavailable rule does not block setup completion, an unknown rule
 
 for (const [name, setup, next] of [
   ['missing-policy', { policy: false, open_pull: 0, owner_action: undefined }, 'Next: add the policy'],
-  ['review', {}, 'Next: review owner approval'],
+  ['create', { open_pull: 0, owner_action: undefined }, 'Next: create the pull request'],
+  ['existing-workflow-pr', {}, 'Next: review owner approval'],
   ['approval', { first_pull: 12, open_pull: 0 }, 'Next: review owner approval'],
   [
     'required-check',
@@ -347,13 +341,70 @@ for (const [name, setup, next] of [
   });
 }
 
+for (const [name, setup, chip, completed, copy, action, href] of [
+  [
+    'workflow PR',
+    { policy: true, workflow: false, open_pull: 203 },
+    'Ready for review',
+    2,
+    'PR #203 adds the workflow.',
+    'View PR #203 on GitHub',
+    'https://github.com/acme/app/pull/203',
+  ],
+  [
+    'first-policy PR',
+    { policy: false, workflow: false, open_pull: 0, first_pull: 12 },
+    'Ready for review',
+    2,
+    'PR #12 proposes the first policy and workflow.',
+    'View PR #12',
+    '/r/acme/app/pull/12',
+  ],
+  [
+    'default-branch files',
+    { policy: true, workflow: true, open_pull: 0 },
+    'Done',
+    2,
+    'The policy and workflow are present on the default branch. No setup pull request is needed.',
+    'View policy',
+    '/r/acme/app/policy',
+  ],
+  [
+    'missing workflow',
+    { policy: true, workflow: false, open_pull: 0 },
+    'Action needed',
+    1,
+    'Open one pull request that adds the missing policy or workflow.',
+    'Create a pull request on GitHub',
+    'https://github.com/acme/app/compare',
+  ],
+] as const) {
+  test('home: pull-request stage describes ' + name, async ({ page }) => {
+    const body = fixture('workflow-review');
+    Object.assign(body.setup, setup, { owner_action: undefined });
+    await open(page, path, { [api]: () => [200, body] });
+    const step = page.locator('.setup .steps > li').nth(1);
+    await expect(step.getByRole('heading')).toHaveText('2 · Policy and workflow pull request');
+    await expect(step.locator('.chip')).toHaveText(chip);
+    await expect(step.locator('.number')).toHaveText(completed === 2 ? '✓' : '2');
+    if (completed === 2) await expect(step).toHaveClass(/done/);
+    else await expect(step).not.toHaveClass(/done/);
+    await expect(page.getByLabel(`${completed} of 4 steps done`)).toBeVisible();
+    await expect(step.getByText(copy, { exact: true })).toBeVisible();
+    await expect(step.getByRole('link', { name: action, exact: true })).toHaveAttribute('href', href);
+    if (completed === 2)
+      await expect(step.getByRole('link', { name: 'Create a pull request on GitHub' })).toHaveCount(0);
+    await expectClean(page, setupApprovedCopy);
+  });
+}
+
 test('home: setup chips use semantic colours in both themes', async ({ page }) => {
   const body = fixture('workflow-review');
   body.setup.rules.push({ code: 'administrator_bypass', state: 'unknown', text: '' });
   await open(page, path, { [api]: () => [200, body] });
-  for (const [theme, good, attention, neutral] of [
-    ['light', 'rgb(218, 251, 225)', 'rgb(255, 248, 197)', 'rgb(239, 242, 245)'],
-    ['dark', 'rgba(46, 160, 67, 0.15)', 'rgba(187, 128, 9, 0.15)', 'rgba(101, 108, 118, 0.2)'],
+  for (const [theme, good, attention] of [
+    ['light', 'rgb(218, 251, 225)', 'rgb(255, 248, 197)'],
+    ['dark', 'rgba(46, 160, 67, 0.15)', 'rgba(187, 128, 9, 0.15)'],
   ] as const) {
     await page.emulateMedia({ colorScheme: theme });
     await expect(page.locator('.setup .chip').filter({ hasText: /^Done$/ })).toHaveCSS('background-color', good);
@@ -362,9 +413,9 @@ test('home: setup chips use semantic colours in both themes', async ({ page }) =
       attention,
     );
     await expect(page.locator('.setup .chip').filter({ hasText: /^Check$/ })).toHaveCSS('background-color', attention);
-    await expect(page.locator('.setup .chip').filter({ hasText: /^In review$/ })).toHaveCSS(
+    await expect(page.locator('.setup .chip').filter({ hasText: /^Ready for review$/ })).toHaveCSS(
       'background-color',
-      neutral,
+      good,
     );
   }
   delete body.setup.owner_action;

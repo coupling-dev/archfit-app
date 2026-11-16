@@ -118,7 +118,7 @@ describe('setup step labels and progress', () => {
     ['Review needed', 'attention'],
     ['Check', 'attention'],
     ['Check with an admin', 'attention'],
-    ['In review', 'neutral'],
+    ['Ready for review', 'good'],
     ['Waiting', 'neutral'],
     ['Not available', 'neutral'],
     ['Done', 'good'],
@@ -127,8 +127,9 @@ describe('setup step labels and progress', () => {
 
   it.each([
     [base, 'Next: add the policy'],
-    [{ ...base, policy: true }, 'Next: review the pull request'],
+    [{ ...base, policy: true }, 'Next: create the pull request'],
     [{ ...base, policy: true, open_pull: 203 }, 'Next: review owner approval'],
+    [{ ...base, policy: true, workflow: true }, 'Next: review owner approval'],
     [{ ...base, first_pull: 12 }, 'Next: review owner approval'],
     [{ ...base, first_pull: 12, state: 'approved', approval: active }, 'Next: turn on the required check'],
     [
@@ -143,10 +144,17 @@ describe('setup step labels and progress', () => {
     ],
   ])('shows one next action for %j', (setup, next) => expect(setupStepState(setup).next).toBe(next));
 
-  it('derives the three pull-request step branches', () => {
-    expect(setupPullStep(base)).toEqual({ kind: 'create', status: 'Action needed' });
-    expect(setupPullStep({ ...base, first_pull: 12 })).toEqual({ kind: 'first-policy', status: 'Done', number: 12 });
-    expect(setupPullStep({ ...base, open_pull: 203 })).toEqual({ kind: 'review', status: 'In review', number: 203 });
+  it.each([
+    [base, { kind: 'create', status: 'Action needed' }, false],
+    [{ ...base, policy: true }, { kind: 'create', status: 'Action needed' }, false],
+    [{ ...base, workflow: true }, { kind: 'create', status: 'Action needed' }, false],
+    [{ ...base, first_pull: 12 }, { kind: 'first-policy', status: 'Ready for review', number: 12 }, true],
+    [{ ...base, policy: true, open_pull: 203 }, { kind: 'review', status: 'Ready for review', number: 203 }, true],
+    [{ ...base, policy: true, workflow: true }, { kind: 'current', status: 'Done' }, true],
+    [{ ...base, first_pull: 12, open_pull: 203 }, { kind: 'review', status: 'Ready for review', number: 203 }, true],
+  ])('keeps the PR step and its completion consistent for %j', (setup, step, done) => {
+    expect(setupPullStep(setup)).toEqual(step);
+    expect(setupStepState(setup).done[1]).toBe(done);
   });
 
   it('derives progress from policy, first pull, approval and rules', () => {
@@ -156,7 +164,7 @@ describe('setup step labels and progress', () => {
       approval: 'Action needed',
       approvalText: 'Review the proposed files before approving.',
       gate: 'On',
-      next: 'Next: review the pull request',
+      next: 'Next: create the pull request',
     });
     expect(
       setupStepState({

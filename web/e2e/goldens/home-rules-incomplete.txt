@@ -22,14 +22,15 @@ Done
 The policy is on the default branch. View the policy
 
 ✓
-2 · Open a pull request
+2 · Policy and workflow pull request
 
 Rules reach the default branch through review, so the approval binds to exact file contents.
 
 Done
 
-The policy and workflow are on the default branch. No setup pull request is needed.
+The policy and workflow are present on the default branch. No setup pull request is needed.
 
+View policy
 ✓
 3 · Owner approval
 
