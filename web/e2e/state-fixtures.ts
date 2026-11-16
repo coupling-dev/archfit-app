@@ -16,6 +16,8 @@ closed.state = 'closed';
 const unknownRuleset = readHome(fixture('home/not-set-up'));
 if (!unknownRuleset.setup) throw new Error('The setup fixture must include setup.');
 unknownRuleset.setup.rules = [
+  { code: 'pull_requests', state: 'ok', text: '' },
+  { code: 'rulesets', state: 'unknown', text: '' },
   { code: 'gate_check', state: 'ok', text: '' },
   { code: 'policy_push', state: 'not_applicable', text: '' },
   { code: 'administrator_bypass', state: 'unknown', text: '' },

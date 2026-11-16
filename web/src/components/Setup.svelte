@@ -1,5 +1,6 @@
 <script lang="ts">
   import { repoPage, type Repo } from '../lib/route';
+  import { setupRuleHelp } from '../lib/setup-rules';
   import { approvalNeedsReview, ownerReviewLabel, homeHref, setupChipClass, setupPullStep, setupRuleStatus, setupStepState, type HomeSetup } from '../lib/home';
 
   let { setup, repo, showOwnerAction = true }: { setup: HomeSetup; repo: Repo; showOwnerAction?: boolean } = $props();
@@ -7,7 +8,7 @@
     { title: 'Add the policy', text: 'Your architecture rules live in .archfit.yaml, in the repository.' },
     { title: 'Policy and workflow pull request', text: 'Rules reach the default branch through review, so the approval binds to exact file contents.' },
     { title: 'Owner approval', text: 'The owner signs the policy with a passkey. Change one byte and the approval no longer counts.' },
-    { title: 'Require the gate', text: 'The App cannot change repository rulesets without Administration permission. An administrator must turn on the required check in the repository settings.' },
+    { title: 'Require the gate', text: 'In GitHub, require archfit/gate on the default branch. The App reads these settings; an administrator changes them.' },
   ];
   const passkeyReason = 'The gate protects the rules themselves. A password or a GitHub review can be replayed by a compromised account, and in a one-person repository a self-review proves nothing. A passkey stays on your device, works only on this site, and signs the exact bytes of the policy and workflow. Any later edit needs a new approval.';
   let state = $derived(setupStepState(setup));
@@ -17,11 +18,6 @@
   let pullStep = $derived(setupPullStep(setup));
   let approvalHref = $derived(setup.approval.href ? homeHref(repo, setup.approval.href) : undefined);
   let githubRepo = $derived(`https://github.com/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`);
-  function ruleExplanation(rule: HomeSetup['rules'][number]): string {
-    if (rule.state === 'unknown' && rule.code === 'administrator_bypass') return 'The App cannot read administrator bypass without Administration permission. An admin must confirm the bypass list is intentional.';
-    if (rule.state === 'not_applicable') return 'Not available: this applies only to organization-owned private or internal repositories.';
-    return rule.text;
-  }
 </script>
 
 <section class="box setup" aria-labelledby="setup-title">
@@ -73,11 +69,23 @@
               {/if}
               <details><summary>Why a passkey?</summary><p>{passkeyReason}</p></details>
             {:else}
-              <p>This step turns green once archfit/gate is required and the applicable rules below are checked.</p>
+              <p>This step turns green when GitHub requires pull requests and archfit/gate on the default branch. Bypass and policy-push advice does not block this step; Verify yourself means the App has not checked that setting.</p>
               <div class="rules">
-                <a class="btn ghost" href={`${githubRepo}/settings/rules`}>Open ruleset settings</a>
+                <div class="rule-actions"><a class="btn ghost" href={`${githubRepo}/settings/rules`}>Open ruleset settings</a><button class="btn ghost" onclick={() => window.location.reload()}>Check</button></div>
+                <p>After saving changes on GitHub, select Check to read the settings again. Check does not change any GitHub settings.</p>
                 {#each setup.rules as rule, ri (`${rule.code}-${ri}`)}
-                  <div class="rule"><div><div class="rule-title">{rule.code === 'pull_requests' ? 'Default-branch changes require a pull request' : rule.code === 'gate_check' ? "The App’s archfit/gate check is required" : rule.code === 'administrator_bypass' ? 'Administrator bypass' : rule.code === 'policy_push' ? 'Policy-push restriction' : rule.text}</div>{#if rule.state !== 'ok'}<p>{ruleExplanation(rule)}</p>{/if}</div><span class="chip" class:good={rule.state === 'ok'} class:attention={rule.state !== 'ok' && rule.state !== 'not_applicable'} class:neutral={rule.state === 'not_applicable'}>{setupRuleStatus(rule.state)}</span></div>
+                  {@const help = setupRuleHelp(rule, repo)}
+                  <div class="rule">
+                    <div class="rule-head">
+                      <h4>{help.title}</h4>
+                      <span class="chip" class:good={rule.state === 'ok'} class:attention={rule.state !== 'ok' && rule.state !== 'not_applicable'} class:neutral={rule.state === 'not_applicable'}>{setupRuleStatus(rule.state, rule.code)}</span>
+                    </div>
+                    <p>{help.explanation}</p>
+                    {#each help.instructions as instruction (instruction)}<p>{instruction}</p>{/each}
+                    <div class="rule-links">
+                      {#each help.links as link (link.href)}<a href={link.href}>{link.label}</a>{/each}
+                    </div>
+                  </div>
                 {:else}<p>No ruleset settings are available.</p>{/each}
               </div>
             {/if}
@@ -113,7 +121,12 @@
   details p { margin-top: 8px !important; }
   .command { margin: 8px 0; padding: 10px 12px; border-radius: var(--radius); background: var(--bg-subtle); overflow-x: auto; }
   .rules { border-top: 1px solid var(--border); margin-top: 8px; }
-  .rule { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 9px 0; border-bottom: 1px dashed var(--border); }
+  .rule { padding: 14px 0; border-bottom: 1px dashed var(--border); overflow-wrap: anywhere; }
+  .rule-head, .rule-actions { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; }
+  .rule-head { justify-content: space-between; }
+  .rule h4 { margin: 0; font-size: 14px; }
+  .rule-links { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 13px; }
+  .rule-head .chip { flex-shrink: 0; }
   .rule:last-child { border-bottom: 0; }
   .rule p { font-size: 13px; margin-top: 3px; }
   @media (max-width: 520px) { .steps li { grid-template-columns: 30px minmax(0, 1fr); } .steps li > .chip { grid-column: 2; grid-row: 2; justify-self: start; } .step-body { grid-column: 2; } }

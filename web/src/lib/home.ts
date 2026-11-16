@@ -36,11 +36,18 @@ export interface HomeSetup {
 }
 
 export function setupStepState(setup: HomeSetup) {
+  const unreadableRules = setup.rules.some(
+    (rule) => (rule.code === 'rulesets' || rule.code === 'branch_rules') && rule.state !== 'ok',
+  );
+  const enforcementOn = ['pull_requests', 'gate_check'].every((code) => {
+    const findings = setup.rules.filter((rule) => rule.code === code);
+    return findings.length > 0 && findings.every((rule) => rule.state === 'ok');
+  });
   const done = [
     setup.policy || setup.first_pull !== undefined,
     setupPullStep(setup).kind !== 'create',
     setup.approval.status === 'active' || setup.approval.status === 'approved_pending_merge',
-    setup.rules.length > 0 && setup.rules.every((rule) => rule.state === 'ok' || rule.state === 'not_applicable'),
+    enforcementOn && !unreadableRules,
   ];
   return {
     done,
@@ -67,11 +74,7 @@ export function setupStepState(setup: HomeSetup) {
               ? 'Review needed'
               : 'Action needed',
     approvalText: approvalText(setup.approval),
-    gate: setup.rules.some((rule) => rule.state === 'unknown')
-      ? 'Check with an admin'
-      : done[3]
-        ? 'On'
-        : 'Action needed',
+    gate: unreadableRules ? 'Check with an admin' : done[3] ? 'On' : 'Action needed',
   };
 }
 
@@ -104,14 +107,22 @@ export function setupPullStep(setup: HomeSetup) {
 
 export function setupChipClass(status: string): 'good' | 'attention' | 'neutral' {
   if (status === 'Done' || status === 'On' || status === 'Signed' || status === 'Ready for review') return 'good';
-  if (status === 'Waiting' || status === 'Not available') return 'neutral';
+  if (status === 'Waiting' || status === 'Does not apply') return 'neutral';
   return 'attention';
 }
 
-export function setupRuleStatus(state: string): string {
+export function setupRuleIsAdvisory(code: string): boolean {
+  return ['administrator_bypass', 'app_bypass', 'policy_push', 'policy_push_bypass', 'approvals'].includes(code);
+}
+
+export function setupRuleStatus(state: string, code = ''): string {
+  if (setupRuleIsAdvisory(code)) {
+    if (state === 'unknown') return 'Verify yourself';
+    if (state === 'warning') return 'Advisory';
+  }
   if (state === 'ok') return 'On';
   if (state === 'unknown') return 'Check';
-  if (state === 'not_applicable') return 'Not available';
+  if (state === 'not_applicable') return 'Does not apply';
   return 'Action needed';
 }
 

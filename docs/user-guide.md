@@ -23,6 +23,8 @@ until push processing confirms activation. A changed head needs a new review. **
 approval** is not success. A first approval of an existing default-branch policy can take effect without
 a PR merge. **Require the gate** remains actionable independently of these approval stages.
 
+**Require the gate** is **On** when the App confirms both required pull requests and the `archfit/gate` check on the default branch. Missing enforcement facts keep the step incomplete; unreadable rulesets show **Check with an admin**. Bypass settings, policy-push restrictions, and GitHub approval-count advice do not hold this step back. **Verify yourself** marks advice the App could not verify, not a successful check. The App deliberately lacks Administration permission: inspect each default-branch ruleset's **Bypass list** yourself and keep it empty or administrators-only for emergencies. Each row links to the relevant GitHub settings and names the values to set. **Does not apply** means no action is needed for that feature. After saving GitHub changes, select **Check** to reload setup; it does not change GitHub settings.
+
 With no passkey, **Register a passkey to approve** does not prevent reading the review. An unreadable
 passkey inventory is shown separately from an empty inventory. **Manage passkeys** is a secondary link.
 

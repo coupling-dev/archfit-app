@@ -45,8 +45,7 @@ for (const file of names) {
     await expect(page.locator('.page-head .status')).toHaveText(body.status);
     await expect(page.getByRole('navigation', { name: 'Repository' }).getByRole('link')).toHaveText(['Home', 'Policy']);
     await expect(page.getByRole('link', { name: 'Home', exact: true })).toHaveAttribute('aria-current', 'page');
-    if (body.map)
-      await expect(page.getByRole('table', { name: 'Policy and review status matrix' })).toBeVisible();
+    if (body.map) await expect(page.getByRole('table', { name: 'Policy and review status matrix' })).toBeVisible();
     if (body.setup) {
       if (!['approved', 'outside_flow'].includes(body.setup.state)) {
         await expect(page.getByRole('heading', { name: 'Needs you' })).toHaveCount(0);
@@ -65,6 +64,16 @@ for (const file of names) {
       await expect(page.getByRole('heading', { name: 'Set up Archfit' })).toBeVisible();
       await expect(page.getByRole('heading', { name: '3 · Owner approval', exact: true })).toBeVisible();
       const approval = body.setup.approval;
+      const gateStep = page.locator('.steps > li').nth(3);
+      if (name.startsWith('approval-') || name === 'workflow-review') {
+        await expect(gateStep).toHaveClass(/done/);
+        await expect(gateStep.locator(':scope > .chip')).toHaveText('On');
+        await expect(page.getByText('Next: turn on the required check', { exact: true })).toHaveCount(0);
+      }
+      if (name === 'not-set-up' || name === 'rules-incomplete') {
+        await expect(gateStep).not.toHaveClass(/done/);
+        await expect(gateStep.locator(':scope > .chip')).toHaveText('Action needed');
+      }
       if (approval.status === 'approved_pending_merge' || approval.status === 'unknown') {
         await expect(page.locator('main a[href*="/owner/"]')).toHaveCount(0);
         await expect(page.getByRole('link', { name: 'Review and approve', exact: true })).toHaveCount(0);
@@ -93,19 +102,19 @@ for (const file of names) {
         const status = await chip.innerText();
         const tone = ['Done', 'On', 'Signed', 'Ready for review'].includes(status)
           ? 'good'
-          : ['Waiting', 'Not available'].includes(status)
+          : ['Waiting', 'Does not apply'].includes(status)
             ? 'neutral'
             : 'attention';
         await expect(chip).toHaveClass(new RegExp(tone));
       }
       await expect(
         page.getByText(
-          'The App cannot change repository rulesets without Administration permission. An administrator must turn on the required check in the repository settings.',
+          'In GitHub, require archfit/gate on the default branch. The App reads these settings; an administrator changes them.',
         ),
       ).toBeVisible();
       await expect(
         page.getByText(
-          'This step turns green once archfit/gate is required and the applicable rules below are checked.',
+          'This step turns green when GitHub requires pull requests and archfit/gate on the default branch. Bypass and policy-push advice does not block this step; Verify yourself means the App has not checked that setting.',
         ),
       ).toBeVisible();
       await expect(
@@ -153,13 +162,19 @@ for (const file of names) {
         await expect(page.getByRole('link', { name: need.text, exact: true })).toHaveAttribute('href', need.href);
     }
     // HTML tables add trailing cell separators to innerText; keep text goldens whitespace-clean.
-    if (body.map) expect((await page.locator('main').innerText()).replace(/[ \t]+$/gm, '').trimEnd()).toMatchSnapshot('home-' + name + '.txt');
+    if (body.map)
+      expect((await page.locator('main').innerText()).replace(/[ \t]+$/gm, '').trimEnd()).toMatchSnapshot(
+        'home-' + name + '.txt',
+      );
     else await expectPageText(page, 'home-' + name);
     if (name === 'one-request') await docsShot(page, 'home', ['Policy and review status']);
     if (body.map) {
       for (const m of body.map.modules)
         await expect(page.getByRole('rowheader').filter({ hasText: m.name })).toBeVisible();
-      await expectNoNotUsedWord(page, body.setup ? setupApprovedCopy : ['Review workflow change', 'Policy and review status']);
+      await expectNoNotUsedWord(
+        page,
+        body.setup ? setupApprovedCopy : ['Review workflow change', 'Policy and review status'],
+      );
     }
     await expectClean(page, body.setup ? setupApprovedCopy : ['Review workflow change', 'Policy and review status']);
     expect(reads).toEqual(['/api/repos/acme/app/home']);
@@ -189,7 +204,10 @@ test('home: worker failure says so, and Matrix still works', async ({ page }) =>
   await expectPageText(page, 'home-worker-error');
   await page.getByRole('button', { name: 'Matrix', exact: true }).click();
   await page.getByRole('button', { name: /^app → other:/ }).click();
-  await expect(page.getByRole('link', { name: 'Open request #431' })).toHaveAttribute('href', '/r/acme/app/requests/431');
+  await expect(page.getByRole('link', { name: 'Open request #431' })).toHaveAttribute(
+    'href',
+    '/r/acme/app/requests/431',
+  );
   await page.getByRole('button', { name: 'Close details' }).click();
   await expectClean(page, ['Policy and review status']);
 });
@@ -291,6 +309,10 @@ for (const first of [true, false]) {
 
 test('home: ineligible viewer gets a role handoff without an owner-action link', async ({ page }) => {
   const body = fixture('not-set-up');
+  body.setup.rules = [
+    { code: 'pull_requests', state: 'ok', text: '' },
+    { code: 'gate_check', state: 'ok', text: '' },
+  ];
   body.setup.owner_action = {
     label: 'A repository administrator named as an architecture owner in the proposed policy can review this.',
   };
@@ -298,22 +320,30 @@ test('home: ineligible viewer gets a role handoff without an owner-action link',
   await expect(page.getByText(body.setup.owner_action.label, { exact: true })).toBeVisible();
   await expect(page.locator('main a[href*="/owner/"]')).toHaveCount(0);
   await expect(page.getByText('Approval needs your passkey.', { exact: true })).toHaveCount(0);
+  const gateStep = page.locator('.steps > li').nth(3);
+  await expect(gateStep).toHaveClass(/done/);
+  await expect(gateStep.locator(':scope > .chip')).toHaveText('On');
   await expectPageText(page, 'home-first-policy-viewer');
   await expectClean(page, [...setupApprovedCopy, body.setup.owner_action.label]);
 });
 
-test('home: an unavailable rule does not block setup completion, an unknown rule does', async ({ page }) => {
+test('home: advisory findings do not block enforcement, unreadable rulesets do', async ({ page }) => {
   const body = fixture('not-set-up');
   body.setup.rules = [
+    { code: 'pull_requests', state: 'ok', text: '' },
     { code: 'gate_check', state: 'ok', text: '' },
     { code: 'policy_push', state: 'not_applicable', text: '' },
   ];
   await open(page, path, { [api]: () => [200, body] });
   await expect(page.getByLabel('3 of 4 steps done')).toBeVisible();
   await expect(page.getByRole('listitem').nth(3).getByText('Action needed', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Not available', { exact: true })).toBeVisible();
+  await expect(page.getByText('Does not apply', { exact: true })).toBeVisible();
   body.setup.rules.push({ code: 'administrator_bypass', state: 'unknown', text: '' });
-  await page.reload();
+  await page.getByRole('button', { name: 'Check', exact: true }).click();
+  await expect(page.getByLabel('3 of 4 steps done')).toBeVisible();
+  await expect(page.getByText('Verify yourself', { exact: true })).toBeVisible();
+  body.setup.rules.push({ code: 'rulesets', state: 'unknown', text: '' });
+  await page.getByRole('button', { name: 'Check', exact: true }).click();
   await expect(page.getByLabel('2 of 4 steps done')).toBeVisible();
   await expect(page.getByText('Check with an admin', { exact: true })).toBeVisible();
   await expectClean(page, setupApprovedCopy);
@@ -343,7 +373,10 @@ for (const [name, setup, next] of [
       state: 'approved',
       approval: { status: 'active', kind: 'first' },
       owner_action: undefined,
-      rules: [{ code: 'gate_check', state: 'ok', text: '' }],
+      rules: [
+        { code: 'pull_requests', state: 'ok', text: '' },
+        { code: 'gate_check', state: 'ok', text: '' },
+      ],
     },
     'Setup is complete.',
   ],
@@ -351,6 +384,7 @@ for (const [name, setup, next] of [
   test('home: setup next action for ' + name, async ({ page }) => {
     const body = fixture('workflow-review');
     Object.assign(body.setup, setup);
+    if (name === 'required-check') body.setup.rules = fixture('rules-incomplete').setup.rules;
     await open(page, path, { [api]: () => [200, body] });
     await expect(page.locator('.setup .box-head p').first()).toHaveText(next);
   });
@@ -396,7 +430,7 @@ for (const [name, setup, chip, completed, copy, action, href] of [
 ] as const) {
   test('home: pull-request stage describes ' + name, async ({ page }) => {
     const body = fixture('workflow-review');
-    Object.assign(body.setup, setup, { owner_action: undefined });
+    Object.assign(body.setup, setup, { owner_action: undefined, rules: fixture('rules-incomplete').setup.rules });
     await open(page, path, { [api]: () => [200, body] });
     const step = page.locator('.setup .steps > li').nth(1);
     await expect(step.getByRole('heading')).toHaveText('2 · Policy and workflow pull request');
@@ -427,7 +461,10 @@ test('home: setup chips use semantic colours in both themes', async ({ page }) =
       'background-color',
       attention,
     );
-    await expect(page.locator('.setup .chip').filter({ hasText: /^Check$/ })).toHaveCSS('background-color', attention);
+    await expect(page.locator('.setup .chip').filter({ hasText: /^Verify yourself$/ })).toHaveCSS(
+      'background-color',
+      attention,
+    );
     await expect(page.locator('.setup .chip').filter({ hasText: /^Ready for review$/ })).toHaveCSS(
       'background-color',
       good,
