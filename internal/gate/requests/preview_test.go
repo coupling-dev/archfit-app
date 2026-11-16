@@ -429,6 +429,24 @@ func TestEditWritesEachAnswerOfEachRule(t *testing.T) {
 	}
 }
 
+// common counts the equal lines at the start and at the end of a and b, the end not overlapping the start. Lines
+// compare without their line ends: a last line the writer ends with a newline, because it adds lines after it, is not
+// a line the edit wrote.
+func common(a, b []string) (head, tail int) {
+	same := func(x, y string) bool {
+		x, _ = cutEOL(x)
+		y, _ = cutEOL(y)
+		return x == y
+	}
+	for head < len(a) && head < len(b) && same(a[head], b[head]) {
+		head++
+	}
+	for tail < len(a)-head && tail < len(b)-head && same(a[len(a)-1-tail], b[len(b)-1-tail]) {
+		tail++
+	}
+	return head, tail
+}
+
 // changed is the lines of edited that differ from old.
 func changed(old, edited string) string {
 	a, b := lines([]byte(old)), lines([]byte(edited))
@@ -476,9 +494,9 @@ func TestDiff(t *testing.T) {
 		{name: "a changed line with context", old: "1\n2\n3\n4\n5\n6\n7\n8\n9\n", edited: "1\n2\n3\n4\n5x\n6\n7\n8\n9\n",
 			want: "--- a/p\n+++ b/p\n@@ -2,7 +2,7 @@\n 2\n 3\n 4\n-5\n+5x\n 6\n 7\n 8\n"},
 		{name: "no final newline", old: "a\nb", edited: "a\nb\nc",
-			want: "--- a/p\n+++ b/p\n@@ -1,2 +1,3 @@\n a\n b\n+c\n"},
+			want: "--- a/p\n+++ b/p\n@@ -1,2 +1,3 @@\n a\n-b\n\\ No newline at end of file\n+b\n+c\n\\ No newline at end of file\n"},
 		{name: "CRLF line ends", old: "a\r\nb\r\n", edited: "a\r\nx\r\nb\r\n",
-			want: "--- a/p\n+++ b/p\n@@ -1,2 +1,3 @@\n a\n+x\n b\n"},
+			want: "--- a/p\n+++ b/p\n@@ -1,2 +1,3 @@\n a\n+x\n\\ Line ending: CRLF\n b\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -499,8 +517,8 @@ func TestEditAtTheEndOfAPolicyWithoutAFinalNewline(t *testing.T) {
 	if !strings.Contains(string(out), "    why: Migration in progress.\n  - rule: graph  # request #5\n") {
 		t.Errorf("an old line took the comment, or the new one lacks it:\n%s", out)
 	}
-	if got := Diff(policyPath, []byte(file), out); strings.Contains(got, "-    why: Migration in progress.") {
-		t.Errorf("the diff shows the old last line as changed:\n%s", got)
+	if got := Diff(policyPath, []byte(file), out); !strings.Contains(got, "-    why: Migration in progress.\n\\ No newline at end of file\n+    why: Migration in progress.\n") {
+		t.Errorf("the diff hides the added final newline:\n%s", got)
 	}
 }
 
