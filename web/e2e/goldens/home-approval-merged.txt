@@ -7,11 +7,11 @@ Continue setup
 View policy
 Set up Archfit
 
-Waiting for activation on the default branch.
+Next: turn on the required check
 
 Policy approval and required-check settings are separate. Complete the applicable steps below.
 
-4 of 4 done
+3 of 4 done
 ✓
 1 · Add the policy
 
@@ -45,18 +45,31 @@ View PR #203 and approval record
 Manage passkeys
 
 Why a passkey?
-✓
+4
 4 · Require the gate
 
-The App cannot change repository rulesets without Administration permission. An administrator must turn on the required check in the repository settings.
+In GitHub, require archfit/gate on the default branch. The App reads these settings; an administrator changes them.
 
-On
+Action needed
 
-This step turns green once archfit/gate is required and the applicable rules below are checked.
+This step turns green when GitHub requires pull requests and archfit/gate on the default branch. Bypass and policy-push advice does not block this step; Verify yourself means the App has not checked that setting.
 
 Open ruleset settings
-The App’s archfit/gate check is required
+Check
+
+After saving changes on GitHub, select Check to read the settings again. Check does not change any GitHub settings.
+
+Require archfit/gate
 On
+
+GitHub requires the Archfit app’s archfit/gate check before merging.
+
+Open Repository rulesets, create or edit a branch ruleset, set Enforcement status to Active, and target the default branch. Enable Require status checks to pass, add archfit/gate, and select the Archfit app as its source. Save changes.
+
+If you use classic branch protection instead, edit the default-branch rule under Branches → Require status checks to pass before merging → add archfit/gate and select the Archfit app. If the check is not listed yet, run the Archfit workflow on a pull request first.
+
+Repository rulesets
+Classic branch protection
 Needs you
 
 Nothing needs you.

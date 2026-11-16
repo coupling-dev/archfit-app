@@ -50,7 +50,7 @@ for (const width of [390, 1280]) {
       }
       if (state.name === 'unknown-ruleset') {
         await expect(page.getByLabel('2 of 4 steps done')).toBeVisible();
-        await expect(page.getByText('Not available', { exact: true })).toBeVisible();
+        await expect(page.getByText('Does not apply', { exact: true })).toBeVisible();
       }
       if (state.name === 'long-names') {
         await page.getByRole('region', { name: 'Modules', exact: true }).locator('td summary').click();

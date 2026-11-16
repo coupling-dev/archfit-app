@@ -109,7 +109,7 @@ describe('setup step labels and progress', () => {
   it.each([
     ['ok', 'On'],
     ['unknown', 'Check'],
-    ['not_applicable', 'Not available'],
+    ['not_applicable', 'Does not apply'],
     ['warning', 'Action needed'],
   ])('maps rule state %s to %s', (state, label) => expect(setupRuleStatus(state)).toBe(label));
 
@@ -120,7 +120,7 @@ describe('setup step labels and progress', () => {
     ['Check with an admin', 'attention'],
     ['Ready for review', 'good'],
     ['Waiting', 'neutral'],
-    ['Not available', 'neutral'],
+    ['Does not apply', 'neutral'],
     ['Done', 'good'],
     ['On', 'good'],
   ])('gives %s a %s chip', (status, tone) => expect(setupChipClass(status)).toBe(tone));
@@ -138,7 +138,7 @@ describe('setup step labels and progress', () => {
         first_pull: 12,
         state: 'approved',
         approval: active,
-        rules: [{ code: 'gate_check', state: 'ok', text: '' }],
+        rules: [{ code: 'pull_requests', state: 'ok', text: '' }, { code: 'gate_check', state: 'ok', text: '' }],
       },
       'Setup is complete.',
     ],
@@ -158,7 +158,7 @@ describe('setup step labels and progress', () => {
   });
 
   it('derives progress from policy, first pull, approval and rules', () => {
-    expect(setupStepState({ ...base, policy: true, rules: [{ code: 'x', state: 'ok', text: '' }] })).toEqual({
+    expect(setupStepState({ ...base, policy: true, rules: [{ code: 'pull_requests', state: 'ok', text: '' }, { code: 'gate_check', state: 'ok', text: '' }] })).toEqual({
       done: [true, false, false, true],
       completed: 2,
       approval: 'Action needed',
@@ -171,7 +171,7 @@ describe('setup step labels and progress', () => {
         ...base,
         first_pull: 12,
         state: 'first_approval',
-        rules: [{ code: 'admin', state: 'unknown', text: '' }],
+        rules: [{ code: 'rulesets', state: 'unknown', text: '' }],
       }),
     ).toEqual({
       done: [true, true, false, false],
@@ -195,31 +195,52 @@ describe('setup step labels and progress', () => {
         policy: true,
         state: 'approved',
         approval: active,
-        rules: [{ code: 'x', state: 'ok', text: '' }],
+        rules: [{ code: 'pull_requests', state: 'ok', text: '' }, { code: 'gate_check', state: 'ok', text: '' }],
       }).completed,
     ).toBe(3);
   });
 });
 
-describe('setup applicable rules', () => {
+describe('setup enforcement facts and advisory findings', () => {
+  const enforced = [
+    { code: 'pull_requests', state: 'ok', text: '' },
+    { code: 'gate_check', state: 'ok', text: '' },
+  ];
   it.each([
-    [['ok', 'not_applicable'], true],
-    [['ok', 'unknown', 'not_applicable'], false],
-    [['ok', 'warning'], false],
-    [[], false],
-  ])('keeps unknown blocking but excludes unavailable prerequisites: %j', (states, complete) => {
-    const setup = {
-      approval: active,
-      passkey_known: true,
-      state: 'approved',
-      policy: true,
-      workflow: true,
-      passkey: true,
-      open_pull: 0,
-      missing: [],
-      rules: states.map((state) => ({ code: state, state, text: '' })),
-    };
-    expect(setupStepState(setup).done[3]).toBe(complete);
+    ['all enforcement on', enforced, true, 'On'],
+    ['administrator unreadable', [...enforced, { code: 'administrator_bypass', state: 'unknown', text: '' }], true, 'On'],
+    ['gate missing', [enforced[0]], false, 'Action needed'],
+    ['pull request rule missing', [enforced[1]], false, 'Action needed'],
+    ['gate not required', [enforced[0], { ...enforced[1], state: 'warning' }], false, 'Action needed'],
+    ['gate not confirmed', [enforced[0], { ...enforced[1], state: 'unknown' }], false, 'Action needed'],
+    ['rulesets unreadable', [...enforced, { code: 'rulesets', state: 'unknown', text: '' }], false, 'Check with an admin'],
+    ['branch rules unreadable', [{ code: 'branch_rules', state: 'unknown', text: '' }], false, 'Check with an admin'],
+    ['integration unavailable', [{ code: 'integration', state: 'unknown', text: '' }], false, 'Action needed'],
+    ['conflicting enforcement findings', [...enforced, { ...enforced[1], state: 'warning' }], false, 'Action needed'],
+    ['no findings', [], false, 'Action needed'],
+  ])('%s', (_name, rules, complete, gate) => {
+    const state = setupStepState({
+      approval: active, passkey_known: true, state: 'approved', policy: true,
+      workflow: true, passkey: true, open_pull: 0, missing: [], rules,
+    });
+    expect(state.done[3]).toBe(complete);
+    expect(state.gate).toBe(gate);
+    expect(state.completed).toBe(complete ? 4 : 3);
+  });
+
+  it.each(['administrator_bypass', 'app_bypass', 'policy_push', 'policy_push_bypass', 'approvals'])('%s is advisory, not an enforcement prerequisite', (code) => {
+    for (const state of ['unknown', 'warning', 'not_applicable', 'ok']) {
+      const result = setupStepState({
+        approval: active, passkey_known: true, state: 'approved', policy: true,
+        workflow: true, passkey: true, open_pull: 0, missing: [], rules: [...enforced, { code, state, text: '' }],
+      });
+      expect(result.done[3]).toBe(true);
+      expect(result.gate).toBe('On');
+    }
+    expect(setupRuleStatus('unknown', code)).toBe('Verify yourself');
+    expect(setupRuleStatus('warning', code)).toBe('Advisory');
+    expect(setupRuleStatus('not_applicable', code)).toBe('Does not apply');
+    expect(setupRuleStatus('ok', code)).toBe('On');
   });
 });
 

@@ -51,22 +51,66 @@ Why a passkey?
 4
 4 · Require the gate
 
-The App cannot change repository rulesets without Administration permission. An administrator must turn on the required check in the repository settings.
+In GitHub, require archfit/gate on the default branch. The App reads these settings; an administrator changes them.
 
 Check with an admin
 
-This step turns green once archfit/gate is required and the applicable rules below are checked.
+This step turns green when GitHub requires pull requests and archfit/gate on the default branch. Bypass and policy-push advice does not block this step; Verify yourself means the App has not checked that setting.
 
 Open ruleset settings
-The App’s archfit/gate check is required
-On
-Policy-push restriction
-
-Not available: this applies only to organization-owned private or internal repositories.
-
-Not available
-Administrator bypass
-
-The App cannot read administrator bypass without Administration permission. An admin must confirm the bypass list is intentional.
-
 Check
+
+After saving changes on GitHub, select Check to read the settings again. Check does not change any GitHub settings.
+
+Require pull requests
+On
+
+Default-branch changes require a pull request, so changes go through checks before merging.
+
+Open Repository rulesets, create or edit a branch ruleset, set Enforcement status to Active, and target the default branch. Enable Require a pull request before merging and save changes. In classic branch protection, enable the same option for the default branch.
+
+Repository rulesets
+Classic branch protection
+Read repository rulesets
+Check
+
+The App cannot read rulesets, so it cannot confirm required checks or bypass access.
+
+The App deliberately does not hold Administration permission. To inspect its access, open the App installations for the account that owns this repository → Configure Archfit → Permissions. Administration: Read-only would be needed to read bypass lists; it is not something this setup asks you to grant.
+
+To check by hand, open Repository rulesets and inspect each active ruleset targeting the default branch. Require a pull request and archfit/gate from the Archfit app; check each Bypass list for unintended access.
+
+Personal-account App installations
+Organization App installations (acme)
+Repository rulesets
+Require archfit/gate
+On
+
+GitHub requires the Archfit app’s archfit/gate check before merging.
+
+Open Repository rulesets, create or edit a branch ruleset, set Enforcement status to Active, and target the default branch. Enable Require status checks to pass, add archfit/gate, and select the Archfit app as its source. Save changes.
+
+If you use classic branch protection instead, edit the default-branch rule under Branches → Require status checks to pass before merging → add archfit/gate and select the Archfit app. If the check is not listed yet, run the Archfit workflow on a pull request first.
+
+Repository rulesets
+Classic branch protection
+Policy-push restriction
+Does not apply
+
+This GitHub restriction exists only for organization-owned private or internal repositories, so it does not apply here and there is nothing to do.
+
+Repository rulesets
+Administrator bypass
+Verify yourself
+
+The App does not hold Administration permission, so it cannot read this ruleset’s bypass list. Verify it yourself; this row does not block the required check.
+
+To check by hand, open Repository rulesets, then each ruleset targeting the default branch → Bypass list. Recommended: no bypass actors, or repository/organization administrators only for emergencies. Remove other actors; if emergency access is needed, set the administrator bypass mode to Always. Save changes.
+
+The App deliberately does not hold Administration permission. To inspect its access, open the App installations for the account that owns this repository → Configure Archfit → Permissions. Administration: Read-only would be needed to read bypass lists; it is not something this setup asks you to grant.
+
+An empty list is stricter and can be intentional. This is advisory: an unreadable list stays marked Verify yourself even when the required check is On.
+
+Personal-account App installations
+Organization App installations (acme)
+Repository rulesets

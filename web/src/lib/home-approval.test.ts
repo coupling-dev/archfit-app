@@ -63,7 +63,10 @@ describe('owner approval is separate from activation and gate rules', () => {
     const state = setupStepState({
       ...base,
       approval: pending,
-      rules: [{ code: 'gate_check', state: 'ok', text: '' }],
+      rules: [
+        { code: 'pull_requests', state: 'ok', text: '' },
+        { code: 'gate_check', state: 'ok', text: '' },
+      ],
     });
     expect(state.done).toEqual([true, true, true, true]);
     expect(state.next).toBe('Waiting for activation on the default branch.');
