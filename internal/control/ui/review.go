@@ -7,6 +7,7 @@ import (
 
 	"github.com/alexei-led/archfit-app/internal/control/answers"
 	"github.com/alexei-led/archfit-app/internal/gate"
+	"github.com/alexei-led/archfit-app/internal/github/api"
 )
 
 // reviewJSON is navigation, not approval authority. The destination rechecks on submission.
@@ -16,6 +17,9 @@ type reviewJSON struct {
 }
 
 func (s *server) ownerReview(r *http.Request, sc scope, pull int) *reviewJSON {
+	done := api.StartStage(r.Context(), "owner_review")
+	probes := 0
+	defer func() { done(probes, 0) }()
 	actions := []answers.OwnerAction{}
 	if pull > 0 {
 		actions = append(actions, answers.OwnerAction{Kind: gate.OwnerFirst, Pull: pull})
@@ -28,6 +32,7 @@ func (s *server) ownerReview(r *http.Request, sc scope, pull int) *reviewJSON {
 	permission, permissionErr := s.gh.users.Permission(r.Context(), sc.user.Token, sc.repo.FullName)
 	u.Admin = permissionErr == nil && permission == permAdmin
 	for _, a := range actions {
+		probes++
 		err := s.owners.OwnerReview(r.Context(), sc.repo, a, u)
 		switch {
 		case errors.Is(err, gate.ErrOwnerNotDue), errors.Is(err, gate.ErrOwnerNotPossible):

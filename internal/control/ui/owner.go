@@ -3,8 +3,10 @@ package ui
 import (
 	"net/http"
 	"strconv"
+	"sync"
 
 	"github.com/alexei-led/archfit-app/internal/control/answers"
+	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
@@ -110,13 +112,27 @@ type setupJSON struct {
 }
 
 func (s *server) apiSetup(r *http.Request, sc scope) (any, error) {
-	out, err := s.setups.Setup(r.Context(), sc.repo)
-	if err != nil {
-		return nil, err
+	var out onboarding.Setup
+	var setupErr error
+	var passkey, passkeyKnown bool
+	var reads sync.WaitGroup
+	reads.Go(func() {
+		done := api.StartStage(r.Context(), "setup")
+		out, setupErr = s.setups.Setup(r.Context(), sc.repo)
+		done(1, 0)
+	})
+	reads.Go(func() {
+		done := api.StartStage(r.Context(), "passkeys")
+		keys, err := s.passkeys.List(r.Context(), sc.repo, sc.user.UserID)
+		// Unreadable inventory is not a confirmed empty inventory.
+		passkeyKnown = err == nil
+		passkey = passkeyKnown && len(keys) > 0
+		done(len(keys), 0)
+	})
+	reads.Wait()
+	if setupErr != nil {
+		return nil, setupErr
 	}
-	passkeys, err := s.passkeys.List(r.Context(), sc.repo, sc.user.UserID)
-	// An unavailable inventory must not be presented as a confirmed empty inventory.
-	passkey := err == nil && len(passkeys) > 0
 	approval := approvalJSON{Status: string(out.Approval.Status), Kind: out.Approval.Kind, Pull: out.Approval.Pull,
 		CurrentHead: out.Approval.CurrentHead, ApprovedHead: out.Approval.ApprovedHead, Merged: out.Approval.Merged}
 	if approval.Status == "" {
@@ -128,7 +144,7 @@ func (s *server) apiSetup(r *http.Request, sc scope) (any, error) {
 	if approval.Pull > 0 {
 		approval.Href = "https://github.com/" + sc.repo.FullName + "/pull/" + strconv.Itoa(approval.Pull)
 	}
-	body := setupJSON{Approval: approval, PasskeyKnown: err == nil, Admitted: out.Admitted, Policy: out.Policy, Workflow: out.Workflow, Passkey: passkey, OpenPull: out.OpenPull,
+	body := setupJSON{Approval: approval, PasskeyKnown: passkeyKnown, Admitted: out.Admitted, Policy: out.Policy, Workflow: out.Workflow, Passkey: passkey, OpenPull: out.OpenPull,
 		State: out.State, Missing: out.Missing, FirstPull: out.FirstPull, Issue: out.Issue, Rules: []setupFindingJSON{}}
 	for _, f := range out.Rules.Findings {
 		body.Rules = append(body.Rules, setupFindingJSON{Code: f.Code, State: f.State, Text: f.Text})

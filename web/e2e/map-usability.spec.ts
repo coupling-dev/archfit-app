@@ -33,9 +33,9 @@ for (const width of [390, 1280]) {
     const diagram = page.getByRole('img', { name: graphName });
     const listToggle = page.getByText('Show the map as a list', { exact: true });
     const diagramToggle = page.getByText('Show the map as a diagram', { exact: true });
-    await expect(page.locator('.map-node')).toHaveCount(3);
+    await expect(page.locator('.map-node')).toHaveCount(width < 720 ? 0 : 3);
     const legend = page.locator('.map-diagram').getByRole('list', { name: 'Map legend', includeHidden: true });
-    await expect(legend).toHaveCount(1);
+    await expect(legend).toHaveCount(width < 720 ? 0 : 1);
     await expect(page.locator('main')).not.toContainText('#431');
     if (width < 720) {
       await expect(diagram).toBeHidden();
@@ -60,6 +60,7 @@ for (const width of [390, 1280]) {
     }
     await expect(diagram).toBeVisible();
     await expect(legend).toBeVisible();
+    await expect(page.locator('.map-node')).toHaveCount(3);
     await expect(legend).not.toContainText('#');
     await expect(legend).toContainText('A requested dependency');
     expect(await diagram.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThanOrEqual(width - 32);

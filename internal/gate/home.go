@@ -85,18 +85,19 @@ func (h *homeViews) Home(ctx context.Context, r api.Repo) (HomeState, error) {
 	if err := records.Load(ctx, h.store, t, records.RepoKey(r.FullName), &rec); err != nil && !errors.Is(err, records.ErrNoRecord) {
 		return out, err
 	}
-	tip, err := h.gh.BranchHead(ctx, r.RepoRef, r.DefaultBranch)
+	snapshot, err := ReadHomeSnapshot(ctx, h.gh, r)
 	if err != nil {
 		return out, err
 	}
-	raw, _, err := h.gh.File(ctx, r.RepoRef, tip, homePolicyPath)
+	policy := snapshot.Policy(ctx, h.gh)
+	err, decodeErr := policy.ReadErr, policy.DecodeErr
 	if err != nil && !errors.Is(err, api.ErrNotFound) {
 		return out, err
 	}
-	pol, decodeErr := policy3.Decode(raw)
+	tip, pol := snapshot.Tip(), policy.File
 	out.Tip = tip
 	out.PolicyAvailable = err == nil && decodeErr == nil
-	out.OutsideFlow = rec.OutsideFlow != nil || rec.ApprovedDigest != "" && (!out.PolicyAvailable || rec.ApprovedDigest != policy3.Digest(raw))
+	out.OutsideFlow = rec.OutsideFlow != nil || rec.ApprovedDigest != "" && (!out.PolicyAvailable || rec.ApprovedDigest != policy.Digest)
 	if !out.PolicyAvailable && !out.OutsideFlow {
 		return out, fmt.Errorf("home: read the target policy: %w", cmp.Or(err, decodeErr))
 	}
@@ -122,15 +123,20 @@ func (h *homeViews) Home(ctx context.Context, r api.Repo) (HomeState, error) {
 	if err != nil {
 		return out, err
 	}
-	for _, entry := range requests.Entries {
-		number, err := strconv.Atoi(entry.ID)
+	loadedRequests := make([]records.Request, len(requests.Entries))
+	numbers := make([]int, len(requests.Entries))
+	if err := homeReads(len(requests.Entries), func(i int) error {
+		number, err := strconv.Atoi(requests.Entries[i].ID)
 		if err != nil || number <= 0 {
-			return out, errors.New("home: invalid request number")
+			return errors.New("home: invalid request number")
 		}
-		var req records.Request
-		if err := records.Load(ctx, h.store, t, records.RequestKey(r.FullName, number), &req); err != nil {
-			return out, err
-		}
+		numbers[i] = number
+		return records.Load(ctx, h.store, t, records.RequestKey(r.FullName, number), &loadedRequests[i])
+	}); err != nil {
+		return out, err
+	}
+	for i, req := range loadedRequests {
+		number := numbers[i]
 		if req.State == records.StateOpen {
 			out.Requests = append(out.Requests, HomeRequest{Number: number, Rule: req.Rule, From: req.From, To: req.To, Record: req.Record})
 		}
@@ -140,15 +146,21 @@ func (h *homeViews) Home(ctx context.Context, r api.Repo) (HomeState, error) {
 	if err != nil {
 		return out, err
 	}
-	for _, p := range pulls {
-		if p.State != "open" || p.BaseRef != r.DefaultBranch || !strings.EqualFold(p.HeadRepo, r.FullName) {
-			continue
+	pulls = slices.DeleteFunc(slices.Clone(pulls), func(p api.Pull) bool {
+		return p.State != "open" || p.BaseRef != r.DefaultBranch || !strings.EqualFold(p.HeadRepo, r.FullName)
+	})
+	loadedPulls := make([]records.Pull, len(pulls))
+	if err := homeReads(len(pulls), func(i int) error {
+		err := records.Load(ctx, h.store, t, records.PullKey(r.FullName, pulls[i].Number), &loadedPulls[i])
+		if errors.Is(err, records.ErrNoRecord) {
+			return nil
 		}
-		var pull records.Pull
-		err := records.Load(ctx, h.store, t, records.PullKey(r.FullName, p.Number), &pull)
-		if err != nil && !errors.Is(err, records.ErrNoRecord) {
-			return out, err
-		}
+		return err
+	}); err != nil {
+		return out, err
+	}
+	for i, p := range pulls {
+		pull := loadedPulls[i]
 		if pull.HeadSHA != p.HeadSHA {
 			continue
 		}
@@ -171,7 +183,7 @@ func (h *homeViews) Home(ctx context.Context, r api.Repo) (HomeState, error) {
 
 	}
 	if rec.ApprovedDigest != "" && !out.OutsideFlow {
-		out.WorkflowPulls, err = h.workflows(ctx, r, tip, pulls)
+		out.WorkflowPulls, err = h.workflows(ctx, r, snapshot, pulls)
 		if err != nil {
 			return out, err
 		}
@@ -197,8 +209,11 @@ func (h *homeViews) file(ctx context.Context, r api.RepoRef, ref, path string) (
 }
 
 // workflows lists changes the M2 workflow action can approve. Forks and other targets never enter this list.
-func (h *homeViews) workflows(ctx context.Context, r api.Repo, tip string, pulls []api.Pull) ([]int, error) {
-	current, err := h.file(ctx, r.RepoRef, tip, approvals.WorkflowPath)
+func (h *homeViews) workflows(ctx context.Context, r api.Repo, snapshot *HomeSnapshot, pulls []api.Pull) ([]int, error) {
+	current, err := snapshot.Workflow(ctx, h.gh)
+	if errors.Is(err, api.ErrNotFound) {
+		current, err = nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -207,11 +222,13 @@ func (h *homeViews) workflows(ctx context.Context, r api.Repo, tip string, pulls
 		return nil, err
 	}
 	approved := map[int]string{}
-	for _, entry := range proposals.Entries {
-		var p records.Proposal
-		if err := records.Load(ctx, h.store, store.Tenant(r.InstallationID), records.ProposalKey(r.FullName, entry.ID), &p); err != nil {
-			return nil, err
-		}
+	loadedProposals := make([]records.Proposal, len(proposals.Entries))
+	if err := homeReads(len(proposals.Entries), func(i int) error {
+		return records.Load(ctx, h.store, store.Tenant(r.InstallationID), records.ProposalKey(r.FullName, proposals.Entries[i].ID), &loadedProposals[i])
+	}); err != nil {
+		return nil, err
+	}
+	for _, p := range loadedProposals {
 		if p.State == records.StateOpen && (p.Kind == records.ProposalWorkflow || p.Kind == records.ProposalFirst) {
 			approved[p.PullRequest] = p.HeadSHA
 		}

@@ -29,8 +29,7 @@ outer
 app · Volatility: high
 core
 util · Volatility: low
-
-Placing the modules…
+Show the map as a diagram
 
 Dependencies not allowed by this policy need a request.
 

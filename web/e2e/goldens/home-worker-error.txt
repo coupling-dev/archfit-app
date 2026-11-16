@@ -18,6 +18,7 @@ core
 util · Volatility: low
 No layer
 other · Volatility: high
+Show the map as a diagram
 
 The map layout worker could not place the modules. The map is available as a list above.
 

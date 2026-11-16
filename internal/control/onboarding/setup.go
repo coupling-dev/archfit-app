@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -52,22 +53,31 @@ func NewSetup(gh *api.Client, g gate.SetupViews) Setups {
 
 func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 	out := Setup{State: "not_admitted", Missing: []string{}}
-	tip, err := s.gh.BranchHead(ctx, r.RepoRef, r.DefaultBranch)
+	snapshot, err := gate.ReadHomeSnapshot(ctx, s.gh, r)
 	if err != nil {
 		return out, err
 	}
-	digest, valid, err := s.policyAt(ctx, r, tip)
-	if err != nil {
-		return out, err
+	var policy gate.HomePolicy
+	var accepted bool
+	var workflowErr error
+	var reads sync.WaitGroup
+	reads.Go(func() { policy = snapshot.Policy(ctx, s.gh) })
+	reads.Go(func() {
+		raw, err := snapshot.Workflow(ctx, s.gh)
+		accepted, workflowErr = s.acceptWorkflow(ctx, raw, err)
+	})
+	reads.Wait()
+	if policy.ReadErr != nil && !errors.Is(policy.ReadErr, api.ErrNotFound) {
+		return out, policy.ReadErr
 	}
+	digest, valid := policy.Digest, policy.ReadErr == nil && policy.DecodeErr == nil
 	if !valid {
 		out.Missing = append(out.Missing, "The default branch has no version 3 policy.")
 	}
-	workflow, err := s.workflowAt(ctx, r, tip)
-	if err != nil {
-		return out, err
+	if workflowErr != nil {
+		return out, workflowErr
 	}
-	if !workflow {
+	if !accepted {
 		out.Missing = append(out.Missing, "The default branch has no Archfit workflow (or it uses an Action commit the App does not accept).")
 	}
 	state, err := s.gate.SetupState(ctx, r)
@@ -75,9 +85,9 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 		return out, err
 	}
 	out.Policy = valid
-	out.Workflow = workflow
-	out.Admitted = valid && workflow
-	if valid && !workflow {
+	out.Workflow = accepted
+	out.Admitted = valid && accepted
+	if valid && !accepted {
 		pulls, err := s.gh.OpenPulls(ctx, r.RepoRef)
 		if err != nil {
 			return out, err
@@ -142,11 +152,16 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 	if out.State == "outside_flow" {
 		action = gate.OwnerAction{Kind: gate.OwnerConfirm}
 	}
-	out.Approval = s.gate.SetupApproval(ctx, r, action)
+	reads.Go(func() {
+		done := api.StartStage(ctx, "approval_summary")
+		out.Approval = s.gate.SetupApproval(ctx, r, action)
+		done(1, 0)
+	})
+	reads.Go(func() { out.Rules = s.rules(ctx, r) })
+	reads.Wait()
 	if out.State == "approved" && out.Approval.Status == gate.ApprovalNeeded {
 		out.Approval.Status = gate.ApprovalActive
 	}
-	out.Rules = s.rules(ctx, r)
 	return out, nil
 }
 
@@ -166,6 +181,10 @@ func (s *setups) policyAt(ctx context.Context, r api.Repo, ref string) (digest s
 
 func (s *setups) workflowAt(ctx context.Context, r api.Repo, ref string) (bool, error) {
 	raw, _, err := s.gh.File(ctx, r.RepoRef, ref, workflowPath)
+	return s.acceptWorkflow(ctx, raw, err)
+}
+
+func (s *setups) acceptWorkflow(ctx context.Context, raw []byte, err error) (bool, error) {
 	if errors.Is(err, api.ErrNotFound) {
 		return false, nil
 	}

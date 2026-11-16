@@ -40,7 +40,13 @@ func (g *Gate) SetupApproval(ctx context.Context, r api.Repo, a OwnerAction) App
 	if err := g.admitted(ctx, Target{Repo: r}); err != nil {
 		return ApprovalSummary{Status: ApprovalUnknown, Kind: a.Kind, Pull: a.Pull}
 	}
-	out, err := g.approvals.Summary(ctx, r, a)
+	var out ApprovalSummary
+	var err error
+	if snapshot, ok := ctx.Value(snapshotKey{}).(*HomeSnapshot); ok && snapshot.repo == r {
+		out, err = g.approvals.SummaryWithInputs(ctx, r, a, summaryInputs{Repos: g.repos, snapshot: snapshot})
+	} else {
+		out, err = g.approvals.Summary(ctx, r, a)
+	}
 	if err != nil {
 		out.Status = ApprovalUnknown
 	}
