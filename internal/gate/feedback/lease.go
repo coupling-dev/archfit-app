@@ -38,9 +38,10 @@ type lease struct {
 
 // serialized is the Publisher4 New4 returns: every write runs inside the head's lease.
 type serialized struct {
-	next  *publisher
-	store store.Store
-	now   func() time.Time
+	next       *publisher
+	store      store.Store
+	now        func() time.Time
+	ownerCheck OwnerCheck
 	// wait pauses between polls of a held lease. Tests replace it to observe contention.
 	wait func(context.Context) error
 }

@@ -34,6 +34,7 @@ type Publication4 struct {
 	Generated   bool   // result is made by the App, not the uploaded engine
 	Source      string // upload, request, sweep, missing_upload or owner
 	token       string
+	ownerCheck  *api.CheckRun // independently authorized owner verdict; Result remains the run diagnostics
 	Result      result.Result // Status is the status the App gave; the status line and the records are shown as given
 	// Current, when set, is called inside the head's publication lease before anything is written. false means the
 	// status was decided from inputs that are no longer current: Publish4 writes nothing and returns ErrStaleInputs, so
@@ -53,12 +54,18 @@ type Publisher4 interface {
 	Publish4(ctx context.Context, p Publication4) error
 }
 
+// OwnerCheck resolves an independently authorized owner verdict inside the publication lease.
+// A nil check leaves the run's verdict unchanged; an error prevents publication.
+type OwnerCheck func(context.Context, api.Repo, int, string) (*api.CheckRun, error)
+
 // New4 serializes publication through a per-head Store lease. appURL links feedback to the App's pull page.
-func New4(checks api.Checks, comments api.Comments, pulls api.Pulls, s store.Store, appURL string, now func() time.Time) Publisher4 {
+// ownerCheck, when non-nil, resolves an onboarding approval before publishing any run's check.
+func New4(checks api.Checks, comments api.Comments, pulls api.Pulls, s store.Store, appURL string, now func() time.Time, ownerCheck OwnerCheck) Publisher4 {
 	return &serialized{
-		next:  &publisher{checks: checks, comments: comments, pulls: pulls, appURL: appURL, now: now},
-		store: s,
-		now:   now,
-		wait:  pollWait,
+		next:       &publisher{checks: checks, comments: comments, pulls: pulls, appURL: appURL, now: now},
+		store:      s,
+		now:        now,
+		wait:       pollWait,
+		ownerCheck: ownerCheck,
 	}
 }

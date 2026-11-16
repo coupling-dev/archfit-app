@@ -198,20 +198,8 @@ func (s *Service) Review(ctx context.Context, r api.Repo, a Action, u Owner, dig
 	if c.Digest() != digest {
 		return ErrMoved
 	}
-	if c.Pull > 0 {
-		index := records.Index{Schema: records.SchemaProposalIndex}
-		if err := records.Load(ctx, s.store, tenant(r), records.ProposalIndexKey(r.FullName), &index); err != nil && !errors.Is(err, records.ErrNoRecord) {
-			return err
-		}
-		if id, ok := index.Lookup(records.PullEntry(c.Pull)); ok {
-			var p records.Proposal
-			if err := records.Load(ctx, s.store, tenant(r), records.ProposalKey(r.FullName, id), &p); err != nil {
-				return err
-			}
-			if matchesApproval(p, c) {
-				return ErrNotDue
-			}
-		}
+	if err := s.notAlreadyApproved(ctx, r, c); err != nil {
+		return err
 	}
 	_, err = s.mayAct(ctx, r, Input{Action: a, Owner: u}, c)
 	return err
@@ -227,6 +215,9 @@ func (s *Service) Act(ctx context.Context, r api.Repo, in Input) (Done, error) {
 	}
 	if c.Digest() != in.Digest {
 		return Done{}, ErrMoved
+	}
+	if err := s.notAlreadyApproved(ctx, r, c); err != nil {
+		return Done{}, err
 	}
 	owners, err := s.mayAct(ctx, r, in, c)
 	if err != nil {
@@ -248,6 +239,9 @@ func (s *Service) Act(ctx context.Context, r api.Repo, in Input) (Done, error) {
 	done := Done{Approval: records.NewID(), Change: c, Passkey: passkey}
 	if done.Issue, err = s.record(ctx, r, done.Approval, a, c); err != nil {
 		return Done{}, err
+	}
+	if c.Pull > 0 {
+		s.checkApproved(ctx, r, done, in.Owner.Login)
 	}
 	if c.Kind == records.KindConfirm {
 		// The confirm ended the state an open revert was made in: its head must not restore the old policy over it.
