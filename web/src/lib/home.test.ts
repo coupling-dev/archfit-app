@@ -72,9 +72,20 @@ describe('map rules', () => {
 
 
 describe('setup step labels and progress', () => {
-  const base = { state: 'not_admitted', policy: false, workflow: false, passkey: false, open_pull: 0, missing: [], rules: [] };
+  const base = {
+    state: 'not_admitted',
+    policy: false,
+    workflow: false,
+    passkey: false,
+    open_pull: 0,
+    missing: [],
+    rules: [],
+  };
   it.each([
-    ['ok', 'On'], ['unknown', 'Check'], ['not_applicable', 'Not available'], ['warning', 'Action needed'],
+    ['ok', 'On'],
+    ['unknown', 'Check'],
+    ['not_applicable', 'Not available'],
+    ['warning', 'Action needed'],
   ])('maps rule state %s to %s', (state, label) => expect(setupRuleStatus(state)).toBe(label));
 
   it.each([
@@ -82,7 +93,7 @@ describe('setup step labels and progress', () => {
     ['Review needed', 'attention'],
     ['Check', 'attention'],
     ['Check with an admin', 'attention'],
-    ['In review', 'neutral'],
+    ['Ready for review', 'good'],
     ['Waiting', 'neutral'],
     ['Not available', 'neutral'],
     ['Done', 'good'],
@@ -91,8 +102,9 @@ describe('setup step labels and progress', () => {
 
   it.each([
     [base, 'Next: add the policy'],
-    [{ ...base, policy: true }, 'Next: review the pull request'],
-    [{ ...base, policy: true, open_pull: 203 }, 'Next: review the pull request'],
+    [{ ...base, policy: true }, 'Next: create the pull request'],
+    [{ ...base, policy: true, open_pull: 203 }, 'Next: approve the workflow with your passkey'],
+    [{ ...base, policy: true, workflow: true }, 'Next: approve the workflow with your passkey'],
     [{ ...base, first_pull: 12 }, 'Next: approve the workflow with your passkey'],
     [{ ...base, first_pull: 12, state: 'approved' }, 'Next: turn on the required check'],
     [
@@ -101,26 +113,54 @@ describe('setup step labels and progress', () => {
     ],
   ])('shows one next action for %j', (setup, next) => expect(setupStepState(setup).next).toBe(next));
 
-  it('derives the three pull-request step branches', () => {
-    expect(setupPullStep(base)).toEqual({ kind: 'create', status: 'Action needed' });
-    expect(setupPullStep({ ...base, first_pull: 12 })).toEqual({ kind: 'first-policy', status: 'Done', number: 12 });
-    expect(setupPullStep({ ...base, open_pull: 203 })).toEqual({ kind: 'review', status: 'In review', number: 203 });
+  it.each([
+    [base, { kind: 'create', status: 'Action needed' }, false],
+    [{ ...base, policy: true }, { kind: 'create', status: 'Action needed' }, false],
+    [{ ...base, workflow: true }, { kind: 'create', status: 'Action needed' }, false],
+    [{ ...base, first_pull: 12 }, { kind: 'first-policy', status: 'Ready for review', number: 12 }, true],
+    [{ ...base, policy: true, open_pull: 203 }, { kind: 'review', status: 'Ready for review', number: 203 }, true],
+    [{ ...base, policy: true, workflow: true }, { kind: 'current', status: 'Done' }, true],
+    [{ ...base, first_pull: 12, open_pull: 203 }, { kind: 'review', status: 'Ready for review', number: 203 }, true],
+  ])('keeps the PR step and its completion consistent for %j', (setup, step, done) => {
+    expect(setupPullStep(setup)).toEqual(step);
+    expect(setupStepState(setup).done[1]).toBe(done);
   });
 
   it('derives progress from policy, first pull, approval and rules', () => {
     expect(setupStepState({ ...base, policy: true, rules: [{ code: 'x', state: 'ok', text: '' }] })).toEqual({
-      done: [true, false, false, true], completed: 2, approval: 'Waiting', gate: 'On', next: 'Next: review the pull request',
+      done: [true, false, false, true],
+      completed: 2,
+      approval: 'Waiting',
+      gate: 'On',
+      next: 'Next: create the pull request',
     });
-    expect(setupStepState({ ...base, first_pull: 12, state: 'first_approval', rules: [{ code: 'admin', state: 'unknown', text: '' }] })).toEqual({
-      done: [true, true, false, false], completed: 2, approval: 'Action needed', gate: 'Check with an admin', next: 'Next: approve the workflow with your passkey',
+    expect(
+      setupStepState({
+        ...base,
+        first_pull: 12,
+        state: 'first_approval',
+        rules: [{ code: 'admin', state: 'unknown', text: '' }],
+      }),
+    ).toEqual({
+      done: [true, true, false, false],
+      completed: 2,
+      approval: 'Action needed',
+      gate: 'Check with an admin',
+      next: 'Next: approve the workflow with your passkey',
     });
     expect(setupStepState({ ...base, policy: true, open_pull: 203 })).toEqual({
-      done: [true, false, false, false], completed: 1, approval: 'Waiting', gate: 'Action needed', next: 'Next: review the pull request',
+      done: [true, true, false, false],
+      completed: 2,
+      approval: 'Waiting',
+      gate: 'Action needed',
+      next: 'Next: approve the workflow with your passkey',
     });
-    expect(setupStepState({ ...base, policy: true, state: 'approved', rules: [{ code: 'x', state: 'ok', text: '' }] }).completed).toBe(3);
+    expect(
+      setupStepState({ ...base, policy: true, state: 'approved', rules: [{ code: 'x', state: 'ok', text: '' }] })
+        .completed,
+    ).toBe(3);
   });
 });
-
 
 describe('setup applicable rules', () => {
   it.each([

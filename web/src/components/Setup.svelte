@@ -5,7 +5,7 @@
   let { setup, repo, showOwnerAction = true }: { setup: HomeSetup; repo: Repo; showOwnerAction?: boolean } = $props();
   const steps = [
     { title: 'Add the policy', text: 'Your architecture rules live in .archfit.yaml, in the repository.' },
-    { title: 'Open a pull request', text: 'Rules reach the default branch through review, so the approval binds to exact file contents.' },
+    { title: 'Policy and workflow pull request', text: 'Rules reach the default branch through review, so the approval binds to exact file contents.' },
     { title: 'Approve the policy and workflow', text: 'The owner signs the policy with a passkey. Change one byte and the approval no longer counts.' },
     { title: 'Require the gate', text: 'The App cannot change repository rulesets without Administration permission. An administrator must turn on the required check in the repository settings.' },
   ];
@@ -42,15 +42,17 @@
               {#if !setup.policy && !setup.first_pull}<p>Commit the policy and workflow, then open a pull request.</p>{/if}
             {:else if i === 1}
               {#if pullStep.kind === 'review'}
-                <p><a href={repoPage(repo.fullName, '/pull/' + pullStep.number)}>PR #{pullStep.number}</a> adds the workflow — review it.</p>
-                <a class="btn ghost" href={`${githubRepo}/pull/${pullStep.number}`}>Review PR #{pullStep.number}</a>
-                <p>This opens GitHub to read the change; nothing needs to be created here.</p>
+                <p><a href={repoPage(repo.fullName, '/pull/' + pullStep.number)}>PR #{pullStep.number}</a> adds the workflow.</p>
+                <a class="btn ghost" href={`${githubRepo}/pull/${pullStep.number}`}>View PR #{pullStep.number} on GitHub</a>
               {:else if pullStep.kind === 'first-policy'}
-                <p>First policy: #{setup.first_pull}, open and waiting for approval. The workflow is present in this PR.</p>
-                <a class="btn ghost" href={repoPage(repo.fullName, '/pull/' + setup.first_pull)}>Open the first pull request</a>
+                <p>PR #{pullStep.number} proposes the first policy and workflow.</p>
+                <a class="btn ghost" href={repoPage(repo.fullName, '/pull/' + pullStep.number)}>View PR #{pullStep.number}</a>
+              {:else if pullStep.kind === 'current'}
+                <p>The policy and workflow are present on the default branch. No setup pull request is needed.</p>
+                <a class="btn ghost" href={repoPage(repo.fullName, '/policy')}>View policy</a>
               {:else}
-                <p>Open one pull request that adds the policy and workflow.</p>
-                <a class="btn ghost" href={`${githubRepo}/compare`}>Open a pull request on GitHub</a>
+                <p>Open one pull request that adds the missing policy or workflow.</p>
+                <a class="btn ghost" href={`${githubRepo}/compare`}>Create a pull request on GitHub</a>
               {/if}
               {#if !setup.workflow && setup.open_pull === 0 && !setup.first_pull}<p>The pull request should also add <code>.github/workflows/archfit.yaml</code>.</p>{/if}
             {:else if i === 2}

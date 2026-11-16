@@ -22,15 +22,15 @@ Done
 A version 3 policy is proposed in PR #12; it is not yet on the default branch.
 
 ✓
-2 · Open a pull request
+2 · Policy and workflow pull request
 
 Rules reach the default branch through review, so the approval binds to exact file contents.
 
-Done
+Ready for review
 
-First policy: #12, open and waiting for approval. The workflow is present in this PR.
+PR #12 proposes the first policy and workflow.
 
-Open the first pull request
+View PR #12
 3
 3 · Approve the policy and workflow
 
