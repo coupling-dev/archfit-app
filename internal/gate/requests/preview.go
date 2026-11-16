@@ -40,11 +40,7 @@ const (
 	ruleUnowned     = "unowned"
 )
 
-const (
-	dateLayout = "2006-01-02"
-	// diffContext is the number of unchanged lines a diff shows around the change.
-	diffContext = 3
-)
+const dateLayout = "2006-01-02"
 
 // Answer is an owner's answer to a request (design 10.4).
 type Answer struct {
@@ -155,76 +151,6 @@ func RequestComment(number int) string { return "request #" + strconv.Itoa(numbe
 
 func onlyRule(pol policy3.File, id string) bool {
 	return slices.ContainsFunc(pol.Rules, func(r policy3.Rule) bool { return r.ID == id && r.Only != nil })
-}
-
-// lines splits text after each LF, keeping the line ends; a last line without one is kept as it is.
-func lines(text []byte) []string {
-	out := strings.SplitAfter(string(text), "\n")
-	if out[len(out)-1] == "" {
-		out = out[:len(out)-1]
-	}
-	return out
-}
-
-func cutEOL(line string) (body, eol string) {
-	for _, end := range []string{"\r\n", "\n"} {
-		if b, ok := strings.CutSuffix(line, end); ok {
-			return b, end
-		}
-	}
-	return line, ""
-}
-
-// common counts the equal lines at the start and at the end of a and b, the end not overlapping the start. Lines
-// compare without their line ends: a last line the writer ends with a newline, because it adds lines after it, is not
-// a line the edit wrote.
-func common(a, b []string) (head, tail int) {
-	same := func(x, y string) bool {
-		x, _ = cutEOL(x)
-		y, _ = cutEOL(y)
-		return x == y
-	}
-	for head < len(a) && head < len(b) && same(a[head], b[head]) {
-		head++
-	}
-	for tail < len(a)-head && tail < len(b)-head && same(a[len(a)-1-tail], b[len(b)-1-tail]) {
-		tail++
-	}
-	return head, tail
-}
-
-// Diff is the change from old to edited of the file at path as a unified diff of one hunk, the edit of one answer
-// being one contiguous change; "" when the two are the same. Lines are shown without their line ends.
-func Diff(path string, old, edited []byte) string {
-	if string(old) == string(edited) {
-		return ""
-	}
-	a, b := lines(old), lines(edited)
-	head, tail := common(a, b)
-	from, to := max(0, head-diffContext), tail-min(tail, diffContext)
-	oldN, newN := len(a)-to-from, len(b)-to-from
-	var w strings.Builder
-	w.WriteString("--- a/" + path + "\n+++ b/" + path + "\n")
-	w.WriteString("@@ -" + hunkRange(from, oldN) + " +" + hunkRange(from, newN) + " @@\n")
-	write := func(mark string, ls []string) {
-		for _, l := range ls {
-			body, _ := cutEOL(l)
-			w.WriteString(mark + body + "\n")
-		}
-	}
-	write(" ", a[from:head])
-	write("-", a[head:len(a)-tail])
-	write("+", b[head:len(b)-tail])
-	write(" ", a[len(a)-tail:len(a)-to])
-	return w.String()
-}
-
-// hunkRange is "start,count" of a unified diff hunk; an empty range starts at the line before it.
-func hunkRange(from, n int) string {
-	if n == 0 {
-		return strconv.Itoa(from) + ",0"
-	}
-	return strconv.Itoa(from+1) + "," + strconv.Itoa(n)
 }
 
 // Module is one of the two modules of a request as the policy at the default branch's tip declares it.

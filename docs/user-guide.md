@@ -85,6 +85,12 @@ The editor accepts a whole file up to 32 KiB. **Preview the edit** lists every d
 the App's text diff against the current default-branch policy. Check path globs locally before approval:
 `archfit check --policy <file>`.
 
+Text diffs show separate hunks with old/new line ranges and three unchanged lines of context.
+`-` means removed, `+` means added, and a leading space means unchanged. Line-ending annotations
+identify LF/CRLF changes and a missing final newline. Tabs, backslashes and non-printing characters
+use visible escapes; file content is text, not HTML. Very large replacements can show the whole
+changed block instead of a minimal diff; no changed bytes are omitted.
+
 If an earlier branch write was not recorded, **Reload the policy** restores only the recorded proposal under the App's proposal lock.
 It does not approve or merge new bytes. Preview and confirm the edit again after reload.
 
