@@ -105,6 +105,12 @@ export const stateFixtures: StateFixture[] = [
       'Review first policy',
       'Review needed',
       'A passkey is needed to approve, but not to read the review.',
+  "Next: review owner approval",
+  "Review and approve",
+  "Review proposed files",
+  "Review the proposed files before approving.",
+  "PR #203 changed after approval. Review the new head.",
+  "Could not read your passkeys. Review is still available; try again before approving.",
     ],
   },
   {

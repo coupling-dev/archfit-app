@@ -1,20 +1,21 @@
 <script lang="ts">
   import { repoPage, type Repo } from '../lib/route';
-  import { homeHref, setupChipClass, setupPullStep, setupRuleStatus, setupStepState, type HomeSetup } from '../lib/home';
+  import { approvalNeedsReview, ownerReviewLabel, homeHref, setupChipClass, setupPullStep, setupRuleStatus, setupStepState, type HomeSetup } from '../lib/home';
 
   let { setup, repo, showOwnerAction = true }: { setup: HomeSetup; repo: Repo; showOwnerAction?: boolean } = $props();
   const steps = [
     { title: 'Add the policy', text: 'Your architecture rules live in .archfit.yaml, in the repository.' },
     { title: 'Open a pull request', text: 'Rules reach the default branch through review, so the approval binds to exact file contents.' },
-    { title: 'Approve the policy and workflow', text: 'The owner signs the policy with a passkey. Change one byte and the approval no longer counts.' },
+    { title: 'Owner approval', text: 'The owner signs the policy with a passkey. Change one byte and the approval no longer counts.' },
     { title: 'Require the gate', text: 'The App cannot change repository rulesets without Administration permission. An administrator must turn on the required check in the repository settings.' },
   ];
   const passkeyReason = 'The gate protects the rules themselves. A password or a GitHub review can be replayed by a compromised account, and in a one-person repository a self-review proves nothing. A passkey stays on your device, works only on this site, and signs the exact bytes of the policy and workflow. Any later edit needs a new approval.';
   let state = $derived(setupStepState(setup));
   let done = $derived(state.done);
   let completed = $derived(state.completed);
-  let reviewHref = $derived(setup.owner_action?.href ? homeHref(repo, setup.owner_action.href) : undefined);
+  let reviewHref = $derived(approvalNeedsReview(setup) && setup.owner_action?.href ? homeHref(repo, setup.owner_action.href) : undefined);
   let pullStep = $derived(setupPullStep(setup));
+  let approvalHref = $derived(setup.approval.href ? homeHref(repo, setup.approval.href) : undefined);
   let githubRepo = $derived(`https://github.com/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`);
   function ruleExplanation(rule: HomeSetup['rules'][number]): string {
     if (rule.state === 'unknown' && rule.code === 'administrator_bypass') return 'The App cannot read administrator bypass without Administration permission. An admin must confirm the bypass list is intentional.';
@@ -46,23 +47,30 @@
                 <a class="btn ghost" href={`${githubRepo}/pull/${pullStep.number}`}>Review PR #{pullStep.number}</a>
                 <p>This opens GitHub to read the change; nothing needs to be created here.</p>
               {:else if pullStep.kind === 'first-policy'}
-                <p>First policy: #{setup.first_pull}, open and waiting for approval. The workflow is present in this PR.</p>
+                {#if setup.approval.status === 'approved_pending_merge'}<p>First policy: #{setup.first_pull}, approved for its current head. The workflow is present in this PR.</p>
+                {:else}<p>First policy: #{setup.first_pull}, open and waiting for approval. The workflow is present in this PR.</p>{/if}
                 <a class="btn ghost" href={repoPage(repo.fullName, '/pull/' + setup.first_pull)}>Open the first pull request</a>
+              {:else if pullStep.kind === 'present'}
+                <p>The policy and workflow are on the default branch. No setup pull request is needed.</p>
               {:else}
                 <p>Open one pull request that adds the policy and workflow.</p>
                 <a class="btn ghost" href={`${githubRepo}/compare`}>Open a pull request on GitHub</a>
               {/if}
               {#if !setup.workflow && setup.open_pull === 0 && !setup.first_pull}<p>The pull request should also add <code>.github/workflows/archfit.yaml</code>.</p>{/if}
             {:else if i === 2}
-              {#if setup.owner_action}
-                {#if reviewHref}{#if showOwnerAction}<a class="btn primary" href={reviewHref}>{setup.owner_action.label}</a><p>This needs your passkey.</p>{/if}
+              <p>{state.approvalText}</p>
+              {#if approvalHref}<p><a href={approvalHref}>View PR #{setup.approval.pull_request} and approval record</a></p>{/if}
+              {#if approvalNeedsReview(setup) && setup.owner_action}
+                {#if reviewHref}{#if showOwnerAction}<a class="btn" href={reviewHref}>{ownerReviewLabel(setup)}</a>{/if}
                 {:else}<p>{setup.owner_action.label}</p>{/if}
               {/if}
-              {#if !setup.passkey}
-                <a class="btn ghost" href={repoPage(repo.fullName, '/passkeys')}>Register a passkey</a>
+              {#if !setup.passkey_known}
+                <p>Could not read your passkeys. Review is still available; try again before approving.</p>
+              {:else if !setup.passkey && approvalNeedsReview(setup)}
+                <a class="btn ghost" href={repoPage(repo.fullName, '/passkeys')}>Register a passkey to approve</a>
                 <p>A passkey is needed to approve, but not to read the review.</p>
-              {:else}
-                <a class="btn ghost" href={repoPage(repo.fullName, '/passkeys')}>Manage passkeys</a>
+              {:else if setup.passkey}
+                <p><a href={repoPage(repo.fullName, '/passkeys')}>Manage passkeys</a></p>
               {/if}
               <details><summary>Why a passkey?</summary><p>{passkeyReason}</p></details>
             {:else}

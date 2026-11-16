@@ -1,0 +1,60 @@
+{
+  "status": "clean",
+  "map": {
+    "layers": [
+      "cmd",
+      "core",
+      ""
+    ],
+    "modules": [
+      {
+        "name": "app",
+        "layer": "cmd",
+        "volatility": "high"
+      },
+      {
+        "name": "util",
+        "layer": "core",
+        "volatility": "low"
+      },
+      {
+        "name": "other",
+        "layer": "",
+        "volatility": "high"
+      }
+    ],
+    "lines": [
+      {
+        "kind": "allowed",
+        "from": "app",
+        "to": "util"
+      }
+    ]
+  },
+  "setup": {
+    "approval": {
+      "status": "approved_pending_merge",
+      "kind": "workflow",
+      "pull_request": 203,
+      "current_head": "0000000000000000000000000000000000000003",
+      "approved_head": "0000000000000000000000000000000000000003",
+      "merged": true,
+      "href": "https://github.com/acme/app/pull/203"
+    },
+    "passkey_known": true,
+    "admitted": true,
+    "policy": true,
+    "workflow": true,
+    "passkey": true,
+    "open_pull": 0,
+    "state": "approved",
+    "missing": [],
+    "rules": [
+      {
+        "code": "gate_check",
+        "state": "ok",
+        "text": ""
+      }
+    ]
+  }
+}

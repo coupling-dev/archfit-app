@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/alexei-led/archfit-app/internal/gate/approvals"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -19,6 +20,31 @@ type SetupState struct {
 // SetupViews reads change-control state for onboarding without exposing storage.
 type SetupViews interface {
 	SetupState(context.Context, api.Repo) (SetupState, error)
+	SetupApproval(context.Context, api.Repo, OwnerAction) ApprovalSummary
+}
+
+// ApprovalSummary describes a signature independently of default-branch activation.
+type ApprovalSummary = approvals.Summary
+
+// Approval states used by the read-only setup view.
+const (
+	ApprovalNeeded  = approvals.Needed
+	ApprovalPending = approvals.Pending
+	ApprovalActive  = approvals.Active
+	ApprovalStale   = approvals.Stale
+	ApprovalUnknown = approvals.Unknown
+)
+
+// SetupApproval returns unknown on read failures; it never grants approval authority.
+func (g *Gate) SetupApproval(ctx context.Context, r api.Repo, a OwnerAction) ApprovalSummary {
+	if err := g.admitted(ctx, Target{Repo: r}); err != nil {
+		return ApprovalSummary{Status: ApprovalUnknown, Kind: a.Kind, Pull: a.Pull}
+	}
+	out, err := g.approvals.Summary(ctx, r, a)
+	if err != nil {
+		out.Status = ApprovalUnknown
+	}
+	return out
 }
 
 // SetupState returns the recorded state. Missing state means a first approval is due.

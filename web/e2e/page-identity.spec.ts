@@ -16,6 +16,12 @@ const approvedCopy = [
   'Review needed',
   'A password or a GitHub review can be replayed by a compromised account',
   'A passkey is needed to approve, but not to read the review.',
+  "Next: review owner approval",
+  "Review and approve",
+  "Review proposed files",
+  "Review the proposed files before approving.",
+  "PR #203 changed after approval. Review the new head.",
+  "Could not read your passkeys. Review is still available; try again before approving.",
 ];
 
 for (const width of [390, 1280]) {
