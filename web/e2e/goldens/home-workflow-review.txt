@@ -3,18 +3,18 @@ Home
 acme/app
 
 Set up this repository.
-Review workflow change
-
-This needs your passkey.
-
+Review and approve
 View policy
+
+Approval needs your passkey.
+
 Set up Archfit
 
-Next: review the pull request
+Next: review owner approval
 
 Policy approval and required-check settings are separate. Complete the applicable steps below.
 
-1 of 4 done
+2 of 4 done
 ✓
 1 · Add the policy
 
@@ -24,26 +24,29 @@ Done
 
 The policy is on the default branch. View the policy
 
-2
-2 · Open a pull request
+✓
+2 · Policy and workflow pull request
 
 Rules reach the default branch through review, so the approval binds to exact file contents.
 
-In review
+Ready for review
 
-PR #203 adds the workflow — review it.
+PR #203 adds the workflow.
 
-Review PR #203
-
-This opens GitHub to read the change; nothing needs to be created here.
-
+View PR #203 on GitHub
 3
-3 · Approve the policy and workflow
+3 · Owner approval
 
 The owner signs the policy with a passkey. Change one byte and the approval no longer counts.
 
 Review needed
+
+Review the proposed files before approving.
+
+View PR #203 and approval record
+
 Manage passkeys
+
 Why a passkey?
 4
 4 · Require the gate

@@ -3,7 +3,6 @@ Home
 acme/app
 
 1 workflow change waits
-See what needs you
 View policy
 Needs you
 Review workflow change · PR #4

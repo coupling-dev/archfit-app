@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Dsm from './Dsm.svelte';
-  import Map from './Map.svelte';
   import type { MapModel } from './model';
 
   let { model, repo }: { model: MapModel; repo: string } = $props();
@@ -25,7 +24,13 @@
 {#if view === 'matrix'}
   <Dsm {model} {repo} />
 {:else}
-  <Map {model} {repo} />
+  {#await import('./Diagram.svelte')}
+    <p role="status">Placing the modules…</p>
+  {:then component}
+    <component.default {model} detailView="matrix" />
+  {:catch}
+    <p class="flash error" role="alert">The diagram could not load. Select Matrix for relationship details.</p>
+  {/await}
 {/if}
 
 <style>

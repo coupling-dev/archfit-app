@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/gate"
@@ -20,6 +21,7 @@ var setupRepo = api.Repo{RepoRef: api.RepoRef{InstallationID: 7, FullName: "acme
 
 // setupHub exposes only reads: setup cannot write repository files or approval records.
 type setupHub struct {
+	mu        sync.Mutex
 	files     map[string]map[string]string
 	pulls     []api.Pull
 	tags      map[string]string
@@ -36,6 +38,8 @@ func newSetupHub() *setupHub {
 }
 
 func (h *setupHub) File(_ context.Context, _ api.RepoRef, ref, path string) ([]byte, string, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.fileReads = append(h.fileReads, ref+":"+path)
 	raw, ok := h.files[ref][path]
 	if !ok {
@@ -48,6 +52,8 @@ func (h *setupHub) BranchHead(context.Context, api.RepoRef, string) (string, err
 }
 func (h *setupHub) OpenPulls(context.Context, api.RepoRef) ([]api.Pull, error) { return h.pulls, nil }
 func (h *setupHub) PublicTagCommit(_ context.Context, repo, tag string) (string, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.tagReads = append(h.tagReads, repo+"@"+tag)
 	if h.tagErr != nil {
 		return "", h.tagErr
@@ -77,6 +83,10 @@ type setupView struct{ state gate.SetupState }
 
 func (v setupView) SetupState(context.Context, api.Repo) (gate.SetupState, error) {
 	return v.state, nil
+}
+
+func (v setupView) SetupApproval(_ context.Context, _ api.Repo, a gate.OwnerAction) gate.ApprovalSummary {
+	return gate.ApprovalSummary{Status: gate.ApprovalNeeded, Kind: a.Kind, Pull: a.Pull}
 }
 
 func setupWorkflow(refs ...string) string {

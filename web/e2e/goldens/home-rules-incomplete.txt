@@ -1,0 +1,105 @@
+Home
+
+acme/app
+
+clean
+Continue setup
+View policy
+Set up Archfit
+
+Next: turn on the required check
+
+Policy approval and required-check settings are separate. Complete the applicable steps below.
+
+3 of 4 done
+✓
+1 · Add the policy
+
+Your architecture rules live in .archfit.yaml, in the repository.
+
+Done
+
+The policy is on the default branch. View the policy
+
+✓
+2 · Policy and workflow pull request
+
+Rules reach the default branch through review, so the approval binds to exact file contents.
+
+Done
+
+The policy and workflow are present on the default branch. No setup pull request is needed.
+
+View policy
+✓
+3 · Owner approval
+
+The owner signs the policy with a passkey. Change one byte and the approval no longer counts.
+
+Done
+
+The approved policy and workflow are active on the default branch.
+
+Manage passkeys
+
+Why a passkey?
+4
+4 · Require the gate
+
+The App cannot change repository rulesets without Administration permission. An administrator must turn on the required check in the repository settings.
+
+Action needed
+
+This step turns green once archfit/gate is required and the applicable rules below are checked.
+
+Open ruleset settings
+The App’s archfit/gate check is required
+
+Require archfit/gate.
+
+Action needed
+Needs you
+
+Nothing needs you.
+
+The map
+Matrix
+Diagram
+
+Policy and review status · row depends on column.
+
+✓ Explicit allow
+× Explicit deny
+? Request
+! Drift
+◷ Exception (expiry in details)
+
+Blank = no explicit relationship in this payload, not “no imports” or “permitted”. Deny status is only known for touched, requested or drift pairs; full deny evaluation is not available.
+
+Select a cell for details. Use arrow keys within the table; Enter opens details.
+
+Policy and review status matrix
+Source ↓
+Target →
+cmd
+app
+core
+util
+No layer
+other
+
+cmd
+app
+
+✓
+
+
+
+core
+util
+
+
+
+
+No layer
+other

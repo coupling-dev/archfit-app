@@ -2,8 +2,11 @@ package ui
 
 import (
 	"net/http"
+	"strconv"
+	"sync"
 
 	"github.com/alexei-led/archfit-app/internal/control/answers"
+	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
@@ -83,29 +86,65 @@ type setupFindingJSON struct {
 	State string `json:"state"`
 	Text  string `json:"text"`
 }
+type approvalJSON struct {
+	Status       string `json:"status"`
+	Kind         string `json:"kind"`
+	Pull         int    `json:"pull_request,omitempty"`
+	CurrentHead  string `json:"current_head,omitempty"`
+	ApprovedHead string `json:"approved_head,omitempty"`
+	Merged       bool   `json:"merged,omitempty"`
+	Href         string `json:"href,omitempty"`
+}
 type setupJSON struct {
-	Review    *reviewJSON        `json:"owner_action,omitempty"`
-	Admitted  bool               `json:"admitted"`
-	Policy    bool               `json:"policy"`
-	Workflow  bool               `json:"workflow"`
-	Passkey   bool               `json:"passkey"`
-	OpenPull  int                `json:"open_pull"`
-	State     string             `json:"state"`
-	Missing   []string           `json:"missing"`
-	FirstPull int                `json:"first_pull,omitempty"`
-	Issue     int                `json:"issue,omitempty"`
-	Rules     []setupFindingJSON `json:"rules"`
+	Approval     approvalJSON       `json:"approval"`
+	PasskeyKnown bool               `json:"passkey_known"`
+	Review       *reviewJSON        `json:"owner_action,omitempty"`
+	Admitted     bool               `json:"admitted"`
+	Policy       bool               `json:"policy"`
+	Workflow     bool               `json:"workflow"`
+	Passkey      bool               `json:"passkey"`
+	OpenPull     int                `json:"open_pull"`
+	State        string             `json:"state"`
+	Missing      []string           `json:"missing"`
+	FirstPull    int                `json:"first_pull,omitempty"`
+	Issue        int                `json:"issue,omitempty"`
+	Rules        []setupFindingJSON `json:"rules"`
 }
 
 func (s *server) apiSetup(r *http.Request, sc scope) (any, error) {
-	out, err := s.setups.Setup(r.Context(), sc.repo)
-	if err != nil {
-		return nil, err
+	var out onboarding.Setup
+	var setupErr error
+	var passkey, passkeyKnown bool
+	var reads sync.WaitGroup
+	reads.Go(func() {
+		done := api.StartStage(r.Context(), "setup")
+		out, setupErr = s.setups.Setup(r.Context(), sc.repo)
+		done(1, 0)
+	})
+	reads.Go(func() {
+		done := api.StartStage(r.Context(), "passkeys")
+		keys, err := s.passkeys.List(r.Context(), sc.repo, sc.user.UserID)
+		// Unreadable inventory is not a confirmed empty inventory.
+		passkeyKnown = err == nil
+		passkey = passkeyKnown && len(keys) > 0
+		done(len(keys), 0)
+	})
+	reads.Wait()
+	if setupErr != nil {
+		return nil, setupErr
 	}
-	passkeys, err := s.passkeys.List(r.Context(), sc.repo, sc.user.UserID)
-	// Home remains available when passkey inventory is temporarily unreadable; false safely asks the user to register.
-	passkey := err == nil && len(passkeys) > 0
-	body := setupJSON{Admitted: out.Admitted, Policy: out.Policy, Workflow: out.Workflow, Passkey: passkey, OpenPull: out.OpenPull,
+	approval := approvalJSON{Status: string(out.Approval.Status), Kind: out.Approval.Kind, Pull: out.Approval.Pull,
+		CurrentHead: out.Approval.CurrentHead, ApprovedHead: out.Approval.ApprovedHead, Merged: out.Approval.Merged}
+	if approval.Status == "" {
+		approval.Status = string(gate.ApprovalUnknown)
+	}
+	if approval.Kind == "" {
+		approval.Kind = gate.OwnerFirst
+	}
+	if approval.Pull > 0 {
+		approval.Href = "https://github.com/" + sc.repo.FullName + "/pull/" + strconv.Itoa(approval.Pull)
+	}
+	body := setupJSON{Approval: approval, PasskeyKnown: passkeyKnown, Admitted: out.Admitted, Policy: out.Policy, Workflow: out.Workflow, Passkey: passkey, OpenPull: out.OpenPull,
 		State: out.State, Missing: out.Missing, FirstPull: out.FirstPull, Issue: out.Issue, Rules: []setupFindingJSON{}}
 	for _, f := range out.Rules.Findings {
 		body.Rules = append(body.Rules, setupFindingJSON{Code: f.Code, State: f.State, Text: f.Text})

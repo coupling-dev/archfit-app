@@ -129,14 +129,16 @@ test('DSM large map filters retain square axes and bounded two-axis scrolling', 
 test('Matrix is the default without a worker; explicit Diagram choice survives reload and resize', async ({ page }) => {
   const workers: string[] = [];
   page.on('request', (request) => {
-    if (request.url().includes('layout.worker-')) workers.push(request.url());
+    if (/\/assets\/(?:layout\.worker|Diagram)-/.test(request.url())) workers.push(request.url());
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, '/r/acme/app', { [api]: () => [200, fixture(5)] });
   await expect(page.getByRole('table', { name: tableName })).toBeVisible();
   expect(workers).toEqual([]);
   await page.getByRole('button', { name: 'Diagram', exact: true }).click();
-  await expect(page.getByText('Show the map as a diagram', { exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toBeVisible();
+  await expect(page.getByText('Show the map as a diagram', { exact: true })).toHaveCount(0);
+  expect(workers.some((url) => url.includes('layout.worker-'))).toBe(true);
   await page.reload();
   await expect(page.getByRole('button', { name: 'Diagram', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.setViewportSize({ width: 1280, height: 844 });
@@ -157,7 +159,20 @@ test('Matrix works when browser storage is unavailable', async ({ page }) => {
   await open(page, '/r/acme/app', { [api]: () => [200, fixture(5)] });
   await expect(page.getByRole('table', { name: tableName })).toBeVisible();
   await page.getByRole('button', { name: 'Diagram', exact: true }).click();
-  await expect(page.getByText('Show the map as a diagram', { exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toBeVisible();
+  await expect(page.getByText('Show the map as a diagram', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Matrix', exact: true }).click();
   await expect(page.getByRole('table', { name: tableName })).toBeVisible();
+});
+
+test('Diagram import failure reports an error and leaves Matrix available', async ({ page }) => {
+  await page.route('**/assets/Diagram-*.js', (route) => route.abort());
+  await open(page, '/r/acme/app', { [api]: () => [200, fixture(5)] });
+  await expect(page.getByRole('table', { name: tableName })).toBeVisible();
+  await page.getByRole('button', { name: 'Diagram', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveText('The diagram could not load. Select Matrix for relationship details.');
+  await expect(page.getByText('Show the map as a diagram', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Matrix', exact: true }).click();
+  await expect(page.getByRole('table', { name: tableName })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
 });

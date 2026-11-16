@@ -3,7 +3,6 @@ Home
 acme/app
 
 1 request waits
-See what needs you
 View policy
 Needs you
 Request #431 waits.
@@ -11,17 +10,5 @@ Show the record
 The map
 Matrix
 Diagram
-Show the map as a list
-Dependencies
-app → other: Requested dependency · #431
-app → util: Allowed dependency
-cmd
-app · Volatility: high
-core
-util · Volatility: low
-No layer
-other · Volatility: high
 
-The map layout worker could not place the modules. The map is available as a list above.
-
-Dependencies not allowed by this policy need a request.
+The map layout worker could not place the modules. Select Matrix for relationship details.

@@ -1,0 +1,62 @@
+Home
+
+acme/app
+
+Set up this repository.
+Review and approve
+View policy
+
+Approval needs your passkey.
+
+Set up Archfit
+
+Next: review owner approval
+
+Policy approval and required-check settings are separate. Complete the applicable steps below.
+
+3 of 4 done
+✓
+1 · Add the policy
+
+Your architecture rules live in .archfit.yaml, in the repository.
+
+Done
+
+The policy is on the default branch. View the policy
+
+✓
+2 · Policy and workflow pull request
+
+Rules reach the default branch through review, so the approval binds to exact file contents.
+
+Ready for review
+
+PR #203 adds the workflow.
+
+View PR #203 on GitHub
+3
+3 · Owner approval
+
+The owner signs the policy with a passkey. Change one byte and the approval no longer counts.
+
+Review needed
+
+PR #203 changed after approval. Review the new head.
+
+View PR #203 and approval record
+
+Manage passkeys
+
+Why a passkey?
+✓
+4 · Require the gate
+
+The App cannot change repository rulesets without Administration permission. An administrator must turn on the required check in the repository settings.
+
+On
+
+This step turns green once archfit/gate is required and the applicable rules below are checked.
+
+Open ruleset settings
+The App’s archfit/gate check is required
+On

@@ -23,8 +23,22 @@ app.go:3 graph app -> util
 
 The map
 Show the map as a list
+Show the map as a diagram
 
-Placing the modules…
+Diagram fitted to this box. Use the list above for full-size dependency labels.
+
+outer
+core
+A rule denies this dependency · no-util-to-app
+app
+Volatility: high
+util
+Volatility: low
+An allowed dependency
+A requested dependency
+One a rule denies
+An exception (with its date)
+Drift
 
 Dependencies not allowed by this policy need a request.
 

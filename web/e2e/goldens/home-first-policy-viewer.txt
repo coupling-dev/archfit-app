@@ -7,7 +7,7 @@ Continue setup
 View policy
 Set up Archfit
 
-Next: approve the workflow with your passkey
+Next: review owner approval
 
 Policy approval and required-check settings are separate. Complete the applicable steps below.
 
@@ -22,25 +22,30 @@ Done
 A version 3 policy is proposed in PR #12; it is not yet on the default branch.
 
 ✓
-2 · Open a pull request
+2 · Policy and workflow pull request
 
 Rules reach the default branch through review, so the approval binds to exact file contents.
 
-Done
+Ready for review
 
-First policy: #12, open and waiting for approval. The workflow is present in this PR.
+PR #12 proposes the first policy and workflow.
 
-Open the first pull request
+View PR #12
 3
-3 · Approve the policy and workflow
+3 · Owner approval
 
 The owner signs the policy with a passkey. Change one byte and the approval no longer counts.
 
 Action needed
 
+Review the proposed files before approving.
+
+View PR #12 and approval record
+
 A repository administrator named as an architecture owner in the proposed policy can review this.
 
 Manage passkeys
+
 Why a passkey?
 4
 4 · Require the gate

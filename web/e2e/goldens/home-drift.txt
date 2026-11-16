@@ -3,7 +3,6 @@ Home
 acme/app
 
 drift
-See what needs you
 View policy
 Needs you
 Drift on the default branch.

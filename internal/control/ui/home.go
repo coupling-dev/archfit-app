@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate"
+	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
 )
 
@@ -55,14 +56,22 @@ type homeLineJSON struct {
 }
 
 func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
+	ctx, snapshot := gate.WithHomeSnapshot(r.Context(), sc.repo)
+	r = r.WithContext(ctx)
+	snapshotDone := api.StartStage(ctx, "snapshot")
+	defer func() { snapshotDone(1, int(snapshot.CacheHits())) }()
 	setup, err := s.apiSetup(r, sc)
 	if err != nil {
 		return nil, err
 	}
 	state := setup.(setupJSON)
 	if state.State != "approved" && state.State != "outside_flow" {
-		if state.State == "first_approval" || state.OpenPull > 0 {
-			pull := state.FirstPull
+		if (state.Approval.Status == string(gate.ApprovalNeeded) || state.Approval.Status == string(gate.ApprovalStale)) &&
+			(state.State == "first_approval" || state.OpenPull > 0 || state.Approval.Pull > 0) {
+			pull := state.Approval.Pull
+			if pull == 0 {
+				pull = state.FirstPull
+			}
 			if pull == 0 {
 				pull = state.OpenPull
 			}
@@ -70,12 +79,18 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 		}
 		return homeJSON{Status: "Set up this repository.", Setup: &state}, nil
 	}
+	recordsDone := api.StartStage(ctx, "home_records")
 	view, err := s.home.Home(r.Context(), sc.repo)
+	recordsDone(len(view.Requests)+len(view.Touched)+len(view.WorkflowPulls), 0)
 	if err != nil {
 		return nil, err
 	}
 	today := s.now().UTC().Truncate(24 * time.Hour)
 	body := homeBody(view, state, sc.repo.FullName, today)
+	if !setupRulesComplete(state.Rules) || state.Approval.Status == string(gate.ApprovalPending) ||
+		state.Approval.Status == string(gate.ApprovalStale) || state.Approval.Status == string(gate.ApprovalUnknown) {
+		body.Setup = &state
+	}
 	for i := range body.NeedsYou {
 		need := &body.NeedsYou[i]
 		if need.Kind != "workflow" {
@@ -86,6 +101,12 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 		}
 	}
 	return body, nil
+}
+
+func setupRulesComplete(rules []setupFindingJSON) bool {
+	return len(rules) > 0 && !slices.ContainsFunc(rules, func(r setupFindingJSON) bool {
+		return r.State != "ok" && r.State != "not_applicable"
+	})
 }
 
 func homeBody(view gate.HomeState, setup setupJSON, repo string, today time.Time) homeJSON {

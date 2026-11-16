@@ -37,7 +37,9 @@ func newHomeEnv(t *testing.T, pol string) *env {
 	e := newEnv(t)
 	e.passkeys.listed = []passkey.Passkey{{ID: fakePasskeyID, Created: fakeCreated}}
 	e.now = time.Date(2026, 11, 10, 23, 45, 0, 0, time.UTC)
-	e.setups.out = onboarding.Setup{Admitted: true, Policy: true, Workflow: true, State: "approved", Missing: []string{}}
+	e.setups.out = onboarding.Setup{Admitted: true, Policy: true, Workflow: true, State: "approved", Missing: []string{},
+		Approval: gate.ApprovalSummary{Status: gate.ApprovalActive, Kind: gate.OwnerFirst},
+		Rules:    onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{{Code: "gate_check", State: "ok"}}}}
 	e.gh.setFile(repoName, mainBranch, ".archfit.yaml", pol)
 	e.gh.setFile(repoName, mainBranch, workflow, "the target workflow")
 	homePut(t, e, "repo", map[string]any{
@@ -123,14 +125,32 @@ func TestHomeAPIGoldens(t *testing.T) {
 		}},
 		{"deny-request", homePolicy + homeDeny, func(t *testing.T, e *env) { homeRequest(t, e, "open") }},
 		{"workflow-review", homePolicy, func(_ *testing.T, e *env) {
-			e.setups.out = onboarding.Setup{Policy: true, OpenPull: 203, State: "not_admitted", Missing: []string{},
+			e.setups.out = onboarding.Setup{Approval: gate.ApprovalSummary{Status: gate.ApprovalNeeded, Kind: gate.OwnerWorkflow, Pull: 203}, Policy: true, OpenPull: 203, State: "not_admitted", Missing: []string{},
 				Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{
 					{Code: "pull_requests", State: "warning", Text: "Add a pull request rule to the default branch."},
 					{Code: "gate_check", State: "warning", Text: "Add the App's archfit/gate check as a required status check."},
 				}}}
 		}},
+		{"rules-incomplete", homePolicy, func(_ *testing.T, e *env) {
+			e.setups.out.Rules.Findings[0].State = "warning"
+			e.setups.out.Rules.Findings[0].Text = "Require archfit/gate."
+		}},
+		{"approval-pending", homePolicy, func(_ *testing.T, e *env) {
+			e.setups.out.State, e.setups.out.Workflow, e.setups.out.OpenPull = "not_admitted", false, 203
+			e.setups.out.Approval = gate.ApprovalSummary{Status: gate.ApprovalPending, Kind: gate.OwnerWorkflow, Pull: 203, CurrentHead: sha(3), ApprovedHead: sha(3)}
+		}},
+		{"approval-stale", homePolicy, func(_ *testing.T, e *env) {
+			e.setups.out.State, e.setups.out.Workflow, e.setups.out.OpenPull = "not_admitted", false, 203
+			e.setups.out.Approval = gate.ApprovalSummary{Status: gate.ApprovalStale, Kind: gate.OwnerWorkflow, Pull: 203, CurrentHead: sha(4), ApprovedHead: sha(3)}
+		}},
+		{"approval-unknown", homePolicy, func(_ *testing.T, e *env) {
+			e.setups.out.Approval = gate.ApprovalSummary{Status: gate.ApprovalUnknown, Kind: gate.OwnerWorkflow, Pull: 203}
+		}},
+		{"approval-merged", homePolicy, func(_ *testing.T, e *env) {
+			e.setups.out.Approval = gate.ApprovalSummary{Status: gate.ApprovalPending, Kind: gate.OwnerWorkflow, Pull: 203, CurrentHead: sha(3), ApprovedHead: sha(3), Merged: true}
+		}},
 		{"not-set-up", homePolicy, func(_ *testing.T, e *env) {
-			e.setups.out = onboarding.Setup{State: "first_approval", FirstPull: 12, Missing: []string{"Register a passkey and approve the first policy."},
+			e.setups.out = onboarding.Setup{Approval: gate.ApprovalSummary{Status: gate.ApprovalNeeded, Kind: gate.OwnerFirst, Pull: 12}, State: "first_approval", FirstPull: 12, Missing: []string{"Register a passkey and approve the first policy."},
 				Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{
 					{Code: "pull_requests", State: "warning", Text: "Add a pull request rule to the default branch."},
 					{Code: "gate_check", State: "warning", Text: "Add the App's archfit/gate check as a required status check."},
@@ -162,7 +182,7 @@ func TestHomeAPIGoldens(t *testing.T) {
 			if tt.setup != nil {
 				tt.setup(t, e)
 			}
-			if tt.name == "workflow-review" || tt.name == "workflow-change" || tt.name == "not-set-up" {
+			if tt.name == "workflow-review" || tt.name == "workflow-change" || tt.name == "not-set-up" || tt.name == "approval-stale" {
 				e.owners.review = func(a answers.OwnerAction, _ gate.OwnerUser) error {
 					if tt.name == "not-set-up" && a.Kind == gate.OwnerFirst && a.Pull == 12 ||
 						tt.name != "not-set-up" && a.Kind == gate.OwnerWorkflow && a.Pull > 0 {

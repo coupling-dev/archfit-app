@@ -1,6 +1,13 @@
 {
   "status": "Set up this repository.",
   "setup": {
+    "approval": {
+      "status": "needed",
+      "kind": "first",
+      "pull_request": 12,
+      "href": "https://github.com/acme/app/pull/12"
+    },
+    "passkey_known": true,
     "owner_action": {
       "label": "Review first policy",
       "href": "/r/acme/app/owner/first?pull=12"

@@ -1,20 +1,36 @@
-Home
+Request #415
 
-acme/app
+waiting Request #415 waits for an owner to answer. Its numbers are as reported: no pull request confirmed them yet.
 
-1 request waits
-See what needs you
-View policy
-Needs you
-Request #415 waits.
-Show the record
+Reason
+
+Use the helper.
+
+Rule graph · app -> other
+
+Answer
+
+Choose an answer and read its policy change before confirming. Previewing or leaving this page changes nothing.
+
+Choose an answer
+Approve
+Approve until a date
+Reject
+Approve
+
+Preview this answer to see its policy change and affected pull requests.
+
+Preview approve
+
+Choose an answer.
+
+Record
+app -> util
 The map
-Matrix
-Diagram
 Show the map as a list
 Dependencies
-app → other: Requested dependency · #415
 app → util: Allowed dependency
+app → other: Requested dependency · #415
 cmd
 app · Volatility: high
 core
@@ -23,4 +39,39 @@ No layer
 other · Volatility: high
 Show the map as a diagram
 
+Diagram fitted to this box. Use the list above for full-size dependency labels.
+
+cmd
+core
+No layer
+Allowed dependency
+Requested dependency · #415
+app
+Volatility: high
+util
+Volatility: low
+other
+Volatility: high
+An allowed dependency
+A requested dependency
+One a rule denies
+An exception (with its date)
+Drift
+
 Dependencies not allowed by this policy need a request.
+
+Why the balance
+
+The record has no balance.
+
+The policy declares the volatility of each module:
+
+app: Layer cmd · Volatility high
+
+util: Layer core · Volatility low
+
+other: Volatility high
+
+Earlier answers 0
+
+No earlier answer about these modules.

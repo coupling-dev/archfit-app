@@ -62,11 +62,17 @@ func validFullName(fullName string) bool {
 }
 
 func (s *sessions) Authorize(ctx context.Context, u User, fullName, minPermission string) (api.Repo, error) {
+	done := api.StartStage(ctx, "authorization")
+	hits := 0
+	defer func() { done(1, hits) }()
 	if permissionRank(minPermission) == 0 || !validFullName(fullName) || u.Token == "" {
 		return api.Repo{}, ErrForbidden
 	}
 	key := cacheKey{userID: u.UserID, fullName: strings.ToLower(fullName)}
 	e, ok := s.cacheGet(key)
+	if ok {
+		hits = 1
+	}
 	if !ok {
 		var err error
 		if e, err = s.ask(ctx, u, fullName); err != nil {

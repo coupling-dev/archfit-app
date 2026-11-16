@@ -1,6 +1,13 @@
 {
   "status": "Set up this repository.",
   "setup": {
+    "approval": {
+      "status": "needed",
+      "kind": "workflow",
+      "pull_request": 203,
+      "href": "https://github.com/acme/app/pull/203"
+    },
+    "passkey_known": true,
     "owner_action": {
       "label": "Review workflow change",
       "href": "/r/acme/app/owner/workflow?pull=203"
