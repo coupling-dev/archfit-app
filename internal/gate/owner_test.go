@@ -134,11 +134,8 @@ func TestAFirstApprovalOnAHeadWhoseRunIsGoneSaysSo(t *testing.T) {
 	if out.Check != CheckBlocked {
 		t.Fatalf("check = %q, want %q", out.Check, CheckBlocked)
 	}
-	run, ok := w.latestGate(p.head)
-	if !ok || run.Conclusion != "action_required" {
-		t.Fatalf("archfit/gate = %+v, want action_required", run)
-	}
-	if text := run.Summary; !strings.Contains(text, "this head is approved, and its run is gone (no_run)") ||
+	w.wantOwnerCheck(p, out.Approval)
+	if text := w.comment(p); !strings.Contains(text, "this head is approved, and its run is gone (no_run)") ||
 		!strings.Contains(text, "push a commit; an owner then approves the new head") {
 		t.Errorf("the check does not say what happened and what to do:\n%s", text)
 	}
@@ -300,7 +297,7 @@ func TestAStaleFirstApprovalAdmitsNothingOnceChangeControlStarts(t *testing.T) {
 }
 
 // TestAFirstApprovalWhoseRunCannotRunAgainNamesTheCondition: the default branch moved in more than the policy since
-// the run, so the re-run guard (design 10.5) keeps the run back, and the check names the condition and the way out.
+// the run, so the re-run guard keeps the run back. The comment retains the diagnostic; the owner verdict stands.
 func TestAFirstApprovalWhoseRunCannotRunAgainNamesTheCondition(t *testing.T) {
 	w := newWorld4(t)
 	w.onboarding()
@@ -318,10 +315,10 @@ func TestAFirstApprovalWhoseRunCannotRunAgainNamesTheCondition(t *testing.T) {
 	if out.Check != CheckBlocked || len(w.gh.reruns) != 0 {
 		t.Fatalf("check %q, reruns %v; want no re-run", out.Check, w.gh.reruns)
 	}
-	run, ok := w.latestGate(p.head)
-	if !ok || run.Conclusion != "action_required" || !strings.Contains(run.Summary, "(base_changed)") ||
-		!strings.Contains(run.Summary, "update the branch; an owner then approves the new head") {
-		t.Errorf("archfit/gate = %+v, want unknown naming base_changed and the way out", run)
+	w.wantOwnerCheck(p, out.Approval)
+	if text := w.comment(p); !strings.Contains(text, "(base_changed)") ||
+		!strings.Contains(text, "update the branch; an owner then approves the new head") {
+		t.Errorf("comment = %s, want the rerun diagnostic and the way out", text)
 	}
 }
 

@@ -93,6 +93,13 @@ func (s *serialized) current4(ctx context.Context, p Publication4, withdraw bool
 			return ErrStaleInputs
 		}
 	}
+	if s.ownerCheck != nil && p.Target.PullRequest > 0 {
+		check, err := s.ownerCheck(ctx, p.Target.Repo, p.Target.PullRequest, p.Target.HeadSHA)
+		if err != nil {
+			return fmt.Errorf("feedback: read owner approval: %w: %w", errUnwritten, err)
+		}
+		p.ownerCheck = check
+	}
 	if withdraw {
 		existing, found, err := s.next.latestRun(ctx, p.Target.Repo.RepoRef, p.Target.HeadSHA, gateCheck)
 		if err != nil {
@@ -144,6 +151,9 @@ func (s *publisher) publish4(ctx context.Context, p Publication4) (written, supe
 	start := s.now()
 	gate, comment := actionNone, actionNone
 	status, conclusion := checkState(p.Result.Status, p.Advisory)
+	if p.ownerCheck != nil {
+		status, conclusion = p.ownerCheck.Status, p.ownerCheck.Conclusion
+	}
 	defer func() {
 		slog.Default().InfoContext(ctx, "feedback published",
 			"envelope", 2, "repo_id", p.Target.Repo.ID, "pull", p.Target.PullRequest, "head_sha", p.Target.HeadSHA,
@@ -164,6 +174,10 @@ func (s *publisher) publish4(ctx context.Context, p Publication4) (written, supe
 		Summary:     v.summary(),
 		Annotations: v.annotations(),
 		StartedAt:   start,
+	}
+	if p.ownerCheck != nil {
+		run = *p.ownerCheck
+		run.StartedAt, run.DetailsURL = start, s.pullLink(p.Target)
 	}
 	if gate, err = s.writeCheck4(ctx, p, run); err != nil || p.Target.PullRequest == 0 {
 		return false, false, err
