@@ -2,8 +2,10 @@ package ui
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/alexei-led/archfit-app/internal/control/answers"
+	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
@@ -98,13 +100,26 @@ type setupJSON struct {
 }
 
 func (s *server) apiSetup(r *http.Request, sc scope) (any, error) {
-	out, err := s.setups.Setup(r.Context(), sc.repo)
-	if err != nil {
-		return nil, err
+	var out onboarding.Setup
+	var setupErr error
+	var passkey bool
+	var reads sync.WaitGroup
+	reads.Go(func() {
+		done := api.StartStage(r.Context(), "setup")
+		out, setupErr = s.setups.Setup(r.Context(), sc.repo)
+		done(1, 0)
+	})
+	reads.Go(func() {
+		done := api.StartStage(r.Context(), "passkeys")
+		keys, err := s.passkeys.List(r.Context(), sc.repo, sc.user.UserID)
+		// Preserve the existing inventory failure behavior; this does not authorize approval.
+		passkey = err == nil && len(keys) > 0
+		done(len(keys), 0)
+	})
+	reads.Wait()
+	if setupErr != nil {
+		return nil, setupErr
 	}
-	passkeys, err := s.passkeys.List(r.Context(), sc.repo, sc.user.UserID)
-	// Home remains available when passkey inventory is temporarily unreadable; false safely asks the user to register.
-	passkey := err == nil && len(passkeys) > 0
 	body := setupJSON{Admitted: out.Admitted, Policy: out.Policy, Workflow: out.Workflow, Passkey: passkey, OpenPull: out.OpenPull,
 		State: out.State, Missing: out.Missing, FirstPull: out.FirstPull, Issue: out.Issue, Rules: []setupFindingJSON{}}
 	for _, f := range out.Rules.Findings {

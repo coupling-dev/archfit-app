@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate"
+	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
 )
 
@@ -55,6 +56,10 @@ type homeLineJSON struct {
 }
 
 func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
+	ctx, snapshot := gate.WithHomeSnapshot(r.Context(), sc.repo)
+	r = r.WithContext(ctx)
+	snapshotDone := api.StartStage(ctx, "snapshot")
+	defer func() { snapshotDone(1, int(snapshot.CacheHits())) }()
 	setup, err := s.apiSetup(r, sc)
 	if err != nil {
 		return nil, err
@@ -70,7 +75,9 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 		}
 		return homeJSON{Status: "Set up this repository.", Setup: &state}, nil
 	}
+	recordsDone := api.StartStage(ctx, "home_records")
 	view, err := s.home.Home(r.Context(), sc.repo)
+	recordsDone(len(view.Requests)+len(view.Touched)+len(view.WorkflowPulls), 0)
 	if err != nil {
 		return nil, err
 	}

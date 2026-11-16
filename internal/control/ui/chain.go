@@ -77,6 +77,7 @@ func chain(next http.Handler) http.Handler {
 		start := time.Now()
 		l := &reqLog{outcome: "ok"}
 		ctx, gh := api.WithCallStats(context.WithValue(r.Context(), reqLogKey{}, l))
+		ctx, stages := api.WithStageStats(ctx)
 		r = r.WithContext(ctx)
 		sw := &statusWriter{ResponseWriter: w}
 
@@ -113,6 +114,7 @@ func chain(next http.Handler) http.Handler {
 				// GitHub round trips of the request and their time summed: concurrent calls add up past duration_ms.
 				"gh_calls", gh.Calls(),
 				"gh_ms", gh.Duration().Milliseconds(),
+				"stages", stages.Snapshot(),
 			)
 		}()
 		next.ServeHTTP(sw, r)

@@ -402,8 +402,12 @@ for (const width of [390, 1280]) {
       await expect(decision).toContainText('These code pull requests are not merged by this answer.');
       const target = await decision.getByRole('button').boundingBox();
       if (width === 390) expect(target?.height).toBeGreaterThanOrEqual(44);
-      await expect(page.locator('.map-node')).toHaveCount(2);
+      await expect(page.locator('.map-node')).toHaveCount(width === 390 ? 0 : 2);
       await docsShot(page, `request-${kind}-${width}`);
+      if (width === 390) {
+        await page.getByText('Show the map as a diagram', { exact: true }).click();
+        await expect(page.locator('.map-node')).toHaveCount(2);
+      }
       await expectClean(page);
       expect(writes).toEqual([]);
       await decision.getByRole('link', { name: 'PR #12 in Archfit' }).click();

@@ -2,9 +2,12 @@ package onboarding
 
 import (
 	"context"
+	"sync"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
+
+const rulesetReadConcurrency = 4
 
 // RulesetFinding is read-back or advice, never an automatic settings change.
 type RulesetFinding struct {
@@ -20,16 +23,27 @@ type RulesetReport struct {
 
 func (s *setups) rules(ctx context.Context, r api.Repo) RulesetReport {
 	report := RulesetReport{Findings: []RulesetFinding{}}
+	done := api.StartStage(ctx, "rules")
+	count := 0
+	defer func() { done(count, 0) }()
 	add := func(code, state, text string) {
 		report.Findings = append(report.Findings, RulesetFinding{code, state, text})
 	}
-	branch, err := s.gh.BranchPolicy(ctx, r.RepoRef, r.DefaultBranch)
-	if err != nil {
+	var branch []api.RepositoryRule
+	var app int64
+	var sets []api.Ruleset
+	var branchErr, appErr, setsErr error
+	var reads sync.WaitGroup
+	reads.Go(func() { branch, branchErr = s.gh.BranchPolicy(ctx, r.RepoRef, r.DefaultBranch) })
+	reads.Go(func() { app, appErr = s.gh.AppIntegrationID(ctx) })
+	reads.Go(func() { sets, setsErr = s.gh.ListRulesets(ctx, r.RepoRef) })
+	reads.Wait()
+	count = 3
+	if branchErr != nil {
 		add("branch_rules", "unknown", "The App cannot read the default-branch rules.")
 		return report
 	}
-	app, err := s.gh.AppIntegrationID(ctx)
-	if err != nil {
+	if appErr != nil {
 		add("integration", "unknown", "The App integration ID is not available.")
 		return report
 	}
@@ -61,17 +75,25 @@ func (s *setups) rules(ctx context.Context, r api.Repo) RulesetReport {
 	} else {
 		add("gate_check", "warning", "Add the App's archfit/gate check as a required status check.")
 	}
-	sets, err := s.gh.ListRulesets(ctx, r.RepoRef)
-	if err != nil {
+	if setsErr != nil {
 		add("rulesets", "unknown", "The App cannot read rulesets or administrator bypass.")
 		return report
 	}
 	pushSupported := r.OwnerType == "Organization" && (r.Visibility == "private" || r.Visibility == "internal")
 	push, adminUnknown, unreadable := false, false, false
 	adminAll, branchSets := true, 0
-	for _, summary := range sets {
-		rs, err := s.gh.GetRuleset(ctx, r.RepoRef, summary.ID)
-		if err != nil {
+	// Keep response order and unknown findings, independent of completion order.
+	details := make([]api.Ruleset, len(sets))
+	readErrors := make([]error, len(sets))
+	for start := 0; start < len(sets); start += rulesetReadConcurrency {
+		for i := start; i < min(start+rulesetReadConcurrency, len(sets)); i++ {
+			reads.Go(func() { details[i], readErrors[i] = s.gh.GetRuleset(ctx, r.RepoRef, sets[i].ID) })
+		}
+		reads.Wait()
+	}
+	count += len(sets)
+	for i, rs := range details {
+		if readErrors[i] != nil {
 			unreadable = true
 			continue
 		}

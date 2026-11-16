@@ -165,13 +165,22 @@ test('home: empty map is explicit', async ({ page }) => {
 });
 
 test('home: phone map starts as a list, the diagram fits, and bands stay in order', async ({ page }) => {
+  const workers: string[] = [];
+  page.on('request', (request) => {
+    if (/\/assets\/layout\.worker-.*\.js/.test(request.url())) workers.push(request.url());
+  });
+
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, path, { [api]: () => [200, fixture('one-request')] });
   const diagram = page.getByRole('img', { name: 'Modules by layer and their dependencies' });
   await expect(page.getByText('app → other: Requested dependency · #431', { exact: true })).toBeVisible();
   await expect(diagram).toBeHidden();
+  expect(workers).toEqual([]);
+  const workerRequest = page.waitForRequest(/\/assets\/layout\.worker-.*\.js/);
   await page.getByText('Show the map as a diagram', { exact: true }).click();
+  await workerRequest;
   await expect(diagram).toBeVisible();
+  expect(workers).toHaveLength(1);
   expect(await diagram.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThan(390);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   const ys = await page.locator('.map-node rect').evaluateAll((nodes) => nodes.map((n) => Number(n.getAttribute('y'))));
