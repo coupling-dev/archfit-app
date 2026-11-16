@@ -9,6 +9,8 @@ Needs you
 Request #431 waits.
 Show the record
 The map
+Matrix
+Diagram
 Show the map as a list
 Dependencies
 app → other: Requested dependency · #431

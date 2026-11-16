@@ -30,6 +30,7 @@ for (const width of [390, 1280]) {
   test('map: list, complete diagram and real request at ' + width, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await open(page, '/r/acme/app', { 'GET /api/repos/acme/app/home': () => [200, home] });
+    await page.getByRole('button', { name: 'Diagram', exact: true }).click();
     const diagram = page.getByRole('img', { name: graphName });
     const listToggle = page.getByText('Show the map as a list', { exact: true });
     const diagramToggle = page.getByText('Show the map as a diagram', { exact: true });
@@ -102,7 +103,7 @@ for (const width of [390, 1280]) {
         dark,
         page.getByRole('button', { name: 'Sign out' }),
         page.getByRole('link', { name: 'Policy', exact: true }),
-        page.getByText('Show the map as a diagram', { exact: true }),
+        page.getByRole('button', { name: 'Diagram', exact: true }),
       ]) {
         const box = await control.boundingBox();
         expect(box?.height).toBeGreaterThanOrEqual(44);

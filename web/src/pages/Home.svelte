@@ -1,6 +1,6 @@
 <script lang="ts">
   import Status from '../components/Status.svelte';
-  import Map from '../components/map/Map.svelte';
+  import RepositoryMap from '../components/map/RepositoryMap.svelte';
   import Setup from '../components/Setup.svelte';
   import Skeleton from '../components/Skeleton.svelte';
   import { explainLoad, repoAPI, type ApiError } from '../lib/api';
@@ -58,7 +58,7 @@
   {#if body.map}
     <section class="box" aria-labelledby="home-map">
       <div class="box-head"><h2 id="home-map">The map</h2></div>
-      <div class="box-body"><Map model={body.map} repo={route.fullName} /></div>
+      <div class="box-body"><RepositoryMap model={body.map} repo={route.fullName} /></div>
     </section>
   {:else}<p>The map is not available.</p>{/if}
 {/if}

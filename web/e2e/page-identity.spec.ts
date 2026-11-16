@@ -5,6 +5,7 @@ import { docsClock, docsShot, expectClean, open } from './support';
 const fixture = (path: string) =>
   JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/' + path + '.json', import.meta.url), 'utf8'));
 const approvedCopy = [
+  'Policy and review status',
   'Review workflow change',
   'Review first policy',
   'Rules reach the default branch through review, so the approval binds to exact file contents.',
