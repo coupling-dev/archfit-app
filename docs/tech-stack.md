@@ -65,7 +65,7 @@ The tests use the standard `testing` package and table-driven cases with `t.Run`
 | --------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | Rendering | Svelte 5 and TypeScript, built by Vite into `internal/control/ui/spa` and embedded in the binary; an error page is the same shell |
 | Styles    | One stylesheet, the tokens and components of `docs/archive/design/prototypes/archfit.css`, light and dark                         |
-| Home map  | SVG with the ELK layered layout (`elkjs`, EPL-2.0); ELK runs in a worker |
+| Home map  | HTML status matrix by default; optional SVG with ELK layout (`elkjs`, EPL-2.0) in a worker |
 | Licences  | The build writes the licence of every bundled npm package to `assets/licenses-<hash>.txt`, linked as `/licenses.txt`              |
 | Tests     | `svelte-check`, ESLint, Vitest, a bundle budget, and a Playwright smoke test with axe under the production CSP                    |
 

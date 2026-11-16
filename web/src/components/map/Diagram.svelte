@@ -2,7 +2,7 @@
   import { layoutMap, type MapLayout } from './layout';
   import { lineLabel, type MapModel } from './model';
 
-  let { model }: { model: MapModel } = $props();
+  let { model, detailView = 'list' }: { model: MapModel; detailView?: 'list' | 'matrix' } = $props();
   const id = $props.id();
   let placed = $state<MapLayout | null>(null);
   let failure = $state('');
@@ -14,7 +14,9 @@
     if (model.modules.length) {
       layoutMap(model, controller.signal).then(
         (p) => { if (!controller.signal.aborted) placed = p; },
-        () => { if (!controller.signal.aborted) failure = 'The map layout worker could not place the modules. The map is available as a list above.'; },
+        () => { if (!controller.signal.aborted) failure = detailView === 'matrix'
+          ? 'The map layout worker could not place the modules. Select Matrix for relationship details.'
+          : 'The map layout worker could not place the modules. The map is available as a list above.'; },
       );
     }
     return () => controller.abort();
@@ -28,7 +30,7 @@
 {:else if !placed}
   <p role="status">Placing the modules…</p>
 {:else}
-  <p class="muted small">Diagram fitted to this box. Use the list above for full-size dependency labels.</p>
+  <p class="muted small">Diagram fitted to this box. Use {detailView === 'matrix' ? 'Matrix' : 'the list above'} for full-size dependency labels.</p>
   <div class="map-canvas">
     <svg width={placed.width} height={placed.height} viewBox={`0 0 ${placed.width} ${placed.height}`} role="img" aria-labelledby={id + '-title'}>
       <title id={id + '-title'}>Modules by layer and their dependencies</title>

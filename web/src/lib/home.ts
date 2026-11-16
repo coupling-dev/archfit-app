@@ -142,6 +142,10 @@ function nonnegativeNumber(v: unknown): number {
   if (typeof v !== 'number' || !Number.isSafeInteger(v) || v < 0) throw new Error('The Home answer could not be read.');
   return v;
 }
+function integer(v: unknown): number {
+  if (typeof v !== 'number' || !Number.isSafeInteger(v)) throw new Error('The Home answer could not be read.');
+  return v;
+}
 function number(v: unknown): number {
   if (typeof v !== 'number' || !Number.isSafeInteger(v) || v < 1) throw new Error('The Home answer could not be read.');
   return v;
@@ -209,6 +213,7 @@ export function readHome(value: unknown): Home {
           ...(l.rule === undefined ? {} : { rule: string(l.rule) }),
           ...(l.request === undefined ? {} : { request: number(l.request) }),
           ...(l.expires === undefined ? {} : { expires: string(l.expires) }),
+          ...(l.days_left === undefined ? {} : { days_left: integer(l.days_left) }),
         };
       }),
     };

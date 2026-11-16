@@ -13,6 +13,7 @@ export interface MapLine {
   rule?: string;
   request?: number;
   expires?: string;
+  days_left?: number;
 }
 export interface MapModel {
   layers: string[];

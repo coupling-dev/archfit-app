@@ -44,21 +44,36 @@ instead of the map. Owner actions open the pages below.
 
 ![Home: a request and the map](images/home.png)
 
-**The map** shows modules by layer, outer first, with each module's volatility. The legend shows five kinds:
+**The map** starts with **Matrix**, including on phones. **Diagram** is the second view; the browser remembers
+your explicit choice when local storage is available. Matrix needs no diagram layout worker.
 
-| Line           | Meaning                                                               |
-| -------------- | --------------------------------------------------------------------- |
-| Solid          | An allowed dependency.                                                |
-| Dashed         | A requested dependency, with its request number.                      |
-| Heavy dash-dot | A dependency a rule denies, when an open request or error touches it. |
-| Dotted         | An exception, with its date.                                          |
-| Red solid      | Drift.                                                                |
+The matrix shows **Policy and review status**, not observed imports. Rows are sources and columns are targets:
+**row depends on column**. Both axes use the same order: policy layer order (outer first), then module name.
 
-When several kinds apply to a pair, only one is drawn, in this order: drift, a rule denies it, requested, exception,
-allowed. Dependencies not allowed by this policy need a request. **Show the map as a list** opens dependencies
-and modules as text, with links to the actual requests. Below 720px, the list opens first and the diagram stays
-behind **Show the map as a diagram**. On wider screens, the diagram opens fitted to its box; the list keeps
-full-size labels available. If the layout worker fails, Home says so and the list is still available.
+| Symbol | Meaning                                                                     |
+| ------ | --------------------------------------------------------------------------- |
+| ✓      | Explicit allow in the policy.                                               |
+| ×      | Explicit deny reported for a touched, requested or drift pair.              |
+| ?      | A request.                                                                  |
+| !      | Drift.                                                                      |
+| ◷      | An exception; select the cell for its expiry and server-reported days left. |
+
+Every payload status remains in its cell, including multiple rules, requests and exceptions. A blank means
+**no explicit relationship in this payload**, not “no imports” or “permitted”. Deny status is not fully evaluated
+for all pairs. Select a cell for all rules, request links, exception dates and evidence scope. Tab enters the
+table; arrow keys move between cells, Enter opens details, and Escape closes details and returns focus.
+
+Headers stay visible while the table scrolls in either direction. At 50 or more modules, search names or layers,
+focus on explicit inbound/outbound neighbors, collapse layers, or use **Needs attention** to show modules
+with denies, requests, drift or exceptions. Filters use the same modules on both axes; **Reset filters** restores all.
+
+**Diagram** loads the SVG and its layout worker only when selected, including on phones. It shows declared
+volatility. Its line precedence is drift, deny, request, exception, allow: unlike Matrix, it draws only one
+status per pair. Use Matrix for complete pair details, including when the diagram cannot load.
+
+On request pages, the map still has **Show the map as a list** and **Show the map as a diagram** disclosures.
+Below 720px the list opens first and no diagram worker loads until the diagram is opened. On wider screens
+the SVG opens fitted to its box. The list remains available if the layout worker fails.
 
 Use **Skip to main content** (the first keyboard link) to bypass the header. Theme and action controls have
 larger hit areas on narrow screens and touch devices. Request fields use the selected light or dark theme.

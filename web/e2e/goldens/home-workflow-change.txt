@@ -7,25 +7,43 @@ View policy
 Needs you
 Review workflow change · PR #4
 The map
-Show the map as a list
-Show the map as a diagram
+Matrix
+Diagram
 
-Diagram fitted to this box. Use the list above for full-size dependency labels.
+Policy and review status · row depends on column.
+
+✓ Explicit allow
+× Explicit deny
+? Request
+! Drift
+◷ Exception (expiry in details)
+
+Blank = no explicit relationship in this payload, not “no imports” or “permitted”. Deny status is only known for touched, requested or drift pairs; full deny evaluation is not available.
+
+Select a cell for details. Use arrow keys within the table; Enter opens details.
+
+Policy and review status matrix
+Source ↓
+Target →
+cmd
+app
+core
+util
+No layer
+other
 
 cmd
-core
-No layer
-Allowed dependency
 app
-Volatility: high
-util
-Volatility: low
-other
-Volatility: high
-An allowed dependency
-A requested dependency
-One a rule denies
-An exception (with its date)
-Drift
 
-Dependencies not allowed by this policy need a request.
+✓
+
+
+
+core
+util
+
+
+
+
+No layer
+other

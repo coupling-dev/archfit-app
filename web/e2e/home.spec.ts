@@ -11,6 +11,7 @@ const names = readdirSync(fixtures)
   .sort();
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(name + '.json', fixtures), 'utf8'));
 const setupApprovedCopy = [
+  'Policy and review status',
   'Rules reach the default branch through review, so the approval binds to exact file contents.',
   'Require the gate',
   'Ready for review',
@@ -45,7 +46,7 @@ for (const file of names) {
     await expect(page.getByRole('navigation', { name: 'Repository' }).getByRole('link')).toHaveText(['Home', 'Policy']);
     await expect(page.getByRole('link', { name: 'Home', exact: true })).toHaveAttribute('aria-current', 'page');
     if (body.map)
-      await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toBeVisible();
+      await expect(page.getByRole('table', { name: 'Policy and review status matrix' })).toBeVisible();
     if (body.setup) {
       if (!['approved', 'outside_flow'].includes(body.setup.state)) {
         await expect(page.getByRole('heading', { name: 'Needs you' })).toHaveCount(0);
@@ -151,16 +152,16 @@ for (const file of names) {
       for (const need of body.needs_you)
         await expect(page.getByRole('link', { name: need.text, exact: true })).toHaveAttribute('href', need.href);
     }
-    await expectPageText(page, 'home-' + name);
-    if (name === 'one-request') await docsShot(page, 'home');
+    // HTML tables add trailing cell separators to innerText; keep text goldens whitespace-clean.
+    if (body.map) expect((await page.locator('main').innerText()).replace(/[ \t]+$/gm, '').trimEnd()).toMatchSnapshot('home-' + name + '.txt');
+    else await expectPageText(page, 'home-' + name);
+    if (name === 'one-request') await docsShot(page, 'home', ['Policy and review status']);
     if (body.map) {
-      await page.getByText('Show the map as a list', { exact: true }).focus();
-      await page.keyboard.press('Enter');
       for (const m of body.map.modules)
-        await expect(page.locator('details li').filter({ hasText: m.name + ' · Volatility:' })).toBeVisible();
-      await expectNoNotUsedWord(page, body.setup ? setupApprovedCopy : ['Review workflow change']);
+        await expect(page.getByRole('rowheader').filter({ hasText: m.name })).toBeVisible();
+      await expectNoNotUsedWord(page, body.setup ? setupApprovedCopy : ['Review workflow change', 'Policy and review status']);
     }
-    await expectClean(page, body.setup ? setupApprovedCopy : ['Review workflow change']);
+    await expectClean(page, body.setup ? setupApprovedCopy : ['Review workflow change', 'Policy and review status']);
     expect(reads).toEqual(['/api/repos/acme/app/home']);
     expect(writes).toEqual([]);
   });
@@ -171,7 +172,7 @@ test('home: request opens its page and the record folds away', async ({ page }) 
   await expect(page.getByText('cmd/run.go:12:', { exact: false })).toBeHidden();
   await page.getByText('Show the record', { exact: true }).click();
   await expect(page.locator('pre')).toContainText('balance: 9/10 (min 7)');
-  await expectNoNotUsedWord(page, ['Review workflow change']);
+  await expectNoNotUsedWord(page, ['Review workflow change', 'Policy and review status']);
   await page.route('**/api/repos/acme/app/requests/431', (r) =>
     r.fulfill({ status: 404, json: { error: 'Not found.' } }),
   );
@@ -179,15 +180,18 @@ test('home: request opens its page and the record folds away', async ({ page }) 
   await expect(page).toHaveURL(/\/requests\/431$/);
 });
 
-test('home: worker failure says so, and the list still works', async ({ page }) => {
+test('home: worker failure says so, and Matrix still works', async ({ page }) => {
   await page.route('**/assets/layout.worker-*.js', (r) => r.abort());
   await open(page, path, { [api]: () => [200, fixture('one-request')] });
+  await page.getByRole('button', { name: 'Diagram', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('The map layout worker could not place the modules.');
   await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toHaveCount(0);
-  await page.getByText('Show the map as a list', { exact: true }).click();
-  await expect(page.getByText('app → other: Requested dependency · #431', { exact: true })).toBeVisible();
   await expectPageText(page, 'home-worker-error');
-  await expectClean(page);
+  await page.getByRole('button', { name: 'Matrix', exact: true }).click();
+  await page.getByRole('button', { name: /^app → other:/ }).click();
+  await expect(page.getByRole('link', { name: 'Open request #431' })).toHaveAttribute('href', '/r/acme/app/requests/431');
+  await page.getByRole('button', { name: 'Close details' }).click();
+  await expectClean(page, ['Policy and review status']);
 });
 
 for (const [name, response] of [
@@ -208,10 +212,10 @@ test('home: empty map is explicit', async ({ page }) => {
   await open(page, path, { [api]: () => [200, body] });
   await expect(page.getByText('No modules.', { exact: true })).toBeVisible();
   await expectPageText(page, 'home-empty');
-  await expectClean(page);
+  await expectClean(page, ['Policy and review status']);
 });
 
-test('home: phone map starts as a list, the diagram fits, and bands stay in order', async ({ page }) => {
+test('home: phone map starts as a matrix, the diagram fits, and bands stay in order', async ({ page }) => {
   const workers: string[] = [];
   page.on('request', (request) => {
     if (/\/assets\/layout\.worker-.*\.js/.test(request.url())) workers.push(request.url());
@@ -220,12 +224,13 @@ test('home: phone map starts as a list, the diagram fits, and bands stay in orde
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, path, { [api]: () => [200, fixture('one-request')] });
   const diagram = page.getByRole('img', { name: 'Modules by layer and their dependencies' });
-  await expect(page.getByText('app → other: Requested dependency · #431', { exact: true })).toBeVisible();
+  await expect(page.getByRole('table', { name: 'Policy and review status matrix' })).toBeVisible();
   await expect(diagram).toBeHidden();
   expect(workers).toEqual([]);
   const workerRequest = page.waitForRequest(/\/assets\/layout\.worker-.*\.js/);
-  await page.getByText('Show the map as a diagram', { exact: true }).click();
+  await page.getByRole('button', { name: 'Diagram', exact: true }).click();
   await workerRequest;
+  await expect(page.getByText('Show the map as a diagram', { exact: true })).toHaveCount(0);
   await expect(diagram).toBeVisible();
   expect(workers).toHaveLength(1);
   expect(await diagram.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThan(390);
@@ -244,6 +249,7 @@ test('home: SVG keeps request/date labels and only one kind per pair', async ({ 
   ]) {
     await page.unrouteAll();
     await open(page, path, { [api]: () => [200, fixture(name)] });
+    await page.getByRole('button', { name: 'Diagram', exact: true }).click();
     await expect(page.locator('.map-edge.' + kind)).toContainText(label);
     await expect(page.locator('.map-edge')).toHaveCount(2);
     await expect(page.locator('.map-edge.allowed')).toHaveCount(1);
@@ -265,7 +271,7 @@ test('home: unknown and cross-repository links stay text, and API text is escape
   await expect(page.getByRole('link', { name: 'Another repository' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Unknown page' })).toHaveCount(0);
   await expect(page.locator('main img')).toHaveCount(0);
-  await expectClean(page);
+  await expectClean(page, ['Policy and review status']);
 });
 
 for (const first of [true, false]) {

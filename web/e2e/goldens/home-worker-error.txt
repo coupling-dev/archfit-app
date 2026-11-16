@@ -8,18 +8,7 @@ Needs you
 Request #431 waits.
 Show the record
 The map
-Show the map as a list
-Dependencies
-app → other: Requested dependency · #431
-app → util: Allowed dependency
-cmd
-app · Volatility: high
-core
-util · Volatility: low
-No layer
-other · Volatility: high
-Show the map as a diagram
+Matrix
+Diagram
 
-The map layout worker could not place the modules. The map is available as a list above.
-
-Dependencies not allowed by this policy need a request.
+The map layout worker could not place the modules. Select Matrix for relationship details.

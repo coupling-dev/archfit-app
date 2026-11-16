@@ -9,8 +9,17 @@ Needs you
 Nothing needs you.
 
 The map
-Show the map as a list
+Matrix
+Diagram
+
+Policy and review status · row depends on column.
+
+✓ Explicit allow
+× Explicit deny
+? Request
+! Drift
+◷ Exception (expiry in details)
+
+Blank = no explicit relationship in this payload, not “no imports” or “permitted”. Deny status is only known for touched, requested or drift pairs; full deny evaluation is not available.
 
 No modules.
-
-Dependencies not allowed by this policy need a request.
