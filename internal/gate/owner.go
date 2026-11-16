@@ -121,8 +121,8 @@ func (g *Gate) OwnerDigest(ctx context.Context, t Target, a OwnerAction) (string
 
 // OwnerAct makes an owner action on t's repository. A revert goes through the App's policy pull request
 // (gate/proposals); the others are recorded at once (gate/approvals). A first or a workflow approval of a pull request
-// then gets that head its verdict: the App re-runs the head's stored run through the re-run guard, and the upload passes
-// the approval (manager, 2026-11-13). A first approval of the default branch's policy and a confirm do the same for
+// publishes the owner's verdict on that exact head, then re-runs its stored run through the re-run guard. Feedback
+// preserves a matching onboarding verdict while retaining run diagnostics separately. A first approval of the default branch's policy and a confirm do the same for
 // every open pull request whose stored status is unknown.
 func (g *Gate) OwnerAct(ctx context.Context, t Target, in OwnerInput) (OwnerOutcome, error) {
 	if err := g.admitted(ctx, t); err != nil {

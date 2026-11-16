@@ -97,8 +97,19 @@ direct push to the policy is the new rule with no owner's word.
   Owners are read from the policy at `Repo.ApprovedCommit`, never from the default branch: a policy changed outside the
   flow could name anyone.
 
+Pull-bound first and workflow actions also publish an owner-approval `archfit/gate` success on the exact
+`Change.HeadSHA` after recording, under feedback's head lease. The external ID is `approval:<id>`, never
+`proposal:<id>`. A failed write is logged without undoing the approval. `Review` and `Act` refuse a second
+matching open approval with `ErrNotDue` before redeeming a passkey.
+
+`OnboardingCheck` re-binds a first approval and checks its indexed open proposal and recorded approval against
+the current head and both file digests. It returns no check after activation, outside the flow, after a head
+change, or for a closed/fork/retargeted pull. The shared feedback publisher consults it inside the head lease,
+so a later upload, rerun or withdrawal cannot replace a matching onboarding approval with an engine verdict.
+The check names the owner and both digests and explicitly is not an engine pass; run diagnostics remain separate.
+
 Not provided: the re-check of the waiting pull requests (`sweep.AfterAnswer`, called by the gate), the revert
-(written by `gate/proposals` as an answer is), the re-run that gives an approved head its verdict (`gate`, `owner.go`),
+(written by `gate/proposals` as an answer is), the re-run of an approved head's workflow (`gate`, `owner.go`),
 traversing installations and the guarded re-check handoff (gate/sweep4.go).
 
 ## Narrow sweep recovery

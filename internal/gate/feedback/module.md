@@ -10,13 +10,19 @@ its head and one pull request comment, using the engine result's status and reco
 archfit/state check. Pass is success; fail is failure (neutral only in advisory mode); waiting is
 in_progress; unknown or an unrecognized status is action_required.
 
+The composed publisher's `OwnerCheck` callback resolves an exact onboarding approval inside the same lease.
+When present, its owner-approved success, title, summary and `approval:<id>` external ID replace only the
+check output, not the engine result. The PR comment and publication receipt retain run diagnostics, including
+blocked reruns. A lookup error prevents publication. `WriteOwnerCheck` uses that head lease for the initial
+recorded approval too, so uploads and owner actions cannot write over each other out of order.
+
 Every publication holds the installation/head Store lease. `Current` rechecks live authority
 inside that lease; false returns `ErrStaleInputs` without writing. `Withdraw4` accepts only unknown
 and can take the live check receipt when the caller lacks a matching pull record.
 Uncertain writes keep the lease until expiry; a known-unwritten call releases it. Work deadlines
 end before lease expiry and releases cannot delete another holder's lease.
 
-The external ID is `v2:<run>:<attempt>:<digest>`. Historical v1 external IDs and comment head markers
+An engine-derived check's external ID is `v2:<run>:<attempt>:<digest>`. Historical v1 external IDs and comment head markers
 are read only to prevent overwriting newer existing publications; this is not an envelope v1 upload path or an Archfit 3 renderer.
 `Receipt` retains only run and attempt for ordering and re-checks.
 Annotations are batched; newer runs and comments belonging to another current head are not overwritten.
