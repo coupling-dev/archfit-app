@@ -1,0 +1,45 @@
+Approve the workflow change
+
+acme/app · PR #7
+
+unknown — no verdict until this workflow change is approved.
+
+This pull request changes the workflow that runs Archfit. The App cannot use its result without your approval.
+
+Approval does not mean the check passed.
+
+Pull request #7 on GitHub
+View policy
+Workflow — .github/workflows/archfit.yaml
+
+Compared with the default branch at 1111111.
+
++ Added
+- Removed
+
+--- a/.github/workflows/archfit.yaml
+
++++ b/.github/workflows/archfit.yaml
+
+@@ -1,1 +1,1 @@
+
+-name: old
+
++name: archfit
+
+Policy — .archfit.yaml
+
+Unchanged from this pull request's base at 2222222. These policy bytes are included in this approval.
+
+Full files and approval details
+Confirm with your passkey
+
+Approve the workflow and policy shown for PR #7 at commit 3333333.
+
+Your passkey confirms exactly the change shown above. Nothing is approved until this step finishes.
+
+Why a passkey?
+
+Manage your passkeys
+
+Approve the workflow change

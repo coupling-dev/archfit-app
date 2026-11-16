@@ -6,21 +6,32 @@ unknown: the policy changed outside the flow.
 
 This makes the current policy the approved policy.
 
-Read the change
 View policy
 The policy change
+
++ Added
+- Removed
+
 --- a/.archfit.yaml
+
 +++ b/.archfit.yaml
+
 @@ -3,3 +3,3 @@
+
  modules:
+
    app:
+
 -    paths: [cmd/**]
+
 +    paths: [cmd/**, pkg/**]
 
-Show the files and their SHA-256s
+Full files and approval details
 Confirm with your passkey
 
 Your passkey confirms exactly the change shown above. Nothing is approved until this step finishes.
+
+Why a passkey?
 
 Manage your passkeys
 

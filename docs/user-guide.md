@@ -109,10 +109,26 @@ The App accepts a `merge_group` upload and binds it to GitHub queue authority. R
 
 ## Owner actions
 
-Each page names the action and repository (and PR when present), then shows the status and **Read the change**.
-This primary link only navigates to the displayed diff; it does not approve anything. The confirmation remains
-after the files and asks for your passkey before it submits. **Show the files and their SHA-256s** opens
-all input files and their immutable commit refs. GitHub issue links and direct loads use the same pages.
+Each page names the action and repository (and PR when present), then shows the status and files.
+The GitHub pull-request and **View policy** links are secondary navigation. The confirmation after the files
+is the only strong action and asks for your passkey before it submits. GitHub issue links and direct loads
+use the same pages.
+
+For a workflow change, **unknown** means no verdict until the change is approved: the App cannot use the
+changed workflow's result without your approval. The workflow diff compares with the named default-branch
+commit; the policy diff compares with the named pull-request base commit. Added and removed lines have
+`+` and `-` signs and green and red backgrounds, with a legend. An unchanged policy appears as a compact
+row, but its bytes are still included in the approval. Unchanged from the pull-request base does not mean
+previously approved. The confirmation names both files, the PR number and its head commit.
+
+**Full files and approval details** opens the complete file versions, grouped by file and labelled by version
+and commit. Use these to inspect unchanged lines or compare another copy. Each version's **Technical details**
+contains its SHA-256 fingerprint, which identifies its bytes; you do not need to compare fingerprints to approve.
+
+**Why a passkey?** explains that GitHub sign-in identifies your account, which an agent can also use.
+Your passkey adds a separate confirmation for these file versions. Read both files before confirming a workflow
+change. Approval does not mean the check passed. If a passkey is unavailable, use a second registered passkey;
+GitHub sign-in alone cannot replace this confirmation.
 
 | Action                                                 | Path after `/r/<owner>/<repo>`  |
 | ------------------------------------------------------ | ------------------------------- |
