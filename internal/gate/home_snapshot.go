@@ -21,6 +21,8 @@ type HomeSnapshot struct {
 	tipErr       error
 	policyOnce   sync.Once
 	policy       HomePolicy
+	policyRaw    []byte
+	policyBlob   string
 	workflowOnce sync.Once
 	workflow     []byte
 	workflowErr  error
@@ -74,7 +76,8 @@ func (s *HomeSnapshot) Policy(ctx context.Context, gh snapshotGitHub) HomePolicy
 	loaded := false
 	s.policyOnce.Do(func() {
 		loaded = true
-		raw, _, err := gh.File(ctx, s.repo.RepoRef, s.tip, homePolicyPath)
+		raw, blob, err := gh.File(ctx, s.repo.RepoRef, s.tip, homePolicyPath)
+		s.policyRaw, s.policyBlob = raw, blob
 		s.policy.ReadErr = err
 		s.policy.File, s.policy.DecodeErr = policy3.Decode(raw)
 		s.policy.Digest = policy3.Digest(raw)
@@ -96,4 +99,33 @@ func (s *HomeSnapshot) Workflow(ctx context.Context, gh snapshotGitHub) ([]byte,
 		s.hits.Add(1)
 	}
 	return s.workflow, s.workflowErr
+}
+
+// summaryInputs reuses only the Home request's protected files. Candidate heads
+// and approval records are still read by the summary's existing eligibility path.
+type summaryInputs struct {
+	api.Repos
+	snapshot *HomeSnapshot
+}
+
+func (g summaryInputs) BranchHead(ctx context.Context, r api.RepoRef, branch string) (string, error) {
+	if r == g.snapshot.repo.RepoRef && branch == g.snapshot.repo.DefaultBranch {
+		snapshot, err := ReadHomeSnapshot(ctx, g.Repos, g.snapshot.repo)
+		return snapshot.Tip(), err
+	}
+	return g.Repos.BranchHead(ctx, r, branch)
+}
+
+func (g summaryInputs) File(ctx context.Context, r api.RepoRef, ref, path string) ([]byte, string, error) {
+	if r == g.snapshot.repo.RepoRef && ref == g.snapshot.Tip() {
+		switch path {
+		case homePolicyPath:
+			policy := g.snapshot.Policy(ctx, g.Repos)
+			return g.snapshot.policyRaw, g.snapshot.policyBlob, policy.ReadErr
+		case approvals.WorkflowPath:
+			raw, err := g.snapshot.Workflow(ctx, g.Repos)
+			return raw, "", err
+		}
+	}
+	return g.Repos.File(ctx, r, ref, path)
 }

@@ -70,17 +70,19 @@ Before first approval it returns `status` and `setup` (the missing steps, first 
 without loading Home data or a map.
 
 Home reads the protected tip once per authorized request and shares its immutable policy (including its
-byte digest and decode result) and workflow between Setup and Home. It never caches repository approval
+byte digest and decode result) and workflow between Setup and Home. The read-only approval summary also
+reuses the protected file bytes and tip, without changing the fresh inputs of Review or Act. It never caches repository approval
 records, candidate PR heads or owner eligibility. Passkey inventory runs alongside Setup; policy and
-workflow reads run concurrently at that same tip. Ruleset details and each Home record batch have at
+workflow reads run concurrently at that same tip. The approval summary runs alongside rules, using the
+same exact-head/digest predicate as Review. Ruleset details and each Home record batch have at
 most four concurrent reads. Error priority follows input order, not completion order; unreadable rules
-remain unknown and inventory errors retain the existing false-passkey response. HTTP client timeouts,
+remain unknown and inventory errors return both `passkey: false` and `passkey_known: false`. HTTP client timeouts,
 request cancellation and rate-limit backoff remain in effect.
 
 The structured `ui request` log includes `stages`: `authorization`, `setup`, `rules`, `passkeys`,
-`home_records`, `owner_review` and `snapshot` when reached. Each records `duration_ms`, `count` and
+`home_records`, `owner_review`, `approval_summary` and `snapshot` when reached. Each records `duration_ms`, `count` and
 `cache_hits`; durations overlap and must not be summed as request latency. Counts mean authorization/
-setup/snapshot invocations, rules API reads, returned passkeys, Home request/touched-pair/workflow items,
+setup/approval-summary/snapshot invocations, rules API reads, returned passkeys, Home request/touched-pair/workflow items,
 and owner eligibility probes respectively. Cache hits count session authorization reuse or request-local
 protected-input reuse, not approval reuse. Stages contain no tokens, file bytes or upstream error text.
 Existing `gh_calls` and `gh_ms` still measure real GitHub round trips, including retries.

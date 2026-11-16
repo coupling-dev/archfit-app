@@ -9,13 +9,16 @@ const approvedCopy = [
   'Review first policy',
   'Rules reach the default branch through review, so the approval binds to exact file contents.',
   'Require the gate',
-  'Next: review the pull request',
-  'Review PR #203',
-  'PR #203 adds the workflow — review it.',
-  'In review',
+  'Ready for review',
   'Review needed',
   'A password or a GitHub review can be replayed by a compromised account',
   'A passkey is needed to approve, but not to read the review.',
+  "Next: review owner approval",
+  "Review and approve",
+  "Review proposed files",
+  "Review the proposed files before approving.",
+  "PR #203 changed after approval. Review the new head.",
+  "Could not read your passkeys. Review is still available; try again before approving.",
 ];
 
 for (const width of [390, 1280]) {
@@ -88,6 +91,9 @@ for (const width of [390, 1280]) {
         await expect(page.locator('main .primary')).toHaveCount(0);
         await expect(page.locator('main button.approval')).toHaveCount(1);
         await expect(actions.first()).not.toHaveClass(/btn/);
+      } else if (name === 'home') {
+        await expect(page.locator('main .primary')).toHaveCount(0);
+        await expect(actions).toHaveText(['View policy']);
       } else {
         await expect(page.locator('main .primary')).toHaveCount(1);
         await expect(actions.first()).toHaveClass(/primary/);
@@ -127,10 +133,32 @@ for (const width of [390, 1280]) {
     test(`page identity: setup ${file} at ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await open(page, '/r/acme/app', { 'GET /api/repos/acme/app/home': () => [200, body] });
-      const primary = page.locator('main .primary');
-      await expect(primary).toHaveCount(1);
-      await expect(page.locator('.page-head .primary')).toBeVisible();
-      await expect(primary).toHaveAttribute('href', body.setup.owner_action?.href ?? '#setup-title');
+      const actions = page.locator('.page-head .row > a');
+      await expect(actions).toHaveCount(2);
+      await expect(page.locator('.page-head .row > :not(a)')).toHaveCount(0);
+      await expect(actions.first()).toHaveAttribute('href', body.setup.owner_action?.href ?? '#setup-title');
+      if (body.setup.owner_action?.href) {
+        await expect(page.locator('main .primary')).toHaveCount(0);
+        await expect(actions.first()).toHaveAccessibleDescription('Approval needs your passkey.');
+        const note = page.getByText('Approval needs your passkey.', { exact: true });
+        await expect(note).toBeVisible();
+        const boxes = await actions.evaluateAll((links) =>
+          links.map((link) => {
+            const { y, bottom, height } = link.getBoundingClientRect();
+            return { y, bottom, height };
+          }),
+        );
+        if (width === 1280) {
+          expect(boxes[0].y).toBe(boxes[1].y);
+          expect(boxes[0].height).toBe(boxes[1].height);
+        }
+        expect((await note.boundingBox())!.y).toBeGreaterThanOrEqual(Math.max(...boxes.map((box) => box.bottom)));
+        await actions.first().focus();
+        await page.keyboard.press('Tab');
+        await expect(actions.nth(1)).toBeFocused();
+      } else {
+        await expect(actions.first()).toHaveClass(/primary/);
+      }
       await expect(
         page.getByText('The owner signs the policy with a passkey. Change one byte and the approval no longer counts.'),
       ).toBeVisible();

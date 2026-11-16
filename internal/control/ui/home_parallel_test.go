@@ -73,7 +73,7 @@ func TestHomeSetupAndPasskeysOverlapWithoutHidingErrors(t *testing.T) {
 			if ctx.Err() != nil {
 				t.Fatal("setup and passkeys did not overlap")
 			}
-			if err == nil && out.(setupJSON).Passkey != tc.hasKey {
+			if err == nil && (out.(setupJSON).Passkey != tc.hasKey || out.(setupJSON).PasskeyKnown != (tc.keyErr == nil)) {
 				t.Fatalf("Setup = %+v", out)
 			}
 		})

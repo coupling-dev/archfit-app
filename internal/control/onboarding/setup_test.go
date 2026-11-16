@@ -85,6 +85,10 @@ func (v setupView) SetupState(context.Context, api.Repo) (gate.SetupState, error
 	return v.state, nil
 }
 
+func (v setupView) SetupApproval(_ context.Context, _ api.Repo, a gate.OwnerAction) gate.ApprovalSummary {
+	return gate.ApprovalSummary{Status: gate.ApprovalNeeded, Kind: a.Kind, Pull: a.Pull}
+}
+
 func setupWorkflow(refs ...string) string {
 	raw := "name: Archfit\non: pull_request\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n"
 	for _, ref := range refs {

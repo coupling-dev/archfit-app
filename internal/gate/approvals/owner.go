@@ -208,8 +208,7 @@ func (s *Service) Review(ctx context.Context, r api.Repo, a Action, u Owner, dig
 			if err := records.Load(ctx, s.store, tenant(r), records.ProposalKey(r.FullName, id), &p); err != nil {
 				return err
 			}
-			if p.State == records.StateOpen && p.HeadSHA == c.HeadSHA && p.ExpectedDigest == c.Policy && p.WorkflowDigest == c.Workflow &&
-				(p.Kind == records.ProposalFirst || p.Kind == records.ProposalWorkflow) {
+			if matchesApproval(p, c) {
 				return ErrNotDue
 			}
 		}

@@ -65,16 +65,16 @@ The public role serves `/health`, `/ready`, GitHub webhooks, the upload, OAuth a
 The shell serves these routes. Repository pages require sign-in. Each page reads its repository data from an authorized API, not from the shell.
 The repository list has the canonical page URL `/`. `/repos` is an unknown page, not an alias. The repository route prefix below is `/r/{owner}/{repo}`; API paths use `/api/repos/{owner}/{repo}`.
 
-| Page route                    | Page data and actions                                                                                             |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `/`                           | Repository list from `GET /api/repos`; sign-in or admission state when needed.                                    |
-| `/admin`                      | Operator-only installation administration.                                                                        |
-| Prefix                        | Home reads `/home`; before first approval it shows setup. Otherwise it shows requests, owner actions and the map. |
-| Prefix + `/policy`            | Reads `/policy`; `?edit=1` opens the YAML editor, which previews and submits through `/policy/edit` endpoints.    |
-| Prefix + `/requests/{number}` | Reads `/requests/{number}` and its previews; owner answers use its answer endpoints.                              |
-| Prefix + `/pull/{number}`     | Reads `/pulls/{number}`; the page and GitHub comment use the same feedback model.                                 |
-| Prefix + `/passkeys`          | Reads and manages the user's passkeys with `/passkeys` endpoints.                                                 |
-| Prefix + `/owner/{action}`    | Reads `/owner/{action}/view` and submits first-policy, workflow, confirm or revert actions.                       |
+| Page route                    | Page data and actions                                                                                                                                              |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/`                           | Repository list from `GET /api/repos`; sign-in or admission state when needed.                                                                                     |
+| `/admin`                      | Operator-only installation administration.                                                                                                                         |
+| Prefix                        | Home reads `/home`; setup remains until approval activation and applicable rules are confirmed. Active repositories also show requests, owner actions and the map. |
+| Prefix + `/policy`            | Reads `/policy`; `?edit=1` opens the YAML editor, which previews and submits through `/policy/edit` endpoints.                                                     |
+| Prefix + `/requests/{number}` | Reads `/requests/{number}` and its previews; owner answers use its answer endpoints.                                                                               |
+| Prefix + `/pull/{number}`     | Reads `/pulls/{number}`; the page and GitHub comment use the same feedback model.                                                                                  |
+| Prefix + `/passkeys`          | Reads and manages the user's passkeys with `/passkeys` endpoints.                                                                                                  |
+| Prefix + `/owner/{action}`    | Reads `/owner/{action}/view` and submits first-policy, workflow, confirm or revert actions.                                                                        |
 
 The browser renders Home from the target policy and available request, exception and drift data. Request previews show
 the proposed policy and affected pull requests before an answer. Approvals bind a passkey to the displayed change;
