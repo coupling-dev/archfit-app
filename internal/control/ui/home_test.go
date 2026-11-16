@@ -39,7 +39,10 @@ func newHomeEnv(t *testing.T, pol string) *env {
 	e.now = time.Date(2026, 11, 10, 23, 45, 0, 0, time.UTC)
 	e.setups.out = onboarding.Setup{Admitted: true, Policy: true, Workflow: true, State: "approved", Missing: []string{},
 		Approval: gate.ApprovalSummary{Status: gate.ApprovalActive, Kind: gate.OwnerFirst},
-		Rules:    onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{{Code: "gate_check", State: "ok"}}}}
+		Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{
+			{Code: "pull_requests", State: "ok"},
+			{Code: "gate_check", State: "ok"},
+		}}}
 	e.gh.setFile(repoName, mainBranch, ".archfit.yaml", pol)
 	e.gh.setFile(repoName, mainBranch, workflow, "the target workflow")
 	homePut(t, e, "repo", map[string]any{
@@ -126,14 +129,12 @@ func TestHomeAPIGoldens(t *testing.T) {
 		{"deny-request", homePolicy + homeDeny, func(t *testing.T, e *env) { homeRequest(t, e, "open") }},
 		{"workflow-review", homePolicy, func(_ *testing.T, e *env) {
 			e.setups.out = onboarding.Setup{Approval: gate.ApprovalSummary{Status: gate.ApprovalNeeded, Kind: gate.OwnerWorkflow, Pull: 203}, Policy: true, OpenPull: 203, State: "not_admitted", Missing: []string{},
-				Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{
-					{Code: "pull_requests", State: "warning", Text: "Add a pull request rule to the default branch."},
-					{Code: "gate_check", State: "warning", Text: "Add the App's archfit/gate check as a required status check."},
-				}}}
+				Rules: e.setups.out.Rules}
 		}},
 		{"rules-incomplete", homePolicy, func(_ *testing.T, e *env) {
-			e.setups.out.Rules.Findings[0].State = "warning"
-			e.setups.out.Rules.Findings[0].Text = "Require archfit/gate."
+			e.setups.out.Rules.Findings = []onboarding.RulesetFinding{
+				{Code: "gate_check", State: "warning", Text: "Require archfit/gate."},
+			}
 		}},
 		{"approval-pending", homePolicy, func(_ *testing.T, e *env) {
 			e.setups.out.State, e.setups.out.Workflow, e.setups.out.OpenPull = "not_admitted", false, 203

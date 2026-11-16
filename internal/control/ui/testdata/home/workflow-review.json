@@ -22,13 +22,13 @@
     "rules": [
       {
         "code": "pull_requests",
-        "state": "warning",
-        "text": "Add a pull request rule to the default branch."
+        "state": "ok",
+        "text": ""
       },
       {
         "code": "gate_check",
-        "state": "warning",
-        "text": "Add the App's archfit/gate check as a required status check."
+        "state": "ok",
+        "text": ""
       }
     ]
   }

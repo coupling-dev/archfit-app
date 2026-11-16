@@ -11,7 +11,7 @@ Next: review owner approval
 
 Policy approval and required-check settings are separate. Complete the applicable steps below.
 
-2 of 4 done
+3 of 4 done
 ✓
 1 · Add the policy
 
@@ -47,12 +47,12 @@ A repository administrator named as an architecture owner in the proposed policy
 Manage passkeys
 
 Why a passkey?
-4
+✓
 4 · Require the gate
 
 In GitHub, require archfit/gate on the default branch. The App reads these settings; an administrator changes them.
 
-Action needed
+On
 
 This step turns green when GitHub requires pull requests and archfit/gate on the default branch. Bypass and policy-push advice does not block this step; Verify yourself means the App has not checked that setting.
 
@@ -62,18 +62,18 @@ Check
 After saving changes on GitHub, select Check to read the settings again. Check does not change any GitHub settings.
 
 Require pull requests
-Action needed
+On
 
-Direct pushes can skip pull request checks; require a pull request for default-branch changes.
+Default-branch changes require a pull request, so changes go through checks before merging.
 
 Open Repository rulesets, create or edit a branch ruleset, set Enforcement status to Active, and target the default branch. Enable Require a pull request before merging and save changes. In classic branch protection, enable the same option for the default branch.
 
 Repository rulesets
 Classic branch protection
 Require archfit/gate
-Action needed
+On
 
-archfit/gate reports a result; GitHub only stops a merge when that check is required.
+GitHub requires the Archfit app’s archfit/gate check before merging.
 
 Open Repository rulesets, create or edit a branch ruleset, set Enforcement status to Active, and target the default branch. Enable Require status checks to pass, add archfit/gate, and select the Archfit app as its source. Save changes.
 
