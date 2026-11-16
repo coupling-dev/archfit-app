@@ -3,7 +3,6 @@ Home
 acme/app
 
 1 request waits
-See what needs you
 View policy
 Needs you
 Request #431 waits.

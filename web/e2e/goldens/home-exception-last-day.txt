@@ -3,7 +3,6 @@ Home
 acme/app
 
 1 exception expires today
-See what needs you
 View policy
 Needs you
 1 exception expires today

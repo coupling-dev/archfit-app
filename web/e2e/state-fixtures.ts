@@ -104,6 +104,7 @@ export const stateFixtures: StateFixture[] = [
       'A password or a GitHub review can be replayed by a compromised account',
       'Review first policy',
       'Review needed',
+      'Ready for review',
       'A passkey is needed to approve, but not to read the review.',
     ],
   },

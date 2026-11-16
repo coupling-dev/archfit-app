@@ -30,14 +30,15 @@
     {#if body}
       <div class="row">
         {#if reviewHref && body.setup?.owner_action}
-          <div><a class="btn primary" href={reviewHref}>{body.setup.owner_action.label}</a><p class="muted">This needs your passkey.</p></div>
+          <a class="btn" href={reviewHref} aria-describedby="home-review-note">{body.setup.owner_action.label}</a>
         {:else if body.setup}
           <a class="btn primary" href="#setup-title">Continue setup</a>
-        {:else if body.needs_you.length}
-          <a class="btn primary" href="#home-needs">See what needs you</a>
         {/if}
         <a class="btn" class:primary={!body.setup && !body.needs_you.length} href={repoPage(route.fullName, '/policy')}>View policy</a>
       </div>
+      {#if reviewHref && body.setup?.owner_action}
+        <p id="home-review-note" class="muted">Approval needs your passkey.</p>
+      {/if}
     {/if}
   </div>
 </div>
