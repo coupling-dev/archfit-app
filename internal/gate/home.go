@@ -81,8 +81,8 @@ func (h *homeViews) Home(ctx context.Context, r api.Repo) (HomeState, error) {
 		return out, api.ErrNotFound
 	}
 	t := store.Tenant(r.InstallationID)
-	var rec records.Repo
-	if err := records.Load(ctx, h.store, t, records.RepoKey(r.FullName), &rec); err != nil && !errors.Is(err, records.ErrNoRecord) {
+	rec, err := loadRepoRecord(ctx, h.store, r.RepoRef)
+	if err != nil && !errors.Is(err, records.ErrNoRecord) {
 		return out, err
 	}
 	snapshot, err := ReadHomeSnapshot(ctx, h.gh, r)

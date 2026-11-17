@@ -1,11 +1,14 @@
-Home
-
 acme/app
-
 drift
+
+The default branch has dependencies the policy does not allow. Issue #72.
+
+Open the drift issue
+(opens GitHub)
 View policy
 Needs you
 Drift on the default branch.
+(opens GitHub)
 The map
 Matrix
 Diagram

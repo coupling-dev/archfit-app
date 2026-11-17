@@ -18,6 +18,7 @@
   "view": {
     "status": "unknown",
     "status_line": "Archfit: unknown, no verdict",
+    "note": "Archfit could not check this pull request. The record below says what to do.",
     "records": [
       {
         "path": ".github/workflows/archfit.yaml",
@@ -30,8 +31,7 @@
         },
         "show_next": true
       }
-    ],
-    "author": "do the `next` step of each record."
+    ]
   },
   "owner_action": {
     "label": "An architecture owner named in the approved policy can review this."

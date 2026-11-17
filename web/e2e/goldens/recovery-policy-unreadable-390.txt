@@ -1,6 +1,6 @@
 Policy
 
-acme/app · Rules, exceptions and allowed dependencies.
+acme/app
 
 The policy on the default branch could not be read. Open current setup to check whether a first policy is still being prepared or the existing file needs a change.
 

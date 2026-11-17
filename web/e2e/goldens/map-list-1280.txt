@@ -38,25 +38,31 @@ util · Volatility: low
 No layer
 other · Volatility: high
 Show the map as a diagram
+An allowed dependency
+A requested dependency
+One a rule denies
+An exception (with its date)
+Drift
 
-Diagram fitted to this box. Use the list above for full-size dependency labels.
+An arrow points at the module it depends on. Outer layer on top. Allowed dependencies, not observed imports.
 
+Find a module
++
+−
+Fit
+100%
+Full screen
 cmd
 core
 No layer
-Allowed dependency
-Requested dependency · #415
+1
+1
 app
 Volatility: high
 util
 Volatility: low
 other
 Volatility: high
-An allowed dependency
-A requested dependency
-One a rule denies
-An exception (with its date)
-Drift
 
 Dependencies not allowed by this policy need a request.
 

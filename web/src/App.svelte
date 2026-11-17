@@ -33,12 +33,22 @@
   // The page's first reads and its chunk start beside the session, so the page waits for the slowest, not their sum.
   if (!serverSentence) prefetch(route);
   getJSON<Session>('/api/session').then(
-    (s) => (session = s),
+    (s) => {
+      session = s;
+      if (s.operator) countWaiting(s);
+    },
     (e: ApiError) => {
       if (e.status === 401) signedOut = true;
       else failure = e.message;
     },
   );
+  // The operator's count fills the header once the session shows; -1 when it cannot be read.
+  function countWaiting(s: Session) {
+    getJSON<{ waiting: number }>('/api/admin/waiting').then(
+      (b) => (session = { ...s, waiting: b.waiting }),
+      () => (session = { ...s, waiting: -1 }),
+    );
+  }
 
   const title = $derived(
     notFound
@@ -78,7 +88,7 @@
   {repo}
   tab={route.kind === 'repo'
     ? 'home'
-    : route.kind === 'policy'
+    : route.kind === 'policy' || route.kind === 'passkeys'
       ? route.kind
       : ''}
   pull={route.kind === 'pull' ? route.number : 0}

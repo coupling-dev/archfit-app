@@ -100,8 +100,14 @@ func writeJSON(w http.ResponseWriter, r *http.Request, status int, body any) {
 		slog.Error("ui response encoding failed", "route", r.Pattern)
 		status, buf = http.StatusInternalServerError, []byte(`{"error":"internal error"}`)
 	}
-	w.Header().Set("Content-Type", mediaJSON)
-	w.Header().Set("Cache-Control", "no-store")
+	h := w.Header()
+	h.Set("Content-Type", mediaJSON)
+	h.Set("Cache-Control", "no-store")
+	h.Add("Vary", "Accept-Encoding")
+	if _, secret := body.(tokenBearer); !secret && len(buf) > gzipMinBytes && accepts(r, "gzip") {
+		buf = gzipped(buf)
+		h.Set("Content-Encoding", "gzip")
+	}
 	w.WriteHeader(status)
 	_, _ = w.Write(buf)
 }
@@ -131,16 +137,14 @@ type sessionJSON struct {
 	Build    buildInfoJSON `json:"build"` // authenticated, public metadata of the serving binary only
 	Login    string        `json:"login"`
 	CSRF     string        `json:"csrf"`
-	Operator bool          `json:"operator,omitempty"` // may approve installations on /admin
-	Waiting  int           `json:"waiting,omitempty"`  // operators only: installations waiting; -1 when it could not be read
+	Operator bool          `json:"operator,omitempty"` // may admit installations on /admin
 }
 
 // apiSession is the signed-in login and the CSRF token the app sends with every write.
 func (s *server) apiSession(r *http.Request, sc scope) (any, error) {
-	body := sessionJSON{Login: sc.user.Login, CSRF: csrfToken(sc.user), Build: runningBuild()}
-	if s.isOperator(sc.user) {
-		body.Operator, body.Waiting = true, s.waitingCount(r.Context())
-	}
+	// The operator's waiting count is a GitHub read per installation, so it has its own request: the page does not wait
+	// for it (apiWaiting).
+	body := sessionJSON{Login: sc.user.Login, CSRF: csrfToken(sc.user), Build: runningBuild(), Operator: s.isOperator(sc.user)}
 	return body, nil
 }
 

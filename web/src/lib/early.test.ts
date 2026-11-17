@@ -14,9 +14,16 @@ describe('early reads', () => {
     ['/r/acme/app/pull/4', ['/api/repos/acme/app/pulls/4']],
     ['/r/acme/app/passkeys', ['/api/repos/acme/app/passkeys']],
     ['/r/acme/app/requests/431', ['/api/repos/acme/app/requests/431']],
+    ['/admin', ['/api/repos', '/api/admin/installations']],
     ['/nowhere', []],
   ])('starts the first reads of %s', (path, want) => {
     expect(firstPaths(parseRoute(path))).toEqual(want);
+  });
+
+  it('starts an owner action view with its pull request number', () => {
+    expect(firstPaths(parseRoute('/r/acme/app/owner/first', '?pull=4'))).toEqual([
+      '/api/repos/acme/app/owner/first/view?pull=4',
+    ]);
   });
 
   it('hands the early read to the page once, then reads again', async () => {

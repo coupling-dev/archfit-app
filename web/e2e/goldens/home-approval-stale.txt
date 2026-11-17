@@ -1,13 +1,12 @@
-Home
-
 acme/app
+not set up
 
-Set up this repository.
-Review and approve
-View policy
+Pull requests are not checked yet. Finish the setup steps.
 
 Approval needs your passkey.
 
+Review and approve
+View policy
 Set up Archfit
 
 Next: review owner approval

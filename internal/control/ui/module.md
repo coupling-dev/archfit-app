@@ -22,7 +22,14 @@ The gate facade supplies policy/request views, answers and owner actions; UI imp
 - Passkeys list, register, step up and remove the signed-in user's credentials.
 - Installation admin routes require configured operator user IDs. Account admission is checked before
   repository data access.
+- `/api/session` answers the operator flag only. The waiting count, which reads every installation, is `GET /api/admin/waiting`
+  for operators, read by the header after the session shows; it answers -1 when the reads fail.
 - /api/repos lists accessible repositories in name order, at most 100, with state from the gate RepoStates façade and no historical check reads.
+
+Assets under `/assets/` ship with `.br` and `.gz` siblings from the web build; the server sends the one the client
+takes (`br` first) with `Vary: Accept-Encoding`. API JSON bodies over 1 KB are gzip-compressed when the client takes
+gzip, except answers that carry a CSRF or step-up token (`tokenBearer`): those are never compressed, whatever their size.
+Nothing else is compressed.
 
 ## Security and checks
 
@@ -83,6 +90,12 @@ Error priority follows input order, not completion order; unreadable rules
 remain unknown and inventory errors return both `passkey: false` and `passkey_known: false`. HTTP client timeouts,
 request cancellation and rate-limit backoff remain in effect.
 
+Home also reads the installation's admission and the repository record once per request (`gate.WithRequestMemo`),
+where Home, the Setup state and each owner review probe asked for them again. A failed read is remembered too, so the
+request fails closed the same way at every step. The memo lives in the request context only and is installed on
+read-only routes only: nothing in it outlives the request, and a request that changes an admission or a record
+must not install it.
+
 The structured `ui request` log includes `stages`: `authorization`, `setup`, `rules`, `passkeys`,
 `home_records`, `owner_review`, `approval_summary` and `snapshot` when reached. Each records `duration_ms`, `count` and
 `cache_hits`; durations overlap and must not be summed as request latency. Counts mean authorization/
@@ -99,10 +112,12 @@ is a known limit, not a gap in the header: fixing it means sharing the stats thr
 writer, which only pays off once slow requests need the stages, so it waits for that.
 
 The map imports its Diagram component only while the diagram disclosure is open; closing it aborts
-layout work. The list view never starts the ELK worker. Desktop still starts with the diagram selected;
-phone starts with the list. Browser tests assert zero worker requests before phone diagram selection.
+layout work. The list view never starts the ELK worker. The diagram starts closed at every width; phone starts
+with the list open. Browser tests assert zero worker requests before the diagram opens.
 
-For an approved repository the response has `status`, optional `needs_you` rows, and `map`. Each row has
+For an approved repository the response has `state` (`clean`, `drift`, `expired`, `outside_flow`, `not_set_up` or
+`unknown`; the first that holds, in the order outside the flow, expired, drift, unknown, clean, wins), `status` (the sentence that says what the state means and
+what waits), optional `needs_you` rows, and `map`. A setup answer has `state: not_set_up` and a `setup` block. Each row has
 `kind`, `text`, `href`, and the applicable request, pull, rule, modules, expiry date, days left or request record.
 Requests link to `/r/{o}/{n}/requests/{number}`. Drift and expiry link to their GitHub issue, falling back to
 Policy before the sweep opens one. Owner actions link to `/r/{o}/{n}/owner/{workflow|confirm|revert}`;

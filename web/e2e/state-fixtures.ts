@@ -65,7 +65,7 @@ export const stateFixtures: StateFixture[] = [
     api: '/api/repos/acme/app/pulls/4',
     reply: [200, fixture('pull/no-result')],
     heading: 'Pull request #4',
-    text: 'No result yet.',
+    text: 'No check has reported for this pull request. It runs on the next push.',
   },
   {
     name: 'expired-session',
@@ -97,7 +97,7 @@ export const stateFixtures: StateFixture[] = [
     path: '/r/acme/app',
     api: '/api/repos/acme/app/home',
     reply: [200, unknownRuleset],
-    heading: 'Home',
+    heading: 'acme/app',
     text: 'Check with an admin',
     approvedCopy: [
       'Rules reach the default branch through review, so the approval binds to exact file contents.',

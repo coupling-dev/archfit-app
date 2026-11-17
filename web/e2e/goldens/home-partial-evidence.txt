@@ -1,13 +1,9 @@
-Home
-
 acme/app
+unknown
 
-the check could not read every place
+The last check could not read every file, so the state is unknown. Nothing needs you.
+
 View policy
-Needs you
-
-Nothing needs you.
-
 The map
 Matrix
 Diagram

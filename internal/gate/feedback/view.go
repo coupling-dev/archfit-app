@@ -67,7 +67,7 @@ func newView(r result.Result) view {
 	case r.Status == result.StatusPass:
 		return v
 	case r.Status == result.StatusUnknown:
-		v.author = authorEach
+		// Each record's next step names who acts; a generic author line would only repeat it.
 	case asks:
 		v.author, v.covered = authorAsk, nextCommand
 	case fixes:
@@ -211,12 +211,15 @@ func (v view) annotations() []api.Annotation {
 	return out
 }
 
-// comment is the comment of design 12.5, without its markers: the status line as the heading, one Markdown record
-// per error and unknown reason, then the author line and the owner line. Records that do not fit in budget are left
+// comment is the comment of design 12.5, without its markers: the status line as the heading, the unknown note under
+// it when there is one, one Markdown record per error and unknown reason, then the author line and the owner line. Records that do not fit in budget are left
 // out after a line that counts them.
 func (v view) comment(budget int) string {
 	p := v.page()
 	head := "## " + p.StatusLine + "\n"
+	if p.Note != "" {
+		head += "\n" + prose(p.Note) + "\n"
+	}
 	var tail strings.Builder
 	if p.Author != "" {
 		tail.WriteString("\n**Author:** " + p.Author + "\n")
