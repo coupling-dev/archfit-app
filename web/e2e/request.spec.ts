@@ -236,7 +236,7 @@ test('request: Approve until a date sends the date and "merge later", and the pr
   );
   expect(reads).toContain('?answer=approve-until&until=2027-01-15');
   await box.getByLabel('Merge the policy pull request now').uncheck();
-  await box.getByRole('button', { name: 'Approve until date and keep policy PR open' }).click();
+  await box.getByRole('button', { name: 'Approve until date and keep the policy pull request open' }).click();
   await expect(box.locator('.flash.success')).toContainText(notice);
   expect(writes[0].postDataJSON()).toEqual({ answer: 'approve-until', until: '2027-01-15', merge_later: true });
   expect(writes[1].postDataJSON()).toEqual({ action: 'approve-until', request: 431, digest });
@@ -267,7 +267,7 @@ test('request: Reject sends what to do instead and "merge later", and needs no p
   expect(reads).toContain('?answer=reject&instead=Add+a+retry+method+to+container.Client.');
   // Merge later holds the policy pull request open for a reject too: the server merges at once without it.
   await box.getByLabel('Merge the policy pull request now').uncheck();
-  await box.getByRole('button', { name: 'Reject and keep policy PR open' }).click();
+  await box.getByRole('button', { name: 'Reject and keep the policy pull request open' }).click();
   await expect(box.locator('.flash.success')).toBeVisible();
   expect(paths(writes)).toEqual([`${req}/answer`]);
   expect(writes[0].postDataJSON()).toEqual({
@@ -429,7 +429,7 @@ for (const width of [390, 1280]) {
       if (kind === 'approve-until') await box.getByLabel('The exception ends on').fill('2027-01-15');
       if (kind === 'reject') await box.getByLabel('What to do instead').fill('Use a port.');
       if (kind !== 'approve') await box.getByRole('button', { name: 'Preview ' + title.toLowerCase() }).click();
-      const decision = page.getByRole('region', { name: title + ': preview' });
+      const decision = page.getByRole('region', { name: /: preview$/ });
       await expect(decision.getByLabel(title + ': the change to .archfit.yaml')).toBeVisible();
       await expect(box.getByRole('button', { name: verb + ' and merge policy PR' })).toBeVisible();
       await expect(box.locator('button.primary')).toHaveCount(1);
@@ -446,7 +446,7 @@ for (const width of [390, 1280]) {
         request.issue_href,
       );
       await box.getByLabel('Merge the policy pull request now').uncheck();
-      await expect(box.getByRole('button', { name: verb + ' and keep policy PR open' })).toBeVisible();
+      await expect(box.getByRole('button', { name: verb + ' and keep the policy pull request open' })).toBeVisible();
       await expect(box).toContainText('The change takes effect only when that pull request merges.');
       await expect(decision).toContainText('These code pull requests are not merged by this answer.');
       const target = await box.locator('button.primary').boundingBox();
@@ -541,4 +541,16 @@ test('request: failed preview cannot confirm; retry and a changed date require a
   await expect(box.locator('button.primary')).toHaveCount(0);
   await expect(page.getByLabel('Approve until a date: the change to .archfit.yaml')).toHaveCount(0);
   expect(writes).toEqual([]);
+});
+
+test('request: the approve title and button say what happens, with the merge checkbox', async ({ page }) => {
+  await open(page, path, owner({}).handlers);
+  await answerBox(page).getByRole('button', { name: 'Approve and merge', exact: true }).click();
+  await expect(answerBox(page).getByRole('heading', { name: 'Approve and merge', exact: true })).toBeVisible();
+  await expect(answerBox(page).getByRole('button', { name: 'Approve and merge policy PR' })).toBeVisible();
+  await answerBox(page).getByLabel('Merge the policy pull request now').uncheck();
+  await expect(answerBox(page).getByRole('heading', { name: 'Approve', exact: true })).toBeVisible();
+  await expect(answerBox(page).getByRole('button', { name: 'Approve and keep the policy pull request open' })).toBeVisible();
+  await expect(answerBox(page).getByRole('button', { name: 'Approve and merge policy PR' })).toHaveCount(0);
+  await expectClean(page);
 });

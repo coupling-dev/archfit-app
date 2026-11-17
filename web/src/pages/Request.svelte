@@ -64,7 +64,8 @@
   let previews = $state<Record<AnswerKind, Shown>>({ approve: {}, 'approve-until': {}, reject: {} });
   // The newest preview read of each answer wins: an older answer that arrives late is dropped.
   const reads: Record<AnswerKind, number> = { approve: 0, 'approve-until': 0, reject: 0 };
-  let title = $derived(kinds.find((item) => item.kind === selected)?.title ?? '');
+  // The title says what the answer does: the merge word only when the merge checkbox is on.
+  let title = $derived(selected === 'approve' && !mergeNow ? 'Approve' : (kinds.find((item) => item.kind === selected)?.title ?? ''));
   let shown = $derived(previews[selected]);
   let decision = $derived(decisionState(selected, shown.preview, !mergeNow));
 
