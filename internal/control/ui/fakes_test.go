@@ -41,6 +41,8 @@ type fakeGH struct {
 	pulls     map[string]api.Pull // full name + "#" + number
 	fail      map[string]error    // method, method + " " + full name, or method + " " + the call's detail
 	calls     []ghCall
+	// openPullsDelay is the time OpenPulls takes, spent outside the lock so other calls still overlap it.
+	openPullsDelay time.Duration
 }
 
 func newFakeGH() *fakeGH {
@@ -228,6 +230,7 @@ func (g *fakeGH) PullSummary(_ context.Context, r api.RepoRef, number int) (api.
 
 // OpenPulls lists the open pull requests of a repository by number.
 func (g *fakeGH) OpenPulls(_ context.Context, r api.RepoRef) ([]api.Pull, error) {
+	time.Sleep(g.openPullsDelay)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if err := g.record("OpenPulls", r, ""); err != nil {
