@@ -12,7 +12,7 @@ const pumba: Policy = JSON.parse(
 test('policy reading: search filters rules, exceptions and modules without changing totals', async ({ page }) => {
   await open(page, path, { [api]: () => [200, pumba] });
   const counts = page.getByLabel('Policy counts');
-  await expect(counts).toContainText('9Blocking rules');
+  await expect(counts).toContainText('9Ask and deny rules');
   const search = page.getByRole('searchbox', { name: 'Search policy' });
   await search.fill('container.Client');
   await expect(page.getByRole('status')).toHaveText('1 matching items');
@@ -20,7 +20,7 @@ test('policy reading: search filters rules, exceptions and modules without chang
   await expect(rule.locator('details')).toHaveCount(1);
   await rule.locator('summary').click();
   await expect(rule.getByText(pumba.rules[1]?.instead ?? '', { exact: true })).toBeVisible();
-  await expect(counts).toContainText('9Blocking rules');
+  await expect(counts).toContainText('9Ask and deny rules');
 
   await search.fill('no-such-module');
   await expect(page.getByRole('status')).toHaveText('No matches. Try a module name or rule ID.');
@@ -28,6 +28,51 @@ test('policy reading: search filters rules, exceptions and modules without chang
   await search.fill(' PKG/TC ');
   await expect(page.getByRole('region', { name: 'Modules', exact: true }).locator('tbody tr')).toHaveCount(1);
   await expectClean(page);
+});
+
+test('policy reading: rules carry their ids and notes are explained once', async ({ page }) => {
+  const body: Policy = {
+    ...pumba,
+    gate: 'advisory',
+    rules: [{ id: 'use-runner', note: 'Run jobs through the runner.', not_checked: true, why: '' }],
+  };
+  await open(page, path, { [api]: () => [200, body] });
+  const facts = page.getByRole('region', { name: 'Policy summary' });
+  await expect(facts.locator('dd').nth(2)).toHaveText('advisory — rules are reported and archfit/gate does not fail');
+  const rules = page.getByRole('region', { name: 'Rules', exact: true });
+  await expect(rules.locator('summary strong')).toHaveText([
+    'graph',
+    'coupling',
+    'duplication',
+    'cycle',
+    'layers',
+    'unowned',
+    'use-runner',
+  ]);
+  await expect(rules.getByText('A note is not checked. It tells the reader what to do.', { exact: true })).toHaveCount(1);
+  await rules.locator('summary').last().click();
+  await expect(rules.getByText('Run jobs through the runner.', { exact: true })).toBeVisible();
+  await expect(rules.getByText('Instead', { exact: true })).toHaveCount(0);
+  await expectClean(page);
+});
+
+test('policy reading: a repository without a policy keeps its tabs and points to setup', async ({ page }) => {
+  const writes = await open(page, path, { [api]: () => [409, { error: 'No policy on the default branch yet.' }] });
+  await expect(page.getByRole('heading', { name: 'No policy on the default branch yet.' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Continue setup', exact: true })).toHaveAttribute('href', '/r/acme/app');
+  await expect(page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Policy' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await expect(page.getByRole('link', { name: 'Edit', exact: true })).toHaveCount(0);
+  expect(writes).toEqual([]);
+  await expectClean(page);
+});
+
+test('policy reading: a repository the user cannot see stays the generic page', async ({ page }) => {
+  await open(page, path, { [api]: () => [404, { error: 'Not found.' }] });
+  await expect(page.getByRole('heading', { name: 'Page not available' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Repository' })).toHaveCount(0);
 });
 
 test('policy reading: graph is secondary, uses declared dependencies and selects module details @docs', async ({
@@ -106,7 +151,8 @@ test('policy reading: expiry counts, unknown facts and server dates remain expli
   await expect(counts).toContainText('1 already expired');
   await expect(counts).toContainText('2Expiring in 30 days');
   const facts = page.getByRole('region', { name: 'Policy summary' });
-  await expect(facts.locator('dd')).toHaveText(['Not provided', 'Not provided', 'required', 'Not provided']);
+  await expect(facts.locator('dd')).toHaveText(['None', 'None', 'required — a failing rule makes archfit/gate fail']);
+  await expect(facts.getByRole('link', { name: 'Home', exact: true })).toHaveAttribute('href', '/r/acme/app');
   const exceptions = page.getByRole('region', { name: 'Exceptions', exact: true });
   await expect(exceptions.getByText('Expires in 12 days', { exact: true })).toBeVisible();
   await expect(exceptions.getByText('Expired 1 day ago', { exact: true })).toBeVisible();
