@@ -1,4 +1,4 @@
-import { mapLayers, type LineKind, type MapLine, type MapModel } from './model';
+import { lineKinds, mapLayers, type LineKind, type MapLine, type MapModel } from './model';
 
 export const symbols: Record<LineKind, string> = {
   allowed: '✓',
@@ -109,4 +109,35 @@ export function nextCell(key: string, ctrl: boolean, from: Cell, size: number, o
     case 'End': return edge(-1);
     default: return from;
   }
+}
+
+// From this many modules the matrix draws 32 px cells and vertical column names, so 24 columns fit a laptop page.
+export const compactFrom = 12;
+// The App opens an expiry issue seven days before an exception ends, so that is "near" here too.
+export const soonDays = 7;
+
+// Split a module name where a line may break: after "_" and "-", never inside a word.
+export function breakable(name: string): string[] {
+  return name.match(/[^_-]*[_-]|[^_-]+$/g) ?? [name];
+}
+
+export interface CellView {
+  kind: LineKind;
+  count: number;
+  // An exception that ends within soonDays, or already ended: the only exception drawn strongly.
+  soon: boolean;
+  // Only exceptions that are far off: drawn quiet so they do not mark every allow.
+  quiet: boolean;
+}
+
+const isSoon = (line: MapLine) => line.kind === 'exception' && line.days_left !== undefined && line.days_left <= soonDays;
+
+// One symbol per cell: the strongest status, with the number of statuses when there are several. Order: drift,
+// deny, an exception that is near its date, request, allow, then a far exception. Every status stays in the label
+// and in the details, so nothing is dropped, only ranked.
+export function cellView(lines: MapLine[]): CellView | null {
+  if (!lines.length) return null;
+  const rank = (line: MapLine) => (isSoon(line) ? lineKinds.indexOf('deny') + 0.5 : line.kind === 'exception' ? lineKinds.length : lineKinds.indexOf(line.kind));
+  const top = lines.reduce((best, line) => (rank(line) < rank(best) ? line : best));
+  return { kind: top.kind, count: lines.length, soon: isSoon(top), quiet: top.kind === 'exception' && !isSoon(top) };
 }

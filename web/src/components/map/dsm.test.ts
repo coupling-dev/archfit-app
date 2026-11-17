@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readHome } from '../../lib/home';
-import { isNavKey, nextCell, pairIndex, pairKey, statusLabel, visibleModules, type Cell } from './dsm';
+import { breakable, cellView, isNavKey, nextCell, pairIndex, pairKey, soonDays, statusLabel, visibleModules, type Cell } from './dsm';
 import type { MapModel, MapLine } from './model';
 
 const lines: MapLine[] = [
@@ -117,5 +117,48 @@ describe('DSM cell navigation', () => {
   it('knows which keys it handles', () => {
     expect(['ArrowUp', 'Home', 'End'].every(isNavKey)).toBe(true);
     expect(['Enter', 'Tab', 'a'].some(isNavKey)).toBe(false);
+  });
+});
+
+describe('DSM names', () => {
+  it.each([
+    ['multiplexer_backends', ['multiplexer_', 'backends']],
+    ['cli-composition', ['cli-', 'composition']],
+    ['a_b-c', ['a_', 'b-', 'c']],
+    ['plain', ['plain']],
+    ['_lead-', ['_', 'lead-']],
+  ])('breaks %s only after _ or -', (name, parts) => {
+    expect(breakable(name)).toEqual(parts);
+    expect(breakable(name).join('')).toBe(name);
+  });
+});
+
+describe('DSM cell view', () => {
+  const allow: MapLine = { from: 'a', to: 'b', kind: 'allowed' };
+  const exception = (days_left?: number): MapLine => ({ from: 'a', to: 'b', kind: 'exception', days_left });
+  it('is empty without lines', () => expect(cellView([])).toBeNull());
+  it('shows one symbol and no count for one status', () => {
+    expect(cellView([allow])).toEqual({ kind: 'allowed', count: 1, soon: false, quiet: false });
+  });
+  it('shows the strongest status with the number of statuses', () => {
+    const view = cellView([allow, { ...allow, kind: 'requested' }, { ...allow, kind: 'deny' }, { ...allow, kind: 'drift' }]);
+    expect(view).toMatchObject({ kind: 'drift', count: 4 });
+    expect(cellView([allow, allow, allow])).toMatchObject({ kind: 'allowed', count: 3 });
+  });
+  it.each([
+    [soonDays, true],
+    [0, true],
+    [-2, true],
+    [soonDays + 1, false],
+    [undefined, false],
+  ])('an exception with %s days left is near its date: %s', (days, soon) => {
+    expect(cellView([allow, exception(days)])).toMatchObject(
+      soon ? { kind: 'exception', soon: true, quiet: false } : { kind: 'allowed', soon: false },
+    );
+  });
+  it('draws a far exception alone quiet, and ranks a near one below deny and drift', () => {
+    expect(cellView([exception(30)])).toEqual({ kind: 'exception', count: 1, soon: false, quiet: true });
+    expect(cellView([exception(1), { ...allow, kind: 'requested' }])).toMatchObject({ kind: 'exception', soon: true });
+    expect(cellView([exception(1), { ...allow, kind: 'deny' }])).toMatchObject({ kind: 'deny', soon: false });
   });
 });
