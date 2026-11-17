@@ -143,6 +143,7 @@ test('request: the reason, the record with its balance, the two modules, the pre
 }) => {
   const { handlers, reads } = owner({});
   const writes = await open(page, path, handlers);
+  await answerBox(page).getByRole('button', { name: 'Approve and merge', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Request #431', level: 1 })).toBeVisible();
   await expect(page.locator('.lede')).toHaveText('waiting Waiting for an owner to answer.');
   await expect(page.getByRole('region', { name: 'Reason' })).toContainText(request.reason);
@@ -168,11 +169,11 @@ test('request: the reason, the record with its balance, the two modules, the pre
   await expect(why).toContainText('Volatility low · subdomain generic');
 
   const shown = page.getByRole('region', { name: /: preview$/ });
-  await expect(shown.getByLabel('Approve: the change to .archfit.yaml')).toContainText(
+  await expect(shown.getByLabel('Approve and merge: the change to .archfit.yaml')).toContainText(
     '+      - pkg_util # request #431',
   );
   await expect(answerBox(page).getByRole('button', { name: 'Approve and merge policy PR' })).toBeVisible();
-  await expect(shown.getByLabel('Approve: open pull requests').getByRole('listitem').locator('p')).toHaveText([
+  await expect(shown.getByLabel('Approve and merge: open pull requests').getByRole('listitem').locator('p')).toHaveText([
     '#12 (waiting), waits on this request: clears 1 error, 0 errors left',
     '#15 (fail): clears 1 error, 2 errors left',
   ]);
@@ -195,6 +196,7 @@ test('request: Approve and merge takes the digest, a passkey step-up for it, the
     path,
     owner({ pull_request: 77, state: 'merged', merge: 'c'.repeat(40), notice }, id).handlers,
   );
+  await answerBox(page).getByRole('button', { name: 'Approve and merge', exact: true }).click();
   await answerBox(page).getByRole('button', { name: 'Approve and merge policy PR' }).click();
   await expect(answerBox(page).locator('.flash.success')).toContainText(notice);
   await expect(answerBox(page).getByRole('link', { name: 'Policy pull request #77' })).toHaveAttribute(
@@ -225,7 +227,7 @@ test('request: Approve until a date sends the date and "merge later", and the pr
   const { handlers, reads } = owner({ pull_request: 77, state: 'later', notice }, id);
   const writes = await open(page, path, handlers);
   const box = answerBox(page);
-  await box.getByRole('radio', { name: 'Approve until a date', exact: true }).check();
+  await box.getByRole('button', { name: 'Approve until a date', exact: true }).click();
   await expect(box.getByRole('button', { name: 'Preview approve until a date' })).toBeDisabled();
   await box.getByLabel('The exception ends on').fill('2027-01-15');
   await box.getByRole('button', { name: 'Preview approve until a date' }).click();
@@ -233,7 +235,7 @@ test('request: Approve until a date sends the date and "merge later", and the pr
     'expires: 2027-01-15',
   );
   expect(reads).toContain('?answer=approve-until&until=2027-01-15');
-  await box.getByLabel('Keep the policy pull request open').check();
+  await box.getByLabel('Merge the policy pull request now').uncheck();
   await box.getByRole('button', { name: 'Approve until date and keep policy PR open' }).click();
   await expect(box.locator('.flash.success')).toContainText(notice);
   expect(writes[0].postDataJSON()).toEqual({ answer: 'approve-until', until: '2027-01-15', merge_later: true });
@@ -254,7 +256,7 @@ test('request: Reject sends what to do instead and "merge later", and needs no p
   });
   const writes = await open(page, path, handlers);
   const box = answerBox(page);
-  await box.getByRole('radio', { name: 'Reject', exact: true }).check();
+  await box.getByRole('button', { name: 'Reject', exact: true }).click();
   await expect(box.getByRole('button', { name: 'Preview reject' })).toBeDisabled();
   await box.getByLabel('What to do instead').fill('Add a retry method to container.Client.');
   await box.getByRole('button', { name: 'Preview reject' }).click();
@@ -264,7 +266,7 @@ test('request: Reject sends what to do instead and "merge later", and needs no p
   await expect(page.getByRole('region', { name: /: preview$/ })).toContainText('Tightens the policy: no passkey needed.');
   expect(reads).toContain('?answer=reject&instead=Add+a+retry+method+to+container.Client.');
   // Merge later holds the policy pull request open for a reject too: the server merges at once without it.
-  await box.getByLabel('Keep the policy pull request open').check();
+  await box.getByLabel('Merge the policy pull request now').uncheck();
   await box.getByRole('button', { name: 'Reject and keep policy PR open' }).click();
   await expect(box.locator('.flash.success')).toBeVisible();
   expect(paths(writes)).toEqual([`${req}/answer`]);
@@ -282,6 +284,7 @@ test('request: a refused step-up is the server sentence, nothing is answered, an
   handlers[`POST ${api}/passkeys/step-up`] = () => [409, { error: 'Register a passkey first.' }];
   const writes = await open(page, path, handlers);
   const box = answerBox(page);
+  await answerBox(page).getByRole('button', { name: 'Approve and merge', exact: true }).click();
   await box.getByRole('button', { name: 'Approve and merge policy PR' }).click();
   await expect(box.getByRole('alert')).toHaveText('Register a passkey first.');
   await expect(box.getByRole('link', { name: 'Your passkeys' })).toHaveAttribute(
@@ -343,7 +346,10 @@ for (const [name, data] of [
     await expect(page.getByRole('heading', { name: 'Request #431' })).toBeVisible();
     await page.getByText('Show the map as a diagram', { exact: true }).click();
     await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toBeVisible();
-    if (!('answer' in data)) await expect(page.getByLabel('Approve: the change to .archfit.yaml')).toBeVisible();
+    if (!('answer' in data)) {
+      await answerBox(page).getByRole('button', { name: 'Approve and merge', exact: true }).click();
+      await expect(page.getByLabel('Approve and merge: the change to .archfit.yaml')).toBeVisible();
+    }
     else {
       await expect(answerBox(page).getByRole('button')).toHaveCount(0);
       const module = page.locator('[data-module]').first();
@@ -378,6 +384,7 @@ test('request: the page reads status, reason, record, map, balance, preview, ear
   page,
 }) => {
   await open(page, path, owner({}).handlers);
+  await answerBox(page).getByRole('button', { name: 'Approve and merge', exact: true }).click();
   await expect(page.getByRole('region', { name: /: preview$/ })).toBeVisible();
   const heads = await page.locator('main section.box h2').allTextContents();
   expect(heads.map((h) => h.split(' ')[0])).toEqual(['Reason', 'Record', 'The', 'Why', 'Preview:', 'Earlier', 'Answer']);
@@ -409,7 +416,7 @@ test('request: an approved answer shows approved, the record as checked, and no 
 
 for (const width of [390, 1280]) {
   for (const [kind, title, verb] of [
-    ['approve', 'Approve', 'Approve'],
+    ['approve', 'Approve and merge', 'Approve'],
     ['approve-until', 'Approve until a date', 'Approve until date'],
     ['reject', 'Reject', 'Reject'],
   ] as const) {
@@ -418,7 +425,7 @@ for (const width of [390, 1280]) {
       await docsClock(page);
       const writes = await open(page, path, owner({}).handlers);
       const box = answerBox(page);
-      await box.getByRole('radio', { name: title, exact: true }).check();
+      await box.getByRole('button', { name: title, exact: true }).click();
       if (kind === 'approve-until') await box.getByLabel('The exception ends on').fill('2027-01-15');
       if (kind === 'reject') await box.getByLabel('What to do instead').fill('Use a port.');
       if (kind !== 'approve') await box.getByRole('button', { name: 'Preview ' + title.toLowerCase() }).click();
@@ -438,7 +445,7 @@ for (const width of [390, 1280]) {
         'href',
         request.issue_href,
       );
-      await box.getByLabel('Keep the policy pull request open').check();
+      await box.getByLabel('Merge the policy pull request now').uncheck();
       await expect(box.getByRole('button', { name: verb + ' and keep policy PR open' })).toBeVisible();
       await expect(box).toContainText('The change takes effect only when that pull request merges.');
       await expect(decision).toContainText('These code pull requests are not merged by this answer.');
@@ -469,7 +476,7 @@ test('request: editing discards the preview and a late read cannot restore it', 
   };
   const writes = await open(page, path, handlers);
   const box = answerBox(page);
-  await box.getByRole('radio', { name: 'Reject', exact: true }).check();
+  await box.getByRole('button', { name: 'Reject', exact: true }).click();
   await box.getByLabel('What to do instead').fill('Old alternative');
   await box.getByRole('button', { name: 'Preview reject' }).click();
   await expect.poll(() => !!release).toBe(true);
@@ -495,11 +502,10 @@ test('request: no policy change hides merge control and does not submit its stal
       : preview(url);
   const writes = await open(page, path, handlers);
   const box = answerBox(page);
-  await box.getByLabel('Keep the policy pull request open').check();
-  await box.getByRole('radio', { name: 'Reject', exact: true }).check();
+  await box.getByRole('button', { name: 'Reject', exact: true }).click();
   await box.getByLabel('What to do instead').fill('Use a port.');
   await box.getByRole('button', { name: 'Preview reject' }).click();
-  await expect(box.getByLabel('Keep the policy pull request open')).toHaveCount(0);
+  await expect(box.getByLabel('Merge the policy pull request now')).toHaveCount(0);
   await expect(box).toContainText('This records your answer without changing .archfit.yaml.');
   await expectClean(page);
   await box.getByRole('button', { name: 'Reject without a passkey' }).click();
@@ -519,12 +525,14 @@ test('request: failed preview cannot confirm; retry and a changed date require a
   handlers[`GET ${req}/preview`] = () => [503, { error: 'Preview unavailable.' }];
   const writes = await open(page, path, handlers);
   const box = answerBox(page);
+  await box.getByRole('button', { name: 'Approve and merge', exact: true }).click();
   await expect(box.getByRole('alert')).toContainText('Preview unavailable.');
   await expect(box.locator('button.primary')).toHaveCount(0);
   handlers[`GET ${req}/preview`] = (_, url) => preview(url);
-  await box.getByRole('button', { name: 'Preview approve', exact: true }).click();
+  await box.getByRole('button', { name: 'Preview approve and merge', exact: true }).click();
+  await answerBox(page).getByRole('button', { name: 'Approve and merge', exact: true }).click();
   await expect(box.getByRole('button', { name: 'Approve and merge policy PR' })).toBeVisible();
-  await box.getByRole('radio', { name: 'Approve until a date', exact: true }).check();
+  await box.getByRole('button', { name: 'Approve until a date', exact: true }).click();
   await box.getByLabel('The exception ends on').fill('2027-01-15');
   await box.getByRole('button', { name: 'Preview approve until a date' }).click();
   await expect(page.getByLabel('Approve until a date: the change to .archfit.yaml')).toContainText('2027-01-15');
