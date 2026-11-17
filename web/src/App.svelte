@@ -2,7 +2,7 @@
   import Header from './Header.svelte';
   import About from './components/About.svelte';
   import Skeleton from './components/Skeleton.svelte';
-  import { ApiError, getJSON, type Session } from './lib/api';
+  import { ApiError, getJSON, type Repos as RepoList, type Session } from './lib/api';
   import { prefetch } from './lib/early';
   import { refused, waiting } from './lib/gate';
   import { missingSentence } from './lib/notfound';
@@ -30,11 +30,15 @@
   let visible = $state<string[] | null>(null);
   let lookedUp = false;
   const onRepo = 'fullName' in route;
-  const knownRepo = $derived(notFound && onRepo && visible?.includes(route.fullName) ? route.fullName : '');
+  // GitHub names are case-insensitive, so the URL's spelling is matched against the canonical one.
+  const knownRepo = $derived(
+    notFound && onRepo && visible?.some((name) => name.toLowerCase() === route.fullName.toLowerCase()) ? route.fullName : '',
+  );
   $effect(() => {
     if (!notFound || !onRepo || lookedUp) return;
     lookedUp = true;
-    getJSON<{ repos: { full_name: string }[] }>('/api/repos').then(
+    // The overview is the one repository list the App has; a 404 is rare, so its cost is paid only here.
+    getJSON<RepoList>('/api/repos').then(
       (b) => (visible = b.repos.map((r) => r.full_name)),
       () => (visible = []),
     );

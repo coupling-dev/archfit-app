@@ -74,3 +74,10 @@ test('about this App: the lead says what it is, and only rows with a value show'
   await expect(page.getByText('Not recorded')).toHaveCount(0);
   await expectClean(page);
 });
+
+test('a repository the user can see is matched whatever the letter case of the address', async ({ page }) => {
+  await open(page, '/r/Acme/APP/pull/999999', { repos: { repos: [{ full_name: 'acme/app', name: 'app', private: false }] } });
+  await expect(page.getByText('Pull request #999999 was not found in Acme/APP.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Repository' })).toBeVisible();
+  await expectClean(page);
+});

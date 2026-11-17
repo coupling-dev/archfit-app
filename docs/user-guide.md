@@ -237,7 +237,7 @@ that action. A changed artifact still prevents submission; **Reload the change**
 before you confirm anything. Policy and Owner read/service failures offer **Try again**; not-found and stale-action states do not.
 
 **Page not available** uses the same message for a missing resource and one your account cannot access.
-Its **Repositories** link returns to `/`. For a repository you can see, a missing pull request or request says so, names the repository, and offers **Back to <repository>**, with the repository tabs. A repository you cannot see gets the generic message and no tabs, so the page never shows that it exists.
+Its **Repositories** link returns to `/`. For a repository you can see, a missing pull request or request says so, and any other missing page of it (for example a policy or an owner action) says it was not found in that repository. Each names the repository and offers **Back to <repository>**, with the repository tabs. A repository you cannot see gets the generic message and no tabs, so the page never shows that it exists.
 
 ## Register a passkey
 
