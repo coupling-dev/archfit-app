@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate"
@@ -61,7 +62,18 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 	r = r.WithContext(ctx)
 	snapshotDone := api.StartStage(ctx, "snapshot")
 	defer func() { snapshotDone(1, int(snapshot.CacheHits())) }()
+	// Home's reads do not depend on Setup, so they run beside it. Their result is used only for an approved
+	// repository, as before: for any other state the Home result and its error are dropped.
+	var view gate.HomeState
+	var homeErr error
+	var homeReads sync.WaitGroup
+	homeReads.Go(func() {
+		recordsDone := api.StartStage(ctx, "home_records")
+		view, homeErr = s.home.Home(ctx, sc.repo)
+		recordsDone(len(view.Requests)+len(view.Touched)+len(view.WorkflowPulls), 0)
+	})
 	setup, err := s.apiSetup(r, sc)
+	homeReads.Wait()
 	if err != nil {
 		return nil, err
 	}
@@ -80,11 +92,8 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 		}
 		return homeJSON{Status: "Set up this repository.", Setup: &state}, nil
 	}
-	recordsDone := api.StartStage(ctx, "home_records")
-	view, err := s.home.Home(r.Context(), sc.repo)
-	recordsDone(len(view.Requests)+len(view.Touched)+len(view.WorkflowPulls), 0)
-	if err != nil {
-		return nil, err
+	if homeErr != nil {
+		return nil, homeErr
 	}
 	today := s.now().UTC().Truncate(24 * time.Hour)
 	body := homeBody(view, state, sc.repo.FullName, today)
