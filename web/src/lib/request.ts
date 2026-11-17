@@ -68,9 +68,12 @@ export interface Status {
 // statusOf is the page's first line: the state as a dot and a word, then one sentence.
 export function statusOf(r: RequestView): Status {
   const name = `Request #${r.number}`;
-  if (r.state === 'answered') return { word: 'answered', tone: 'neutral', line: `${name} is answered.` };
+  if (r.state === 'answered') {
+    const line = r.answer?.kind === 'reject' ? 'An owner rejected this request.' : r.answer ? 'An owner approved this request.' : 'An owner answered this request.';
+    return { word: 'answered', tone: 'neutral', line };
+  }
   if (r.state === 'closed') return { word: 'closed', tone: 'neutral', line: `${name} is closed.` };
-  let line = `${name} waits for an owner to answer.`;
+  let line = 'Waiting for an owner to answer.';
   if (!r.policy) line = `${name} cannot be answered here: the default branch has no policy of version 3.`;
   else if (r.allowed) line += ' The policy already allows this dependency.';
   else if (!r.verified) line += ' Its numbers are as reported: no pull request confirmed them yet.';

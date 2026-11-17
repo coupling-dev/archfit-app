@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -86,14 +87,31 @@ func (s *sessions) Authorize(ctx context.Context, u User, fullName, minPermissio
 	return e.repo, nil
 }
 
-// ask gets one complete answer from GitHub: the user's permission with the user's own token,
-// then, only for a user who has one, the covering installation with the App JWT.
+// ask gets one complete answer from GitHub. The user's access (their own token) and the App's installation of the
+// repository (the App JWT) are asked at once. The installation is the repository's own: GitHub answers for the same
+// repository, so the user's view of it needs no second read. A user with no access gets "none" whatever the
+// installation says, and the installation's failure is then not an error for them.
 func (s *sessions) ask(ctx context.Context, u User, fullName string) (cacheEntry, error) {
 	start := s.now()
 	ctx, cancel := context.WithTimeout(ctx, githubTimeout)
 	defer cancel()
 
-	perm, err := s.users.Permission(ctx, u.Token, fullName)
+	var (
+		wg        sync.WaitGroup
+		installID int64
+		instErr   error
+	)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		installID, instErr = s.repos.InstallationID(ctx, fullName)
+	}()
+	perm, repo, err := s.users.Access(ctx, u.Token, fullName)
+	if err != nil || permissionRank(perm) == 0 {
+		cancel() // the installation's answer is not needed
+	}
+	wg.Wait()
+
 	if err != nil {
 		return cacheEntry{}, s.askFailed(ctx, u, start, "permission", err)
 	}
@@ -101,10 +119,10 @@ func (s *sessions) ask(ctx context.Context, u User, fullName string) (cacheEntry
 		s.logAnswer(ctx, slog.LevelInfo, u, api.Repo{}, permNone, start)
 		return cacheEntry{perm: permNone, expires: s.now().Add(cacheTTL)}, nil
 	}
-	repo, err := s.repos.ResolveRepo(ctx, fullName)
-	if err != nil {
-		return cacheEntry{}, s.askFailed(ctx, u, start, "resolve repository", err)
+	if instErr != nil {
+		return cacheEntry{}, s.askFailed(ctx, u, start, "installation", instErr)
 	}
+	repo.InstallationID = installID
 	s.logAnswer(ctx, slog.LevelInfo, u, repo, perm, start)
 	return cacheEntry{perm: perm, repo: repo, expires: s.now().Add(cacheTTL)}, nil
 }

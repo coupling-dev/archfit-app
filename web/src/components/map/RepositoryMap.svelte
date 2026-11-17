@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import SegmentedControl from '../ui/SegmentedControl.svelte';
   import Dsm from './Dsm.svelte';
   import type { MapModel } from './model';
 
@@ -17,9 +18,16 @@
   }
 </script>
 
-<div class="views" role="group" aria-label="Map view">
-  <button class="btn" aria-pressed={view === 'matrix'} onclick={() => select('matrix')}>Matrix</button>
-  <button class="btn" aria-pressed={view === 'diagram'} onclick={() => select('diagram')}>Diagram</button>
+<div class="views">
+  <SegmentedControl
+    label="Map view"
+    options={[
+      { value: 'matrix', label: 'Matrix' },
+      { value: 'diagram', label: 'Diagram' },
+    ]}
+    value={view}
+    onselect={(next) => select(next as 'matrix' | 'diagram')}
+  />
 </div>
 {#if view === 'matrix'}
   <Dsm {model} {repo} />
@@ -34,7 +42,5 @@
 {/if}
 
 <style>
-  .views { display: flex; gap: 8px; margin-bottom: 16px; }
-  button[aria-pressed="true"] { background: var(--accent-subtle); border-color: var(--accent); }
-  button { min-height: 44px; }
+  .views { margin-bottom: 16px; }
 </style>

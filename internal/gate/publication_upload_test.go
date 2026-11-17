@@ -118,7 +118,7 @@ func TestUnpublishedPolicyProposalDoesNotStayPending(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.View != nil || got.Message != "No result yet." {
+	if got.View != nil || got.Message != noResultYet {
 		t.Fatalf("unpublished proposal page %+v", got)
 	}
 }

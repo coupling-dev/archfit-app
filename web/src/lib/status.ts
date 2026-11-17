@@ -11,36 +11,34 @@ export interface StatusStyle {
 const styles = new Map<string, StatusStyle>([
   // Done, on, and passing: the check is met.
   ['pass', { tone: 'success', icon: 'check-circle' }],
-  ['Done', { tone: 'success', icon: 'check-circle' }],
-  ['On', { tone: 'success', icon: 'check-circle' }],
-  ['Signed', { tone: 'success', icon: 'check-circle' }],
+  ['done', { tone: 'success', icon: 'check-circle' }],
+  ['on', { tone: 'success', icon: 'check-circle' }],
   ['Required', { tone: 'success', icon: 'check-circle' }],
   ['Policy approved', { tone: 'success', icon: 'check-circle' }],
-  // Failing: the check did not pass.
+  // Failing: the check did not pass, or a repository's state is expired (every pull request fails).
   ['fail', { tone: 'danger', icon: 'x-circle' }],
+  ['expired', { tone: 'danger', icon: 'x-circle' }],
   // Waiting on someone else.
   ['waiting', { tone: 'attention', icon: 'clock' }],
   ['Waiting', { tone: 'attention', icon: 'clock' }],
   ['Waiting for owner', { tone: 'attention', icon: 'clock' }],
   ['Waiting for installation approval', { tone: 'attention', icon: 'clock' }],
   // Needs an action from the reader.
-  ['Action needed', { tone: 'attention', icon: 'alert' }],
+  ['to do', { tone: 'attention', icon: 'alert' }],
+  ['off', { tone: 'attention', icon: 'alert' }],
   ['Not started', { tone: 'attention', icon: 'alert' }],
-  ['Review needed', { tone: 'attention', icon: 'alert' }],
-  ['Check with an admin', { tone: 'attention', icon: 'alert' }],
   ['Not required', { tone: 'attention', icon: 'alert' }],
-  ['Could not confirm approval', { tone: 'attention', icon: 'alert' }],
   // In progress or ready for the reader to do: the next step is clear.
-  ['Ready for review', { tone: 'accent', icon: 'info' }],
   ['First approval', { tone: 'accent', icon: 'info' }],
   ['Workflow review', { tone: 'accent', icon: 'info' }],
-  ['Advisory', { tone: 'accent', icon: 'info' }],
-  // Not known: never shown as a pass.
-  ['unknown', { tone: 'neutral', icon: 'question' }],
+  // Optional: the reader may choose; this is not an action and does not share the attention tone.
+  ['optional', { tone: 'neutral', icon: 'dot' }],
+  // Not known: never shown as a pass, and never inert.
+  ['unknown', { tone: 'attention', icon: 'question' }],
   ['Check', { tone: 'neutral', icon: 'question' }],
-  ['Verify yourself', { tone: 'neutral', icon: 'question' }],
+  ['verify in GitHub', { tone: 'neutral', icon: 'question' }],
   // Not applicable.
-  ['Does not apply', { tone: 'neutral', icon: 'dot' }],
+  ['does not apply', { tone: 'neutral', icon: 'dot' }],
 ]);
 
 const fallback: StatusStyle = { tone: 'neutral', icon: 'dot' };
