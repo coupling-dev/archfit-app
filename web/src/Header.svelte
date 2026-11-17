@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SegmentedControl from './components/ui/SegmentedControl.svelte';
   import type { Session } from './lib/api';
   import { repoPage } from './lib/route';
   import { applyTheme, saveTheme, storedTheme, themes, type Theme } from './lib/theme';
@@ -59,11 +60,12 @@
       Admin{#if session.waiting && session.waiting > 0}<span class="label attention">{session.waiting} waiting</span>{/if}
     </a>
   {/if}
-  <div class="theme-toggle" role="group" aria-label="Theme">
-    {#each themes as t (t)}
-      <button type="button" aria-pressed={theme === t} onclick={() => pick(t)}>{themeNames[t]}</button>
-    {/each}
-  </div>
+  <SegmentedControl
+    label="Theme"
+    options={themes.map((t) => ({ value: t, label: themeNames[t] }))}
+    value={theme}
+    onselect={(t) => pick(t as Theme)}
+  />
   {#if session}
     <form class="user-chip" method="post" action="/auth/logout">
       <span class="avatar" aria-hidden="true">{session.login.slice(0, 1).toUpperCase()}</span>
