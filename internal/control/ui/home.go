@@ -58,7 +58,7 @@ type homeLineJSON struct {
 
 func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 	ctx, snapshot := gate.WithHomeSnapshot(r.Context(), sc.repo)
-	ctx = withReviewPermission(ctx, sc)
+	ctx = gate.WithRequestMemo(withReviewPermission(ctx, sc))
 	r = r.WithContext(ctx)
 	snapshotDone := api.StartStage(ctx, "snapshot")
 	defer func() { snapshotDone(1, int(snapshot.CacheHits())) }()

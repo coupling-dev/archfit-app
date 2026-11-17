@@ -131,16 +131,14 @@ type sessionJSON struct {
 	Build    buildInfoJSON `json:"build"` // authenticated, public metadata of the serving binary only
 	Login    string        `json:"login"`
 	CSRF     string        `json:"csrf"`
-	Operator bool          `json:"operator,omitempty"` // may approve installations on /admin
-	Waiting  int           `json:"waiting,omitempty"`  // operators only: installations waiting; -1 when it could not be read
+	Operator bool          `json:"operator,omitempty"` // may admit installations on /admin
 }
 
 // apiSession is the signed-in login and the CSRF token the app sends with every write.
 func (s *server) apiSession(r *http.Request, sc scope) (any, error) {
-	body := sessionJSON{Login: sc.user.Login, CSRF: csrfToken(sc.user), Build: runningBuild()}
-	if s.isOperator(sc.user) {
-		body.Operator, body.Waiting = true, s.waitingCount(r.Context())
-	}
+	// The operator's waiting count is a GitHub read per installation, so it has its own request: the page does not wait
+	// for it (apiWaiting).
+	body := sessionJSON{Login: sc.user.Login, CSRF: csrfToken(sc.user), Build: runningBuild(), Operator: s.isOperator(sc.user)}
 	return body, nil
 }
 
