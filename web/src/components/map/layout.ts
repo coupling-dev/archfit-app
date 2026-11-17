@@ -1,5 +1,6 @@
 import ELK, { type ElkNode } from 'elkjs/lib/elk-api.js';
 import { lineKinds, mapLayers, mapLines, type LineKind, type MapModel, type MapModule } from './model';
+import type { Box } from './viewport';
 
 export interface MapNode extends MapModule {
   x: number;
@@ -30,6 +31,8 @@ export interface MapLayout {
   nodes: MapNode[];
   bands: MapBand[];
   links: MapLink[];
+  // Text the chart always draws (band names, link counts): the labels of a focused module keep off it.
+  avoid: Box[];
 }
 
 type Layout = (graph: ElkNode) => Promise<ElkNode>;
@@ -83,7 +86,7 @@ export async function placeBands(model: MapModel, layout: Layout): Promise<MapLa
 
   const nodes: MapNode[] = [];
   const bands: MapBand[] = [];
-  let y = 12;
+  let y = 24;
   let width = 0;
   for (const name of layers) {
     const modules = model.modules.filter((m) => m.layer === name);
@@ -120,7 +123,11 @@ export async function placeBands(model: MapModel, layout: Layout): Promise<MapLa
       labelY: (ya + yb) / 2,
     };
   });
-  return { left: gutter, width: Math.max(360, gutter + width + 8), height: Math.max(100, y), nodes, bands, links };
+  const avoid: Box[] = [
+    ...bands.map((b) => ({ x: gutter + 12, y: b.y + 6, width: (b.name || 'No layer').length * 7 + 8, height: 18 })),
+    ...links.map((l) => ({ x: l.labelX - 12, y: l.labelY - 14, width: 24, height: 18 })),
+  ];
+  return { left: gutter, width: Math.max(360, gutter + width + 8), height: Math.max(100, y), nodes, bands, links, avoid };
 }
 
 // One worker per mounted map; abort/unmount terminates it. Worker errors reject, never leave an empty picture.

@@ -1,5 +1,6 @@
 import type { MapNode } from './layout';
 import { focusLabel, type MapLine } from './model';
+import type { Box } from './viewport';
 
 export interface Route {
   line: MapLine;
@@ -25,7 +26,14 @@ const LINE = 18;
 // Lines of the module in focus only. A line leaves the near side of its module toward the other one and arrives at the
 // near side of that one; where several share a side they spread along it, ordered by where the other end is, so they
 // do not cross at the module. Same-row lines arch over the row.
-export function routeLines(nodes: MapNode[], lines: MapLine[], focused: string): Route[] {
+export interface Area {
+  width: number;
+  height: number;
+  // Other text on the chart that a label must not cover.
+  avoid: Box[];
+}
+
+export function routeLines(nodes: MapNode[], lines: MapLine[], focused: string, area: Area): Route[] {
   const byName = new Map(nodes.map((n) => [n.name, n]));
   const mine = lines.filter((l) => l.from === focused || l.to === focused);
   const sides = (from: MapNode, to: MapNode): [Side, Side] =>
@@ -49,19 +57,22 @@ export function routeLines(nodes: MapNode[], lines: MapLine[], focused: string):
     };
   };
   // Labels keep off every module and off the labels placed before them.
-  const taken = nodes.map((n) => ({ x0: n.x, x1: n.x + n.width, y0: n.y, y1: n.y + n.height }));
+  const taken = [...nodes, ...area.avoid].map((n) => ({ x0: n.x, x1: n.x + n.width, y0: n.y, y1: n.y + n.height }));
   // Move a label down, then up, in steps until it is clear.
-  const clear = (x: number, y: number, text: string) => {
+  // Labels stay inside the chart; the search is wide enough that it ends well before running out for any real module.
+  const clear = (wanted: number, y: number, text: string): [number, number] => {
     const half = (text.length * CHAR) / 2;
-    for (let n = 0; n < 24; n++) {
+    const x = Math.min(Math.max(wanted, half + 4), Math.max(half + 4, area.width - half - 4));
+    for (let n = 0; n < 200; n++) {
       const dy = (n % 2 ? 1 : -1) * Math.ceil(n / 2) * LINE;
-      const box = { x0: x - half, x1: x + half, y0: y + dy - LINE, y1: y + dy };
+      const at = Math.min(Math.max(y + dy, LINE + 2), area.height - 4);
+      const box = { x0: x - half, x1: x + half, y0: at - LINE, y1: at };
       if (!taken.some((t) => box.x0 < t.x1 && t.x0 < box.x1 && box.y0 < t.y1 && t.y0 < box.y1)) {
         taken.push(box);
-        return y + dy;
+        return [x, at];
       }
     }
-    return y;
+    return [x, y];
   };
   return mine.flatMap((line): Route[] => {
     const from = byName.get(line.from);
@@ -72,28 +83,29 @@ export function routeLines(nodes: MapNode[], lines: MapLine[], focused: string):
     if (from === to) {
       const x = from.x + from.width;
       const text = focusLabel(line);
-      const labelX = x + 12 + (text.length * CHAR) / 2;
+      const [labelX, labelY] = clear(x + 12 + (text.length * CHAR) / 2, from.y + 36, text);
       return [{
         line,
         path: `M ${x} ${from.y + 20} C ${x + 50} ${from.y + 20}, ${x + 50} ${from.y + 44}, ${x} ${from.y + 44}`,
         labelX,
-        labelY: clear(labelX, from.y + 36, text),
+        labelY,
       }];
     }
     const sameRow = from.y === to.y;
-    const reach = sameRow ? 50 + Math.abs(b.x - a.x) / 4 : Math.max(40, Math.abs(b.y - a.y) / 2);
+    // An arch stays under 60 px, so it never leaves the top of the chart.
+    const reach = sameRow ? 40 + Math.min(20, Math.abs(b.x - a.x) / 20) : Math.max(40, Math.abs(b.y - a.y) / 2);
     const out = a.y === from.y ? -reach : reach;
     const into = b.y === to.y ? -reach : reach;
     // Near the arrowhead the lines of one module are furthest apart, so a label there is the easiest to read.
     const t = 0.8;
     const at = (p0: number, p1: number, p2: number, p3: number) =>
       (1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * p1 + 3 * (1 - t) * t ** 2 * p2 + t ** 3 * p3;
-    const labelX = at(a.x, a.x, b.x, b.x);
+    const [labelX, labelY] = clear(at(a.x, a.x, b.x, b.x), at(a.y, a.y + out, b.y + into, b.y), focusLabel(line));
     return [{
       line,
       path: `M ${a.x} ${a.y} C ${a.x} ${a.y + out}, ${b.x} ${b.y + into}, ${b.x} ${b.y}`,
       labelX,
-      labelY: clear(labelX, at(a.y, a.y + out, b.y + into, b.y), focusLabel(line)),
+      labelY,
     }];
   });
 }

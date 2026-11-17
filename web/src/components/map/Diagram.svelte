@@ -32,7 +32,7 @@
     focused ? [focused, ...lines.filter(touches).flatMap((line) => [line.from, line.to])] : [],
   );
   // Only the lines of the module in focus are drawn; every other dependency is in the line between its two layers.
-  const routes = $derived(placed && focused ? routeLines(placed.nodes, lines, focused) : []);
+  const routes = $derived(placed && focused ? routeLines(placed.nodes, lines, focused, placed) : []);
   const count = (pick: (line: { from: string; to: string }) => string, name: string) =>
     lines.filter((line) => pick(line) === name).length;
   const layerName = (name: string) => name || 'No layer';
