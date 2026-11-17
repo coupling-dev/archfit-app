@@ -112,8 +112,13 @@ A repository with no `.archfit.yaml` on its default branch shows **No policy on 
 
 Search filters rules, exceptions, and modules without changing the totals. Each rule is named by its id, as on the
 pull request and request pages. Expand a rule for its scope, **Why**, and **Instead**. A note is **Not checked**: it
-tells the reader what to do. Exceptions show server-supplied days remaining, including today in the next
-30 days. Bars show the remaining days capped at 30, not exception age. Missing expiry or ownership stays **Not provided**.
+tells the reader what to do.
+
+Exceptions are grouped by rule, largest group first, with a count for each (for example **coupling · 62**). The first
+20 rows show, then **Show all**. A column appears only when a shown row has its fact: **Expiry** when an end date
+exists, **Request** when a request link exists. Exceptions without an end date say so once above the table. Exceptions
+show server-supplied days remaining, including today in the next 30 days. Bars appear only when a shown row has an end
+date and show the remaining days capped at 30, not exception age.
 Request links appear only when the response supplies a safe destination.
 
 The module table follows the rules and exceptions. Expand a module for public paths, volatility, and subdomain.
