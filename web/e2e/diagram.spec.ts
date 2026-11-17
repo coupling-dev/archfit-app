@@ -15,7 +15,7 @@ const map = bigMap();
 async function openDiagram(page: Page, width = 1280) {
   await page.setViewportSize({ width, height: 900 });
   await open(page, path, { [api]: () => [200, home] });
-  await page.getByRole('button', { name: 'Diagram', exact: true }).click();
+  await page.getByRole('radio', { name: 'Diagram', exact: true }).click();
   await expect(page.getByRole('group', { name: group })).toBeVisible();
 }
 const viewport = (page: Page) => page.locator('.map-viewport');
@@ -222,10 +222,10 @@ for (const width of [390, 1280]) {
         expect(box.height).toBeGreaterThanOrEqual(44);
         expect(box.width).toBeGreaterThanOrEqual(44);
       }
-    await page.getByRole('button', { name: 'Dark', exact: true }).click();
+    await page.getByRole('radio', { name: 'Dark', exact: true }).click();
     await expect(viewport(page)).toBeVisible();
     await page.screenshot({ path: `../tmp/diagram/focus-dark-${width}.png` });
-    await page.getByRole('button', { name: 'Auto', exact: true }).click();
+    await page.getByRole('radio', { name: 'Auto', exact: true }).click();
     await expectClean(page, ['Review workflow change']);
   });
 }
@@ -237,7 +237,7 @@ test('diagram: a module without lines stays bright when it is the one in focus',
     map: { layers: [''], modules: [...map.modules.slice(0, 2), { name: 'alone', layer: '', volatility: 'low' }], lines: [] },
   };
   await open(page, path, { [api]: () => [200, alone] });
-  await page.getByRole('button', { name: 'Diagram', exact: true }).click();
+  await page.getByRole('radio', { name: 'Diagram', exact: true }).click();
   await page.locator('[data-module="alone"]').click();
   await expect(page.locator('.map-node.selected')).toHaveCount(1);
   await expect(page.locator('.map-node:not(.dim)')).toHaveCount(1);

@@ -210,11 +210,11 @@ test('home: request opens its page and the record folds away', async ({ page }) 
 test('home: worker failure says so, and Matrix still works', async ({ page }) => {
   await page.route('**/assets/layout.worker-*.js', (r) => r.abort());
   await open(page, path, { [api]: () => [200, fixture('one-request')] });
-  await page.getByRole('button', { name: 'Diagram', exact: true }).click();
+  await page.getByRole('radio', { name: 'Diagram', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('The map layout worker could not place the modules.');
   await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toHaveCount(0);
   await expectPageText(page, 'home-worker-error');
-  await page.getByRole('button', { name: 'Matrix', exact: true }).click();
+  await page.getByRole('radio', { name: 'Matrix', exact: true }).click();
   await page.getByRole('button', { name: /^app to other:/ }).click();
   await expect(page.getByRole('link', { name: 'Open request #431' })).toHaveAttribute(
     'href',
@@ -258,7 +258,7 @@ test('home: phone map starts as a matrix, the diagram fits, and bands stay in or
   await expect(diagram).toBeHidden();
   expect(workers).toEqual([]);
   const workerRequest = page.waitForRequest(/\/assets\/layout\.worker-.*\.js/);
-  await page.getByRole('button', { name: 'Diagram', exact: true }).click();
+  await page.getByRole('radio', { name: 'Diagram', exact: true }).click();
   await workerRequest;
   await expect(page.getByText('Show the map as a diagram', { exact: true })).toHaveCount(0);
   await expect(diagram).toBeVisible();
@@ -279,7 +279,7 @@ test('home: SVG names both ends of a line when its module is in focus, and draws
   ]) {
     await page.unrouteAll();
     await open(page, path, { [api]: () => [200, fixture(name)] });
-    await page.getByRole('button', { name: 'Diagram', exact: true }).click();
+    await page.getByRole('radio', { name: 'Diagram', exact: true }).click();
     await expect(page.locator('.map-link')).toHaveCount(2);
     await expect(page.locator('.map-edge')).toHaveCount(0);
     await page.locator('[data-module="app"]').click();
