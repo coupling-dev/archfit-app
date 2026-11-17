@@ -109,6 +109,9 @@ func TestPolicyErrorsAndEdit(t *testing.T) {
 		t.Fatalf("no policy: %s", res.Body.String())
 	}
 	wantStatus(t, e.signIn("mallory").get(policyAPI), http.StatusNotFound)
+	e.gh.fail = map[string]error{"File": api.ErrRateLimited}
+	wantStatus(t, e.as("alice", permRead).get(policyAPI), http.StatusServiceUnavailable)
+	e.gh.fail = nil
 	e.gh.setFile(repoName, mainBranch, ".archfit.yaml", "version: 2\nmodules: {}\n")
 	c := e.as("alice", permRead)
 	res = c.get(policyAPI)

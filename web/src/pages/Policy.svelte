@@ -7,7 +7,7 @@
   import { confirm } from '../lib/passkey';
   import { passkeyFailure } from '../lib/webauthn';
   import { firstJSON } from '../lib/early';
-  import { isPolicyMissing } from '../lib/policy';
+  import { isPolicyMissing, policyMissing } from '../lib/policy';
   import { repoPage, type Repo } from '../lib/route';
 
   let { route, here, session }: { route: Repo; here: string; session: Session } = $props();
@@ -90,7 +90,7 @@
 
 {#if missing}
   <section class="box" aria-labelledby="no-policy"><div class="blankslate">
-    <h2 class="title-box" id="no-policy">No policy on the default branch yet.</h2>
+    <h2 class="title-box" id="no-policy">{policyMissing}</h2>
     <a class="btn primary" href={repoPage(route.fullName)}>Continue setup</a>
   </div></section>
 {:else if failure}
