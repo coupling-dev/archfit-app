@@ -1,4 +1,4 @@
-import { expectNoNotUsedWord } from './support';
+import { docsShot, expectNoNotUsedWord } from './support';
 import { expect, test } from '@playwright/test';
 import { open, expectClean } from './fixtures';
 
@@ -80,4 +80,27 @@ test('a repository the user can see is matched whatever the letter case of the a
   await expect(page.getByText('Pull request #999999 was not found in Acme/APP.', { exact: true })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Repository' })).toBeVisible();
   await expectClean(page);
+});
+
+test('a missing page shows the generic message at once, and names the repository only when the list answers @docs', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await open(page, '/r/acme/app/pull/999999', {
+    holdRepos: held,
+    repos: { repos: [{ full_name: 'acme/app', name: 'app', private: false }] },
+  });
+  await expect(page.getByRole('heading', { name: 'Page not available' })).toBeVisible();
+  await expect(page.getByText('This page does not exist or is not available to your account.')).toBeVisible();
+  await expect(page.getByText('was not found in', { exact: false })).toHaveCount(0);
+  await docsShot(page, 'unknown/missing-pull-pending-1280');
+  release();
+  await expect(page.getByText('Pull request #999999 was not found in acme/app.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Repository' })).toBeVisible();
+  await expectClean(page);
+  await docsShot(page, 'unknown/missing-pull-visible-1280');
 });
