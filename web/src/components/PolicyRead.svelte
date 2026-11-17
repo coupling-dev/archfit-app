@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { Policy } from '../lib/api';
-  import { exceptionExpiry, filterPolicy, policyCounts, ruleMode } from '../lib/policy';
+  import { exceptionExpiry, filterPolicy, groupExceptions, policyCounts, ruleMode } from '../lib/policy';
   import { safeHref } from '../lib/route';
   import PolicyGraph from './PolicyGraph.svelte';
 
@@ -10,6 +10,17 @@
   let copyNotice = $state('');
   const counts = $derived(policyCounts(policy));
   const filtered = $derived(filterPolicy(policy, query));
+  // Exceptions are grouped by rule and shown a page at a time. A column is drawn only when some row has its fact.
+  const previewRows = 20;
+  let showAll = $state(false);
+  const groups = $derived(groupExceptions(filtered.exceptions));
+  const flat = $derived(groups.flatMap((group) => group.items.map((item) => ({ group, item }))));
+  const shown = $derived(showAll ? flat : flat.slice(0, previewRows));
+  const hasEnd = $derived(policy.exceptions.some((e) => !!e.expires));
+  const hasRequest = $derived(policy.exceptions.some((e) => !!e.request && !!safeHref(e.request_href)));
+  const hasBars = $derived(policy.exceptions.some((e) => e.days_left != null));
+  const noEnd = $derived(policy.exceptions.filter((e) => !e.expires).length);
+  const columns = $derived(1 + (hasEnd ? 1 : 0) + (hasRequest ? 1 : 0));
   const matches = $derived(filtered.modules.length + filtered.rules.length + filtered.exceptions.length);
 
   async function inspectModule(index: number) {
@@ -83,37 +94,52 @@
 </section>
 
 <section class="box" aria-labelledby="exceptions">
-  <div class="box-head"><div><h2 class="title-box" id="exceptions">Exceptions</h2><p>Follow the supplied request to resolve or replace an exception.</p></div></div>
-  {#if filtered.exceptions.length}
+  <div class="box-head"><div><h2 class="title-box" id="exceptions">Exceptions</h2><p>Follow the linked request to renew or replace an exception.</p></div></div>
+  {#if flat.length}
+    {#if noEnd > 1}<p class="box-body small muted">{noEnd} exceptions have no end date.</p>{/if}
     <table class="data cards exceptions">
-      <thead><tr><th>Rule / boundary</th><th>Owner</th><th>Expiry</th><th>Request</th></tr></thead>
+      <thead><tr>
+        <th>Rule / boundary</th>
+        {#if hasEnd}<th>Expiry</th>{/if}
+        {#if hasRequest}<th>Request</th>{/if}
+      </tr></thead>
       <tbody>
-        {#each filtered.exceptions as exception, i (i)}
-          {@const expiry = exceptionExpiry(exception)}
+        {#each shown as row, i (i)}
+          {@const exception = row.item}
+          {#if i === 0 || shown[i - 1]?.group !== row.group}
+            <tr class="group"><th colspan={columns} scope="colgroup">{row.group.rule} · {row.group.items.length}</th></tr>
+          {/if}
           <tr>
-            <td><strong>{exception.rule}</strong><p class="boundary">{exception.from}{exception.to ? ` → ${exception.to}` : ''}</p>
-              <details><summary>Reason</summary><p>{exception.why || 'Not provided'}</p></details>
+            <td><p class="boundary">{exception.from}{exception.to ? ` → ${exception.to}` : ''}</p>
+              {#if exception.why}<details><summary>Reason</summary><p>{exception.why}</p></details>{/if}
             </td>
-            <td data-label="Owner" class="muted">Not provided</td>
-            <td data-label="Expiry">
-              <div class="expiry">
-                <span class={'label ' + expiry.tone}>{expiry.label}</span>
-                {#if exception.expires}<time datetime={exception.expires}>{exception.expires}</time>{/if}
-                {#if expiry.remaining !== null}
-                  <progress max="30" value={expiry.remaining} class:expired={expiry.tone === 'danger'} aria-label="Days remaining, capped at 30"></progress>
-                {/if}
-              </div>
-            </td>
-            <td data-label="Request">
-              {#if exception.request && safeHref(exception.request_href)}
-                <a href={safeHref(exception.request_href)}>Request #{exception.request}</a>
-              {:else}<span class="muted">Not provided</span>{/if}
-            </td>
+            {#if hasEnd}
+              {@const expiry = exceptionExpiry(exception)}
+              <td data-label="Expiry">
+                <div class="expiry">
+                  <span class={'label ' + expiry.tone}>{expiry.label}</span>
+                  {#if exception.expires}<time datetime={exception.expires}>{exception.expires}</time>{/if}
+                  {#if expiry.remaining !== null}
+                    <progress max="30" value={expiry.remaining} class:expired={expiry.tone === 'danger'} aria-label="Days remaining, capped at 30"></progress>
+                  {/if}
+                </div>
+              </td>
+            {/if}
+            {#if hasRequest}
+              <td data-label="Request">
+                {#if exception.request && safeHref(exception.request_href)}
+                  <a href={safeHref(exception.request_href)}>Request #{exception.request}</a>
+                {:else}<span class="muted">None</span>{/if}
+              </td>
+            {/if}
           </tr>
         {/each}
       </tbody>
     </table>
-    <div class="box-foot">Bars show days remaining within a 30-day window, not exception age. Expired records are not active exceptions.</div>
+    {#if flat.length > previewRows && !showAll}
+      <div class="box-foot row-between"><span class="small muted">Showing {previewRows} of {flat.length}</span><button class="btn sm" type="button" onclick={() => showAll = true}>Show all</button></div>
+    {/if}
+    {#if hasBars}<div class="box-foot">Bars show days remaining within a 30-day window, not exception age. Expired records are not active exceptions.</div>{/if}
   {:else}<p class="box-body muted">{query.trim() ? 'No exceptions match this search.' : 'No exceptions.'}</p>{/if}
 </section>
 
@@ -186,9 +212,8 @@
   .rule-body { padding: 0 0 14px 22px; font-size: 13px; overflow-wrap: anywhere; }
   table { table-layout: fixed; }
   table td { overflow-wrap: anywhere; padding: 12px; }
-  .exceptions th:first-child { width: 40%; }
-  .exceptions th:nth-child(2) { width: 16%; }
-  .exceptions th:nth-child(3) { width: 26%; }
+  .exceptions th:first-child { width: 50%; }
+  tr.group th { text-align: left; background: var(--bg-subtle); font-size: 12px; }
   .modules .label { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
   .modules th:first-child { width: 45%; }
   .modules th:nth-child(2) { width: 20%; }

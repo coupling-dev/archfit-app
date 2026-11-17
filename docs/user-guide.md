@@ -90,8 +90,11 @@ check mode, and counts. Approval and live enforcement are **Not provided**: this
 **Blocking rules** counts configured ask/deny rules, not off settings or unchecked notes. It does not prove that checks are required.
 
 Search filters rules, exceptions, and modules without changing the totals. Expand a rule for its scope, **Why**, and
-**Instead**. Notes remain **Not checked**. Exceptions show server-supplied days remaining, including today in the next
-30 days. Bars show the remaining days capped at 30, not exception age. Missing expiry or ownership stays **Not provided**.
+**Instead**. Notes remain **Not checked**. Exceptions are grouped by rule, largest group first, with a count for each (for example **coupling · 62**). The first
+20 show, then **Show all**. A column appears only when some exception has its fact: **Expiry** when an end date exists,
+**Request** when a request link exists. Exceptions without an end date say so once above the table. Exceptions show
+server-supplied days remaining, including today in the next 30 days. Bars appear only when an end date exists and show
+the remaining days capped at 30, not exception age.
 Request links appear only when the response supplies a safe destination.
 
 The module table follows the rules and exceptions. Expand a module for public paths, volatility, and subdomain.

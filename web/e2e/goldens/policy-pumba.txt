@@ -62,42 +62,35 @@ no-util-to-domain
 Deny
 Exceptions
 
-Follow the supplied request to resolve or replace an exception.
+Follow the linked request to renew or replace an exception.
 
-Rule / boundary	Owner	Expiry	Request
-duplication
+4 exceptions have no end date.
+
+Rule / boundary
+duplication · 4
+
 
 cmd → pkg_chaos
 
 Reason
-	Not provided	
-Not provided
-	Not provided
-duplication
+
+
 
 cmd → pkg_runtime
 
 Reason
-	Not provided	
-Not provided
-	Not provided
-duplication
+
+
 
 pkg_chaos → pkg_runtime
 
 Reason
-	Not provided	
-Not provided
-	Not provided
-duplication
+
+
 
 pkg_container → pkg_runtime
 
 Reason
-	Not provided	
-Not provided
-	Not provided
-Bars show days remaining within a 30-day window, not exception age. Expired records are not active exceptions.
 Modules
 
 Inspect paths and allowed dependencies. The graph is a secondary view.

@@ -56,7 +56,7 @@ export function ruleMode(mode: string): string {
 export function exceptionExpiry(exception: Exception) {
   const days = exception.days_left;
   if (days == null || !Number.isFinite(days)) {
-    return { label: exception.expires ? 'Days remaining not provided' : 'Not provided', tone: '', remaining: null };
+    return { label: exception.expires ? 'Days remaining not provided' : 'No end date', tone: '', remaining: null };
   }
   return {
     label:
@@ -68,6 +68,15 @@ export function exceptionExpiry(exception: Exception) {
     tone: days < 0 ? 'danger' : days <= 30 ? 'attention' : '',
     remaining: Math.max(0, Math.min(30, days)),
   };
+}
+
+// groupExceptions orders exceptions by rule, the largest group first; ties keep the order of the file.
+export function groupExceptions(exceptions: Exception[]): { rule: string; items: Exception[] }[] {
+  const byRule = new Map<string, Exception[]>();
+  for (const e of exceptions) byRule.set(e.rule, [...(byRule.get(e.rule) ?? []), e]);
+  return [...byRule]
+    .map(([rule, items]) => ({ rule, items }))
+    .sort((a, b) => b.items.length - a.items.length);
 }
 
 export function policyCounts(policy: Policy) {
