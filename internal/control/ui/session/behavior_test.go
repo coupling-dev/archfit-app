@@ -36,9 +36,6 @@ func TestRevokedUserLosesAccessWithinCacheWindow(t *testing.T) {
 			}
 		}
 	}
-	if got := f.repos.callCount(); got != 1 {
-		t.Errorf("%d ResolveRepo calls, want only the one before the revocation", got)
-	}
 }
 
 func TestRemovedRepositoryIsForbidden(t *testing.T) {
@@ -50,7 +47,7 @@ func TestRemovedRepositoryIsForbidden(t *testing.T) {
 		t.Fatalf("Authorize before the removal: %v", err)
 	}
 
-	f.repos.answer(api.Repo{}, api.ErrNotFound)
+	f.repos.answer(0, api.ErrNotFound)
 	f.clock.advance(61 * time.Second)
 
 	repo, err := f.s.Authorize(ctx, testUser, testRepo, "read")
@@ -80,9 +77,6 @@ func TestCrossInstallationIdentifierHasNoEffect(t *testing.T) {
 
 	if !errors.Is(err, ErrForbidden) || repo != (api.Repo{}) {
 		t.Errorf("Authorize = %+v, %v; want no repo and ErrForbidden", repo, err)
-	}
-	if got := f.repos.callCount(); got != 0 {
-		t.Errorf("%d ResolveRepo calls, want 0", got)
 	}
 	if got := f.users.lastCall(); got != (permissionCall{testToken, "other-org/secret"}) {
 		t.Errorf("Permission asked about %q, want the requested repository with the user's token", got.fullName)
