@@ -156,9 +156,11 @@ date and show the remaining days capped at 30, not exception age.
 Request links appear only when the response supplies a safe destination.
 
 The module table follows the rules and exceptions. Expand a module for public paths, volatility, and subdomain.
-**Show graph** is closed by default at every width. It draws allowed dependencies, not measured imports, and keeps the
-whole policy visible during search. Select a node to clear search and open that module's details. Large maps scroll
-vertically; dependency targets missing from the module list are reported, not invented.
+**Show graph** is closed by default at every width, and its layout worker loads only when it opens. It uses the same
+map as Home: module names are shown in full, layers are bands, and it draws allowed dependencies, not measured
+imports. Select a module to see what it depends on and what depends on it, below the graph; **Show in the table**
+opens its details in the table. Search filters the table, not the graph. Dependency targets missing from the module
+list are reported, not invented.
 
 **View source** opens **Show raw YAML**. **Copy digest** copies the complete digest; clipboard refusal leaves the value
 selectable. **Edit** appears only when change control is available. The existing edit and passkey flow is unchanged.

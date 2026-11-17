@@ -93,11 +93,13 @@ test('policy reading: graph is secondary, uses declared dependencies and selects
     });
   }
   await page.getByText('Show graph', { exact: false }).click();
-  await expect(graph.getByRole('link')).toHaveCount(6);
-  await expect(graph.locator('path.dependency')).toHaveCount(7);
+  await expect(graph.locator('.map-node')).toHaveCount(6);
   await page.getByRole('searchbox').fill('no-such-module');
-  await graph.getByRole('link', { name: 'Inspect pkg_container', exact: true }).focus();
-  await page.keyboard.press('Enter');
+  await graph.locator('[data-module="pkg_container"]').click();
+  const panel = page.getByRole('region', { name: 'Selected module' });
+  await expect(panel).toContainText('Depends on:');
+  await expect(panel).toContainText('Used by:');
+  await panel.getByRole('button', { name: 'Show in the table', exact: true }).click();
   const detail = page.locator('#policy-module-2');
   await expect(detail).toHaveAttribute('open', '');
   await expect(detail.locator('summary')).toBeFocused();
