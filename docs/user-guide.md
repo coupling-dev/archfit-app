@@ -76,9 +76,9 @@ with denies, requests, drift or exceptions. Filters use the same modules on both
 volatility. Its line precedence is drift, deny, request, exception, allow: unlike Matrix, it draws only one
 status per pair. Use Matrix for complete pair details, including when the diagram cannot load.
 
-On request pages, the map still has **Show the map as a list** and **Show the map as a diagram** disclosures.
-Below 720px the list opens first and no diagram worker loads until the diagram is opened. On wider screens
-the SVG opens fitted to its box. The list remains available if the layout worker fails.
+On request pages, the map has **Show the map as a list** and **Show the map as a diagram** disclosures.
+The diagram is closed at every width, so no layout worker loads until you open it. Below 720px the list opens
+first. The list remains available if the layout worker fails.
 
 Use **Skip to main content** (the first keyboard link) to bypass the header. Theme and action controls have
 larger hit areas on narrow screens and touch devices. Request fields use the selected light or dark theme.
