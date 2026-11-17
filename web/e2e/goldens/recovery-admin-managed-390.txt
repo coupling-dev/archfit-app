@@ -1,6 +1,6 @@
 Installations
 
-Accounts admitted to this App. Admission is set in the App settings, by pull request.
+Accounts that may run Archfit. Admit an account below, or set admission in the App settings, by pull request.
 
 No installation is waiting to be admitted.
 

@@ -52,7 +52,7 @@
 <div class="page-head">
   <div>
     <h1>Installations</h1>
-    <p class="lede">Accounts admitted to this App. Admission is set in the App settings, by pull request.</p>
+    <p class="lede">Accounts that may run Archfit. Admit an account below, or set admission in the App settings, by pull request.</p>
   </div>
 </div>
 
