@@ -8,7 +8,10 @@ import (
 	"html"
 	"io/fs"
 	"log/slog"
+	"mime"
 	"net/http"
+	"path"
+	"strconv"
 	"strings"
 )
 
@@ -105,7 +108,8 @@ func shellPolicy(nonce string) string {
 	return cspHead + " 'nonce-" + nonce + "'" + cspTail
 }
 
-// assets serves the hashed build files under /assets/: no directory listing, no other folder of the build.
+// assets serves the hashed build files under /assets/: no directory listing, no other folder of the build. A script or
+// stylesheet has a .br and a .gz sibling from the build (web/vite.config.ts); the one the client takes is sent as it is.
 func assets(web fs.FS) http.HandlerFunc {
 	files := http.FileServerFS(web)
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -113,11 +117,27 @@ func assets(web fs.FS) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
-		if _, err := fs.Stat(web, strings.TrimPrefix(r.URL.Path, "/")); err != nil {
+		name := strings.TrimPrefix(r.URL.Path, "/")
+		if _, err := fs.Stat(web, name); err != nil {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Cache-Control", immutableCache)
+		w.Header().Add("Vary", "Accept-Encoding")
+		for _, c := range []struct{ token, suffix string }{{"br", ".br"}, {"gzip", ".gz"}} {
+			if !accepts(r, c.token) {
+				continue
+			}
+			body, err := fs.ReadFile(web, name+c.suffix)
+			if err != nil {
+				continue
+			}
+			w.Header().Set("Content-Encoding", c.token)
+			w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(name)))
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			_, _ = w.Write(body)
+			return
+		}
 		files.ServeHTTP(w, r)
 	}
 }

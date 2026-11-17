@@ -69,7 +69,12 @@ The matrix shows **Policy and review status**, not observed imports. Rows are so
 | !      | Drift.                                                                      |
 | ◷      | An exception; select the cell for its expiry and server-reported days left. |
 
-Every payload status remains in its cell, including multiple rules, requests and exceptions. A blank means
+From 12 modules the matrix is compact: 32 px cells, vertical column names and a 220 px row header, so 24 modules fit
+a laptop page without horizontal scrolling. Names break only after `_` and `-`; hover a name for the full text.
+A cell shows its strongest status (drift, deny, request, allow) and, when it has several statuses, how many. An
+exception that ends within seven days (or has ended) is ringed and ranks just below deny; a later exception is grey
+and does not change the symbol. An exception with no date is never read as a pass: it shows ◷ in the usual colour. Every status remains in the cell's accessible name and in its details, including
+multiple rules, requests and exceptions. A blank means
 **no explicit relationship in this payload**, not “no imports” or “permitted”. Deny status is not fully evaluated
 for all pairs. Select a cell for all rules, request links, exception dates and evidence scope. Tab enters the
 table; arrow keys move between cells (the shaded diagonal is skipped), Enter opens details, and Escape closes details
@@ -82,6 +87,27 @@ with denies, requests, drift or exceptions. Filters use the same modules on both
 **Diagram** loads the SVG and its layout worker only when selected, including on phones. It shows declared
 volatility. Its line precedence is drift, deny, request, exception, allow: unlike Matrix, it draws only one
 status per pair. Use Matrix for complete pair details, including when the diagram cannot load.
+
+![Diagram: modules by layer, with the legend and toolbar above](images/diagram-1280.png)
+
+The diagram sits in a box of fixed height, so the page does not grow with it. It opens with module names at
+least 11 px high. Layers with many modules wrap into rows, so a large repository still fits about one page wide.
+
+Until you pick a module, the diagram draws one line for each pair of layers, in the margin on the left, with
+the number of dependencies it stands for. The line takes the strongest kind among them (drift first). Picking a
+module draws its own lines.
+
+- **Move:** drag, or use the arrow keys on the focused diagram.
+- **Zoom:** Ctrl or Cmd with the mouse wheel, pinch, double-click, the **+** and **−** buttons, or the **+** and
+  **-** keys. A plain wheel keeps scrolling the page.
+- **Fit** and **100%** reset the zoom; **0** fits from the keyboard. **Full screen** fills the screen where the
+  browser allows it.
+- **Focus a module:** click it, or Tab to it. Its own lines appear, the rest dim, and each line is named by
+  both ends, for example `handlers → api · exception until 2027-01-15`. Click it again or press Esc to clear.
+- **Find a module:** type or pick a name; the diagram moves to it and focuses it.
+
+An arrow points at the module it depends on. The outer layer is on top. The lines are allowed dependencies,
+not observed imports.
 
 On request pages, the map has **Show the map as a list** and **Show the map as a diagram** disclosures.
 The diagram is closed at every width, so no layout worker loads until you open it. Below 720px the list opens
@@ -102,8 +128,13 @@ A repository with no `.archfit.yaml` on its default branch shows **No policy on 
 
 Search filters rules, exceptions, and modules without changing the totals. Each rule is named by its id, as on the
 pull request and request pages. Expand a rule for its scope, **Why**, and **Instead**. A note is **Not checked**: it
-tells the reader what to do. Exceptions show server-supplied days remaining, including today in the next
-30 days. Bars show the remaining days capped at 30, not exception age. Missing expiry or ownership stays **Not provided**.
+tells the reader what to do.
+
+Exceptions are grouped by rule, largest group first, with a count for each (for example **coupling · 62**). The first
+20 rows show, then **Show all**. A column appears only when a shown row has its fact: **Expiry** when an end date
+exists, **Request** when a request link exists. Exceptions without an end date say so once above the table. Exceptions
+show server-supplied days remaining, including today in the next 30 days. Bars appear only when a shown row has an end
+date and show the remaining days capped at 30, not exception age.
 Request links appear only when the response supplies a safe destination.
 
 The module table follows the rules and exceptions. Expand a module for public paths, volatility, and subdomain.

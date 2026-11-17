@@ -39,7 +39,7 @@ function fixture(count: number): { status: string; needs_you: []; map: MapModel 
 const api = 'GET /api/repos/acme/app/home';
 const tableName = 'Policy and review status matrix';
 
-for (const count of [5, 10])
+for (const count of [5, 10, 24])
   for (const width of [390, 1280])
     for (const theme of ['light', 'dark'] as const) {
       test(`DSM layout: ${count} modules, ${width}px, ${theme}`, async ({ page }) => {
@@ -51,7 +51,7 @@ for (const count of [5, 10])
         await expect(page.getByRole('button', { name: 'Matrix', exact: true })).toHaveAttribute('aria-pressed', 'true');
         await expect(page.getByRole('table', { name: tableName })).toBeVisible();
         await expect(page.locator('tbody tr')).toHaveCount(count);
-        await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toHaveCount(0);
+        await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toHaveCount(0);
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
         await expectClean(page, ['Policy and review status']);
         expect(errors).toEqual([]);
@@ -61,7 +61,9 @@ for (const count of [5, 10])
 test('DSM preserves all statuses, keyboard navigation and modal focus return', async ({ page }) => {
   await open(page, '/r/acme/app', { [api]: () => [200, fixture(5)] });
   const cell = page.getByRole('button', { name: /^api to storage:/ });
-  await expect(cell).toContainText('××??◷!');
+  await expect(cell).toContainText('!');
+  await expect(cell).toContainText('6');
+  await expect(cell).not.toContainText('××');
   await expect(cell).toHaveAttribute('aria-label', /entry-boundary.*request #42.*request #43.*0 days left.*Drift/);
   await page.getByRole('button', { name: /^api to web:/ }).focus();
   await page.keyboard.press('End');
@@ -90,6 +92,49 @@ test('DSM preserves all statuses, keyboard navigation and modal focus return', a
   await expect(page.getByRole('dialog')).toContainText('No explicit relationship in this payload.');
   await page.getByRole('button', { name: 'Close details' }).click();
   await expect(blank).toBeFocused();
+});
+
+test('DSM compact density: 24 modules fit 1280px; 11 stay comfortable', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, '/r/acme/app', { [api]: () => [200, fixture(24)] });
+  const viewport = page.getByRole('region', { name: 'Scrollable relationship matrix' });
+  await expect(page.getByRole('table', { name: tableName })).toHaveClass(/compact/);
+  expect(await viewport.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  const rowHeader = await page.getByRole('rowheader').first().boundingBox();
+  expect(rowHeader?.width).toBe(220);
+  const table = await page.getByRole('table', { name: tableName }).boundingBox();
+  expect(table?.width).toBeLessThanOrEqual(1020);
+  const cell = await page.getByRole('button', { name: 'api to web: no rule' }).boundingBox();
+  expect(cell?.width).toBe(32);
+  const head = page.getByRole('columnheader', { name: /module-10/ });
+  await expect(head).toHaveAttribute('title', 'module-10');
+  expect(await head.evaluate((el) => getComputedStyle(el).overflowWrap)).toBe('normal');
+  await page.screenshot({ path: '../docs/images/matrix-24-1280.png', fullPage: true });
+});
+
+test('DSM 24 modules at a phone width: screenshot for review', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, '/r/acme/app', { [api]: () => [200, fixture(24)] });
+  await expect(page.getByRole('table', { name: tableName })).toHaveClass(/compact/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.getByRole('region', { name: 'Scrollable relationship matrix' }).screenshot({ path: '../docs/images/matrix-24-390.png' });
+});
+
+test('DSM comfortable below 12 modules, with counts and names that break only at _ and -', async ({ page }) => {
+  const data = fixture(11);
+  data.map.modules[4].name = 'multiplexer_backends_with_a_long_name';
+  data.map.lines = data.map.lines.map((l) => ({
+    ...l,
+    from: l.from === 'storage' ? data.map.modules[4].name : l.from,
+    to: l.to === 'storage' ? data.map.modules[4].name : l.to,
+  }));
+  await open(page, '/r/acme/app', { [api]: () => [200, data] });
+  await expect(page.getByRole('table', { name: tableName })).not.toHaveClass(/compact/);
+  const rowheader = page.getByRole('rowheader', { name: /multiplexer_backends_with_a_long_name/ });
+  await expect(rowheader).toHaveAttribute('title', 'multiplexer_backends_with_a_long_name');
+  expect(await rowheader.locator('wbr').count()).toBe(6);
+  await expect(page.getByRole('button', { name: /^api to multiplexer_backends_with_a_long_name:/ }).locator('.count')).toHaveText('6');
+  await expect(page.getByRole('button', { name: /^billing to multiplexer_backends_with_a_long_name:/ })).toContainText('✓');
 });
 
 test('DSM diagonal cells are shaded and skipped; blank cells have a short name', async ({ page }) => {
@@ -204,7 +249,7 @@ test('Matrix is the default without a worker; explicit Diagram choice survives r
   await expect(page.getByRole('table', { name: tableName })).toBeVisible();
   expect(workers).toEqual([]);
   await page.getByRole('button', { name: 'Diagram', exact: true }).click();
-  await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toBeVisible();
   await expect(page.getByText('Show the map as a diagram', { exact: true })).toHaveCount(0);
   expect(workers.some((url) => url.includes('layout.worker-'))).toBe(true);
   await page.reload();
@@ -227,7 +272,7 @@ test('Matrix works when browser storage is unavailable', async ({ page }) => {
   await open(page, '/r/acme/app', { [api]: () => [200, fixture(5)] });
   await expect(page.getByRole('table', { name: tableName })).toBeVisible();
   await page.getByRole('button', { name: 'Diagram', exact: true }).click();
-  await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toBeVisible();
   await expect(page.getByText('Show the map as a diagram', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Matrix', exact: true }).click();
   await expect(page.getByRole('table', { name: tableName })).toBeVisible();

@@ -55,3 +55,27 @@ export function lineLabel(line: MapLine): string {
         : line.rule;
   return lineWords[line.kind] + (label ? ' · ' + label : '');
 }
+
+// The legend and caption of the diagram, in the words of design 12.2. The Matrix reuses them.
+export const legendKinds: LineKind[] = ['allowed', 'requested', 'deny', 'exception', 'drift'];
+export const legendWords: Record<LineKind, string> = {
+  allowed: 'An allowed dependency',
+  requested: 'A requested dependency',
+  deny: 'One a rule denies',
+  exception: 'An exception (with its date)',
+  drift: 'Drift',
+};
+export const mapCaption =
+  'An arrow points at the module it depends on. Outer layer on top. Allowed dependencies, not observed imports.';
+
+// A line named by both ends, for the module in focus: "handlers → api · exception until 2027-01-15".
+export function focusLabel(line: MapLine): string {
+  const status: Record<LineKind, string> = {
+    allowed: 'allowed',
+    requested: line.request ? 'requested #' + line.request : 'requested',
+    deny: 'a rule denies it' + (line.rule ? ' · ' + line.rule : ''),
+    exception: line.expires ? 'exception until ' + line.expires : 'exception',
+    drift: 'drift' + (line.rule ? ' · ' + line.rule : ''),
+  };
+  return `${line.from} → ${line.to} · ${status[line.kind]}`;
+}
