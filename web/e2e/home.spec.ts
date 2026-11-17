@@ -54,7 +54,7 @@ for (const file of names) {
       await expect(primary).toHaveAttribute('href', action.href);
     } else await expect(head.locator('.btn.primary')).toHaveCount(0);
     await expect(head.getByRole('link', { name: 'View policy' })).toHaveCount(!body.setup || body.setup.policy ? 1 : 0);
-    await expect(page.getByRole('navigation', { name: 'Repository' }).getByRole('link')).toHaveText(['Home', 'Policy']);
+    await expect(page.getByRole('navigation', { name: 'Repository' }).getByRole('link')).toHaveText(['Home', 'Policy', 'Passkeys']);
     await expect(page.getByRole('link', { name: 'Home', exact: true })).toHaveAttribute('aria-current', 'page');
     if (body.map) await expect(page.getByRole('table', { name: 'Policy and review status matrix' })).toBeVisible();
     if (body.setup) {

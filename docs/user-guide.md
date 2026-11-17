@@ -92,7 +92,7 @@ larger hit areas on narrow screens and touch devices. Request fields use the sel
 
 ## Policy
 
-The repository tabs are **Home** and **Policy**. Policy starts with owners, layers in inner-first order, the configured
+The repository tabs are **Home**, **Policy** and **Passkeys**. Policy starts with owners, layers in inner-first order, the configured
 check mode, and counts. Approval and live enforcement are **Not provided**: this response does not carry that evidence.
 **Blocking rules** counts configured ask/deny rules, not off settings or unchecked notes. It does not prove that checks are required.
 
