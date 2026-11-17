@@ -37,6 +37,15 @@ describe('routeLines', () => {
     expect(xs[0]).toBeLessThan(xs[1]);
   });
 
+  it('puts a label on its line at 80 percent when nothing is in the way', () => {
+    const [route] = routeLines(nodes, [line('api', 'db')], 'api', area);
+    const [x0, y0, x1, y1, x2, y2, x3, y3] = route.path.match(/-?\d+(\.\d+)?/g)!.map(Number);
+    const t = 0.8;
+    const at = (a: number, b: number, c: number, d: number) => (1 - t) ** 3 * a + 3 * (1 - t) ** 2 * t * b + 3 * (1 - t) * t * t * c + t ** 3 * d;
+    expect(route.labelX).toBeCloseTo(at(x0, x1, x2, x3), 6);
+    expect(route.labelY).toBeCloseTo(at(y0, y1, y2, y3), 6);
+  });
+
   it('has no NaN, even for a line from a module to itself or to a missing one', () => {
     const routes = routeLines(nodes, [line('api', 'api'), line('api', 'missing')], 'api', area);
     expect(routes).toHaveLength(1);
