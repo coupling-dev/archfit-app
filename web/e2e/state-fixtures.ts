@@ -65,7 +65,7 @@ export const stateFixtures: StateFixture[] = [
     api: '/api/repos/acme/app/pulls/4',
     reply: [200, fixture('pull/no-result')],
     heading: 'Pull request #4',
-    text: 'No result yet.',
+    text: 'No check has reported for this pull request. It runs on the next push.',
   },
   {
     name: 'expired-session',
