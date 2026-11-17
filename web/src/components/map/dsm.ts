@@ -133,11 +133,17 @@ export interface CellView {
 const isSoon = (line: MapLine) => line.kind === 'exception' && line.days_left !== undefined && line.days_left <= soonDays;
 
 // One symbol per cell: the strongest status, with the number of statuses when there are several. Order: drift,
-// deny, an exception that is near its date, request, allow, then a far exception. Every status stays in the label
-// and in the details, so nothing is dropped, only ranked.
+// deny, an exception that is near its date, request, an exception with no date, allow, then a far exception. An
+// undated exception is never read as a pass, so it outranks allow. Every status stays in the label and in the
+// details, so nothing is dropped, only ranked.
 export function cellView(lines: MapLine[]): CellView | null {
   if (!lines.length) return null;
-  const rank = (line: MapLine) => (isSoon(line) ? lineKinds.indexOf('deny') + 0.5 : line.kind === 'exception' ? lineKinds.length : lineKinds.indexOf(line.kind));
+  const order = ['drift', 'deny', 'soon', 'requested', 'undated', 'allowed', 'far'];
+  const rank = (line: MapLine) => {
+    if (line.kind !== 'exception') return order.indexOf(line.kind);
+    return order.indexOf(isSoon(line) ? 'soon' : line.days_left === undefined ? 'undated' : 'far');
+  };
   const top = lines.reduce((best, line) => (rank(line) < rank(best) ? line : best));
-  return { kind: top.kind, count: lines.length, soon: isSoon(top), quiet: top.kind === 'exception' && !isSoon(top) };
+  const far = top.kind === 'exception' && top.days_left !== undefined && !isSoon(top);
+  return { kind: top.kind, count: lines.length, soon: isSoon(top), quiet: far };
 }

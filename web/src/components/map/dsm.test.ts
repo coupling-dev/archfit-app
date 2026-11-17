@@ -150,11 +150,14 @@ describe('DSM cell view', () => {
     [0, true],
     [-2, true],
     [soonDays + 1, false],
-    [undefined, false],
   ])('an exception with %s days left is near its date: %s', (days, soon) => {
     expect(cellView([allow, exception(days)])).toMatchObject(
       soon ? { kind: 'exception', soon: true, quiet: false } : { kind: 'allowed', soon: false },
     );
+  });
+  it('never reads an exception without a date as a pass', () => {
+    expect(cellView([allow, exception(undefined)])).toEqual({ kind: 'exception', count: 2, soon: false, quiet: false });
+    expect(cellView([exception(undefined), { ...allow, kind: 'requested' }])).toMatchObject({ kind: 'requested' });
   });
   it('draws a far exception alone quiet, and ranks a near one below deny and drift', () => {
     expect(cellView([exception(30)])).toEqual({ kind: 'exception', count: 1, soon: false, quiet: true });

@@ -66,7 +66,7 @@ From 12 modules the matrix is compact: 32 px cells, vertical column names and a 
 a laptop page without horizontal scrolling. Names break only after `_` and `-`; hover a name for the full text.
 A cell shows its strongest status (drift, deny, request, allow) and, when it has several statuses, how many. An
 exception that ends within seven days (or has ended) is ringed and ranks just below deny; a later exception is grey
-and does not change the symbol. Every status remains in the cell's accessible name and in its details, including
+and does not change the symbol. An exception with no date is never read as a pass: it shows ◷ in the usual colour. Every status remains in the cell's accessible name and in its details, including
 multiple rules, requests and exceptions. A blank means
 **no explicit relationship in this payload**, not “no imports” or “permitted”. Deny status is not fully evaluated
 for all pairs. Select a cell for all rules, request links, exception dates and evidence scope. Tab enters the
