@@ -120,6 +120,15 @@ describe('DSM cell navigation', () => {
   });
 });
 
+describe('DSM kind words', () => {
+  it('labels every status with the legend words', () => {
+    expect(statusLabel({ from: 'a', to: 'b', kind: 'allowed' })).toBe('An allowed dependency');
+    expect(statusLabel({ from: 'a', to: 'b', kind: 'requested', request: 7 })).toBe('A requested dependency · request #7');
+    expect(statusLabel({ from: 'a', to: 'b', kind: 'deny', rule: 'r' })).toBe('One a rule denies · rule: r');
+    expect(statusLabel({ from: 'a', to: 'b', kind: 'exception' })).toBe('An exception');
+  });
+});
+
 describe('DSM names', () => {
   it.each([
     ['multiplexer_backends', ['multiplexer_', 'backends']],

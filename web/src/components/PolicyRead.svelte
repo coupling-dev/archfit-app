@@ -13,6 +13,8 @@
   // Exceptions are grouped by rule and shown a page at a time. A column is drawn only when some row has its fact.
   const previewRows = 20;
   let showAll = $state(false);
+  // The graph is built only when its disclosure is open: closed <details> content is still in the DOM.
+  let graphOpen = $state(false);
   const groups = $derived(groupExceptions(filtered.exceptions));
   // Every rule keeps its header and count; the row budget is spent in order, so a rule past it shows no rows.
   const view = $derived.by(() => {
@@ -191,11 +193,13 @@
     </table>
   {:else}<p class="box-body muted">{query.trim() ? 'No modules match this search.' : 'No modules.'}</p>{/if}
   {#if policy.modules.length}
-    <details class="graph-disclosure">
+    <details class="graph-disclosure" ontoggle={(event) => (graphOpen = event.currentTarget.open)}>
       <summary>Show graph <span class="small muted">All {policy.modules.length} modules</span></summary>
       <div class="graph-body">
-        <p class="small muted">Allowed dependencies, not observed imports. Select a module to inspect it. Search filters the table, not the graph.</p>
-        <PolicyGraph modules={policy.modules} layers={policy.layers} inspect={inspectModule} />
+        <p class="small muted">Search filters the table, not the graph.</p>
+        {#if graphOpen}
+          <PolicyGraph modules={policy.modules} layers={policy.layers} inspect={inspectModule} />
+        {/if}
       </div>
     </details>
   {/if}

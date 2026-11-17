@@ -7,12 +7,13 @@ export const symbols: Record<LineKind, string> = {
   drift: '!',
   exception: '◷',
 };
-const statuses: Record<LineKind, string> = {
-  allowed: 'Explicit allow',
-  deny: 'Explicit deny',
-  requested: 'Request',
+// The legend's words for the five kinds, shared by the legend, the cell labels and the details.
+export const kindWords: Record<LineKind, string> = {
+  allowed: 'An allowed dependency',
+  requested: 'A requested dependency',
+  deny: 'One a rule denies',
+  exception: 'An exception',
   drift: 'Drift',
-  exception: 'Exception',
 };
 
 export const pairKey = (from: string, to: string): string => JSON.stringify([from, to]);
@@ -31,7 +32,7 @@ export function pairIndex(lines: MapLine[]): Map<string, MapLine[]> {
 
 export function statusLabel(line: MapLine): string {
   return [
-    statuses[line.kind],
+    kindWords[line.kind],
     line.rule && `rule: ${line.rule}`,
     line.request !== undefined && `request #${line.request}`,
     line.expires && `expires ${line.expires}`,
@@ -113,6 +114,8 @@ export function nextCell(key: string, ctrl: boolean, from: Cell, size: number, o
 
 // From this many modules the matrix draws 32 px cells and vertical column names, so 24 columns fit a laptop page.
 export const compactFrom = 12;
+// From this many modules the search, focus, layer and attention filters appear; below it they only add noise.
+export const filtersFrom = 12;
 // The App opens an expiry issue seven days before an exception ends, so that is "near" here too.
 export const soonDays = 7;
 

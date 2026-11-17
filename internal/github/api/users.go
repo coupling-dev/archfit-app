@@ -8,15 +8,23 @@ import (
 )
 
 func (c *Client) Permission(ctx context.Context, userToken, fullName string) (string, error) {
+	perm, _, err := c.Access(ctx, userToken, fullName)
+	return perm, err
+}
+
+// Access returns the user's permission on the repository and the repository as the user sees it, in one GitHub call.
+// The Repo has no installation ID: that comes from InstallationID, with the App JWT.
+func (c *Client) Access(ctx context.Context, userToken, fullName string) (string, Repo, error) {
 	cr, err := userCred(userToken)
 	if err != nil {
-		return "", err
+		return "", Repo{}, err
 	}
 	base, err := repoPath(fullName)
 	if err != nil {
-		return "", err
+		return "", Repo{}, err
 	}
 	var j struct {
+		repoJSON
 		Permissions struct {
 			Admin bool `json:"admin"`
 			Push  bool `json:"push"`
@@ -26,19 +34,20 @@ func (c *Client) Permission(ctx context.Context, userToken, fullName string) (st
 	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}", url: apiURL(base, nil)}
 	if err := c.send(ctx, k, &j); err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return "none", nil
+			return "none", Repo{}, nil
 		}
-		return "", err
+		return "", Repo{}, err
 	}
+	repo := j.repo(0)
 	switch {
 	case j.Permissions.Admin:
-		return "admin", nil
+		return "admin", repo, nil
 	case j.Permissions.Push:
-		return "write", nil
+		return "write", repo, nil
 	case j.Permissions.Pull:
-		return "read", nil
+		return "read", repo, nil
 	}
-	return "none", nil
+	return "none", repo, nil
 }
 
 // maxInstallationPages bounds how many installations' repository lists are read at once: GitHub asks clients not to

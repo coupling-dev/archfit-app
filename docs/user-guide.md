@@ -79,28 +79,28 @@ your explicit choice when local storage is available. Matrix needs no diagram la
 The matrix shows **Policy and review status**, not observed imports. Rows are sources and columns are targets:
 **row depends on column**. Both axes use the same order: policy layer order (outer first), then module name.
 
-| Symbol | Meaning                                                                     |
-| ------ | --------------------------------------------------------------------------- |
-| ✓      | Explicit allow in the policy.                                               |
-| ×      | Explicit deny reported for a touched, requested or drift pair.              |
-| ?      | A request.                                                                  |
-| !      | Drift.                                                                      |
-| ◷      | An exception; select the cell for its expiry and server-reported days left. |
+| Symbol | Meaning                                                              |
+| ------ | -------------------------------------------------------------------- |
+| ✓      | An allowed dependency in the policy.                                 |
+| ×      | One a rule denies.                                                   |
+| ?      | A requested dependency.                                              |
+| !      | Drift.                                                               |
+| ◷      | An exception. Within seven days of its date, or past it, the cell is ringed. |
 
 From 12 modules the matrix is compact: 32 px cells, vertical column names and a 220 px row header, so 24 modules fit
 a laptop page without horizontal scrolling. Names break only after `_` and `-`; hover a name for the full text.
-A cell shows its strongest status (drift, deny, request, allow) and, when it has several statuses, how many. An
-exception that ends within seven days (or has ended) is ringed and ranks just below deny; a later exception is grey
-and does not change the symbol. An exception with no date is never read as a pass: it shows ◷ in the usual colour. Every status remains in the cell's accessible name and in its details, including
-multiple rules, requests and exceptions. A blank means
-**no explicit relationship in this payload**, not “no imports” or “permitted”. Deny status is not fully evaluated
-for all pairs. Select a cell for all rules, request links, exception dates and evidence scope. Tab enters the
-table; arrow keys move between cells (the shaded diagonal is skipped), Enter opens details, and Escape closes details
-and returns focus. A repository with one module shows "One module is declared, so there is nothing to draw."
+A cell shows its strongest status (drift, deny, request, allow) and, when it has several statuses, how many. A later
+exception is grey and does not change the symbol. An exception with no date is never read as a pass.
 
-Headers stay visible while the table scrolls in either direction. At 50 or more modules, search names or layers,
-focus on explicit inbound/outbound neighbors, collapse layers, or use **Needs attention** to show modules
-with denies, requests, drift or exceptions. Filters use the same modules on both axes; **Reset filters** restores all.
+A blank means **the matrix shows no status for this pair**. It does not mean the dependency is allowed, and a deny rule may still apply. Deny status is
+only known for touched, requested or drift pairs; **About this view** explains this. Every status remains in the cell's
+accessible name and in its details, including multiple rules, requests and exception dates. Select a cell for details.
+Tab enters the table; arrow keys move between cells (the shaded diagonal is skipped), Enter opens details, and Escape
+closes details and returns focus. A repository with one module shows "One module is declared, so there is nothing to draw."
+
+Headers stay visible while the table scrolls in either direction. From 12 modules, search names or layers, focus on
+explicit inbound/outbound neighbors, collapse layers, or use **With denies, requests, drift or exceptions** to show only
+modules with those statuses. Filters use the same modules on both axes; **Reset filters** restores all.
 
 **Diagram** loads the SVG and its layout worker only when selected, including on phones. It shows declared
 volatility. Its line precedence is drift, deny, request, exception, allow: unlike Matrix, it draws only one
@@ -156,9 +156,11 @@ date and show the remaining days capped at 30, not exception age.
 Request links appear only when the response supplies a safe destination.
 
 The module table follows the rules and exceptions. Expand a module for public paths, volatility, and subdomain.
-**Show graph** is closed by default at every width. It draws allowed dependencies, not measured imports, and keeps the
-whole policy visible during search. Select a node to clear search and open that module's details. Large maps scroll
-vertically; dependency targets missing from the module list are reported, not invented.
+**Show graph** is closed by default at every width, and its layout worker loads only when it opens. It uses the same
+map as Home: module names are shown in full, layers are bands, and it draws allowed dependencies, not measured
+imports. Select a module to see what it depends on and what depends on it, below the graph; **Show in the table**
+opens its details in the table. Search filters the table, not the graph. Dependency targets missing from the module
+list are reported, not invented.
 
 **View source** opens **Show raw YAML**. **Copy digest** copies the complete digest; clipboard refusal leaves the value
 selectable. **Edit** appears only when change control is available. The existing edit and passkey flow is unchanged.

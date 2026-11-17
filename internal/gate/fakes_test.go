@@ -132,6 +132,11 @@ func (f *fakeGitHub) ListRepos(_ context.Context, installationID int64) ([]api.R
 	return out, nil
 }
 
+func (f *fakeGitHub) InstallationID(ctx context.Context, fullName string) (int64, error) {
+	r, err := f.ResolveRepo(ctx, fullName)
+	return r.InstallationID, err
+}
+
 func (f *fakeGitHub) ResolveRepo(_ context.Context, fullName string) (api.Repo, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
