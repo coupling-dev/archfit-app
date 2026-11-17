@@ -56,7 +56,8 @@ for (const width of [390, 1280]) {
         await page.getByRole('region', { name: 'Modules', exact: true }).locator('td summary').click();
       }
       if (state.name === 'closed-request' && width === 1280) {
-        await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toBeVisible();
+        await expect(page.getByText('Show the map as a diagram', { exact: true })).toBeVisible();
+        await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toHaveCount(0);
       }
       const text = (await page.locator('main').innerText()).replace(/[ \t]+$/gm, '');
       expect(text).toMatchSnapshot(`state-${state.name}-${width}.txt`);
