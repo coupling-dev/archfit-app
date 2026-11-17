@@ -58,6 +58,15 @@ describe('panBy', () => {
   });
 });
 
+describe('panning at the highest zoom', () => {
+  it('keeps a quarter of the viewport showing the chart', () => {
+    const world = { w: 5000, h: 5000 };
+    const view = panBy({ k: MAX_ZOOM, x: 0, y: 0 }, world, vp, 0, -99999);
+    const shown = world.h - view.y;
+    expect(shown).toBeGreaterThanOrEqual((vp.h / MAX_ZOOM) * 0.25);
+  });
+});
+
 describe('centerOn', () => {
   it('puts the box in the middle and keeps at least the floor', () => {
     const world = { w: 5000, h: 5000 };

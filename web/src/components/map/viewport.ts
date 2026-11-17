@@ -16,19 +16,21 @@ export const MIN_LABEL_PX = 11;
 export const FLOOR = MIN_LABEL_PX / LABEL_PX;
 export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 4;
-// Part of the chart always stays on screen, so a drag or a key cannot lose it.
-const KEEP_PX = 64;
+// A quarter of the viewport, or of the chart where it is smaller, always stays on screen, so a drag or a key cannot
+// lose the chart even at the highest zoom.
+const KEEP = 0.25;
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
 export function clampView(view: View, world: Size, vp: Size): View {
   const k = clamp(view.k, MIN_ZOOM, MAX_ZOOM);
   const seen = { w: vp.w / k, h: vp.h / k };
-  const keep = KEEP_PX / k;
+  const keepW = Math.min(seen.w, world.w) * KEEP;
+  const keepH = Math.min(seen.h, world.h) * KEEP;
   return {
     k,
-    x: clamp(view.x, keep - seen.w, world.w - keep),
-    y: clamp(view.y, keep - seen.h, world.h - keep),
+    x: clamp(view.x, keepW - seen.w, world.w - keepW),
+    y: clamp(view.y, keepH - seen.h, world.h - keepH),
   };
 }
 

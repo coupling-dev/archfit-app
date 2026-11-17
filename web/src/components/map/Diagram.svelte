@@ -27,7 +27,9 @@
   const box = $derived(view && width > 0 ? viewBox(view, vp) : `0 0 ${world.w} ${world.h}`);
   const touches = (line: { from: string; to: string }) => line.from === focused || line.to === focused;
   const near = $derived(
-    (placed?.edges ?? []).filter((e) => touches(e.line)).flatMap((e) => [e.line.from, e.line.to]),
+    focused
+      ? [focused, ...(placed?.edges ?? []).filter((e) => touches(e.line)).flatMap((e) => [e.line.from, e.line.to])]
+      : [],
   );
   // Lines of the module in focus are drawn last, on top of the dimmed rest.
   const edges = $derived(
@@ -106,6 +108,7 @@
   function down(e: PointerEvent) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     suppressClick = false;
+    pressing = true;
     pointers = [...pointers.filter((p) => p.id !== e.pointerId), { id: e.pointerId, ...local(e) }];
     if (pointers.length === 1) { start = local(e); moved = false; }
     else { moved = true; pinch = spread(); }
@@ -160,7 +163,7 @@
   // pans without selecting it.
   let wasFocused = false;
   let pressing = false;
-  function press(node: MapNode) { wasFocused = focused === node.name; pressing = true; }
+  function press(node: MapNode) { wasFocused = focused === node.name; }
   function focusNode(node: MapNode) {
     if (pressing) return;
     focused = node.name;

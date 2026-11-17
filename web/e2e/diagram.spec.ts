@@ -223,3 +223,23 @@ for (const width of [390, 1280]) {
     await expectClean(page, ['Review workflow change']);
   });
 }
+
+test('diagram: a module without lines stays bright when it is the one in focus', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const alone = {
+    ...home,
+    map: { layers: [''], modules: [...map.modules.slice(0, 2), { name: 'alone', layer: '', volatility: 'low' }], lines: [] },
+  };
+  await open(page, path, { [api]: () => [200, alone] });
+  await page.getByRole('button', { name: 'Diagram', exact: true }).click();
+  await page.locator('[data-module="alone"]').click();
+  await expect(page.locator('.map-node.selected')).toHaveCount(1);
+  await expect(page.locator('.map-node:not(.dim)')).toHaveCount(1);
+});
+
+test('diagram: a right click on a module does not stop Tab from focusing modules', async ({ page }) => {
+  await openDiagram(page);
+  await page.locator('[data-module="handlers"]').click({ button: 'right' });
+  await page.locator('[data-module="api"]').focus();
+  await expect(page.locator('.map-node.selected[data-module="api"]')).toHaveCount(1);
+});
