@@ -11,7 +11,7 @@
 
 <style>
   .status-label {
-    display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-height: 20px; padding: 0 7px 0 5px;
+    display: inline-flex; align-items: center; gap: 4px; width: fit-content; max-width: 100%; min-height: 20px; padding: 0 7px 0 5px;
     font: 500 12px/18px var(--font); white-space: normal; overflow-wrap: anywhere;
     color: var(--fg-muted); background: var(--neutral-subtle); border: 1px solid var(--border); border-radius: 999px;
   }

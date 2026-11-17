@@ -68,12 +68,13 @@
         {#if record.show_next}<p class="record-field">next: {@render linked(record.next.text)}{#if record.next.note} ({record.next.note}){/if}</p>{/if}
       </article>
     {/each}
-    {#if body.view.author}<p class="small">Author: {@render linked(body.view.author, true)}</p>{/if}
-    {#if body.view.owner}<p class="small">Owner: {@render linked(body.view.owner, true)}</p>{/if}
+    {#if body.view.author}<p class="owner-line">Author: {@render linked(body.view.author, true)}</p>{/if}
+    {#if body.view.owner}<p class="owner-line">Owner: {@render linked(body.view.owner, true)}</p>{/if}
   </section>
 {/if}
 
 <style>
   .pull-record { padding-block: 12px; border-bottom: 1px solid var(--border-muted); overflow-wrap: anywhere; }
   .record-field { margin: 4px 0 0; font-size: 14px; color: var(--fg-muted); }
+  .owner-line { margin: 16px 0 0; font-size: 14px; }
 </style>
