@@ -1,11 +1,13 @@
 <script lang="ts">
   import Skeleton from '../components/Skeleton.svelte';
   import PolicyRead from '../components/PolicyRead.svelte';
+  import PageHead from '../components/ui/PageHead.svelte';
   import { explain, explainLoad, postJSON, repoAPI, type ApiError, type Policy, type Session, type Answered } from '../lib/api';
   import { canRetryRead, policyReadFailure } from '../lib/recovery';
   import { confirm } from '../lib/passkey';
   import { passkeyFailure } from '../lib/webauthn';
   import { firstJSON } from '../lib/early';
+  import { isPolicyMissing, policyMissing } from '../lib/policy';
   import { repoPage, type Repo } from '../lib/route';
 
   let { route, here, session }: { route: Repo; here: string; session: Session } = $props();
@@ -21,13 +23,15 @@
   let failure = $state('');
   let retry = $state(false);
   let recovery = $state(false);
+  let missing = $state(false);
   let showSource = $state(false);
 
   function load() {
-    failure = ''; retry = recovery = false;
+    failure = ''; retry = recovery = missing = false;
     firstJSON<Policy>(api(editing ? 'policy?edit=1' : 'policy')).then(
       (b) => { body = b; yaml = b.edit.file ?? ''; },
       (e: ApiError) => {
+        if (isPolicyMissing(e)) { missing = true; return; }
         retry = canRetryRead(e);
         recovery = e.status === 409;
         failure = explainLoad(e, here) ? policyReadFailure(e) : '';
@@ -75,17 +79,21 @@
   }
 </script>
 
-<div class="page-head">
-  <div><h1>Policy</h1><p class={editing ? 'muted' : 'lede'}>{route.fullName} · {editing ? 'default branch' : 'Rules, exceptions and allowed dependencies.'}</p></div>
-  <div class="row">
+<PageHead title="Policy" repo={route.fullName}>
+  {#snippet actions()}
     {#if body && !(editing && body.edit.available)}<a class="btn" href="#raw" onclick={() => showSource = true}>View source</a>{/if}
     {#if body?.edit.available && !editing}
       <a class="btn primary" href={repoPage(route.fullName, '/policy?edit=1')}>Edit</a>
     {/if}
-  </div>
-</div>
+  {/snippet}
+</PageHead>
 
-{#if failure}
+{#if missing}
+  <section class="box" aria-labelledby="no-policy"><div class="blankslate">
+    <h2 class="title-box" id="no-policy">{policyMissing}</h2>
+    <a class="btn primary" href={repoPage(route.fullName)}>Continue setup</a>
+  </div></section>
+{:else if failure}
   <section class="box" aria-label="Policy unavailable"><div class="box-body stack-sm">
     <p class="flash error" role="alert">{failure}</p>
     {#if retry}<a class="btn" href={here}>Try again</a>{/if}
@@ -132,7 +140,7 @@
       <a class="btn" href={repoPage(route.fullName)}>View current setup</a>
     </div></section>
   {/if}
-  <PolicyRead policy={body} bind:showSource />
+  <PolicyRead policy={body} home={repoPage(route.fullName)} bind:showSource />
 {/if}
 
 <style>
