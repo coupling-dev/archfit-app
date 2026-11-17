@@ -104,7 +104,7 @@ func writeJSON(w http.ResponseWriter, r *http.Request, status int, body any) {
 	h.Set("Content-Type", mediaJSON)
 	h.Set("Cache-Control", "no-store")
 	h.Add("Vary", "Accept-Encoding")
-	if len(buf) > gzipMinBytes && accepts(r, "gzip") {
+	if _, secret := body.(tokenBearer); !secret && len(buf) > gzipMinBytes && accepts(r, "gzip") {
 		buf = gzipped(buf)
 		h.Set("Content-Encoding", "gzip")
 	}

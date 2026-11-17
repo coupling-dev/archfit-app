@@ -28,7 +28,8 @@ The gate facade supplies policy/request views, answers and owner actions; UI imp
 
 Assets under `/assets/` ship with `.br` and `.gz` siblings from the web build; the server sends the one the client
 takes (`br` first) with `Vary: Accept-Encoding`. API JSON bodies over 1 KB are gzip-compressed when the client takes
-gzip. Nothing else is compressed.
+gzip, except answers that carry a CSRF or step-up token (`tokenBearer`): those are never compressed, whatever their size.
+Nothing else is compressed.
 
 ## Security and checks
 

@@ -8,6 +8,18 @@ import (
 	"strings"
 )
 
+// tokenBearer is an answer that carries a CSRF or step-up token. It is never compressed, whatever its size: a compressed
+// body's length moves with the text around the token, which is how BREACH reads a secret. Its size does not matter, so
+// the rule is explicit rather than a side effect of a size threshold.
+type tokenBearer interface{ carriesToken() }
+
+func (sessionJSON) carriesToken()      {}
+func (answerJSON) carriesToken()       {}
+func (editJSON) carriesToken()         {}
+func (ownerJSON) carriesToken()        {}
+func (passkeyTokenJSON) carriesToken() {}
+func (stepUpTokenJSON) carriesToken()  {}
+
 // gzipMinBytes is the size below which a JSON body is sent as it is: a smaller one gains nothing that the header
 // costs.
 const gzipMinBytes = 1 << 10

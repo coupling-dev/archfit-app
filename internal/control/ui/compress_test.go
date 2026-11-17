@@ -111,3 +111,27 @@ func TestJSONIsGzippedOnlyWhenLargeAndAccepted(t *testing.T) {
 		})
 	}
 }
+
+// Every answer that carries a token is listed here, so a new one cannot skip the rule unnoticed.
+var (
+	_ tokenBearer = sessionJSON{}
+	_ tokenBearer = answerJSON{}
+	_ tokenBearer = editJSON{}
+	_ tokenBearer = ownerJSON{}
+	_ tokenBearer = passkeyTokenJSON{}
+	_ tokenBearer = stepUpTokenJSON{}
+)
+
+// The session stays uncompressed however large it grows: it carries the CSRF token.
+func TestTokenAnswersAreNeverCompressed(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/session", nil)
+	req.Header.Set("Accept-Encoding", "gzip, br")
+	res := httptest.NewRecorder()
+	writeJSON(res, req, http.StatusOK, sessionJSON{Login: strings.Repeat("a", 4<<10), CSRF: "token"})
+	if got := res.Header().Get("Content-Encoding"); got != "" {
+		t.Fatalf("a session of 4 KB was sent with Content-Encoding %q", got)
+	}
+	if !strings.Contains(res.Body.String(), `"csrf":"token"`) {
+		t.Errorf("body lost the token: %.80s", res.Body.String())
+	}
+}
