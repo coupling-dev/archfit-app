@@ -48,12 +48,6 @@ describe('setup rule guidance', () => {
     expect(result.instructions.join(' ')).toContain('Remove the Archfit app from Bypass list');
   });
 
-  it('gives no work for inapplicable policy restrictions', () => {
-    const result = help('policy_push', 'not_applicable');
-    expect(result.explanation).toContain('does not apply to this repository');
-    expect(result.instructions).toEqual([]);
-  });
-
   it('names the policy file restriction and the App exception', () => {
     const result = help('policy_push').instructions.join(' ');
     expect(result).toContain('restricts file paths to .archfit.yaml');

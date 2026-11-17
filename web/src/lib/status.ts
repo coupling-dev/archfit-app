@@ -26,14 +26,9 @@ const styles = new Map<string, StatusStyle>([
   // Needs an action from the reader.
   ['to do', { tone: 'attention', icon: 'alert' }],
   ['off', { tone: 'attention', icon: 'alert' }],
-  ['Action needed', { tone: 'attention', icon: 'alert' }],
   ['Not started', { tone: 'attention', icon: 'alert' }],
-  ['Review needed', { tone: 'attention', icon: 'alert' }],
-  ['Check with an admin', { tone: 'attention', icon: 'alert' }],
   ['Not required', { tone: 'attention', icon: 'alert' }],
-  ['Could not confirm approval', { tone: 'attention', icon: 'alert' }],
   // In progress or ready for the reader to do: the next step is clear.
-  ['Ready for review', { tone: 'accent', icon: 'info' }],
   ['First approval', { tone: 'accent', icon: 'info' }],
   ['Workflow review', { tone: 'accent', icon: 'info' }],
   // Optional: the reader may choose; this is not an action and does not share the attention tone.
@@ -44,7 +39,6 @@ const styles = new Map<string, StatusStyle>([
   ['verify in GitHub', { tone: 'neutral', icon: 'question' }],
   // Not applicable.
   ['does not apply', { tone: 'neutral', icon: 'dot' }],
-  ['Does not apply', { tone: 'neutral', icon: 'dot' }],
 ]);
 
 const fallback: StatusStyle = { tone: 'neutral', icon: 'dot' };

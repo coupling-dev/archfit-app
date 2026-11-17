@@ -62,10 +62,8 @@ export function setupStepState(setup: HomeSetup) {
             ? 'Next: turn on the required check'
             : setup.approval.status === 'approved_pending_merge'
               ? 'Waiting for activation on the default branch.'
-              : 'Setup is complete.',
+              : 'Setup complete · archfit/gate required',
     approvalText: approvalText(setup.approval),
-    // A repository whose approval is not confirmed says so in the step's own chip, not as a fact about the check.
-    approvalUnknown: setup.approval.status === 'unknown',
   };
 }
 

@@ -62,13 +62,6 @@ export function setupRuleHelp(rule: HomeSetup['rules'][number], repo: Repo): Rul
         links: [rules],
       };
     case 'policy_push':
-      if (rule.state === 'not_applicable')
-        return {
-          title: 'Restrict .archfit.yaml',
-          explanation: 'This GitHub restriction does not apply to this repository, so there is nothing to do.',
-          instructions: [],
-          links: [],
-        };
       return {
         title: 'Restrict .archfit.yaml',
         explanation:

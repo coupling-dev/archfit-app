@@ -150,7 +150,7 @@ describe('setup step labels and progress', () => {
         approval: active,
         rules: [{ code: 'pull_requests', state: 'ok', text: '' }, { code: 'gate_check', state: 'ok', text: '' }],
       },
-      'Setup is complete.',
+      'Setup complete · archfit/gate required',
     ],
   ])('shows one next action for %j', (setup, next) => expect(setupStepState(setup).next).toBe(next));
 
@@ -171,7 +171,6 @@ describe('setup step labels and progress', () => {
     expect(setupStepState({ ...base, policy: true, rules: [{ code: 'pull_requests', state: 'ok', text: '' }, { code: 'gate_check', state: 'ok', text: '' }] })).toEqual({
       done: [true, false, false, true],
       completed: 2,
-      approvalUnknown: false,
       approvalText: 'Review the proposed files before approving.',
       next: 'Next: create the pull request',
     });
@@ -185,14 +184,12 @@ describe('setup step labels and progress', () => {
     ).toEqual({
       done: [true, true, false, false],
       completed: 2,
-      approvalUnknown: false,
       approvalText: 'Review the proposed files before approving.',
       next: 'Next: review owner approval',
     });
     expect(setupStepState({ ...base, policy: true, open_pull: 203 })).toEqual({
       done: [true, true, false, false],
       completed: 2,
-      approvalUnknown: false,
       approvalText: 'Review the proposed files before approving.',
       next: 'Next: review owner approval',
     });

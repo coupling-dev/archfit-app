@@ -66,6 +66,11 @@ for (const file of names) {
         await expect(page.getByRole('heading', { name: 'The map' })).toHaveCount(0);
       }
       await expandStep(page.locator('.setup .steps > li').nth(2));
+      if (body.setup.policy) {
+        await expandStep(page.locator('.setup .steps > li').nth(0));
+        await expect(page.getByText('The policy is on the default branch.', { exact: true })).toBeVisible();
+        await expect(page.getByText('archfit init', { exact: true })).toHaveCount(0);
+      }
       if (body.setup.passkey) {
         await expect(page.getByRole('link', { name: 'Manage passkeys' })).toHaveAttribute('href', path + '/passkeys');
         await expect(page.getByRole('link', { name: 'Manage passkeys' })).not.toHaveClass(/btn/);

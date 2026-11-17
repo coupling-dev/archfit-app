@@ -28,7 +28,8 @@
 
 {#snippet stepBody(i: number)}
   {#if i === 0}
-    {#if setup.first_pull !== undefined}<p>Pull request #{setup.first_pull} proposes the first policy.</p>
+    {#if setup.policy}<p>The policy is on the default branch.</p>
+    {:else if setup.first_pull !== undefined}<p>Pull request #{setup.first_pull} proposes the first policy.</p>
     {:else}
       <p>Run <code>archfit init</code> in your repository. It creates .archfit.yaml and adds its agent block to AGENTS.md. It does not write the workflow.</p>
       <pre class="command"><code>archfit init</code></pre>
@@ -119,11 +120,7 @@
 <section class="box setup" aria-labelledby="setup-title">
   <div class="box-head">
     <h2 class="title-box" id="setup-title">Set up Archfit</h2>
-    {#if complete}
-      <p>Setup complete · archfit/gate required</p>
-    {:else}
-      <p>{state.next}</p>
-    {/if}
+    <p>{state.next}</p>
   </div>
   <div class="box-body">
     {#if complete}
