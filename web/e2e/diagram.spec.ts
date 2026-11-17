@@ -51,10 +51,15 @@ test('diagram: opens readable, bounded, with the legend and caption above it', a
   ).toBeVisible();
   expect((await legend.boundingBox())!.y).toBeLessThan(frame.y);
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThan(4000);
-  await expect(page.locator('.map-edge text')).toHaveCount(0);
   await expect(page.locator('.map-node')).toHaveCount(24);
-  await expect(page.locator('.map-edge')).toHaveCount(106);
-  await expect(page.locator('.map-edge path').first()).toHaveCSS('vector-effect', 'non-scaling-stroke');
+  // 106 lines are drawn as one line per pair of layers until a module is in focus.
+  await expect(page.locator('.map-edge')).toHaveCount(0);
+  await expect(page.locator('.map-link')).toHaveCount(3);
+  await expect(page.locator('.map-link path').first()).toHaveCSS('vector-effect', 'non-scaling-stroke');
+  const svg = await page.locator('.map-viewport svg').boundingBox();
+  const natural = await page.locator('.map-viewport svg').evaluate((el: SVGSVGElement) => el.viewBox.baseVal.width);
+  expect(natural).toBeLessThan(frame.width / (11 / 14) + 1);
+  expect(svg!.width).toBeLessThanOrEqual(frame.width);
   await docsClock(page);
   await docsShot(page, 'diagram-1280', ['Review workflow change']);
 });
@@ -147,7 +152,8 @@ test('diagram: a module in focus keeps its lines, dims the rest, and names both 
   await page.locator('[data-module="handlers"]').click();
   await expect(page.locator('.map-node.selected')).toHaveCount(1);
   await expect(page.locator('.map-edge text')).toHaveCount(mine.length);
-  await expect(page.locator('.map-edge:not(.dim)')).toHaveCount(mine.length);
+  await expect(page.locator('.map-edge')).toHaveCount(mine.length);
+  await expect(page.locator('.map-link.dim')).toHaveCount(3);
   const neighbours = new Set(mine.flatMap((l) => [l.from, l.to]));
   await expect(page.locator('.map-node:not(.dim)')).toHaveCount(neighbours.size);
   const first = mine[0];
@@ -155,12 +161,12 @@ test('diagram: a module in focus keeps its lines, dims the rest, and names both 
   expect(labels.some((t) => t.startsWith(`${first.from} → ${first.to} · `))).toBe(true);
   // Clicking again clears; so does Escape.
   await page.locator('[data-module="handlers"]').click();
-  await expect(page.locator('.map-edge text')).toHaveCount(0);
+  await expect(page.locator('.map-edge')).toHaveCount(0);
   await page.locator('[data-module="handlers"]').click();
-  await expect(page.locator('.map-edge text')).toHaveCount(mine.length);
+  await expect(page.locator('.map-edge')).toHaveCount(mine.length);
   await viewport(page).focus();
   await page.keyboard.press('Escape');
-  await expect(page.locator('.map-edge text')).toHaveCount(0);
+  await expect(page.locator('.map-edge')).toHaveCount(0);
   await expect(page.locator('.map-node.dim')).toHaveCount(0);
 });
 

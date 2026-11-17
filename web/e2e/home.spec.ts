@@ -268,9 +268,10 @@ test('home: SVG names both ends of a line when its module is in focus, and draws
     await page.unrouteAll();
     await open(page, path, { [api]: () => [200, fixture(name)] });
     await page.getByRole('button', { name: 'Diagram', exact: true }).click();
-    await expect(page.locator('.map-edge')).toHaveCount(2);
-    await expect(page.locator('.map-edge text')).toHaveCount(0);
+    await expect(page.locator('.map-link')).toHaveCount(2);
+    await expect(page.locator('.map-edge')).toHaveCount(0);
     await page.locator('[data-module="app"]').click();
+    await expect(page.locator('.map-edge')).toHaveCount(2);
     await expect(page.locator('.map-edge.' + kind + ' text')).toHaveText(label);
     await expect(page.locator('.map-edge.allowed text')).toHaveText('app → util · allowed');
     await expect(page.locator('.map-edge.allowed')).toHaveCount(1);

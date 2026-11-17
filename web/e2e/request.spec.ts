@@ -345,8 +345,12 @@ for (const [name, data] of [
     if (!('answer' in data)) await expect(page.getByLabel('Approve: the change to .archfit.yaml')).toBeVisible();
     else {
       await expect(answerBox(page).getByRole('button')).toHaveCount(0);
+      const module = page.locator('[data-module]').first();
+      await module.click();
       await expect(page.locator('.map-edge.' + (data.answer.kind === 'reject' ? 'deny' : 'exception'))).toHaveCount(1);
       await expect(page.locator('.map-edge.allowed')).toHaveCount(0);
+      await module.click();
+      await expect(page.locator('.map-edge')).toHaveCount(0);
       await expect(answerBox(page)).toContainText(
         data.answer.kind === 'reject' ? 'Rejected. What to do instead: Use a port.' : 'Approved until 2027-01-15.',
       );
