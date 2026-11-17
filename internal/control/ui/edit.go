@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/control/answers"
@@ -62,11 +63,7 @@ func (s *server) apiEditPreview(r *http.Request, sc scope) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	problems := make([]string, 0, len(v.Errors))
-	for _, p := range v.Errors {
-		problems = append(problems, editProblem(p))
-	}
-	return editPreviewJSON{Digest: v.Digest, Target: v.Target, Diff: v.Diff, Errors: problems}, nil
+	return editPreviewJSON{Digest: v.Digest, Target: v.Target, Diff: v.Diff, Errors: editProblems(v.Errors)}, nil
 }
 
 var (
@@ -74,9 +71,20 @@ var (
 	unknownKey    = regexp.MustCompile(`^field (.+) not found in type policy3\.\w+$`)
 	missingGlob   = regexp.MustCompile(`^modules\.(\S+?)\.paths: required: list at least one glob$`)
 	badVolatility = regexp.MustCompile(`^modules\.(\S+?)\.volatility: "([^"]*)" is not one of low, medium, high$`)
-	wrongType     = regexp.MustCompile(`^cannot unmarshal .*|want a list$|^modules\.\S+: want`)
-	goTypeName    = regexp.MustCompile(`policy3\.|!!|\[\]|map\[`)
+	wantList      = regexp.MustCompile(`^(modules\.\S+?): want a list$`)
+	wrongType     = regexp.MustCompile(`^cannot unmarshal `)
 )
+
+// editProblems maps every problem and drops a repeat: two decoder messages for one line can read the same.
+func editProblems(problems []string) []string {
+	out := make([]string, 0, len(problems))
+	for _, p := range problems {
+		if mapped := editProblem(p); !slices.Contains(out, mapped) {
+			out = append(out, mapped)
+		}
+	}
+	return out
+}
 
 // editProblem says one decoder problem in the words of the policy, with its line. The Go type names of the decoder
 // do not reach the page; a problem no rule below names keeps its words and gets its line.
@@ -95,8 +103,11 @@ func editProblem(problem string) string {
 	if v := badVolatility.FindStringSubmatch(text); v != nil {
 		return fmt.Sprintf("Line %s: volatility must be low, medium or high (got \"%s\").", line, v[2])
 	}
-	if wrongType.MatchString(text) || goTypeName.MatchString(text) {
-		return fmt.Sprintf("Line %s: this value has the wrong type for its key.", line)
+	if w := wantList.FindStringSubmatch(text); w != nil {
+		return fmt.Sprintf("Line %s: %s must be a list.", line, w[1])
+	}
+	if wrongType.MatchString(text) {
+		return fmt.Sprintf("Line %s: this value has the wrong type.", line)
 	}
 	return fmt.Sprintf("Line %s: %s.", line, strings.TrimSuffix(text, "."))
 }
