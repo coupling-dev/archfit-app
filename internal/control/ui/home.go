@@ -57,6 +57,7 @@ type homeLineJSON struct {
 
 func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 	ctx, snapshot := gate.WithHomeSnapshot(r.Context(), sc.repo)
+	ctx = withReviewPermission(ctx, sc)
 	r = r.WithContext(ctx)
 	snapshotDone := api.StartStage(ctx, "snapshot")
 	defer func() { snapshotDone(1, int(snapshot.CacheHits())) }()
@@ -91,12 +92,19 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 		state.Approval.Status == string(gate.ApprovalStale) || state.Approval.Status == string(gate.ApprovalUnknown) {
 		body.Setup = &state
 	}
-	for i := range body.NeedsYou {
-		need := &body.NeedsYou[i]
-		if need.Kind != "workflow" {
-			continue
+	var workflowNeeds []int
+	for i, need := range body.NeedsYou {
+		if need.Kind == "workflow" {
+			workflowNeeds = append(workflowNeeds, i)
 		}
-		if review := s.ownerReview(r, sc, need.Pull); review != nil {
+	}
+	reviews := make([]*reviewJSON, len(workflowNeeds))
+	forEachBounded(len(workflowNeeds), reviewConcurrency, func(j int) {
+		reviews[j] = s.ownerReview(r, sc, body.NeedsYou[workflowNeeds[j]].Pull)
+	})
+	for j, i := range workflowNeeds {
+		if review := reviews[j]; review != nil {
+			need := &body.NeedsYou[i]
 			need.Text, need.Href = fmt.Sprintf("%s · PR #%d", review.Label, need.Pull), review.Href
 		}
 	}
