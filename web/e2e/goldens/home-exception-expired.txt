@@ -1,8 +1,8 @@
-Home
-
 acme/app
+clean
 
-1 exception expired
+The default branch follows the policy.
+
 View policy
 Needs you
 1 exception expired

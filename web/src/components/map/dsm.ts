@@ -110,3 +110,40 @@ export function nextCell(key: string, ctrl: boolean, from: Cell, size: number, o
     default: return from;
   }
 }
+
+// From this many modules the matrix draws 32 px cells and vertical column names, so 24 columns fit a laptop page.
+export const compactFrom = 12;
+// The App opens an expiry issue seven days before an exception ends, so that is "near" here too.
+export const soonDays = 7;
+
+// Split a module name where a line may break: after "_" and "-", never inside a word.
+export function breakable(name: string): string[] {
+  return name.match(/[^_-]*[_-]|[^_-]+$/g) ?? [name];
+}
+
+export interface CellView {
+  kind: LineKind;
+  count: number;
+  // An exception that ends within soonDays, or already ended: the only exception drawn strongly.
+  soon: boolean;
+  // Only exceptions that are far off: drawn quiet so they do not mark every allow.
+  quiet: boolean;
+}
+
+const isSoon = (line: MapLine) => line.kind === 'exception' && line.days_left !== undefined && line.days_left <= soonDays;
+
+// One symbol per cell: the strongest status, with the number of statuses when there are several. Order: drift,
+// deny, an exception that is near its date, request, an exception with no date, allow, then a far exception. An
+// undated exception is never read as a pass, so it outranks allow. Every status stays in the label and in the
+// details, so nothing is dropped, only ranked.
+export function cellView(lines: MapLine[]): CellView | null {
+  if (!lines.length) return null;
+  const order = ['drift', 'deny', 'soon', 'requested', 'undated', 'allowed', 'far'];
+  const rank = (line: MapLine) => {
+    if (line.kind !== 'exception') return order.indexOf(line.kind);
+    return order.indexOf(isSoon(line) ? 'soon' : line.days_left === undefined ? 'undated' : 'far');
+  };
+  const top = lines.reduce((best, line) => (rank(line) < rank(best) ? line : best));
+  const far = top.kind === 'exception' && top.days_left !== undefined && !isSoon(top);
+  return { kind: top.kind, count: lines.length, soon: isSoon(top), quiet: far };
+}

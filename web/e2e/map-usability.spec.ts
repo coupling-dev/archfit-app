@@ -42,7 +42,7 @@ for (const width of [390, 1280]) {
       'GET /api/repos/acme/app/requests/415': () => [200, mapRequest],
       'GET /api/repos/acme/app/requests/415/preview': () => [422, { error: 'Choose an answer.' }],
     });
-    const diagram = page.getByRole('img', { name: graphName });
+    const diagram = page.getByRole('group', { name: graphName });
     const listToggle = page.getByText('Show the map as a list', { exact: true });
     const diagramToggle = page.getByText('Show the map as a diagram', { exact: true });
     await expect(page.locator('.map-node')).toHaveCount(0);
@@ -69,18 +69,6 @@ for (const width of [390, 1280]) {
     await expect(legend).not.toContainText('#');
     await expect(legend).toContainText('A requested dependency');
     expect(await diagram.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThanOrEqual(width - 32);
-    expect(
-      await diagram.evaluate((el: SVGSVGElement) => {
-        const content = el.getBBox();
-        const box = el.viewBox.baseVal;
-        return (
-          content.x >= 0 &&
-          content.y >= 0 &&
-          content.x + content.width <= box.width &&
-          content.y + content.height <= box.height
-        );
-      }),
-    ).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.getByRole('button', { name: 'Dark', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
@@ -93,7 +81,7 @@ for (const width of [390, 1280]) {
   test('shell: skip link and touch controls at ' + width, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await open(page, '/r/acme/app', { 'GET /api/repos/acme/app/home': () => [200, home] });
-    await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'acme/app', exact: true })).toBeVisible();
     await page.keyboard.press('Tab');
     const skip = page.getByRole('link', { name: 'Skip to main content' });
     await expect(skip).toBeFocused();

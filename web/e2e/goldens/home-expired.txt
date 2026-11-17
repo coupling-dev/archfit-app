@@ -1,0 +1,48 @@
+acme/app
+expired
+
+An exception passed its date and the code still breaks the rule, so every pull request fails.
+
+View policy
+Needs you
+1 exception expired
+The map
+Matrix
+Diagram
+
+Policy and review status · row depends on column.
+
+✓ Explicit allow
+× Explicit deny
+? Request
+! Drift
+◷ Exception (expiry in details)
+
+Blank = no explicit relationship in this payload, not “no imports” or “permitted”. Deny status is only known for touched, requested or drift pairs; full deny evaluation is not available.
+
+Select a cell for details. Use arrow keys within the table; Enter opens details.
+
+Policy and review status matrix
+Source ↓
+Target →
+cmd
+app
+core
+util
+No layer
+other
+
+cmd
+app
+✓
+
+◷
+
+
+core
+util
+
+
+
+No layer
+other

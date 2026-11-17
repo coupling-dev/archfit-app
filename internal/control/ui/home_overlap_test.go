@@ -29,7 +29,7 @@ func TestHomeReadsRunBesideSetup(t *testing.T) {
 		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 			t.Fatal(err)
 		}
-		if body.Map == nil || body.Status != "clean" {
+		if body.Map == nil || body.State != homeStateClean {
 			t.Fatalf("body = %s", response.Body.String())
 		}
 		if elapsed != latency {
