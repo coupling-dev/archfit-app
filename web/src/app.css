@@ -208,14 +208,6 @@ textarea.form-control { resize: vertical; }
   font-size: 11px; font-weight: 600; color: var(--fg-onEmphasis); background: var(--accent); flex: none;
 }
 
-.theme-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-.theme-toggle button {
-  font: 12px var(--font); color: var(--fg-muted); background: var(--bg); border: 0; padding: 3px 8px; cursor: pointer;
-}
-.theme-toggle button:focus-visible { outline-offset: -3px; }
-.theme-toggle button + button { border-left: 1px solid var(--border); }
-.theme-toggle button[aria-pressed="true"] { background: var(--bg-subtle); color: var(--fg); font-weight: 600; }
-
 /* Underline navigation, GitHub-style */
 .unav {
   display: flex; gap: 8px; padding: 0 16px; overflow-x: auto; scrollbar-width: none;
@@ -418,7 +410,7 @@ legend { font-weight: 600; padding: 0; margin-bottom: 4px; }
 @keyframes skeleton-pulse { 50% { opacity: 0.45; } }
 
 @media (max-width: 640px), (pointer: coarse) {
-  .btn, .theme-toggle button, .unav a, .unav button {
+  .btn, .unav a, .unav button {
     min-height: 44px; min-width: 44px;
   }
   summary { min-height: 44px; padding-block: 12px; cursor: pointer; }
