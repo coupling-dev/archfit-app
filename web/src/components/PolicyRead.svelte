@@ -52,13 +52,13 @@
 </div>
 
 <div class="search-row">
-  <label class="search"><span class="sr-only">Search policy</span><input type="search" bind:value={query} placeholder="Search modules, rules, exceptions…" /></label>
+  <label class="search"><span class="sr-only">Search policy</span><input class="form-control" type="search" bind:value={query} placeholder="Search modules, rules, exceptions…" /></label>
   <p class="small muted" role="status">{query.trim() ? matches ? `${matches} matching items` : 'No matches. Try a module name or rule ID.' : 'Expand a row for details.'}</p>
 </div>
 
 <section class="box" aria-labelledby="rules">
   <div class="box-head">
-    <div><h2 id="rules">Rules</h2><p>Read the rule before changing an import. Expand for why and what to use instead.</p></div>
+    <div><h2 class="title-box" id="rules">Rules</h2><p>Read the rule before changing an import. Expand for why and what to use instead.</p></div>
     <a href="#raw" onclick={() => showSource = true}>View source</a>
   </div>
   {#each filtered.rules as rule, i (i)}
@@ -83,7 +83,7 @@
 </section>
 
 <section class="box" aria-labelledby="exceptions">
-  <div class="box-head"><div><h2 id="exceptions">Exceptions</h2><p>Follow the supplied request to resolve or replace an exception.</p></div></div>
+  <div class="box-head"><div><h2 class="title-box" id="exceptions">Exceptions</h2><p>Follow the supplied request to resolve or replace an exception.</p></div></div>
   {#if filtered.exceptions.length}
     <table class="data cards exceptions">
       <thead><tr><th>Rule / boundary</th><th>Owner</th><th>Expiry</th><th>Request</th></tr></thead>
@@ -118,7 +118,7 @@
 </section>
 
 <section class="box" aria-labelledby="modules">
-  <div class="box-head"><div><h2 id="modules">Modules</h2><p>Inspect paths and allowed dependencies. The graph is a secondary view.</p></div></div>
+  <div class="box-head"><div><h2 class="title-box" id="modules">Modules</h2><p>Inspect paths and allowed dependencies. The graph is a secondary view.</p></div></div>
   {#if filtered.modules.length}
     <table class="data cards modules">
       <thead><tr><th>Module / paths</th><th>Layer</th><th>Allowed dependencies</th></tr></thead>
@@ -155,7 +155,7 @@
 </section>
 
 <section class="box" aria-labelledby="raw">
-  <div class="box-head"><h2 id="raw">Policy file</h2><button class="btn sm" onclick={copyDigest} disabled={!policy.digest}>Copy digest</button></div>
+  <div class="box-head"><h2 class="title-box" id="raw">Policy file</h2><button class="btn sm" onclick={copyDigest} disabled={!policy.digest}>Copy digest</button></div>
   <div class="box-body stack-sm">
     <p class="small analysis">Digest: <code>{policy.digest || 'Not provided'}</code></p>
     {#if copyNotice}<p class="small" role="status">{copyNotice}</p>{/if}
@@ -171,8 +171,6 @@
   .stats .s.expired { color: var(--danger); }
   .search-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
   .search { flex: 1; min-width: 220px; }
-  .search input { width: 100%; font: 14px var(--font); padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--fg); background: var(--bg); }
-  .search input::placeholder { color: var(--fg-muted); }
   .box-head p { font-size: 13px; color: var(--fg-muted); margin-top: 4px; }
   .box-head a { font-size: 13px; }
   .rule { border-top: 1px solid var(--border-muted); padding: 0 16px; }
@@ -211,7 +209,7 @@
   .graph-disclosure > summary span { margin-left: 8px; font-weight: 400; }
   .graph-body { padding: 0 16px 16px; }
   pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-  @media (max-width: 719px) {
+  @media (max-width: 640px) {
     .facts dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .search { flex-basis: 100%; min-width: 0; }
     .rule-title { gap: 2px; flex-direction: column; }
