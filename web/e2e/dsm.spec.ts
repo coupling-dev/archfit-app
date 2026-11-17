@@ -80,6 +80,7 @@ test('DSM preserves all statuses, keyboard navigation and modal focus return', a
     );
   }
   await expect(detail).toContainText('expires 2027-01-01 · 0 days left');
+  await detail.screenshot({ path: '../docs/images/matrix-details-dialog.png' });
   await expect(detail).toContainText('not observed imports');
   await expect(detail).toContainText('expires 2027-01-01 · 0 days left');
   await expectClean(page, ['Policy and review status']);
@@ -111,6 +112,12 @@ test('DSM compact density: 24 modules fit 1280px; 11 stay comfortable', async ({
   await expect(head).toHaveAttribute('title', 'module-10');
   expect(await head.evaluate((el) => getComputedStyle(el).overflowWrap)).toBe('normal');
   await page.screenshot({ path: '../docs/images/matrix-24-1280.png', fullPage: true });
+});
+
+test('DSM legend screenshot', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 844 });
+  await open(page, '/r/acme/app', { [api]: () => [200, fixture(5)] });
+  await page.getByRole('list', { name: 'Matrix legend' }).locator('xpath=..').screenshot({ path: '../docs/images/matrix-legend.png' });
 });
 
 test('DSM 24 modules at a phone width: screenshot for review', async ({ page }) => {
