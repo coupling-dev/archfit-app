@@ -83,6 +83,12 @@ Error priority follows input order, not completion order; unreadable rules
 remain unknown and inventory errors return both `passkey: false` and `passkey_known: false`. HTTP client timeouts,
 request cancellation and rate-limit backoff remain in effect.
 
+Home also reads the installation's admission and the repository record once per request (`gate.WithRequestMemo`),
+where Home, the Setup state and each owner review probe asked for them again. A failed read is remembered too, so the
+request fails closed the same way at every step. The memo lives in the request context only and is installed on
+read-only routes only: nothing in it outlives the request, and a request that changes an admission or a record
+must not install it.
+
 The structured `ui request` log includes `stages`: `authorization`, `setup`, `rules`, `passkeys`,
 `home_records`, `owner_review`, `approval_summary` and `snapshot` when reached. Each records `duration_ms`, `count` and
 `cache_hits`; durations overlap and must not be summed as request latency. Counts mean authorization/
