@@ -1,7 +1,7 @@
 acme/app
 clean
 
-The default branch follows the policy. Nothing needs you.
+The default branch follows the policy.
 
 View policy
 Set up Archfit

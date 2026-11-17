@@ -1,9 +1,8 @@
 acme/app
-expired
+clean
 
-An exception passed its date and the code still breaks the rule, so every pull request fails.
+The default branch follows the policy.
 
-Open the exception
 View policy
 Needs you
 1 exception expired

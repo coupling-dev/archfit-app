@@ -3,7 +3,6 @@ clean
 
 The default branch follows the policy. 1 exception expires today.
 
-Open the exception
 View policy
 Needs you
 1 exception expires today

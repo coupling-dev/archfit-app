@@ -317,7 +317,7 @@ describe('the one primary action', () => {
     { code: 'pull_requests', state: 'warning', text: '' },
     { code: 'gate_check', state: 'warning', text: '' },
   ];
-  const workflowNeed = { kind: 'workflow', text: 'Review workflow change · PR #417', href: '/r/acme/app/owner/workflow?pull=417' };
+  const workflowNeed = { kind: 'workflow', text: 'Review workflow change · pull request #417', href: '/r/acme/app/owner/workflow?pull=417' };
 
   it.each([
     ['a workflow change names its verb', home({ needs_you: [workflowNeed] }), 'Review workflow change', '/r/acme/app/owner/workflow?pull=417', false],
@@ -356,6 +356,16 @@ describe('the one primary action', () => {
     expect(action?.label).toBe(label);
     expect(action?.href).toBe(href);
     expect(action?.external).toBe(external);
+  });
+
+  it('does not name an issue that does not exist yet', () => {
+    const noIssue = [
+      { kind: 'drift', text: 'Drift on the default branch.', href: '/r/acme/app/policy' },
+      { kind: 'exception', text: '1 exception expired', href: '/r/acme/app/policy' },
+    ];
+    expect(homeAction(home({ needs_you: noIssue }), repo)).toBeUndefined();
+    const later = { kind: 'request', text: 'Request #9 waits.', href: '/r/acme/app/requests/9' };
+    expect(homeAction(home({ needs_you: [...noIssue, later] }), repo)?.label).toBe('Open the request');
   });
 
   it('flags only the setup review as needing a passkey', () => {

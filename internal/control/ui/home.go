@@ -28,7 +28,7 @@ const (
 
 type homeJSON struct {
 	State    string         `json:"state"`
-	Status   string         `json:"status"` // one or two sentences that say what the state means
+	Status   string         `json:"status"` // the sentence for the state, then one sentence per group that waits
 	NeedsYou []homeNeedJSON `json:"needs_you,omitempty"`
 	Map      *homeMapJSON   `json:"map,omitempty"`
 	Setup    *setupJSON     `json:"setup,omitempty"`
@@ -106,11 +106,12 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 		return nil, homeErr
 	}
 	today := s.now().UTC().Truncate(24 * time.Hour)
-	body := homeBody(view, state, sc.repo.FullName, today)
+	var shown *setupJSON
 	if !setupRulesComplete(state.Rules) || state.Approval.Status == string(gate.ApprovalPending) ||
 		state.Approval.Status == string(gate.ApprovalStale) || state.Approval.Status == string(gate.ApprovalUnknown) {
-		body.Setup = &state
+		shown = &state
 	}
+	body := homeBody(view, state, shown, sc.repo.FullName, today)
 	var workflowNeeds []int
 	for i, need := range body.NeedsYou {
 		if need.Kind == "workflow" {
@@ -136,8 +137,9 @@ func setupRulesComplete(rules []setupFindingJSON) bool {
 	})
 }
 
-func homeBody(view gate.HomeState, setup setupJSON, repo string, today time.Time) homeJSON {
-	out := homeJSON{NeedsYou: []homeNeedJSON{}}
+// homeBody builds the answer for an approved repository. shown is the setup block when setup work is still open.
+func homeBody(view gate.HomeState, setup setupJSON, shown *setupJSON, repo string, today time.Time) homeJSON {
+	out := homeJSON{NeedsYou: []homeNeedJSON{}, Setup: shown}
 	if view.PolicyAvailable {
 		out.Map = homeMap(view, today)
 	}
@@ -169,16 +171,15 @@ func homeBody(view gate.HomeState, setup setupJSON, repo string, today time.Time
 		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "request", Text: fmt.Sprintf("Request #%d waits.", req.Number),
 			Href: base + "/requests/" + strconv.Itoa(req.Number), Request: req.Number, Rule: req.Rule, From: req.From, To: req.To, Record: req.Record})
 	}
-	expired := view.RepositoryState == "expired"
+	// An exception past its date is a row to act on. It makes the repository expired only when the stored result
+	// for this head says the code still breaks the rule, which is what RepositoryState holds.
 	for _, x := range view.Policy.Exceptions {
 		left, ok := homeDays(x.Expires, today)
 		if !ok {
 			continue
 		}
 		text := homeExceptionStatus(left)
-		if left < 0 {
-			expired = true
-		} else {
+		if left >= 0 {
 			waits = append(waits, text+".")
 		}
 		if left > homeExpiryDays {
@@ -203,27 +204,28 @@ func homeBody(view gate.HomeState, setup setupJSON, repo string, today time.Time
 			waits = append(waits, fmt.Sprintf("%d workflow changes wait.", n))
 		}
 	}
+	// Stale or unread evidence is unknown before it is expired or drift, as on the repositories page.
 	switch {
 	case outside:
 		out.State, out.Status = homeStateOutsideFlow, "The policy on the default branch changed without a recorded approval, so every pull request is unknown."
-	case expired:
+	case !view.DriftKnown:
+		out.State, out.Status = homeStateUnknown, "The state of the default branch is not known."
+	case view.DriftUnread:
+		out.State, out.Status = homeStateUnknown, "The last check could not read every file, so the state is unknown."
+	case view.RepositoryState == "expired":
 		out.State, out.Status = homeStateExpired, "An exception passed its date and the code still breaks the rule, so every pull request fails."
 	case drift:
 		out.State, out.Status = homeStateDrift, "The default branch has dependencies the policy does not allow."
 		if view.DriftIssue > 0 {
 			out.Status += fmt.Sprintf(" Issue #%d.", view.DriftIssue)
 		}
-	case !view.DriftKnown:
-		out.State, out.Status = homeStateUnknown, "The state of the default branch is not known."
-	case view.DriftUnread:
-		out.State, out.Status = homeStateUnknown, "The last check could not read every file, so the state is unknown."
 	default:
 		out.State, out.Status = homeStateClean, "The default branch follows the policy."
 	}
 	if len(waits) > 0 {
 		out.Status += " " + strings.Join(waits, " ")
 	}
-	if len(out.NeedsYou) == 0 {
+	if len(out.NeedsYou) == 0 && shown == nil {
 		out.Status += " Nothing needs you."
 	}
 	return out

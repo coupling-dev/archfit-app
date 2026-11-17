@@ -341,7 +341,10 @@ export function homeAction(home: Home, repo: Repo): HomeAction | undefined {
   for (const need of home.needs_you) {
     const href = homeHref(repo, need.href);
     if (!href) continue;
-    // A workflow item for an eligible owner already reads "Review workflow change · PR #n"; keep that verb.
+    // Drift and exception items point at a GitHub issue. Before that issue exists they fall back to the policy page,
+    // which View policy already offers, so a button named for the issue would name something that is not there.
+    if ((need.kind === 'drift' || need.kind === 'exception') && !isExternalHref(href)) continue;
+    // A workflow item for an eligible owner already reads "Review workflow change · pull request #n"; keep that verb.
     const label = need.kind === 'workflow' && need.text.includes(' · ') ? need.text.split(' · ')[0] : needLabels[need.kind];
     if (label) return { label, href, external: isExternalHref(href) };
   }

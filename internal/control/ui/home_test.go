@@ -165,6 +165,11 @@ func TestHomeAPIGoldens(t *testing.T) {
 		}},
 		{"exception-last-day", homeWithException("2026-11-10"), nil},
 		{"exception-expired", homeWithException("2026-11-09"), nil},
+		{"expired", homeWithException("2026-11-09"), func(t *testing.T, e *env) {
+			homeEditRepo(t, e, func(rec map[string]any) {
+				rec["drift"] = map[string]any{"head": sha(10), "state": "expired", "errors": []any{}}
+			})
+		}},
 		{"partial-evidence", homePolicy, func(t *testing.T, e *env) {
 			homeEditRepo(t, e, func(rec map[string]any) {
 				rec["drift"] = map[string]any{"head": sha(10), "state": "clean", "unread": true, "errors": []any{}}
@@ -443,11 +448,19 @@ func TestHomeBodyChoosesOneStateAndSaysWhatWaits(t *testing.T) {
 		{"clean and nothing waits", known, homeStateClean, "The default branch follows the policy. Nothing needs you.", 0},
 		{"drift names its issue", with(func(v *gate.HomeState) { v.Drift = []gate.HomeError{{}}; v.DriftIssue = 210 }), homeStateDrift,
 			"The default branch has dependencies the policy does not allow. Issue #210.", 1},
-		{"drift beats an unread file", with(func(v *gate.HomeState) { v.Drift = []gate.HomeError{{}}; v.DriftUnread = true }), homeStateDrift,
-			"The default branch has dependencies the policy does not allow.", 1},
+		{"an unread file beats drift", with(func(v *gate.HomeState) { v.Drift = []gate.HomeError{{}}; v.DriftUnread = true }), homeStateUnknown,
+			"The last check could not read every file, so the state is unknown.", 1},
 		{"an unread file is unknown, never clean", with(func(v *gate.HomeState) { v.DriftUnread = true }), homeStateUnknown,
 			"The last check could not read every file, so the state is unknown. Nothing needs you.", 0},
 		{"no evidence is unknown", gate.HomeState{}, homeStateUnknown, "The state of the default branch is not known. Nothing needs you.", 0},
+		{"a result for an older head is unknown, not expired", gate.HomeState{RepositoryState: "expired", Drift: []gate.HomeError{{}}}, homeStateUnknown,
+			"The state of the default branch is not known.", 1},
+		{"an unread result is unknown before expired", with(func(v *gate.HomeState) { v.RepositoryState = "expired"; v.DriftUnread = true }), homeStateUnknown,
+			"The last check could not read every file, so the state is unknown. Nothing needs you.", 0},
+		{"an exception past its date is a row, not the state, when the code no longer breaks it", with(func(v *gate.HomeState) {
+			v.RepositoryState = "clean"
+			v.Policy.Exceptions = []policy3.Exception{{Rule: "graph", From: "app", To: "other", Expires: "2026-11-01"}}
+		}), homeStateClean, "The default branch follows the policy.", 1},
 		{"expired beats drift", with(func(v *gate.HomeState) { v.RepositoryState = "expired"; v.Drift = []gate.HomeError{{}} }), homeStateExpired,
 			"An exception passed its date and the code still breaks the rule, so every pull request fails.", 1},
 		{"outside the flow beats expired", with(func(v *gate.HomeState) { v.OutsideFlow = true; v.RepositoryState = "expired" }), homeStateOutsideFlow,
@@ -458,10 +471,22 @@ func TestHomeBodyChoosesOneStateAndSaysWhatWaits(t *testing.T) {
 		}), homeStateClean, "The default branch follows the policy. 2 requests wait. 1 workflow change waits.", 3},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got := homeBody(tt.view, setupJSON{}, repoName, today)
+			got := homeBody(tt.view, setupJSON{}, nil, repoName, today)
 			if got.State != tt.state || got.Status != tt.status || len(got.NeedsYou) != tt.needsCount {
 				t.Fatalf("state %q status %q needs %d; want %q %q %d", got.State, got.Status, len(got.NeedsYou), tt.state, tt.status, tt.needsCount)
 			}
 		})
+	}
+}
+
+func TestHomeBodySaysNothingNeedsYouOnlyWhenNoSetupIsOpen(t *testing.T) {
+	view := gate.HomeState{DriftKnown: true}
+	today := time.Date(2026, 11, 17, 0, 0, 0, 0, time.UTC)
+	open := &setupJSON{}
+	if got := homeBody(view, setupJSON{}, open, repoName, today); strings.Contains(got.Status, "Nothing needs you") || got.Setup != open {
+		t.Fatalf("setup is open, but Home says %q", got.Status)
+	}
+	if got := homeBody(view, setupJSON{}, nil, repoName, today); !strings.Contains(got.Status, "Nothing needs you.") {
+		t.Fatalf("nothing is open, but Home says %q", got.Status)
 	}
 }

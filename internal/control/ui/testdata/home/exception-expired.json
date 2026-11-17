@@ -1,6 +1,6 @@
 {
-  "state": "expired",
-  "status": "An exception passed its date and the code still breaks the rule, so every pull request fails.",
+  "state": "clean",
+  "status": "The default branch follows the policy.",
   "needs_you": [
     {
       "kind": "exception",
