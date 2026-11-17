@@ -104,7 +104,7 @@
     <div class="blankslate">
       <h1>Page could not be loaded</h1>
       <p>{pageError}</p>
-      <a href="/">Repositories</a>
+      <a class="btn" href="/">Repositories</a>
     </div>
   {:else if $waiting}
     <Waiting account={$waiting} />

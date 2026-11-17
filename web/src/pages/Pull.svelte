@@ -33,7 +33,7 @@
 
 {#snippet linked(s: string, authored = false)}
   {#each pieces(s, authored) as part, i (i)}
-    {#if /^#[1-9][0-9]*$/.test(part) && requestNumbers.has(Number(part.slice(1)))}<a href={repoPage(route.fullName, `/requests/${part.slice(1)}`)}>{part}</a>{:else}{part}{/if}
+    {#if /^#[1-9][0-9]*$/.test(part) && requestNumbers.has(Number(part.slice(1)))}<a class="inline" href={repoPage(route.fullName, `/requests/${part.slice(1)}`)}>{part}</a>{:else}{part}{/if}
   {/each}
 {/snippet}
 
@@ -75,6 +75,5 @@
 {/if}
 
 <style>
-a { text-decoration: underline; }
-  .pull-record { margin-block: 1rem; overflow-wrap: anywhere; }
+  .pull-record { margin-block: 16px; overflow-wrap: anywhere; }
 </style>
