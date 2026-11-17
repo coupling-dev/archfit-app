@@ -15,7 +15,7 @@ import (
 func TestInstallationPagesAreReadTogether(t *testing.T) {
 	ids := []int64{1, 2, 3}
 	var mu sync.Mutex
-	arrived := 0
+	seen := map[string]bool{}
 	all := make(chan struct{})
 	env := muxEnv(t, func(mux *http.ServeMux) {
 		mux.HandleFunc("GET /user/installations", func(w http.ResponseWriter, _ *http.Request) {
@@ -27,15 +27,16 @@ func TestInstallationPagesAreReadTogether(t *testing.T) {
 		})
 		mux.HandleFunc("GET /user/installations/{id}/repositories", func(w http.ResponseWriter, r *http.Request) {
 			mu.Lock()
-			arrived++
-			if arrived == len(ids) {
+			seen[r.PathValue("id")] = true
+			if len(seen) == len(ids) {
 				close(all)
 			}
 			mu.Unlock()
 			select {
 			case <-all:
 			case <-time.After(5 * time.Second):
-				w.WriteHeader(http.StatusGatewayTimeout)
+				// Not a status the client retries: a sequential read would fail here rather than wait it out.
+				w.WriteHeader(http.StatusNotFound)
 				return
 			}
 			writeTestJSON(w, map[string]any{"repositories": []map[string]any{
@@ -85,4 +86,29 @@ func TestOneFailingPageFailsTheWholeList(t *testing.T) {
 func writeTestJSON(w http.ResponseWriter, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// The cap applies to the total over all installations: a list one repository past it fails, as before.
+func TestTheTotalCapCoversAllInstallations(t *testing.T) {
+	full := make([]map[string]any, maxItems)
+	for i := range full {
+		full[i] = map[string]any{"id": i + 1, "full_name": fmt.Sprintf("org/r%d", i), "default_branch": "main"}
+	}
+	env := muxEnv(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /user/installations", func(w http.ResponseWriter, _ *http.Request) {
+			writeTestJSON(w, map[string]any{"installations": []map[string]any{{"id": 1}, {"id": 2}}})
+		})
+		mux.HandleFunc("GET /user/installations/{id}/repositories", func(w http.ResponseWriter, r *http.Request) {
+			if r.PathValue("id") == "1" {
+				writeTestJSON(w, map[string]any{"repositories": full})
+				return
+			}
+			writeTestJSON(w, map[string]any{"repositories": []map[string]any{
+				{"id": 99999, "full_name": "other/one", "default_branch": "main"},
+			}})
+		})
+	})
+	if _, err := env.c.UserRepos(context.Background(), "alice-token"); err == nil {
+		t.Fatal("a list one past the total cap was returned, want an error")
+	}
 }

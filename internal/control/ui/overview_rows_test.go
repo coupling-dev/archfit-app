@@ -82,7 +82,7 @@ func TestASlowRowDoesNotHoldTheOthers(t *testing.T) {
 	}
 }
 
-// One state read and one Setup probe per admitted row, none twice: the probe takes the row's own snapshot.
+// One state read and one Setup probe per admitted row, none repeated.
 func TestEachRowIsReadOnceOnTheProbePath(t *testing.T) {
 	e := newEnv(t)
 	names := []string{"acme/a", "acme/b", "acme/c"}
