@@ -8,22 +8,6 @@ Use the helper.
 
 Rule graph · app -> other
 
-Answer
-
-Choose an answer and read its policy change before confirming. Previewing or leaving this page changes nothing.
-
-Choose an answer
-Approve
-Approve until a date
-Reject
-Approve
-
-Preview this answer to see its policy change and affected pull requests.
-
-Preview approve
-
-Choose an answer.
-
 Record
 app -> util
 The map
@@ -81,3 +65,19 @@ other: Volatility high
 Earlier answers 0
 
 No earlier answer about these modules.
+
+Answer
+
+Choose an answer and read its policy change before confirming. Previewing or leaving this page changes nothing.
+
+Choose an answer
+Approve
+Approve until a date
+Reject
+Approve
+
+Preview this answer to see its policy change and affected pull requests.
+
+Preview approve
+
+Choose an answer.
