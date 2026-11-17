@@ -14,12 +14,21 @@
   const previewRows = 20;
   let showAll = $state(false);
   const groups = $derived(groupExceptions(filtered.exceptions));
-  const flat = $derived(groups.flatMap((group) => group.items.map((item) => ({ group, item }))));
-  const shown = $derived(showAll ? flat : flat.slice(0, previewRows));
-  const hasEnd = $derived(policy.exceptions.some((e) => !!e.expires));
-  const hasRequest = $derived(policy.exceptions.some((e) => !!e.request && !!safeHref(e.request_href)));
-  const hasBars = $derived(policy.exceptions.some((e) => e.days_left != null));
-  const noEnd = $derived(policy.exceptions.filter((e) => !e.expires).length);
+  // Every rule keeps its header and count; the row budget is spent in order, so a rule past it shows no rows.
+  const view = $derived.by(() => {
+    let budget = showAll ? Infinity : previewRows;
+    return groups.map((group) => {
+      const take = Math.min(budget, group.items.length);
+      budget -= take;
+      return { group, items: group.items.slice(0, take) };
+    });
+  });
+  const shownRows = $derived(view.flatMap((g) => g.items));
+  const total = $derived(filtered.exceptions.length);
+  const hasEnd = $derived(shownRows.some((e) => !!e.expires));
+  const hasRequest = $derived(shownRows.some((e) => !!e.request && !!safeHref(e.request_href)));
+  const hasBars = $derived(shownRows.some((e) => e.days_left != null));
+  const noEnd = $derived(filtered.exceptions.filter((e) => !e.expires).length);
   const columns = $derived(1 + (hasEnd ? 1 : 0) + (hasRequest ? 1 : 0));
   const matches = $derived(filtered.modules.length + filtered.rules.length + filtered.exceptions.length);
 
@@ -95,8 +104,8 @@
 
 <section class="box" aria-labelledby="exceptions">
   <div class="box-head"><div><h2 class="title-box" id="exceptions">Exceptions</h2><p>Follow the linked request to renew or replace an exception.</p></div></div>
-  {#if flat.length}
-    {#if noEnd > 1}<p class="box-body small muted">{noEnd} exceptions have no end date.</p>{/if}
+  {#if total}
+    {#if noEnd > 0}<p class="box-body small muted">{noEnd === 1 ? '1 exception has' : `${noEnd} exceptions have`} no end date.</p>{/if}
     <table class="data cards exceptions">
       <thead><tr>
         <th>Rule / boundary</th>
@@ -104,11 +113,9 @@
         {#if hasRequest}<th>Request</th>{/if}
       </tr></thead>
       <tbody>
-        {#each shown as row, i (i)}
-          {@const exception = row.item}
-          {#if i === 0 || shown[i - 1]?.group !== row.group}
-            <tr class="group"><th colspan={columns} scope="colgroup">{row.group.rule} · {row.group.items.length}</th></tr>
-          {/if}
+        {#each view as section (section.group.rule)}
+          <tr class="group"><th colspan={columns} scope="colgroup">{section.group.rule} · {section.group.items.length}</th></tr>
+          {#each section.items as exception, i (i)}
           <tr>
             <td><p class="boundary">{exception.from}{exception.to ? ` → ${exception.to}` : ''}</p>
               {#if exception.why}<details><summary>Reason</summary><p>{exception.why}</p></details>{/if}
@@ -133,11 +140,12 @@
               </td>
             {/if}
           </tr>
+          {/each}
         {/each}
       </tbody>
     </table>
-    {#if flat.length > previewRows && !showAll}
-      <div class="box-foot row-between"><span class="small muted">Showing {previewRows} of {flat.length}</span><button class="btn sm" type="button" onclick={() => showAll = true}>Show all</button></div>
+    {#if total > previewRows && !showAll}
+      <div class="box-foot row-between"><span class="small muted">Showing {previewRows} of {total}</span><button class="btn sm" type="button" onclick={() => showAll = true}>Show all</button></div>
     {/if}
     {#if hasBars}<div class="box-foot">Bars show days remaining within a 30-day window, not exception age. Expired records are not active exceptions.</div>{/if}
   {:else}<p class="box-body muted">{query.trim() ? 'No exceptions match this search.' : 'No exceptions.'}</p>{/if}
@@ -213,7 +221,7 @@
   table { table-layout: fixed; }
   table td { overflow-wrap: anywhere; padding: 12px; }
   .exceptions th:first-child { width: 50%; }
-  tr.group th { text-align: left; background: var(--bg-subtle); font-size: 12px; }
+  tr.group th { text-align: left; background: var(--bg-subtle); font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
   .modules .label { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
   .modules th:first-child { width: 45%; }
   .modules th:nth-child(2) { width: 20%; }

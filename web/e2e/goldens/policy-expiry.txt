@@ -64,6 +64,8 @@ Exceptions
 
 Follow the linked request to renew or replace an exception.
 
+1 exception has no end date.
+
 Rule / boundary	Expiry	Request
 graph · 2
 

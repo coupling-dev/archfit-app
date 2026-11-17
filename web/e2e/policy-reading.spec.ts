@@ -177,8 +177,9 @@ test('policy reading: exceptions group by rule, show twenty at a time and drop e
   await expect(exceptions.getByText('25 exceptions have no end date.', { exact: true })).toBeVisible();
   await expect(exceptions.locator('thead th')).toHaveText(['Rule / boundary']);
   await expect(exceptions.getByText('coupling · 22', { exact: true })).toBeVisible();
-  await expect(exceptions.getByText('duplication · 3', { exact: true })).toHaveCount(0);
+  await expect(exceptions.getByText('duplication · 3', { exact: true })).toBeVisible();
   await expect(exceptions.locator('tbody tr:not(.group)')).toHaveCount(20);
+  await expect(exceptions.getByText('pkg_24', { exact: true })).toHaveCount(0);
   await expect(exceptions.getByText('Showing 20 of 25', { exact: true })).toBeVisible();
   await expect(exceptions.getByText('Bars show', { exact: false })).toHaveCount(0);
   await exceptions.getByRole('button', { name: 'Show all', exact: true }).click();
