@@ -5,7 +5,8 @@
   import { ApiError, getJSON, type Session } from './lib/api';
   import { prefetch } from './lib/early';
   import { refused, waiting } from './lib/gate';
-  import { guideURL, parseRoute, serverError } from './lib/route';
+  import { missingSentence } from './lib/notfound';
+  import { guideURL, parseRoute, repoPage, serverError } from './lib/route';
   import Admin from './pages/Admin.svelte';
   import Landing from './pages/Landing.svelte';
   import Home from './pages/Home.svelte';
@@ -24,6 +25,21 @@
   const serverSentence = serverError(document.querySelector('meta[name="app-error"]')?.getAttribute('content'));
   const pageError = $derived(serverSentence || $refused);
   const notFound = $derived(!!$refused || serverSentence === 'Not found.' || route.kind === 'unknown');
+  // The repositories the signed-in user can see. A missing page names its repository only when it is in this list:
+  // a 404 for a repository the user cannot see looks the same, and must not reveal that it exists.
+  let visible = $state<string[] | null>(null);
+  let lookedUp = false;
+  const onRepo = 'fullName' in route;
+  const knownRepo = $derived(notFound && onRepo && visible?.includes(route.fullName) ? route.fullName : '');
+  $effect(() => {
+    if (!notFound || !onRepo || lookedUp) return;
+    lookedUp = true;
+    getJSON<{ repos: { full_name: string }[] }>('/api/repos').then(
+      (b) => (visible = b.repos.map((r) => r.full_name)),
+      () => (visible = []),
+    );
+  });
+  const repoList = location.pathname === '/repos';
 
   // loading, then the signed-in session, signed out (401), or a failure to show.
   let session = $state<Session | null>(null);
@@ -73,9 +89,10 @@
               : 'Repositories',
   );
   const repo = $derived(
-    !pageError && !$waiting && route.kind !== 'home' && route.kind !== 'admin' && route.kind !== 'unknown' && session
-      ? route.fullName
-      : '',
+    knownRepo ||
+      (!pageError && !$waiting && route.kind !== 'home' && route.kind !== 'admin' && route.kind !== 'unknown' && session
+        ? route.fullName
+        : ''),
   );
   $effect(() => {
     document.title = `${title} · Archfit`;
@@ -97,8 +114,16 @@
   {#if notFound}
     <div class="blankslate">
       <h1>Page not available</h1>
-      <p>This page does not exist or is not available to your account.</p>
-      <a class="btn" href="/">Repositories</a>
+      {#if knownRepo}
+        <p>{missingSentence(route)}</p>
+        <a class="btn" href={repoPage(knownRepo)}>Back to {knownRepo}</a>
+      {:else if repoList}
+        <p>Repositories are listed on the home page.</p>
+        <a class="btn" href="/">Repositories</a>
+      {:else}
+        <p>This page does not exist or is not available to your account.</p>
+        <a class="btn" href="/">Repositories</a>
+      {/if}
     </div>
   {:else if pageError}
     <div class="blankslate">

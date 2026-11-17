@@ -34,7 +34,7 @@ For a workflow change, an owner named in the approved policy can follow the revi
 
 ## Repositories
 
-Open `/` after signing in to choose a repository or continue setup. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** with a link back to `/`.
+Open `/` after signing in to choose a repository or continue setup. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** and says the repositories are listed on the home page, with a link to `/`.
 
 ## Home and the map
 
@@ -237,7 +237,7 @@ that action. A changed artifact still prevents submission; **Reload the change**
 before you confirm anything. Policy and Owner read/service failures offer **Try again**; not-found and stale-action states do not.
 
 **Page not available** uses the same message for a missing resource and one your account cannot access.
-Its **Repositories** link returns to `/`; no repository-specific recovery link is shown.
+Its **Repositories** link returns to `/`. For a repository you can see, a missing pull request or request says so, names the repository, and offers **Back to <repository>**, with the repository tabs. A repository you cannot see gets the generic message and no tabs, so the page never shows that it exists.
 
 ## Register a passkey
 
