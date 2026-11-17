@@ -233,27 +233,45 @@ func (h *homeViews) workflows(ctx context.Context, r api.Repo, snapshot *HomeSna
 			approved[p.PullRequest] = p.HeadSHA
 		}
 	}
-	var out []int
+	var candidates []api.Pull
 	for _, p := range pulls {
 		if p.State != "open" || p.HeadSHA == "" || p.BaseRef != r.DefaultBranch || !strings.EqualFold(p.HeadRepo, r.FullName) || approved[p.Number] == p.HeadSHA {
 			continue
 		}
-		run, err := h.file(ctx, r.RepoRef, p.HeadSHA, approvals.WorkflowPath)
-		if err != nil {
-			return nil, err
+		candidates = append(candidates, p)
+	}
+	listed := make([]bool, len(candidates))
+	if err := homeReads(len(candidates), func(i int) error {
+		ok, err := h.workflowChange(ctx, r, current, candidates[i])
+		listed[i] = ok
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	var out []int
+	for i, p := range candidates {
+		if listed[i] {
+			out = append(out, p.Number)
 		}
-		if run == nil || bytes.Equal(run, current) {
-			continue
-		}
-		raw, err := h.file(ctx, r.RepoRef, p.HeadSHA, homePolicyPath)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := policy3.Decode(raw); err != nil {
-			continue
-		}
-		out = append(out, p.Number)
 	}
 	slices.Sort(out)
 	return out, nil
+}
+
+// workflowChange reports whether pull request p changes the workflow to one the M2 action can approve. Its two reads
+// are one after the other, because the policy is read only for a changed workflow.
+func (h *homeViews) workflowChange(ctx context.Context, r api.Repo, current []byte, p api.Pull) (bool, error) {
+	run, err := h.file(ctx, r.RepoRef, p.HeadSHA, approvals.WorkflowPath)
+	if err != nil {
+		return false, err
+	}
+	if run == nil || bytes.Equal(run, current) {
+		return false, nil
+	}
+	raw, err := h.file(ctx, r.RepoRef, p.HeadSHA, homePolicyPath)
+	if err != nil {
+		return false, err
+	}
+	_, err = policy3.Decode(raw)
+	return err == nil, nil
 }

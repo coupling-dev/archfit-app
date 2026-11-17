@@ -60,10 +60,10 @@ for (const count of [5, 10])
 
 test('DSM preserves all statuses, keyboard navigation and modal focus return', async ({ page }) => {
   await open(page, '/r/acme/app', { [api]: () => [200, fixture(5)] });
-  const cell = page.getByRole('button', { name: /^api → storage:/ });
+  const cell = page.getByRole('button', { name: /^api to storage:/ });
   await expect(cell).toContainText('××??◷!');
   await expect(cell).toHaveAttribute('aria-label', /entry-boundary.*request #42.*request #43.*0 days left.*Drift/);
-  await page.getByRole('button', { name: /^api → api:/ }).focus();
+  await page.getByRole('button', { name: /^api to web:/ }).focus();
   await page.keyboard.press('End');
   await expect(cell).toBeFocused();
   await page.keyboard.press('Enter');
@@ -84,10 +84,80 @@ test('DSM preserves all statuses, keyboard navigation and modal focus return', a
   await expect(detail).toBeHidden();
   await expect(cell).toBeFocused();
   await page.keyboard.press('Home');
+  const blank = page.getByRole('button', { name: 'api to web: no rule' });
+  await expect(blank).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('dialog')).toContainText('No explicit relationship in this payload.');
   await page.getByRole('button', { name: 'Close details' }).click();
-  await expect(page.getByRole('button', { name: /^api → api:/ })).toBeFocused();
+  await expect(blank).toBeFocused();
+});
+
+test('DSM diagonal cells are shaded and skipped; blank cells have a short name', async ({ page }) => {
+  await open(page, '/r/acme/app', { [api]: () => [200, fixture(5)] });
+  await expect(page.getByRole('table', { name: tableName })).toBeVisible();
+  await expect(page.locator('td.self')).toHaveCount(5);
+  await expect(page.locator('td > button')).toHaveCount(20);
+  await expect(page.getByRole('button', { name: /^api to api:/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'web to api: no rule' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: /deny status not fully evaluated/ })).toHaveCount(0);
+  // One tab stop; arrows step over the diagonal.
+  await page.keyboard.press('Tab');
+  await page.getByRole('button', { name: 'api to web: no rule' }).focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('button', { name: 'billing to web: no rule' })).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowUp');
+  await expect(page.getByRole('button', { name: 'api to web: no rule' })).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.getByRole('button', { name: 'api to web: no rule' })).toBeFocused();
+  await expect(page.locator('td > button[tabindex="0"]')).toHaveCount(1);
+  await expect(page.locator('td.highlight')).not.toHaveCount(0);
+});
+
+test('DSM moving the active cell touches only the old and new row and column', async ({ page }) => {
+  const count = 12;
+  await open(page, '/r/acme/app', { [api]: () => [200, fixture(count)] });
+  await page.getByRole('button', { name: 'api to web: no rule' }).focus();
+  await page.evaluate(() => {
+    const touched = new Set<Node>();
+    const w = window as unknown as { touched: Set<Node> };
+    w.touched = touched;
+    new MutationObserver((records) => records.forEach((r) => touched.add(r.target))).observe(document.querySelector('table')!, {
+      attributes: true,
+      subtree: true,
+      childList: true,
+    });
+  });
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowRight');
+  const touched = await page.evaluate(() => (window as unknown as { touched: Set<Node> }).touched.size);
+  // Two moves: each clears one row and column and sets another (cells, headers), never all 144 cells.
+  expect(touched).toBeGreaterThan(0);
+  expect(touched).toBeLessThanOrEqual(2 * 2 * (2 * count + 2));
+});
+
+test('DSM keeps one tab stop after a click moves the active cell', async ({ page }) => {
+  await open(page, '/r/acme/app', { [api]: () => [200, fixture(5)] });
+  await expect(page.locator('td > button[tabindex="0"]')).toHaveCount(1);
+  await page.getByRole('button', { name: 'storage to billing: no rule' }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('td > button[tabindex="0"]')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'storage to billing: no rule' })).toHaveAttribute('tabindex', '0');
+});
+
+test('DSM keeps a self-pair that has a status focusable', async ({ page }) => {
+  const data = fixture(5);
+  data.map.lines.push({ from: 'web', to: 'web', kind: 'drift', rule: 'graph' });
+  await open(page, '/r/acme/app', { [api]: () => [200, data] });
+  await expect(page.locator('td.self')).toHaveCount(4);
+  await expect(page.getByRole('button', { name: 'web to web: Drift · rule: graph' })).toBeVisible();
+});
+
+test('DSM says so when only one module is declared', async ({ page }) => {
+  await open(page, '/r/acme/app', { [api]: () => [200, { ...fixture(1), map: { ...fixture(1).map, lines: [] } }] });
+  await expect(page.getByText('One module is declared, so there is nothing to draw.')).toBeVisible();
+  await expect(page.getByRole('table')).toHaveCount(0);
+  await expect(page.getByRole('list', { name: 'Matrix legend' })).toHaveCount(0);
 });
 
 test('DSM large map filters retain square axes and bounded two-axis scrolling', async ({ page }) => {

@@ -71,7 +71,7 @@
 
   <section class="box" aria-labelledby="your-passkeys">
     <div class="box-head">
-      <h2 id="your-passkeys">Your passkeys <span class="counter">{list.length}</span></h2>
+      <h2 class="title-box" id="your-passkeys">Your passkeys <span class="counter">{list.length}</span></h2>
       <button class="btn sm primary" type="button" disabled={busy} onclick={add}>Add a passkey</button>
     </div>
     <div class="box-body stack-sm">

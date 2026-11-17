@@ -5,10 +5,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
+	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/ui/session"
@@ -55,31 +59,69 @@ func logOf(r *http.Request) *reqLog {
 type statusWriter struct {
 	http.ResponseWriter
 	status int
+	// beforeHeader runs once, just before the status line goes out, while headers can still change.
+	beforeHeader func(http.Header)
 }
 
 func (w *statusWriter) WriteHeader(code int) {
 	if w.status == 0 {
 		w.status = code
+		if w.beforeHeader != nil {
+			w.beforeHeader(w.Header())
+		}
 	}
 	w.ResponseWriter.WriteHeader(code)
 }
 
 func (w *statusWriter) Write(b []byte) (int, error) {
 	if w.status == 0 {
-		w.status = http.StatusOK
+		w.WriteHeader(http.StatusOK)
 	}
 	return w.ResponseWriter.Write(b)
 }
 
-// chain is the part of the handler chain every route shares: recover, security headers, body limit, log line.
+// serverTiming is the Server-Timing value of one response: time to the header, GitHub time summed with the call
+// count, each read stage, and "cold" on the first request this instance serves. Only numbers and the fixed metric
+// names the code passes to api.StartStage go out, never tenant data.
+func serverTiming(total time.Duration, gh *api.CallStats, stages map[string]api.Stage, cold bool) string {
+	parts := []string{fmt.Sprintf("total;dur=%.1f", ms(total))}
+	if n := gh.Calls(); n > 0 {
+		parts = append(parts, fmt.Sprintf(`gh;dur=%.1f;desc="%d calls"`, ms(gh.Duration()), n))
+	}
+	names := make([]string, 0, len(stages))
+	for name := range stages {
+		if metricName.MatchString(name) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		parts = append(parts, fmt.Sprintf("%s;dur=%.1f", name, stages[name].DurationMS))
+	}
+	if cold {
+		parts = append(parts, "cold")
+	}
+	return strings.Join(parts, ", ")
+}
+
+var metricName = regexp.MustCompile(`^[a-z][a-z_]{0,31}$`)
+
+func ms(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
+
+// chain is the part of the handler chain every route shares: recover, security headers, timing, body limit, log line.
+// It is built once per process, so its first request is the instance's cold one.
 func chain(next http.Handler) http.Handler {
+	var served atomic.Bool
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		cold := !served.Swap(true)
 		l := &reqLog{outcome: "ok"}
 		ctx, gh := api.WithCallStats(context.WithValue(r.Context(), reqLogKey{}, l))
 		ctx, stages := api.WithStageStats(ctx)
 		r = r.WithContext(ctx)
-		sw := &statusWriter{ResponseWriter: w}
+		sw := &statusWriter{ResponseWriter: w, beforeHeader: func(h http.Header) {
+			h.Set("Server-Timing", serverTiming(time.Since(start), gh, stages.Snapshot(), cold))
+		}}
 
 		id := requestID()
 		h := sw.Header()
