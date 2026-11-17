@@ -97,7 +97,7 @@ export const stateFixtures: StateFixture[] = [
     path: '/r/acme/app',
     api: '/api/repos/acme/app/home',
     reply: [200, unknownRuleset],
-    heading: 'Home',
+    heading: 'acme/app',
     text: 'Check with an admin',
     approvedCopy: [
       'Rules reach the default branch through review, so the approval binds to exact file contents.',

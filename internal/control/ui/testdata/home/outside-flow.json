@@ -1,5 +1,6 @@
 {
-  "status": "policy changed outside the flow",
+  "state": "outside_flow",
+  "status": "The policy on the default branch changed without a recorded approval, so every pull request is unknown.",
   "needs_you": [
     {
       "kind": "confirm",
