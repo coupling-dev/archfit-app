@@ -12,10 +12,10 @@
   const filtered = $derived(filterPolicy(policy, query));
   const matches = $derived(filtered.modules.length + filtered.rules.length + filtered.exceptions.length);
   const hasNotes = $derived(policy.rules.some((rule) => rule.not_checked));
-  // The gate key says whether a failing check stops the merge; any other value is shown as it is, without a meaning.
+  // The gate key says what a failing rule does to archfit/gate; it does not say whether GitHub requires the check. Any other value is shown as it is.
   const gateMeaning: Record<string, string> = {
-    advisory: 'it reports and does not stop a merge',
-    required: 'a failing rule stops the merge',
+    advisory: 'rules are reported and archfit/gate does not fail',
+    required: 'a failing rule makes archfit/gate fail',
   };
 
   async function inspectModule(index: number) {
@@ -45,7 +45,7 @@
     <div><dt>Layers, inner first</dt><dd>{policy.layers?.join(', ') || 'None'}</dd></div>
     <div><dt>The check</dt><dd>{policy.gate || 'unknown'}{#if gateMeaning[policy.gate]}<span class="meaning">{' — ' + gateMeaning[policy.gate]}</span>{/if}</dd></div>
   </dl>
-  <p class="small muted"><a href={home}>Home</a> shows whether the policy is approved and the result of the last check.</p>
+  <p class="small muted">Whether GitHub requires the check is shown on <a href={home}>Home</a>.</p>
 </section>
 
 <div class="stats" aria-label="Policy counts">

@@ -9,9 +9,9 @@ alexei-led
 Layers, inner first
 core, cmd
 The check
-required — a failing rule stops the merge
+required — a failing rule makes archfit/gate fail
 
-Home shows whether the policy is approved and the result of the last check.
+Whether GitHub requires the check is shown on Home.
 
 6
 Modules

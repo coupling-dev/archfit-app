@@ -86,8 +86,8 @@ larger hit areas on narrow screens and touch devices. Request fields use the sel
 ## Policy
 
 The repository tabs are **Home** and **Policy**. Policy starts with owners, layers in inner-first order, **The check**,
-and counts. **The check** is the `gate` key: `advisory` reports and does not stop a merge; `required` means a failing
-rule stops the merge. Home shows whether the policy is approved and the result of the last check.
+and counts. **The check** is the `gate` key: `advisory` means rules are reported and `archfit/gate` does not fail; `required`
+means a failing rule makes `archfit/gate` fail. Whether GitHub requires the check is shown on Home.
 **Ask and deny rules** counts the rules set to `ask` or `deny`, not off settings or notes.
 
 A repository with no `.archfit.yaml` on its default branch shows **No policy on the default branch yet.** with

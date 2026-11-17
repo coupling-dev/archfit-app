@@ -38,7 +38,7 @@ test('policy reading: rules carry their ids and notes are explained once', async
   };
   await open(page, path, { [api]: () => [200, body] });
   const facts = page.getByRole('region', { name: 'Policy summary' });
-  await expect(facts.locator('dd').nth(2)).toHaveText('advisory — it reports and does not stop a merge');
+  await expect(facts.locator('dd').nth(2)).toHaveText('advisory — rules are reported and archfit/gate does not fail');
   const rules = page.getByRole('region', { name: 'Rules', exact: true });
   await expect(rules.locator('summary strong')).toHaveText([
     'graph',
@@ -151,7 +151,7 @@ test('policy reading: expiry counts, unknown facts and server dates remain expli
   await expect(counts).toContainText('1 already expired');
   await expect(counts).toContainText('2Expiring in 30 days');
   const facts = page.getByRole('region', { name: 'Policy summary' });
-  await expect(facts.locator('dd')).toHaveText(['None', 'None', 'required — a failing rule stops the merge']);
+  await expect(facts.locator('dd')).toHaveText(['None', 'None', 'required — a failing rule makes archfit/gate fail']);
   await expect(facts.getByRole('link', { name: 'Home', exact: true })).toHaveAttribute('href', '/r/acme/app');
   const exceptions = page.getByRole('region', { name: 'Exceptions', exact: true });
   await expect(exceptions.getByText('Expires in 12 days', { exact: true })).toBeVisible();
