@@ -19,8 +19,8 @@
   },
   ".btn.primary": {
     "color": "rgb(255, 255, 255)",
-    "background": "rgb(31, 136, 61)",
-    "border": "rgba(31, 35, 40, 0.15)",
+    "background": "rgb(35, 134, 54)",
+    "border": "rgba(240, 246, 252, 0.1)",
     "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px"
   },
   ".pitch-flow li": {
@@ -65,5 +65,5 @@
     "border": "rgb(47, 53, 61) rgb(145, 152, 161) rgb(145, 152, 161)",
     "shadow": "none"
   },
-  "hover": "rgb(28, 129, 57)"
+  "hover": "rgb(24, 116, 48)"
 }
