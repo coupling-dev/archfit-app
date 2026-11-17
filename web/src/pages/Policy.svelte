@@ -95,11 +95,11 @@
   <Skeleton rows={5} />
 {:else if editing && body.edit.available}
   <section class="box" aria-labelledby="edit-policy">
-    <div class="box-head"><h2 id="edit-policy">Edit the policy</h2></div>
+    <div class="box-head"><h2 class="title-box" id="edit-policy">Edit the policy</h2></div>
     <div class="box-body stack-sm">
       <p>Every YAML edit needs your passkey and goes through the policy pull request.</p>
       <label for="policy-yaml">Policy YAML</label>
-      <textarea id="policy-yaml" rows="20" bind:value={yaml} disabled={busy || answered !== null || body.edit.recovery === true}
+      <textarea class="form-control code" id="policy-yaml" rows="20" bind:value={yaml} disabled={busy || answered !== null || body.edit.recovery === true}
         oninput={() => { preview = null; editError = ''; }} spellcheck="false"></textarea>
       <p>preview it: <code>archfit check --policy &lt;file&gt;</code></p>
       {#if editError}<p class="flash error" role="alert">{editError}</p>{/if}
@@ -126,7 +126,7 @@
 {:else}
   {#if !body.edit.available}
     <section class="box" aria-labelledby="editor-unavailable"><div class="box-body stack-sm">
-      <h2 id="editor-unavailable">Policy editor unavailable</h2>
+      <h2 class="title-box" id="editor-unavailable">Policy editor unavailable</h2>
       <p>{body.edit.reason}</p>
       <p>The policy below is read-only.</p>
       <a class="btn" href={repoPage(route.fullName)}>View current setup</a>
@@ -136,6 +136,5 @@
 {/if}
 
 <style>
-  textarea { width: 100%; max-width: 100%; font-family: var(--mono, monospace); }
   pre, li { white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>
