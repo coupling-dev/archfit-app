@@ -113,11 +113,14 @@ export async function open(page: Page, path: string, mock: Mock = {}) {
         return json(200, {
           ...session,
           build: mock.appBuild ?? appBuild,
-          ...(mock.operator ? { operator: true, waiting: 1 } : {}),
+          ...(mock.operator ? { operator: true } : {}),
         });
       case '/api/admin/installations':
         if (!mock.operator) return json(404, { error: 'Not found.' });
         return json(200, installations);
+      case '/api/admin/waiting':
+        if (!mock.operator) return json(404, { error: 'Not found.' });
+        return json(200, { waiting: 1 });
       case '/api/repos':
         return json(200, mock.repos ?? repos);
       case '/api/repos/acme/app/passkeys':

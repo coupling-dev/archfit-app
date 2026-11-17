@@ -22,6 +22,8 @@ The gate facade supplies policy/request views, answers and owner actions; UI imp
 - Passkeys list, register, step up and remove the signed-in user's credentials.
 - Installation admin routes require configured operator user IDs. Account admission is checked before
   repository data access.
+- `/api/session` answers the operator flag only. The waiting count, which reads every installation, is `GET /api/admin/waiting`
+  for operators, read by the header after the session shows; it answers -1 when the reads fail.
 - /api/repos lists accessible repositories in name order, at most 100, with state from the gate RepoStates façade and no historical check reads.
 
 ## Security and checks

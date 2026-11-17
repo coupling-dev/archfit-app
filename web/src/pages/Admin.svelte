@@ -1,6 +1,7 @@
 <script lang="ts">
   import Skeleton from '../components/Skeleton.svelte';
-  import { explain, explainLoad, getJSON, postJSON, type AdminBody, type ApiError, type Installation, type Notice, type Session, type Repos } from '../lib/api';
+  import { explain, explainLoad, postJSON, type AdminBody, type ApiError, type Installation, type Notice, type Session, type Repos } from '../lib/api';
+  import { firstJSON } from '../lib/early';
 
   import { repoPage } from '../lib/route';
 
@@ -10,7 +11,7 @@
 
   let accessible = $state<string[]>([]);
   // Installation visibility is not repository access. A failed/truncated list never grants more links.
-  getJSON<Repos>('/api/repos').then(
+  firstJSON<Repos>('/api/repos').then(
     (b) => { accessible = b.repos.filter((r) => !r.waiting).map((r) => r.full_name); },
     () => { accessible = []; },
   );
@@ -22,7 +23,7 @@
   let confirming = $state(0); // the installation whose revoke asks once, inline
 
   function load() {
-    getJSON<AdminBody>('/api/admin/installations').then(
+    firstJSON<AdminBody>('/api/admin/installations').then(
       (b) => (body = b),
       (e: ApiError) => (failure = explainLoad(e, here)),
     );
