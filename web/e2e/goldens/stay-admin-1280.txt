@@ -32,5 +32,5 @@ alexei-led User Managed by configuration
 An operator must change the App settings by pull request; this page cannot change them. · 1 repository
 ccgram
 Revoke stops Archfit from the account's next event on. Checks already on GitHub stay.
-Documentation · Third-party licences
+Documentation · Third-party licenses
 About this App · v0.12.0

@@ -89,5 +89,5 @@ Check means the App could not confirm that archfit/gate is required; ask an admi
 
 Only the first repositories by name are listed.
 
-Documentation · Third-party licences
+Documentation · Third-party licenses
 About this App · v0.12.0

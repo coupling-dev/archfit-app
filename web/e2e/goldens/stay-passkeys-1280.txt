@@ -29,5 +29,5 @@ Passkey 1 passkey- · added 2026-11-10 · last used 2026-11-11
 This is your last passkey in this installation. Removing it means you must register a new one before you can confirm another approval. The owners will be notified.
 
 Remove
-Documentation · Third-party licences
+Documentation · Third-party licenses
 About this App · v0.12.0
