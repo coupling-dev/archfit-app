@@ -45,19 +45,14 @@ for (const width of [390, 1280]) {
     const diagram = page.getByRole('img', { name: graphName });
     const listToggle = page.getByText('Show the map as a list', { exact: true });
     const diagramToggle = page.getByText('Show the map as a diagram', { exact: true });
-    await expect(page.locator('.map-node')).toHaveCount(width < 720 ? 0 : 3);
+    await expect(page.locator('.map-node')).toHaveCount(0);
     const legend = page.locator('.map-diagram').getByRole('list', { name: 'Map legend', includeHidden: true });
-    await expect(legend).toHaveCount(width < 720 ? 0 : 1);
+    await expect(legend).toHaveCount(0);
     await expect(page.locator('main')).not.toContainText('#431');
-    if (width < 720) {
-      await expect(diagram).toBeHidden();
-      await expect(legend).toBeHidden();
-      expect(await page.locator('main').innerText()).not.toContain('A requested dependency');
-      await expect(page.getByText('app → other: Requested dependency · #415', { exact: true })).toBeVisible();
-    } else {
-      await expect(diagram).toBeVisible();
-      await listToggle.click();
-    }
+    await expect(diagram).toBeHidden();
+    expect(await page.locator('main').innerText()).not.toContain('A requested dependency');
+    if (width < 720) await expect(page.getByText('app → other: Requested dependency · #415', { exact: true })).toBeVisible();
+    else await listToggle.click();
     await expect(page.getByRole('link', { name: '#415', exact: true })).toHaveAttribute(
       'href',
       '/r/acme/app/requests/415',
@@ -65,10 +60,8 @@ for (const width of [390, 1280]) {
     await expect(page.locator('.map-list')).toHaveAttribute('open', '');
     await page.screenshot({ path: '../tmp/map-touch/after-' + width + '.png', fullPage: true });
     await expect(page.locator('.map-list')).toHaveAttribute('open', '');
-    if (width < 720) {
-      await diagramToggle.focus();
-      await page.keyboard.press('Enter');
-    }
+    await diagramToggle.focus();
+    await page.keyboard.press('Enter');
     await expect(diagram).toBeVisible();
     await expect(legend).toBeVisible();
     await expectPageText(page, 'map-list-' + width);
