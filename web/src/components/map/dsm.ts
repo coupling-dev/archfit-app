@@ -1,4 +1,4 @@
-import { lineKinds, mapLayers, type LineKind, type MapLine, type MapModel } from './model';
+import { mapLayers, type LineKind, type MapLine, type MapModel } from './model';
 
 export const symbols: Record<LineKind, string> = {
   allowed: '✓',
