@@ -1,8 +1,9 @@
-Home
-
 acme/app
+clean
 
-1 request waits
+The default branch follows the policy. 1 request waits.
+
+Open the request
 View policy
 Needs you
 Request #431 waits.

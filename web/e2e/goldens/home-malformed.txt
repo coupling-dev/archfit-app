@@ -1,5 +1,3 @@
-Home
-
 acme/app
 
 The Home answer could not be read.

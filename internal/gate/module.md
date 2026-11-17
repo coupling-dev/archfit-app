@@ -26,7 +26,7 @@ It never imports control, app or an LLM. Provenance authenticates the sender; re
 
 `pullview.go` republishes `PullView`, `PullRecord`, `PullNext` and `PullBalance`.
 `BuildPullView(result.Result) PullView` renders the feedback model as the status line,
-ordered records, author and owner lines. Each waiting error names its request number;
+the note under an unknown heading, ordered records, author and owner lines. Each waiting error names its request number;
 `ShowNext` controls the next step already covered by the author line.
 Callers establish the result's authority before rendering; the builder performs no
 artifact retrieval or evidence verification. Control imports this facade, not feedback.
