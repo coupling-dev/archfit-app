@@ -31,8 +31,6 @@ const noLongerNeeded = 'The repository no longer needs this action. Reload the p
 const notOutside = 'The policy has no change outside the flow to revert. Reload the page.';
 const nothingToRevert = 'The policy already matches the approved policy. There is nothing to revert.';
 const merged = 'This pull request is merged. There is nothing to approve.';
-const notApprovable =
-  'This pull request cannot be approved. It must be open, from this repository, into the default branch, with a policy and a workflow file.';
 
 export function ownerStale(error: unknown, action: OwnerKind, pull: number): OwnerStale | null {
   if (!(error instanceof ApiError) || error.status !== 409) return null;
@@ -54,9 +52,6 @@ export function ownerStale(error: unknown, action: OwnerKind, pull: number): Own
   }
   if (pull > 0 && message === merged) {
     return { reason: `Nothing to approve: pull request #${pull} is merged.`, next: 'pull' };
-  }
-  if (action === 'first' && !pull && message === notApprovable) {
-    return { reason: 'Nothing to approve yet: the default branch has no policy of version 3.', next: 'repository' };
   }
   return null;
 }

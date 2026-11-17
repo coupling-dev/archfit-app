@@ -212,10 +212,11 @@ func (g *Gate) OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerVie
 
 const statusOutsideFlow = "unknown — the policy changed outside the flow."
 
-// ownerMergedReason says why a pull request cannot be approved when it is merged. Any other error, and a failed read
-// of the pull request, is returned as it was.
+// ownerMergedReason says why a workflow approval cannot be made on a merged pull request. Any other error, and a
+// failed read of the pull request, is returned as it was.
 func (g *Gate) ownerMergedReason(ctx context.Context, t Target, a OwnerAction, err error) error {
-	if a.Pull == 0 || !errors.Is(err, ErrOwnerNotPossible) {
+	// A merged first approval is not "nothing to approve": the repository may still lack its first policy.
+	if a.Kind != OwnerWorkflow || a.Pull == 0 || !errors.Is(err, ErrOwnerNotPossible) {
 		return err
 	}
 	if pl, perr := g.pulls.Pull(ctx, t.Repo.RepoRef, a.Pull); perr == nil && pl.Merged {

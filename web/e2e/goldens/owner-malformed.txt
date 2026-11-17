@@ -3,6 +3,5 @@ Approve the first policy
 acme/app
 
 The owner action could not be read. Reload the page.
-
 View current setup
 View policy

@@ -3,5 +3,4 @@ Approve the first policy
 acme/app
 
 The first policy is already approved.
-
 Open the repository

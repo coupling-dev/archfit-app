@@ -3,5 +3,4 @@ Revert the policy
 acme/app
 
 Nothing to revert: the policy has not changed outside the flow.
-
 Open the repository

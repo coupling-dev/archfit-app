@@ -2,6 +2,6 @@ Approve the first policy
 
 acme/app
 
-Nothing to approve yet: the default branch has no policy of version 3.
-
-Open the repository
+This pull request cannot be approved. It must be open, from this repository, into the default branch, with a policy and a workflow file.
+View current setup
+View policy

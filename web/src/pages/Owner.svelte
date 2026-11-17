@@ -1,10 +1,12 @@
 <script lang="ts">
   import Skeleton from '../components/Skeleton.svelte';
-  import Icon from '../components/ui/Icon.svelte';
+  import Banner from '../components/ui/Banner.svelte';
+  import Diff from '../components/ui/Diff.svelte';
   import PageHead from '../components/ui/PageHead.svelte';
   import StatusLabel from '../components/ui/StatusLabel.svelte';
-  import { ApiError, explain, explainLoad, getJSON, postJSON, repoAPI, type Session } from '../lib/api';
-  import { ownerViewPath, outcomeText, ownerButton, ownerTitle, readOwnerView, ownerFileVersion, ownerDiffLines, type OwnerOutcome, type OwnerRoute, type OwnerView } from '../lib/owner';
+  import { ApiError, explain, explainLoad, postJSON, repoAPI, type Session } from '../lib/api';
+  import { firstJSON } from '../lib/early';
+  import { ownerViewPath, outcomeText, outcomeTone, ownerButton, ownerTitle, readOwnerView, ownerFileVersion, type OwnerOutcome, type OwnerRoute, type OwnerView } from '../lib/owner';
   import { canRetryRead, ownerStale, type OwnerStale } from '../lib/recovery';
   import { confirm } from '../lib/passkey';
   import { repoPage } from '../lib/route';
@@ -40,7 +42,7 @@
   );
 
   function load() {
-    getJSON<unknown>(api(ownerViewPath(route))).then(
+    firstJSON<unknown>(api(ownerViewPath(route))).then(
     (raw) => { view = readOwnerView(raw, route); },
     ).catch((e: unknown) => {
       retry = canRetryRead(e);
@@ -88,12 +90,12 @@
 <PageHead title={ownerTitle(route.action)} repo={route.fullName} status={showStatus ? statusLine : undefined} actions={nothingToDo ? next : undefined}>
   {#if route.pull && !nothingToDo}<p class="pull-line">Pull request #{route.pull}</p>{/if}
   {#if nothingToDo}
-    <div class="flash" role="status"><Icon name="info" /><p>{nothingToDo.reason}</p></div>
-  {:else if failure}<p class="flash error" role="alert">{failure}</p>
-  {:else if outcome}<p class="flash success" role="status">{outcomeText(route.action, outcome)}</p>
+    <Banner tone="info" role="status">{nothingToDo.reason}</Banner>
+  {:else if failure}<Banner tone="danger" role="alert">{failure}</Banner>
   {:else if view}
+    {#if outcome}<Banner tone={outcomeTone(route.action, outcome)} role="status">{outcomeText(route.action, outcome)}</Banner>{/if}
     {#if view.kind === 'workflow'}
-      <p>This pull request changes the workflow that runs Archfit. The App cannot use its result without your approval.</p>
+      {#if !outcome}<p>This pull request changes the workflow that runs Archfit. The App cannot use its result without your approval.</p>{/if}
       <p>Approval does not mean the check passed.</p>
     {:else}
       <p>{view.note} {#if sibling}<a href={repoPage(route.fullName, `/owner/${sibling.to}`)}>{sibling.text}</a>{/if}</p>
@@ -143,9 +145,7 @@
       </div>
       {#if diff.text}
         <div class="box-body stack-sm">
-          <p class="small diff-legend"><span class="addition">+ Added</span> <span class="deletion">- Removed</span></p>
-          <!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users must be able to scroll the unwrapped diff.) -->
-          <pre class="diff" role="region" tabindex="0" aria-label={`Diff: ${diff.title} (${diff.path})`}><code>{#each ownerDiffLines(diff.text) as line, lineIndex (lineIndex)}<span class={`diff-line ${line.kind}`}>{line.text}</span>{/each}</code></pre>
+          <Diff text={diff.text} label={`Diff: ${diff.title} (${diff.path})`} />
         </div>
       {/if}
     </section>
@@ -214,7 +214,7 @@
         {:else}
           <p class="small">No passkey yet? <a href={repoPage(route.fullName, '/passkeys?return=' + encodeURIComponent(here))}>Register a passkey</a> to return here after registration.</p>
         {/if}
-        {#if actionError}<p class="flash error" role="alert">{actionError}</p>{/if}
+        {#if actionError}<Banner tone="danger" role="alert">{actionError}</Banner>{/if}
         {#if moved}<p><a href={repoPage(route.fullName)}>View current setup</a></p>{/if}
         <div><button class="btn primary approval" type="submit" disabled={busy || moved}>{busy ? 'Waiting for your passkey and the App…' : ownerButton(route.action)}</button></div>
       </form>
@@ -229,14 +229,6 @@
   section { min-width: 0; }
   h2, h3 { overflow-wrap: anywhere; }
   .box-head.stack-sm { align-items: stretch; }
-  .diff code { display: block; width: max-content; min-width: 100%; }
-  .diff-line { display: block; }
-  .addition { background: var(--success-subtle); }
-  .deletion { background: var(--danger-subtle); }
-  .hunk, .header { color: var(--fg-muted); }
-  .diff-legend { display: flex; gap: 16px; }
-  .diff-legend span { padding: 0 4px; }
   .status-line { display: block; }
   .pull-line { margin: 0; color: var(--fg-muted); font-size: 14px; }
-  .flash p { margin: 0; }
 </style>

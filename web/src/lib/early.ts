@@ -1,4 +1,5 @@
 import { getJSON, repoAPI } from './api';
+import { ownerViewPath } from './owner';
 import type { Route } from './route';
 
 // A page's first reads start beside /api/session instead of after it: the server authorizes each one on its own, and
@@ -20,6 +21,10 @@ export function firstPaths(route: Route): string[] {
       return [repoAPI(route.owner, route.name, `requests/${route.number}`)];
     case 'passkeys':
       return [repoAPI(route.owner, route.name, 'passkeys')];
+    case 'owner':
+      return [repoAPI(route.owner, route.name, ownerViewPath(route))];
+    case 'admin':
+      return ['/api/repos', '/api/admin/installations'];
   }
   return [];
 }

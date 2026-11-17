@@ -3,5 +3,4 @@ Approve the workflow change
 acme/app
 
 Nothing to approve: this repository does not need a workflow approval now.
-
 Open the repository

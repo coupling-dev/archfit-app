@@ -3,5 +3,4 @@ Approve the workflow change
 acme/app
 
 Nothing to approve: pull request #213 is merged.
-
 Open pull request #213

@@ -141,6 +141,17 @@ func TestRevertRefusesUnreadableOutsideFile(t *testing.T) {
 	}
 }
 
+func TestOwnerViewMergedFirstApprovalIsNotNothingToApprove(t *testing.T) {
+	w := ownerViewWorld(t, OwnerFirst, 7)
+	pl := w.gh.pulls[pullKey(shopName, 7)]
+	pl.State, pl.Merged = "closed", true
+	w.gh.pulls[pullKey(shopName, 7)] = pl
+	_, err := w.gate.OwnerView(t.Context(), Target{Repo: w.shop}, OwnerAction{Kind: OwnerFirst, Pull: 7})
+	if !errors.Is(err, ErrOwnerNotPossible) || errors.Is(err, ErrOwnerMerged) {
+		t.Fatalf("refusal = %v", err)
+	}
+}
+
 func TestOwnerViewSaysAMergedPullRequestIsMerged(t *testing.T) {
 	for _, tt := range []struct {
 		name   string

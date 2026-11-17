@@ -69,9 +69,8 @@ for (const width of [390, 1280]) {
       status: 409,
       error:
         'This pull request cannot be approved. It must be open, from this repository, into the default branch, with a policy and a workflow file.',
-      text: 'Nothing to approve yet: the default branch has no policy of version 3.',
+      text: 'This pull request cannot be approved. It must be open',
       recovery: true,
-      link: 'Open the repository',
     },
     {
       name: 'owner-merged-pull',
@@ -137,7 +136,7 @@ for (const width of [390, 1280]) {
         ).toBeVisible();
         expect(reads).toBe(2);
         expect(writes).toEqual([]);
-      } else if (state.name.startsWith('owner')) {
+      } else if (state.name.startsWith('owner') && state.link) {
         await expect(page.getByRole('alert')).toHaveCount(0);
         await expect(page.getByRole('heading', { level: 1 })).toHaveText(
           state.path.includes('confirm') ? 'Confirm the policy' : state.path.includes('revert') ? 'Revert the policy' : state.path.includes('workflow') ? 'Approve the workflow change' : 'Approve the first policy',

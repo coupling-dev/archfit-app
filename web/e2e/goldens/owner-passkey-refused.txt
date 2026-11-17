@@ -62,5 +62,4 @@ Why a passkey?
 Manage your passkeys
 
 Passkey confirmation could not start. Try again.
-
 Approve with passkey
