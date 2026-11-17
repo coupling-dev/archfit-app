@@ -72,3 +72,41 @@ export function visibleModules(model: MapModel, filters: MatrixFilters) {
     )
     .sort((a, b) => layers.indexOf(a.layer) - layers.indexOf(b.layer) || a.name.localeCompare(b.name));
 }
+
+export interface Cell {
+  row: number;
+  col: number;
+}
+const navKeys = new Set(['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End']);
+export const isNavKey = (key: string): boolean => navKeys.has(key);
+
+// Where a navigation key moves from a cell, skipping cells that cannot take focus. The result is the same cell when
+// nothing further is reachable. Home and End go to the row's ends (Ctrl: the table's first and last row).
+export function nextCell(key: string, ctrl: boolean, from: Cell, size: number, open: (cell: Cell) => boolean): Cell {
+  const last = size - 1;
+  const step = (dRow: number, dCol: number): Cell => {
+    let { row, col } = from;
+    for (;;) {
+      row += dRow;
+      col += dCol;
+      if (row < 0 || col < 0 || row > last || col > last) return from;
+      if (open({ row, col })) return { row, col };
+    }
+  };
+  const edge = (dCol: 1 | -1): Cell => {
+    const row = ctrl ? (dCol === 1 ? 0 : last) : from.row;
+    for (let col = dCol === 1 ? 0 : last; col >= 0 && col <= last; col += dCol) {
+      if (open({ row, col })) return { row, col };
+    }
+    return from;
+  };
+  switch (key) {
+    case 'ArrowDown': return step(1, 0);
+    case 'ArrowUp': return step(-1, 0);
+    case 'ArrowRight': return step(0, 1);
+    case 'ArrowLeft': return step(0, -1);
+    case 'Home': return edge(1);
+    case 'End': return edge(-1);
+    default: return from;
+  }
+}

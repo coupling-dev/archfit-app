@@ -203,7 +203,7 @@ test('home: worker failure says so, and Matrix still works', async ({ page }) =>
   await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toHaveCount(0);
   await expectPageText(page, 'home-worker-error');
   await page.getByRole('button', { name: 'Matrix', exact: true }).click();
-  await page.getByRole('button', { name: /^app → other:/ }).click();
+  await page.getByRole('button', { name: /^app to other:/ }).click();
   await expect(page.getByRole('link', { name: 'Open request #431' })).toHaveAttribute(
     'href',
     '/r/acme/app/requests/431',
