@@ -86,6 +86,8 @@ type Installation struct {
 type Repos interface {
 	ListInstallations(ctx context.Context) ([]Installation, error)
 	ListRepos(ctx context.Context, installationID int64) ([]Repo, error)
+	// InstallationID returns the installation that covers fullName, using the App JWT. ErrNotFound if none does.
+	InstallationID(ctx context.Context, fullName string) (int64, error)
 	// ResolveRepo finds the installation that covers fullName using the App JWT.
 	ResolveRepo(ctx context.Context, fullName string) (Repo, error)
 	// File returns the raw bytes and git blob SHA of path at ref. ErrNotFound if absent.
@@ -338,6 +340,8 @@ type Changes interface {
 type Users interface {
 	// Permission returns "admin" | "write" | "read" | "none" for the user on the repository.
 	Permission(ctx context.Context, userToken, fullName string) (string, error)
+	// Access is Permission plus the repository as the user sees it, from the same call (InstallationID unset).
+	Access(ctx context.Context, userToken, fullName string) (string, Repo, error)
 	// UserRepos lists repositories the user can access through App installations.
 	UserRepos(ctx context.Context, userToken string) ([]Repo, error)
 }

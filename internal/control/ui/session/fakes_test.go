@@ -48,11 +48,16 @@ type fakeUsers struct {
 	calls []permissionCall
 }
 
-func (f *fakeUsers) Permission(_ context.Context, userToken, fullName string) (string, error) {
+func (f *fakeUsers) Permission(ctx context.Context, userToken, fullName string) (string, error) {
+	perm, _, err := f.Access(ctx, userToken, fullName)
+	return perm, err
+}
+
+func (f *fakeUsers) Access(_ context.Context, userToken, fullName string) (string, api.Repo, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, permissionCall{userToken, fullName})
-	return f.perm, f.err
+	return f.perm, resolvedRepo(0), f.err
 }
 
 func (f *fakeUsers) UserRepos(context.Context, string) ([]api.Repo, error) {
@@ -78,35 +83,40 @@ func (f *fakeUsers) lastCall() permissionCall {
 	return f.calls[len(f.calls)-1]
 }
 
-// fakeRepos answers ResolveRepo only; session calls no other method of Repos.
+// fakeRepos answers InstallationID only; session calls no other method of Repos.
 type fakeRepos struct {
-	t     testing.TB
-	mu    sync.Mutex
-	repo  api.Repo
-	err   error
-	calls int
+	t              testing.TB
+	mu             sync.Mutex
+	installationID int64
+	err            error
+	calls          int
 }
 
-func (f *fakeRepos) ResolveRepo(context.Context, string) (api.Repo, error) {
+func (f *fakeRepos) InstallationID(context.Context, string) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
 	if f.err != nil {
-		return api.Repo{}, f.err
+		return 0, f.err
 	}
-	return f.repo, nil
+	return f.installationID, nil
 }
 
-func (f *fakeRepos) answer(repo api.Repo, err error) {
+func (f *fakeRepos) answer(installationID int64, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.repo, f.err = repo, err
+	f.installationID, f.err = installationID, err
 }
 
 func (f *fakeRepos) callCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.calls
+}
+
+func (f *fakeRepos) ResolveRepo(context.Context, string) (api.Repo, error) {
+	f.t.Errorf("session must not call Repos.ResolveRepo")
+	return api.Repo{}, nil
 }
 
 func (f *fakeRepos) ListInstallations(context.Context) ([]api.Installation, error) {

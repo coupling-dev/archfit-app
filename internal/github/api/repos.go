@@ -72,28 +72,45 @@ func (c *Client) ListRepos(ctx context.Context, installationID int64) ([]Repo, e
 	return out, nil
 }
 
-func (c *Client) ResolveRepo(ctx context.Context, fullName string) (Repo, error) {
+// InstallationID returns the installation that covers fullName, asked with the App JWT. ErrNotFound when the App is not
+// installed on the repository.
+func (c *Client) InstallationID(ctx context.Context, fullName string) (int64, error) {
 	base, err := repoPath(fullName)
 	if err != nil {
-		return Repo{}, err
+		return 0, err
 	}
 	var inst struct {
 		ID int64 `json:"id"`
 	}
 	k := call{cred: appCred, method: http.MethodGet, route: "/repos/{r}/installation", url: apiURL(base+"/installation", nil)}
 	if err := c.send(ctx, k, &inst); err != nil {
+		return 0, err
+	}
+	if _, err := instCred(inst.ID); err != nil {
+		return 0, k.errorf("invalid response")
+	}
+	return inst.ID, nil
+}
+
+func (c *Client) ResolveRepo(ctx context.Context, fullName string) (Repo, error) {
+	base, err := repoPath(fullName)
+	if err != nil {
 		return Repo{}, err
 	}
-	cr, err := instCred(inst.ID)
+	id, err := c.InstallationID(ctx, fullName)
 	if err != nil {
-		return Repo{}, k.errorf("invalid response")
+		return Repo{}, err
+	}
+	cr, err := instCred(id)
+	if err != nil {
+		return Repo{}, err
 	}
 	var j repoJSON
-	k = call{cred: cr, method: http.MethodGet, route: "/repos/{r}", url: apiURL(base, nil)}
+	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}", url: apiURL(base, nil)}
 	if err := c.send(ctx, k, &j); err != nil {
 		return Repo{}, err
 	}
-	return j.repo(inst.ID), nil
+	return j.repo(id), nil
 }
 
 func (c *Client) File(ctx context.Context, r RepoRef, ref, path string) (content []byte, blobSHA string, err error) {
