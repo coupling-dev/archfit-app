@@ -1,9 +1,7 @@
-Owner action
+Approve the workflow change
 
-acme/app · PR #7
+acme/app
 
-This approval is not needed
-View current setup
-View policy
+Nothing to approve: this repository does not need a workflow approval now.
 
-Open current setup or policy to see what to do next.
+Open the repository

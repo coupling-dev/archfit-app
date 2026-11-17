@@ -38,8 +38,9 @@ for (const width of [390, 1280]) {
       endpoint: '/owner/first/view',
       status: 409,
       error: 'The repository no longer needs this action. Reload the page.',
-      text: 'This approval is not needed',
+      text: 'The first policy is already approved.',
       recovery: true,
+      link: 'Open the repository',
     },
     {
       name: 'owner-confirm-not-needed',
@@ -47,8 +48,9 @@ for (const width of [390, 1280]) {
       endpoint: '/owner/confirm/view',
       status: 409,
       error: 'The repository no longer needs this action. Reload the page.',
-      text: 'No policy confirmation needed',
+      text: 'Nothing to confirm: the policy has not changed outside the flow.',
       recovery: true,
+      link: 'Open the repository',
     },
     {
       name: 'owner-nothing-to-revert',
@@ -56,17 +58,31 @@ for (const width of [390, 1280]) {
       endpoint: '/owner/revert/view',
       status: 409,
       error: 'The policy has no change outside the flow to revert. Reload the page.',
-      text: 'Nothing to revert',
+      text: 'Nothing to revert: the policy has not changed outside the flow.',
       recovery: true,
+      link: 'Open the repository',
     },
     {
       name: 'owner-missing-pull',
       path: '/owner/first',
       endpoint: '/owner/first/view',
       status: 409,
-      error: 'This pull request cannot be approved. Check its policy, workflow, head and target branch.',
-      text: 'This approval is not available.',
+      error:
+        'This pull request cannot be approved. It must be open, from this repository, into the default branch, with a policy and a workflow file.',
+      text: 'Nothing to approve yet: the default branch has no policy of version 3.',
       recovery: true,
+      link: 'Open the repository',
+    },
+    {
+      name: 'owner-merged-pull',
+      path: '/owner/workflow?pull=213',
+      endpoint: '/owner/workflow/view',
+      status: 409,
+      error: 'This pull request is merged. There is nothing to approve.',
+      text: 'Nothing to approve: pull request #213 is merged.',
+      recovery: true,
+      link: 'Open pull request #213',
+      href: root + '/pull/213',
     },
     {
       name: 'policy-transient',
@@ -103,8 +119,8 @@ for (const width of [390, 1280]) {
       await expect(page.locator('main')).toContainText(state.text);
       await expect(page.locator('main')).not.toContainText('Fix .archfit.yaml first.');
       await expect(page.getByRole('link', { name: 'Try again' })).toHaveCount(state.recovery ? 0 : 1);
-      const target = page.getByRole('link', { name: state.recovery ? 'View current setup' : 'Try again' });
-      await expect(target).toHaveAttribute('href', state.recovery ? root : root + state.path);
+      const target = page.getByRole('link', { name: state.link ?? (state.recovery ? 'View current setup' : 'Try again') });
+      await expect(target).toHaveAttribute('href', state.href ?? (state.recovery ? root : root + state.path));
       await keyboard(page, target);
       await expectPageText(page, `recovery-${state.name}-${width}`);
       await docsShot(page, `recovery/${state.name}-${width}`);
@@ -123,6 +139,10 @@ for (const width of [390, 1280]) {
         expect(writes).toEqual([]);
       } else if (state.name.startsWith('owner')) {
         await expect(page.getByRole('alert')).toHaveCount(0);
+        await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+          state.path.includes('confirm') ? 'Confirm the policy' : state.path.includes('revert') ? 'Revert the policy' : state.path.includes('workflow') ? 'Approve the workflow change' : 'Approve the first policy',
+        );
+        await expect(page.locator('main .primary')).toHaveCount(1);
         await expect(page.getByRole('main').getByRole('button')).toHaveCount(0);
       }
     });
@@ -216,8 +236,8 @@ for (const width of [390, 1280]) {
         error: 'The change moved since you looked. Reload it and confirm again with your passkey.',
       }],
     });
-    await page.getByRole('button', { name: owner.main_action, exact: true }).click();
-    await expect(page.getByRole('button', { name: owner.main_action, exact: true })).toBeDisabled();
+    await page.getByRole('button', { name: 'Approve with passkey', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Approve with passkey', exact: true })).toBeDisabled();
     await expect(page.getByRole('link', { name: 'Try again' })).toHaveCount(0);
     const setup = page.getByRole('link', { name: 'View current setup' });
     await expect(setup).toHaveAttribute('href', root);

@@ -1,8 +1,8 @@
 {
   "kind": "first",
   "pull_request": 7,
-  "status": "unknown: the first policy needs approval.",
-  "note": "There is no approved policy yet. Approving makes every line below the approved policy.",
+  "status": "unknown — the first policy needs approval.",
+  "note": "No policy is approved yet. If you approve, the policy below becomes the approved policy.",
   "main_action": "Approve the first policy",
   "passkey": true,
   "action_digest": "sha256:a49056135eb339d7bc6e720eb737f2d526eae8c89145c1f6edf791c165c79d32",

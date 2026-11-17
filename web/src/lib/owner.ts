@@ -44,6 +44,21 @@ export interface OwnerOutcome {
   check?: 'rerun' | 'pending' | 'blocked';
 }
 
+// The title of an owner page is its action, known from the address before any data arrives.
+export function ownerTitle(kind: OwnerKind): string {
+  return {
+    first: 'Approve the first policy',
+    workflow: 'Approve the workflow change',
+    confirm: 'Confirm the policy',
+    revert: 'Revert the policy',
+  }[kind];
+}
+
+// The passkey button says how the action is made, so it never repeats the page title.
+export function ownerButton(kind: OwnerKind): string {
+  return { first: 'Approve', workflow: 'Approve', confirm: 'Confirm', revert: 'Revert' }[kind] + ' with passkey';
+}
+
 const unreadable = 'The owner action could not be read. Reload the page.';
 function object(v: unknown): Record<string, unknown> {
   if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error(unreadable);

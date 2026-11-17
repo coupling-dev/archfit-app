@@ -1,8 +1,8 @@
-Owner action
+Revert the policy
 
 acme/app
 
-This file cannot be displayed, so it cannot be approved here. Use the existing owner flow on the GitHub issue.
+Archfit cannot show this file as text, so it cannot be approved here. Use the GitHub issue.
 
 View current setup
 View policy

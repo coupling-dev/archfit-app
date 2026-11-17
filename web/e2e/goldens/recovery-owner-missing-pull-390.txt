@@ -1,9 +1,7 @@
-Owner action
+Approve the first policy
 
 acme/app
 
-This approval is not available. Open current setup to find the policy that needs approval.
-View current setup
-View policy
+Nothing to approve yet: the default branch has no policy of version 3.
 
-Open current setup or policy to see what to do next.
+Open the repository

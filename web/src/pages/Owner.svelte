@@ -1,9 +1,11 @@
 <script lang="ts">
-  import Status from '../components/Status.svelte';
   import Skeleton from '../components/Skeleton.svelte';
+  import Icon from '../components/ui/Icon.svelte';
+  import PageHead from '../components/ui/PageHead.svelte';
+  import StatusLabel from '../components/ui/StatusLabel.svelte';
   import { ApiError, explain, explainLoad, getJSON, postJSON, repoAPI, type Session } from '../lib/api';
-  import { ownerViewPath, outcomeText, readOwnerView, ownerFileVersion, ownerDiffLines, type OwnerOutcome, type OwnerRoute, type OwnerView } from '../lib/owner';
-  import { canRetryRead, ownerUnavailable } from '../lib/recovery';
+  import { ownerViewPath, outcomeText, ownerButton, ownerTitle, readOwnerView, ownerFileVersion, ownerDiffLines, type OwnerOutcome, type OwnerRoute, type OwnerView } from '../lib/owner';
+  import { canRetryRead, ownerStale, type OwnerStale } from '../lib/recovery';
   import { confirm } from '../lib/passkey';
   import { repoPage } from '../lib/route';
   import { passkeyFailure } from '../lib/webauthn';
@@ -13,13 +15,29 @@
   const github = $derived(`https://github.com/${encodeURIComponent(route.owner)}/${encodeURIComponent(route.name)}`);
   let view = $state<OwnerView | null>(null);
   let failure = $state('');
-  let unavailable = $state('');
+  // The action is already done, or its pull request is merged: a normal state, so it reads as a notice, not an error.
+  let nothingToDo = $state<OwnerStale | null>(null);
   let retry = $state(false);
   let recovery = $state(false);
   let actionError = $state('');
   let busy = $state(false);
-  let stale = $state(false);
+  let moved = $state(false);
   let outcome = $state<OwnerOutcome | null>(null);
+
+  // "unknown — why": the status word gets the one status look, and the reason follows it.
+  const status = $derived.by(() => {
+    const text = view?.status ?? '';
+    const at = text.indexOf(' — ');
+    return at < 0 ? { word: text, why: '' } : { word: text.slice(0, at), why: text.slice(at + 3) };
+  });
+  const showStatus = $derived(!!view && !failure && !nothingToDo && !outcome);
+  const sibling = $derived(
+    route.action === 'confirm'
+      ? { to: 'revert', text: 'Revert instead' }
+      : route.action === 'revert'
+        ? { to: 'confirm', text: 'Confirm instead' }
+        : null,
+  );
 
   function load() {
     getJSON<unknown>(api(ownerViewPath(route))).then(
@@ -27,14 +45,14 @@
     ).catch((e: unknown) => {
       retry = canRetryRead(e);
       recovery = !(e instanceof ApiError) || e.status === 409;
-      unavailable = ownerUnavailable(e, route.action, route.pull);
-      if (!unavailable) failure = e instanceof ApiError ? explainLoad(e, here) : e instanceof Error ? e.message : 'The owner action could not be read. Reload the page.';
+      nothingToDo = ownerStale(e, route.action, route.pull);
+      if (!nothingToDo) failure = e instanceof ApiError ? explainLoad(e, here) : e instanceof Error ? e.message : 'The owner action could not be read. Reload the page.';
     });
   }
   load();
 
   async function act() {
-    if (!view || busy || stale || outcome) return;
+    if (!view || busy || moved || outcome) return;
     // Keep this displayed artifact through the whole ceremony; never fetch a fresh action digest here.
     const seen = view;
     busy = true;
@@ -45,7 +63,7 @@
         pull_request: seen.pull_request, digest: seen.action_digest, view_digest: seen.digest, token,
       });
     } catch (e) {
-      stale = e instanceof ApiError && e.status === 409;
+      moved = e instanceof ApiError && e.status === 409;
       actionError = passkeyFailure(e) ?? explain(e as ApiError, here);
     } finally {
       busy = false;
@@ -53,20 +71,37 @@
   }
 </script>
 
-<div class="page-head">
-  <div class="stack-sm page-identity">
-    <h1>{view?.main_action ?? 'Owner action'}</h1>
-    <p class="lede">{route.fullName}{route.pull ? ` · PR #${route.pull}` : ''}</p>
-    {#if unavailable}<h2><Status>{unavailable}</Status></h2>
-    {:else if failure}<p class="flash error" role="alert">{failure}</p>
-    {:else if outcome}<p role="status"><Status>{outcomeText(route.action, outcome)}</Status></p>
-    {:else if view}<Status>{view.kind === 'workflow' ? 'unknown — no verdict until this workflow change is approved.' : view.status}</Status>{/if}
-    {#if view?.kind === 'workflow'}
-      {#if !outcome}<p>This pull request changes the workflow that runs Archfit. The App cannot use its result without your approval.</p>{/if}
+{#snippet statusLine()}
+  <span class="status-line"><StatusLabel label={status.word} /> {#if status.why}<span>— {status.why}</span>{/if}</span>
+{/snippet}
+
+{#snippet next()}
+  {#if nothingToDo}
+    {#if nothingToDo.next === 'pull'}
+      <a class="btn primary" href={repoPage(route.fullName, `/pull/${route.pull}`)}>Open pull request #{route.pull}</a>
+    {:else}
+      <a class="btn primary" href={repoPage(route.fullName)}>Open the repository</a>
+    {/if}
+  {/if}
+{/snippet}
+
+<PageHead title={ownerTitle(route.action)} repo={route.fullName} status={showStatus ? statusLine : undefined} actions={nothingToDo ? next : undefined}>
+  {#if route.pull && !nothingToDo}<p class="pull-line">Pull request #{route.pull}</p>{/if}
+  {#if nothingToDo}
+    <div class="flash" role="status"><Icon name="info" /><p>{nothingToDo.reason}</p></div>
+  {:else if failure}<p class="flash error" role="alert">{failure}</p>
+  {:else if outcome}<p class="flash success" role="status">{outcomeText(route.action, outcome)}</p>
+  {:else if view}
+    {#if view.kind === 'workflow'}
+      <p>This pull request changes the workflow that runs Archfit. The App cannot use its result without your approval.</p>
       <p>Approval does not mean the check passed.</p>
-    {:else if view}<p>{view.note}</p>{/if}
+    {:else}
+      <p>{view.note} {#if sibling}<a href={repoPage(route.fullName, `/owner/${sibling.to}`)}>{sibling.text}</a>{/if}</p>
+    {/if}
+  {/if}
+  {#if !nothingToDo}
     <div class="row">
-      {#if failure || unavailable}
+      {#if failure}
         {#if retry}<a href={here}>Try again</a>{/if}
         {#if recovery}
           <a href={repoPage(route.fullName)}>View current setup</a>
@@ -74,19 +109,19 @@
         {/if}
       {:else if view}
         {#if outcome}<a href={repoPage(route.fullName)}>View current setup</a>
-        {:else if stale}<a href={here}>Reload the change</a>{/if}
+        {:else if moved}<a href={here}>Reload the change</a>{/if}
         {#if view.pull_request}<a href={`${github}/pull/${view.pull_request}`}>Pull request #{view.pull_request} on GitHub</a>{/if}
         <a href={repoPage(route.fullName, '/policy')}>View policy</a>
       {/if}
     </div>
-  </div>
-</div>
+  {/if}
+</PageHead>
 
-{#if unavailable}
-  <p>Open current setup or policy to see what to do next.</p>
-{:else if !view && !failure}
+{#if nothingToDo || failure}
+  <!-- the head already says everything -->
+{:else if !view}
   <Skeleton rows={5} />
-{:else if view}
+{:else}
 
   {#each view.diffs as diff, i (diff.title)}
     <section class="box" aria-labelledby={`diff-${i}`}>
@@ -122,11 +157,11 @@
       <p>These are the file versions included in this approval. Use them to inspect unchanged lines or compare another copy. SHA-256 fingerprints identify the file bytes. You do not need to compare them to approve.</p>
       {#each view.proposals as proposal (proposal.id)}
         <section class="stack-sm">
-          <h2 class="title-box">Approved answers in #{proposal.pull_request}</h2>
+          <h2 class="title-box">Approved answers in pull request #{proposal.pull_request}</h2>
           <p class="small">Pull request at commit <code>{proposal.head}</code></p>
           <details>
             <summary>Technical details</summary>
-            <p class="small">Proposal <code>{proposal.id}</code> · SHA-256 <code>{proposal.digest}</code></p>
+            <p class="small">Policy pull request #{proposal.pull_request} · <code>{proposal.id}</code> · SHA-256 <code>{proposal.digest}</code></p>
             <ol>{#each proposal.approvals as approval (approval.id)}<li><code>{approval.id}</code>{approval.request ? ` · request #${approval.request}` : ''} · <code>{approval.digest}</code></li>{/each}</ol>
           </details>
         </section>
@@ -164,7 +199,7 @@
         <input type="hidden" name="view_digest" value={view.digest} />
         <input type="hidden" name="digest" value={view.action_digest} />
         {#if view.kind === 'workflow'}
-          <p>Approve the workflow and policy shown for PR #{view.pull_request} at commit <code>{view.head.slice(0, 7)}</code>.</p>
+          <p>Approve the workflow and policy shown for pull request #{view.pull_request} at commit <code>{view.head.slice(0, 7)}</code>.</p>
         {/if}
         <p>Your passkey confirms exactly the change shown above. Nothing is approved until this step finishes.</p>
         <details>
@@ -180,8 +215,8 @@
           <p class="small">No passkey yet? <a href={repoPage(route.fullName, '/passkeys?return=' + encodeURIComponent(here))}>Register a passkey</a> to return here after registration.</p>
         {/if}
         {#if actionError}<p class="flash error" role="alert">{actionError}</p>{/if}
-        {#if stale}<p><a href={repoPage(route.fullName)}>View current setup</a></p>{/if}
-        <div><button class="btn approval" type="submit" disabled={busy || stale}>{busy ? 'Waiting for your passkey and the App…' : view.main_action}</button></div>
+        {#if moved}<p><a href={repoPage(route.fullName)}>View current setup</a></p>{/if}
+        <div><button class="btn primary approval" type="submit" disabled={busy || moved}>{busy ? 'Waiting for your passkey and the App…' : ownerButton(route.action)}</button></div>
       </form>
     </section>
   {/if}
@@ -201,5 +236,7 @@
   .hunk, .header { color: var(--fg-muted); }
   .diff-legend { display: flex; gap: 16px; }
   .diff-legend span { padding: 0 4px; }
-  .btn.approval { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .status-line { display: block; }
+  .pull-line { margin: 0; color: var(--fg-muted); font-size: 14px; }
+  .flash p { margin: 0; }
 </style>

@@ -1,6 +1,8 @@
-Owner action
+Approve the workflow change
 
-acme/app · PR #7
+acme/app
+
+Pull request #7
 
 The App did not answer. Try again in a minute.
 

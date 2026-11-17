@@ -2,9 +2,9 @@ Revert the policy
 
 acme/app
 
-unknown: the policy changed outside the flow.
+unknown — the policy changed outside the flow.
 
-This restores the approved policy. It keeps the approved answers in #12.
+The policy on the default branch changed without an owner's approval. Revert restores the approved policy. It keeps the approved answers in pull request #12. Confirm instead
 
 View policy
 The policy to restore
@@ -56,4 +56,4 @@ Why a passkey?
 
 Manage your passkeys
 
-Revert the policy
+Revert with passkey
