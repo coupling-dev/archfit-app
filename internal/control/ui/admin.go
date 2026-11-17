@@ -210,6 +210,17 @@ func (s *server) apiRevoke(r *http.Request, sc scope) (any, error) {
 	return noticeJSON{Notice: "Revoked " + in.Account + ". Archfit stops for it from its next event."}, nil
 }
 
+// waitingJSON is the operator's header count: installations waiting for an admission, -1 when they could not be read.
+type waitingJSON struct {
+	Waiting int `json:"waiting"`
+}
+
+// apiWaiting answers the operator's header count. It is read after the page's first paint, so the session answers
+// without the GitHub calls it takes.
+func (s *server) apiWaiting(r *http.Request, _ scope) (any, error) {
+	return waitingJSON{Waiting: s.waitingCount(r.Context())}, nil
+}
+
 // waitingCount is the number of installations no one approved yet, for the operator's header. -1 when it could not be
 // read: the header then shows no count rather than a wrong one.
 func (s *server) waitingCount(ctx context.Context) int {

@@ -10,7 +10,7 @@
     repo = '',
     tab = '',
     pull = 0,
-  }: { session: Session | null; repo?: string; tab?: 'home' | 'policy' | ''; pull?: number } = $props();
+  }: { session: Session | null; repo?: string; tab?: 'home' | 'policy' | 'passkeys' | ''; pull?: number } = $props();
 
   let theme = $state<Theme>(storedTheme());
   const themeNames: Record<Theme, string> = { auto: 'Auto', light: 'Light', dark: 'Dark' };
@@ -26,6 +26,7 @@
       ? [
           { label: 'Home', href: repoPage(repo), current: tab === 'home' },
           { label: 'Policy', href: repoPage(repo, '/policy'), current: tab === 'policy' },
+          { label: 'Passkeys', href: repoPage(repo, '/passkeys'), current: tab === 'passkeys' },
         ]
       : [],
   );

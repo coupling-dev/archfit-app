@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/store"
@@ -70,6 +71,16 @@ func (a *Admissions) Record(ctx context.Context, installationID int64) (Admissio
 	if installationID <= 0 {
 		return Admission{}, false, nil
 	}
+	memo, ok := ctx.Value(admissionMemoKey{}).(*admissionMemo)
+	if !ok {
+		return a.read(ctx, installationID)
+	}
+	e := memo.entry(admissionRead{a, installationID})
+	e.once.Do(func() { e.rec, e.found, e.err = a.read(ctx, installationID) })
+	return e.rec, e.found, e.err
+}
+
+func (a *Admissions) read(ctx context.Context, installationID int64) (Admission, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, admissionTimeout)
 	defer cancel()
 	raw, err := a.store.Get(ctx, store.Tenant(installationID), AdmissionKey)
@@ -91,4 +102,43 @@ func (a *Admissions) Record(ctx context.Context, installationID int64) (Admissio
 func Owner(fullName string) string {
 	owner, _, _ := strings.Cut(fullName, "/")
 	return owner
+}
+
+type admissionMemoKey struct{}
+
+// admissionRead names one read: the same installation asked of another Admissions is another read.
+type admissionRead struct {
+	a  *Admissions
+	id int64
+}
+
+type admissionEntry struct {
+	once  sync.Once
+	rec   Admission
+	found bool
+	err   error
+}
+
+type admissionMemo struct {
+	mu      sync.Mutex
+	entries map[admissionRead]*admissionEntry
+}
+
+func (m *admissionMemo) entry(k admissionRead) *admissionEntry {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.entries[k] == nil {
+		m.entries[k] = &admissionEntry{}
+	}
+	return m.entries[k]
+}
+
+// WithAdmissionMemo makes Record read each installation once for the rest of the request that ctx belongs to, and
+// remember a failed read too, so the request fails closed the same way at every step. Install it only on a request
+// that does not change an admission: a later read would not see the change. The memo dies with the request.
+func WithAdmissionMemo(ctx context.Context) context.Context {
+	if _, ok := ctx.Value(admissionMemoKey{}).(*admissionMemo); ok {
+		return ctx
+	}
+	return context.WithValue(ctx, admissionMemoKey{}, &admissionMemo{entries: map[admissionRead]*admissionEntry{}})
 }

@@ -1,13 +1,15 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import { statusStyle } from '../../lib/status';
   import Icon from './Icon.svelte';
 
-  // The one status element. The tone and icon come from the table in lib/status.ts; the text keeps its case.
-  let { label }: { label: string } = $props();
-  const style = $derived(statusStyle(label));
+  // The one status element. The tone and icon come from the table in lib/status.ts, looked up by state (or by the
+  // label when no state is given). The text keeps its case and copy; children render it when it holds links.
+  let { label = '', state = label, children }: { label?: string; state?: string; children?: Snippet } = $props();
+  const style = $derived(statusStyle(state));
 </script>
 
-<span class="status-label {style.tone}"><Icon name={style.icon} size={12} />{label}</span>
+<span class="status status-label {style.tone}"><Icon name={style.icon} size={12} />{#if children}{@render children()}{:else}{label}{/if}</span>
 
 <style>
   .status-label {
