@@ -64,6 +64,16 @@ describe('route labels', () => {
     }
   });
 
+  it('are still placed, and reserved, when the chart has no free room', () => {
+    const hub = node('hub', 0, 40);
+    const others = Array.from({ length: 6 }, (_, i) => node('m' + i, 150 * i, 40));
+    const tiny = { width: 400, height: 60, avoid: [] };
+    const routes = routeLines([hub, ...others], others.map((n) => line('hub', n.name)), 'hub', tiny);
+    expect(routes).toHaveLength(6);
+    for (const r of routes) expect(`${r.labelX} ${r.labelY}`).not.toMatch(/NaN|undefined/);
+    expect(new Set(routes.map((r) => `${r.labelX},${r.labelY}`)).size).toBeGreaterThan(1);
+  });
+
   it('stay inside the chart, arches included', () => {
     const edge = [node('left', 0, 46), node('right', 800, 46)];
     const routes = routeLines(edge, [line('left', 'right'), line('left', 'left'), line('right', 'right')], 'left', area);

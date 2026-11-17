@@ -63,16 +63,17 @@ export function routeLines(nodes: MapNode[], lines: MapLine[], focused: string, 
   const clear = (wanted: number, y: number, text: string): [number, number] => {
     const half = (text.length * CHAR) / 2;
     const x = Math.min(Math.max(wanted, half + 4), Math.max(half + 4, area.width - half - 4));
-    for (let n = 0; n < 200; n++) {
+    // Where nothing is free, the position that covers the least is used, and it is reserved like any other.
+    let best = { at: y, hits: Infinity };
+    for (let n = 0; n < 200 && best.hits > 0; n++) {
       const dy = (n % 2 ? 1 : -1) * Math.ceil(n / 2) * LINE;
       const at = Math.min(Math.max(y + dy, LINE + 2), area.height - 4);
       const box = { x0: x - half, x1: x + half, y0: at - LINE, y1: at };
-      if (!taken.some((t) => box.x0 < t.x1 && t.x0 < box.x1 && box.y0 < t.y1 && t.y0 < box.y1)) {
-        taken.push(box);
-        return [x, at];
-      }
+      const hits = taken.filter((t) => box.x0 < t.x1 && t.x0 < box.x1 && box.y0 < t.y1 && t.y0 < box.y1).length;
+      if (hits < best.hits) best = { at, hits };
     }
-    return [x, y];
+    taken.push({ x0: x - half, x1: x + half, y0: best.at - LINE, y1: best.at });
+    return [x, best.at];
   };
   return mine.flatMap((line): Route[] => {
     const from = byName.get(line.from);
