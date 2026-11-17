@@ -136,23 +136,6 @@ export function homeStateLabel(state: HomeState): string {
   return stateLabels[state];
 }
 
-// The repository state words of the Archfit 4 design, as the App sends them. An unknown word is refused.
-export const homeStates = ['clean', 'drift', 'expired', 'outside_flow', 'not_set_up', 'unknown'] as const;
-export type HomeState = (typeof homeStates)[number];
-
-const stateLabels: Record<HomeState, string> = {
-  clean: 'clean',
-  drift: 'drift',
-  expired: 'expired',
-  outside_flow: 'changed outside the flow',
-  not_set_up: 'not set up',
-  unknown: 'unknown',
-};
-
-export function homeStateLabel(state: HomeState): string {
-  return stateLabels[state];
-}
-
 export interface Home {
   state: HomeState;
   status: string;
