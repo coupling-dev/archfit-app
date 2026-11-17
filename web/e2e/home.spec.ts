@@ -200,7 +200,7 @@ test('home: worker failure says so, and Matrix still works', async ({ page }) =>
   await open(page, path, { [api]: () => [200, fixture('one-request')] });
   await page.getByRole('button', { name: 'Diagram', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('The map layout worker could not place the modules.');
-  await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toHaveCount(0);
+  await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toHaveCount(0);
   await expectPageText(page, 'home-worker-error');
   await page.getByRole('button', { name: 'Matrix', exact: true }).click();
   await page.getByRole('button', { name: /^app to other:/ }).click();
@@ -241,7 +241,7 @@ test('home: phone map starts as a matrix, the diagram fits, and bands stay in or
 
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, path, { [api]: () => [200, fixture('one-request')] });
-  const diagram = page.getByRole('img', { name: 'Modules by layer and their dependencies' });
+  const diagram = page.getByRole('group', { name: 'Modules by layer and their dependencies' });
   await expect(page.getByRole('table', { name: 'Policy and review status matrix' })).toBeVisible();
   await expect(diagram).toBeHidden();
   expect(workers).toEqual([]);
@@ -258,18 +258,22 @@ test('home: phone map starts as a matrix, the diagram fits, and bands stay in or
   expect(ys[1]).toBeLessThan(ys[2]);
 });
 
-test('home: SVG keeps request/date labels and only one kind per pair', async ({ page }) => {
+test('home: SVG names both ends of a line when its module is in focus, and draws one kind per pair', async ({ page }) => {
   for (const [name, label, kind] of [
-    ['one-request', 'Requested dependency · #431', 'requested'],
-    ['exception-nine-days', 'Exception · 2026-11-19', 'exception'],
-    ['deny-request', 'A rule denies this dependency · no-app-to-other', 'deny'],
-    ['drift', 'Drift · graph', 'drift'],
+    ['one-request', 'app → other · requested #431', 'requested'],
+    ['exception-nine-days', 'app → other · exception until 2026-11-19', 'exception'],
+    ['deny-request', 'app → other · a rule denies it · no-app-to-other', 'deny'],
+    ['drift', 'app → other · drift · graph', 'drift'],
   ]) {
     await page.unrouteAll();
     await open(page, path, { [api]: () => [200, fixture(name)] });
     await page.getByRole('button', { name: 'Diagram', exact: true }).click();
-    await expect(page.locator('.map-edge.' + kind)).toContainText(label);
+    await expect(page.locator('.map-link')).toHaveCount(2);
+    await expect(page.locator('.map-edge')).toHaveCount(0);
+    await page.locator('[data-module="app"]').click();
     await expect(page.locator('.map-edge')).toHaveCount(2);
+    await expect(page.locator('.map-label.' + kind)).toHaveText(label);
+    await expect(page.locator('.map-label.allowed')).toHaveText('app → util · allowed');
     await expect(page.locator('.map-edge.allowed')).toHaveCount(1);
     await expectNoNotUsedWord(page, ['Review workflow change']);
   }

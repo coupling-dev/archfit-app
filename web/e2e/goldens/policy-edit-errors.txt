@@ -1,6 +1,6 @@
 Policy
 
-acme/app · default branch
+acme/app
 
 Edit the policy
 
