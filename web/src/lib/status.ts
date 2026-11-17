@@ -18,6 +18,8 @@ const styles = new Map<string, StatusStyle>([
   ['Policy approved', { tone: 'success', icon: 'check-circle' }],
   // Failing: the check did not pass.
   ['fail', { tone: 'danger', icon: 'x-circle' }],
+  // The one repository state with colour: an expired exception fails every pull request.
+  ['expired', { tone: 'danger', icon: 'x-circle' }],
   // Waiting on someone else.
   ['waiting', { tone: 'attention', icon: 'clock' }],
   ['Waiting', { tone: 'attention', icon: 'clock' }],
@@ -35,8 +37,8 @@ const styles = new Map<string, StatusStyle>([
   ['First approval', { tone: 'accent', icon: 'info' }],
   ['Workflow review', { tone: 'accent', icon: 'info' }],
   ['Advisory', { tone: 'accent', icon: 'info' }],
-  // Not known: never shown as a pass.
-  ['unknown', { tone: 'neutral', icon: 'question' }],
+  // Not known: never shown as a pass, and never inert.
+  ['unknown', { tone: 'attention', icon: 'question' }],
   ['Check', { tone: 'neutral', icon: 'question' }],
   ['Verify yourself', { tone: 'neutral', icon: 'question' }],
   // Not applicable.

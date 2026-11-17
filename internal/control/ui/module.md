@@ -26,6 +26,11 @@ The gate facade supplies policy/request views, answers and owner actions; UI imp
   for operators, read by the header after the session shows; it answers -1 when the reads fail.
 - /api/repos lists accessible repositories in name order, at most 100, with state from the gate RepoStates façade and no historical check reads.
 
+Assets under `/assets/` ship with `.br` and `.gz` siblings from the web build; the server sends the one the client
+takes (`br` first) with `Vary: Accept-Encoding`. API JSON bodies over 1 KB are gzip-compressed when the client takes
+gzip, except answers that carry a CSRF or step-up token (`tokenBearer`): those are never compressed, whatever their size.
+Nothing else is compressed.
+
 ## Security and checks
 
 The chain recovers panics, adds CSP/security headers, bounds request bodies, authenticates sessions,
@@ -110,7 +115,9 @@ The map imports its Diagram component only while the diagram disclosure is open;
 layout work. The list view never starts the ELK worker. The diagram starts closed at every width; phone starts
 with the list open. Browser tests assert zero worker requests before the diagram opens.
 
-For an approved repository the response has `status`, optional `needs_you` rows, and `map`. Each row has
+For an approved repository the response has `state` (`clean`, `drift`, `expired`, `outside_flow`, `not_set_up` or
+`unknown`; the first that holds, in the order outside the flow, expired, drift, unknown, clean, wins), `status` (the sentence that says what the state means and
+what waits), optional `needs_you` rows, and `map`. A setup answer has `state: not_set_up` and a `setup` block. Each row has
 `kind`, `text`, `href`, and the applicable request, pull, rule, modules, expiry date, days left or request record.
 Requests link to `/r/{o}/{n}/requests/{number}`. Drift and expiry link to their GitHub issue, falling back to
 Policy before the sweep opens one. Owner actions link to `/r/{o}/{n}/owner/{workflow|confirm|revert}`;

@@ -38,13 +38,20 @@ Open `/` after signing in to choose a repository or continue setup. The **Reposi
 
 ## Home and the map
 
-Open `/r/<owner>/<repo>` for **Home**. Home, Pull and Owner pages start with one title and repository identity,
-then the status and a row of next actions. Home puts the eligible setup review link beside **View policy**.
-Otherwise it links to setup or policy. The review link opens a read-only page. The note below the row says that
-approval needs your passkey. **Needs you** appears directly below setup-free Home pages and lists open requests,
-exceptions near their date, drift and owner actions. Each item opens its page. A request's record folds away.
-Before the first policy is approved, Home shows the setup steps, what is missing and the ruleset advice
-instead of the map. Owner actions open the pages below.
+Open `/r/<owner>/<repo>` for **Home**. The title is the repository. Under it, one status shows the repository
+state (`clean`, `drift`, `expired`, `changed outside the flow`, `not set up` or `unknown`) and one sentence that
+says what it means. Next to the title sit at most two buttons. The primary button is the oldest item that waits
+for you, such as **Review workflow change**, or else the action of the setup step you are on, such as
+**Create a pull request on GitHub** or **Open ruleset settings**. With nothing to do there is no primary
+button. **View policy** appears only when the default branch has a policy. A button that leaves for GitHub
+shows an external-link icon.
+
+**Needs you** comes directly after the head and appears only when something waits. It lists open requests,
+exceptions near their date, drift and owner actions, one row each with an icon for its kind. Each item opens its
+page, or its GitHub issue. A request's record folds away. Setup comes after **Needs you**. Before the first
+policy is approved, Home shows the setup steps, what is missing and the ruleset advice instead of the map.
+The review link opens a read-only page; the note under the status says that approval needs your passkey.
+Owner actions open the pages below.
 
 ![Home: a request and the map](images/home.png)
 
@@ -62,7 +69,12 @@ The matrix shows **Policy and review status**, not observed imports. Rows are so
 | !      | Drift.                                                                      |
 | ◷      | An exception; select the cell for its expiry and server-reported days left. |
 
-Every payload status remains in its cell, including multiple rules, requests and exceptions. A blank means
+From 12 modules the matrix is compact: 32 px cells, vertical column names and a 220 px row header, so 24 modules fit
+a laptop page without horizontal scrolling. Names break only after `_` and `-`; hover a name for the full text.
+A cell shows its strongest status (drift, deny, request, allow) and, when it has several statuses, how many. An
+exception that ends within seven days (or has ended) is ringed and ranks just below deny; a later exception is grey
+and does not change the symbol. An exception with no date is never read as a pass: it shows ◷ in the usual colour. Every status remains in the cell's accessible name and in its details, including
+multiple rules, requests and exceptions. A blank means
 **no explicit relationship in this payload**, not “no imports” or “permitted”. Deny status is not fully evaluated
 for all pairs. Select a cell for all rules, request links, exception dates and evidence scope. Tab enters the
 table; arrow keys move between cells (the shaded diagonal is skipped), Enter opens details, and Escape closes details
@@ -76,6 +88,27 @@ with denies, requests, drift or exceptions. Filters use the same modules on both
 volatility. Its line precedence is drift, deny, request, exception, allow: unlike Matrix, it draws only one
 status per pair. Use Matrix for complete pair details, including when the diagram cannot load.
 
+![Diagram: modules by layer, with the legend and toolbar above](images/diagram-1280.png)
+
+The diagram sits in a box of fixed height, so the page does not grow with it. It opens with module names at
+least 11 px high. Layers with many modules wrap into rows, so a large repository still fits about one page wide.
+
+Until you pick a module, the diagram draws one line for each pair of layers, in the margin on the left, with
+the number of dependencies it stands for. The line takes the strongest kind among them (drift first). Picking a
+module draws its own lines.
+
+- **Move:** drag, or use the arrow keys on the focused diagram.
+- **Zoom:** Ctrl or Cmd with the mouse wheel, pinch, double-click, the **+** and **−** buttons, or the **+** and
+  **-** keys. A plain wheel keeps scrolling the page.
+- **Fit** and **100%** reset the zoom; **0** fits from the keyboard. **Full screen** fills the screen where the
+  browser allows it.
+- **Focus a module:** click it, or Tab to it. Its own lines appear, the rest dim, and each line is named by
+  both ends, for example `handlers → api · exception until 2027-01-15`. Click it again or press Esc to clear.
+- **Find a module:** type or pick a name; the diagram moves to it and focuses it.
+
+An arrow points at the module it depends on. The outer layer is on top. The lines are allowed dependencies,
+not observed imports.
+
 On request pages, the map has **Show the map as a list** and **Show the map as a diagram** disclosures.
 The diagram is closed at every width, so no layout worker loads until you open it. Below 720px the list opens
 first. The list remains available if the layout worker fails.
@@ -85,13 +118,23 @@ larger hit areas on narrow screens and touch devices. Request fields use the sel
 
 ## Policy
 
-The repository tabs are **Home**, **Policy** and **Passkeys**. Policy starts with owners, layers in inner-first order, the configured
-check mode, and counts. Approval and live enforcement are **Not provided**: this response does not carry that evidence.
-**Blocking rules** counts configured ask/deny rules, not off settings or unchecked notes. It does not prove that checks are required.
+The repository tabs are **Home**, **Policy** and **Passkeys**. Policy starts with owners, layers in inner-first order, **The check**,
+and counts. **The check** is the `gate` key: `advisory` means rules are reported and `archfit/gate` does not fail; `required`
+means a failing rule makes `archfit/gate` fail. Whether GitHub requires the check is shown on Home.
+**Ask and deny rules** counts the rules set to `ask` or `deny`, not off settings or notes.
 
-Search filters rules, exceptions, and modules without changing the totals. Expand a rule for its scope, **Why**, and
-**Instead**. Notes remain **Not checked**. Exceptions show server-supplied days remaining, including today in the next
-30 days. Bars show the remaining days capped at 30, not exception age. Missing expiry or ownership stays **Not provided**.
+A repository with no `.archfit.yaml` on its default branch shows **No policy on the default branch yet.** with
+**Continue setup**, which opens Home. A repository you cannot see shows **Page not available**.
+
+Search filters rules, exceptions, and modules without changing the totals. Each rule is named by its id, as on the
+pull request and request pages. Expand a rule for its scope, **Why**, and **Instead**. A note is **Not checked**: it
+tells the reader what to do.
+
+Exceptions are grouped by rule, largest group first, with a count for each (for example **coupling · 62**). The first
+20 rows show, then **Show all**. A column appears only when a shown row has its fact: **Expiry** when an end date
+exists, **Request** when a request link exists. Exceptions without an end date say so once above the table. Exceptions
+show server-supplied days remaining, including today in the next 30 days. Bars appear only when a shown row has an end
+date and show the remaining days capped at 30, not exception age.
 Request links appear only when the response supplies a safe destination.
 
 The module table follows the rules and exceptions. Expand a module for public paths, volatility, and subdomain.
@@ -195,7 +238,7 @@ API flow referenced by the GitHub issue instead.
 ### Unavailable policy or owner action
 
 If the policy cannot be read, **View current setup** leads back to Home. The Policy page does not infer
-whether the policy is missing, invalid, or still being prepared in a first-policy PR. An unavailable
+whether an invalid policy is still being prepared in a first-policy pull request. An unavailable
 editor leaves the policy read-only and shows the server's reason. It does not ask you to fix YAML
 just because setup has not finished.
 
@@ -243,7 +286,7 @@ Only an owner named in the current policy can answer. The requester may answer i
 
 Open `/r/<owner>/<repo>/pull/<number>` to see the check result. The page and the GitHub comment use the same status,
 records, and instructions for the author and owner. A result can be **pass**, **fail**, **waiting**, or **unknown**.
-Unknown is not a pass. A request number links to the request page.
+Unknown is not a pass. A request number links to the request page. An unknown result says why under its heading in one sentence. A pull request with no check result yet says so and that the check runs on the next push. Unknown results have no author line: each record's `next:` line names the step and who takes it.
 
 ![Pull request waiting for a request](images/pull.png)
 

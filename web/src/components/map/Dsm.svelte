@@ -2,7 +2,7 @@
   import { tick } from 'svelte';
   import { repoPage } from '../../lib/route';
   import { mapLayers, type MapModel } from './model';
-  import { isNavKey, nextCell, pairIndex, pairKey, statusLabel, symbols, visibleModules, type Cell } from './dsm';
+  import { breakable, cellView, compactFrom, isNavKey, nextCell, pairIndex, pairKey, statusLabel, symbols, visibleModules, type Cell } from './dsm';
 
   let { model, repo }: { model: MapModel; repo: string } = $props();
   const id = $props.id();
@@ -12,6 +12,7 @@
   let direction = $state<'inbound' | 'outbound'>('outbound');
   let attention = $state(false);
   let collapsed = $state<string[]>([]);
+  const compact = $derived(model.modules.length >= compactFrom);
   const modules = $derived(visibleModules(model, { search, focus, direction, attention, collapsed }));
   let selected = $state<{ from: string; to: string } | null>(null);
   let dialog: HTMLDialogElement;
@@ -25,6 +26,8 @@
     next?.setAttribute('tabindex', '0');
   }
 
+  // A column starts a layer band when the module before it is in another layer.
+  const bandStart = (list: { layer: string }[], col: number) => col > 0 && list[col - 1].layer !== list[col].layer;
   const hasLines = (from: string, to: string) => index.has(pairKey(from, to));
   const open = (cell: Cell) =>
     cell.row !== cell.col || hasLines(modules[cell.row].name, modules[cell.row].name);
@@ -138,28 +141,29 @@
     <div class="viewport" role="region" aria-label="Scrollable relationship matrix">
       <!-- The buttons are the interactive elements; the table only delegates their focus, key and click events. -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-      <table bind:this={table} aria-describedby={id + '-scope'} {onfocusin} {onkeydown} {onclick}>
+      <table bind:this={table} class:compact aria-describedby={id + '-scope'} {onfocusin} {onkeydown} {onclick}>
         <caption class="sr-only">Policy and review status matrix</caption>
         <thead><tr>
           <th class="corner" scope="col">Source ↓<br />Target →</th>
-          {#each modules as target (target.name)}
-            <th scope="col">
-              <span class="layer">{target.layer || 'No layer'}</span>{target.name}
+          {#each modules as target, col (target.name)}
+            <th scope="col" class="col" class:col-start={bandStart(modules, col)} title={target.name}>
+              <span class="layer">{target.layer || 'No layer'}</span><span class="name">{#each breakable(target.name) as part, i (i)}{part}<wbr />{/each}</span>
             </th>
           {/each}
         </tr></thead>
         <tbody>
           {#each modules as source, row (source.name)}
             <tr class:layer-start={row > 0 && modules[row - 1].layer !== source.layer}>
-              <th scope="row">
-                <span class="layer">{source.layer || 'No layer'}</span>{source.name}
+              <th scope="row" title={source.name}>
+                <span class="layer" class:repeat={row > 0 && modules[row - 1].layer === source.layer}>{source.layer || 'No layer'}</span><span class="name">{#each breakable(source.name) as part, i (i)}{part}<wbr />{/each}</span>
               </th>
               {#each modules as target, col (target.name)}
                 {@const lines = index.get(pairKey(source.name, target.name)) ?? []}
+                {@const view = cellView(lines)}
                 {#if row === col && !lines.length}
-                  <td class="self"></td>
+                  <td class="self" class:col-start={bandStart(modules, col)}></td>
                 {:else}
-                  <td>
+                  <td class:col-start={bandStart(modules, col)}>
                     <button
                       tabindex="-1"
                       data-row={row}
@@ -167,9 +171,10 @@
                       aria-label={source.name + ' to ' + target.name + ': ' + (lines.length ? lines.map(statusLabel).join('; ') : 'no rule')}
                       aria-haspopup="dialog"
                     >
-                      {#each lines as line, i (i)}
-                        <span class={'mark ' + line.kind} aria-hidden="true">{symbols[line.kind]}</span>
-                      {/each}
+                      {#if view}
+                        <span class={'mark ' + view.kind} class:soon={view.soon} class:quiet={view.quiet} aria-hidden="true">{symbols[view.kind]}</span>
+                        {#if view.count > 1}<span class="count" aria-hidden="true">{view.count}</span>{/if}
+                      {/if}
                     </button>
                   </td>
                 {/if}
@@ -217,7 +222,8 @@
   .viewport { max-height: 65vh; max-width: 100%; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
   table { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; font-size: 13px; }
   th, td { padding: 0; border-right: 1px solid var(--border-muted); border-bottom: 1px solid var(--border-muted); text-align: center; }
-  th { background: var(--bg-subtle); padding: 8px; min-width: 80px; max-width: 150px; overflow-wrap: anywhere; }
+  /* Names break only where the script put a <wbr> (after _ and -), never inside a word. */
+  th { background: var(--bg-subtle); padding: 8px; min-width: 80px; overflow-wrap: normal; }
   thead th { position: sticky; top: 0; z-index: 2; }
   tbody th, .corner { position: sticky; left: 0; text-align: left; min-width: 105px; }
   tbody th { z-index: 1; }
@@ -231,7 +237,24 @@
   /* Set by script on the active row and column, so Svelte cannot see the class. */
   table :global(.highlight) { background: var(--accent-subtle); }
   table :global(th.highlight) { background: var(--bg-subtle); box-shadow: inset 0 -3px var(--accent); }
-  .mark { font-size: 18px; font-weight: 700; }
+  .col-start { border-left: 2px solid var(--border); }
+  .mark { font-size: 18px; font-weight: 700; line-height: 1; }
+  .mark.quiet { color: var(--fg-muted); font-weight: 400; }
+  .mark.soon { display: grid; place-items: center; width: 24px; height: 24px; border: 2px solid var(--attention); border-radius: 50%; font-size: 14px; }
+  .count { font-size: 11px; font-weight: 600; color: var(--fg-muted); }
+  /* Compact: 32 px symbol cells, a 220 px row header, and vertical column names. */
+  table.compact { font-size: 12px; min-width: 0; }
+  table.compact td, table.compact th.col { width: 32px; min-width: 32px; max-width: 32px; }
+  table.compact td button { width: 32px; height: 32px; min-width: 0; min-height: 0; padding: 0; gap: 2px; flex-wrap: nowrap; }
+  table.compact .mark { font-size: 16px; }
+  table.compact .mark.soon { width: 20px; height: 20px; font-size: 12px; }
+  table.compact th.col { padding: 6px 0; vertical-align: bottom; }
+  table.compact th.col .name { display: block; margin-inline: auto; writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; max-height: 12em; overflow: hidden; text-overflow: ellipsis; }
+  table.compact tbody th, table.compact .corner { width: 220px; min-width: 220px; max-width: 220px; padding: 2px 8px; }
+  table.compact th.col .layer, table.compact .layer.repeat { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  @media (width < 720px) {
+    table.compact tbody th, table.compact .corner { width: 140px; min-width: 140px; max-width: 140px; }
+  }
   .allowed { color: var(--success); }
   .deny, .drift { color: var(--danger); }
   .requested, .exception { color: var(--attention); }
