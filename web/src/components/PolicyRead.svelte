@@ -5,12 +5,18 @@
   import { safeHref } from '../lib/route';
   import PolicyGraph from './PolicyGraph.svelte';
 
-  let { policy, showSource = $bindable(false) }: { policy: Policy; showSource?: boolean } = $props();
+  let { policy, home, showSource = $bindable(false) }: { policy: Policy; home: string; showSource?: boolean } = $props();
   let query = $state('');
   let copyNotice = $state('');
   const counts = $derived(policyCounts(policy));
   const filtered = $derived(filterPolicy(policy, query));
   const matches = $derived(filtered.modules.length + filtered.rules.length + filtered.exceptions.length);
+  const hasNotes = $derived(policy.rules.some((rule) => rule.not_checked));
+  // The gate key says what a failing rule does to archfit/gate; it does not say whether GitHub requires the check. Any other value is shown as it is.
+  const gateMeaning: Record<string, string> = {
+    advisory: 'rules are reported and archfit/gate does not fail',
+    required: 'a failing rule makes archfit/gate fail',
+  };
 
   async function inspectModule(index: number) {
     query = '';
@@ -35,17 +41,16 @@
 
 <section class="facts" aria-label="Policy summary">
   <dl>
-    <div><dt>Policy owners</dt><dd>{policy.owners?.join(', ') || 'Not provided'}</dd></div>
-    <div><dt>Layers · inner first</dt><dd>{policy.layers?.join(' · ') || 'Not provided'}</dd></div>
-    <div><dt>Check mode · configured</dt><dd>{policy.gate || 'Not provided'}</dd></div>
-    <div><dt>Approval</dt><dd class="muted">Not provided</dd></div>
+    <div><dt>Owners</dt><dd>{policy.owners?.join(', ') || 'None'}</dd></div>
+    <div><dt>Layers, inner first</dt><dd>{policy.layers?.join(', ') || 'None'}</dd></div>
+    <div><dt>The check</dt><dd>{policy.gate || 'unknown'}{#if gateMeaning[policy.gate]}<span class="meaning">{' — ' + gateMeaning[policy.gate]}</span>{/if}</dd></div>
   </dl>
-  <p class="small muted">Live enforcement and approval evidence are not provided by this response.</p>
+  <p class="small muted">Whether GitHub requires the check is shown on <a href={home}>Home</a>.</p>
 </section>
 
 <div class="stats" aria-label="Policy counts">
   <a href="#modules"><span class="n">{counts.modules}</span><span class="t">Modules</span><span class="s">Declared boundaries</span></a>
-  <a href="#rules"><span class="n">{counts.blocking}</span><span class="t">Blocking rules</span><span class="s">Configured ask / deny</span></a>
+  <a href="#rules"><span class="n">{counts.askDeny}</span><span class="t">Ask and deny rules</span><span class="s">of {counts.rules} rules</span></a>
   <a href="#exceptions"><span class="n">{counts.exceptions}</span><span class="t">Exceptions</span>
     <span class="s" class:expired={counts.expired > 0}>{counts.expired ? `${counts.expired} already expired` : 'No recorded expiry has passed'}</span></a>
   <a href="#exceptions"><span class="n">{counts.expiring}</span><span class="t">Expiring in 30 days</span><span class="s">Includes today</span></a>
@@ -58,23 +63,26 @@
 
 <section class="box" aria-labelledby="rules">
   <div class="box-head">
-    <div><h2 class="title-box" id="rules">Rules</h2><p>Read the rule before changing an import. Expand for why and what to use instead.</p></div>
+    <div><h2 class="title-box" id="rules">Rules</h2><p>Expand a rule to see why it exists and what to do instead.</p>{#if hasNotes}<p>A note is not checked. It tells the reader what to do.</p>{/if}</div>
     <a href="#raw" onclick={() => showSource = true}>View source</a>
   </div>
   {#each filtered.rules as rule, i (i)}
     <details class="rule">
       <summary>
-        <span class="rule-title"><strong>{rule.title}</strong>{#if rule.title !== rule.id}<span class="small muted">{rule.id}</span>{/if}</span>
+        <strong class="rule-id">{rule.id}</strong>
         <span class="label" class:danger={rule.mode === 'deny'} class:attention={rule.mode === 'ask'}>{ruleMode(rule.mode)}</span>
       </summary>
       <div class="rule-body stack-sm">
         {#if rule.summary}<p>{rule.summary}</p>{/if}
-        {#if rule.why !== undefined}
-          <dl class="kv"><dt>Why</dt><dd>{rule.why || 'Not provided'}</dd><dt>Instead</dt><dd>{rule.instead || 'Not provided'}</dd></dl>
+        {#if rule.why || rule.instead}
+          <dl class="kv">
+            {#if rule.why}<dt>Why</dt><dd>{rule.why}</dd>{/if}
+            {#if rule.instead}<dt>Instead</dt><dd>{rule.instead}</dd>{/if}
+          </dl>
         {/if}
         {#if rule.mode === 'ask'}<p class="small muted">An error asks the owner for a change.</p>
         {:else if rule.mode === 'deny'}<p class="small muted">An error must be fixed before the check can pass.</p>
-        {:else if rule.mode === 'off' || rule.mode === 'note'}<p class="small muted">This rule does not run a check.</p>{/if}
+        {:else if rule.mode === 'off'}<p class="small muted">This rule is off.</p>{/if}
       </div>
     </details>
   {:else}
@@ -118,7 +126,7 @@
 </section>
 
 <section class="box" aria-labelledby="modules">
-  <div class="box-head"><div><h2 class="title-box" id="modules">Modules</h2><p>Inspect paths and allowed dependencies. The graph is a secondary view.</p></div></div>
+  <div class="box-head"><div><h2 class="title-box" id="modules">Modules</h2><p>Paths and allowed dependencies of each module. Volatility is how often a module is expected to change. Subdomain is its business role.</p></div></div>
   {#if filtered.modules.length}
     <table class="data cards modules">
       <thead><tr><th>Module / paths</th><th>Layer</th><th>Allowed dependencies</th></tr></thead>
@@ -164,9 +172,10 @@
 </section>
 
 <style>
-  .facts dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 0 0 8px; }
+  .facts dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0 0 8px; }
   .facts dt { font-size: 12px; color: var(--fg-muted); margin-bottom: 4px; }
   .facts dd { margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+  .facts .meaning { font-weight: 400; color: var(--fg-muted); }
   .stats a:hover { background: var(--bg-subtle); text-decoration: none; }
   .stats .s.expired { color: var(--danger); }
   .search-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
@@ -180,8 +189,7 @@
   .rule summary::before { content: '›'; color: var(--fg-muted); font-size: 20px; line-height: 1; }
   .rule[open] summary::before { transform: rotate(90deg); }
   .rule summary:hover strong { color: var(--accent); }
-  .rule-title { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; min-width: 0; overflow-wrap: anywhere; }
-  .rule-title strong { font-size: 13px; }
+  .rule-id { font: 600 13px var(--mono); min-width: 0; overflow-wrap: anywhere; }
   .rule summary .label { margin-left: auto; flex: none; }
   .rule-body { padding: 0 0 14px 22px; font-size: 13px; overflow-wrap: anywhere; }
   table { table-layout: fixed; }
@@ -210,12 +218,10 @@
   .graph-body { padding: 0 16px 16px; }
   pre { white-space: pre-wrap; overflow-wrap: anywhere; }
   @media (max-width: 640px) {
-    .facts dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .facts dl { grid-template-columns: minmax(0, 1fr); }
     .search { flex-basis: 100%; min-width: 0; }
-    .rule-title { gap: 2px; flex-direction: column; }
     .rule summary { align-items: flex-start; }
     .rule summary::before { margin-top: 1px; }
-    .rule-title .small { overflow-wrap: anywhere; }
     .expiry { display: inline-flex; vertical-align: top; }
   }
 </style>

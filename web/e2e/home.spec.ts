@@ -43,7 +43,7 @@ for (const file of names) {
     const writes = await open(page, path, { [api]: () => [200, json] });
     await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
     await expect(page.locator('.page-head .status')).toHaveText(body.status);
-    await expect(page.getByRole('navigation', { name: 'Repository' }).getByRole('link')).toHaveText(['Home', 'Policy']);
+    await expect(page.getByRole('navigation', { name: 'Repository' }).getByRole('link')).toHaveText(['Home', 'Policy', 'Passkeys']);
     await expect(page.getByRole('link', { name: 'Home', exact: true })).toHaveAttribute('aria-current', 'page');
     if (body.map) await expect(page.getByRole('table', { name: 'Policy and review status matrix' })).toBeVisible();
     if (body.setup) {

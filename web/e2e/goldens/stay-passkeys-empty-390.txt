@@ -14,6 +14,7 @@ Sign out
 Home
 Policy
 Passkeys
+Passkeys
 
 You have no passkey in this App installation yet.
 

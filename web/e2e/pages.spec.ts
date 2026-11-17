@@ -28,6 +28,17 @@ test('a page reads its data beside the session and shows its frame at once', asy
   await expectClean(page);
 });
 
+test('an operator page waits for the session, and the waiting count follows it', async ({ page }) => {
+  let release = () => {};
+  const holdSession = new Promise<void>((resolve) => (release = resolve));
+  await open(page, '/admin', { operator: true, holdSession });
+  await expect(page.getByRole('status', { name: 'Loading' })).toBeVisible();
+  release();
+  await expect(page.getByRole('heading', { name: 'Installations', exact: true })).toBeVisible();
+  await expect(page.getByText('1 waiting')).toBeVisible();
+  await expectClean(page);
+});
+
 
 test('every page: content at most 1280px and centred, the licences in the footer', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });

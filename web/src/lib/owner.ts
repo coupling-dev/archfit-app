@@ -137,24 +137,6 @@ export function ownerFileVersion(role: string): string {
   }
 }
 
-export function ownerDiffLines(text: string) {
-  let inHunk = false;
-  return (text.match(/[^\n]*\n|[^\n]+$/g) ?? []).map((line) => {
-    let kind = 'context';
-    if (line.startsWith('@')) {
-      inHunk = true;
-      kind = 'hunk';
-    } else if (!inHunk && (line.startsWith('--- ') || line.startsWith('+++ '))) {
-      kind = 'header';
-    } else if (line.startsWith('+')) {
-      kind = 'addition';
-    } else if (line.startsWith('-')) {
-      kind = 'deletion';
-    }
-    return { text: line, kind };
-  });
-}
-
 export function ownerViewPath(route: OwnerRoute): string {
   return `owner/${route.action}/view${route.pull ? '?pull=' + route.pull : ''}`;
 }
