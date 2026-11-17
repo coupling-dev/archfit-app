@@ -7,7 +7,6 @@ import (
 	"github.com/alexei-led/archfit-app/internal/gate/approvals"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/store"
 )
 
 // SetupState is the recorded change-control state, not an admission verdict.
@@ -58,8 +57,7 @@ func (g *Gate) SetupState(ctx context.Context, r api.Repo) (SetupState, error) {
 	if err := g.admitted(ctx, Target{Repo: r}); err != nil {
 		return SetupState{}, err
 	}
-	var state records.Repo
-	err := records.Load(ctx, g.v4.store, store.Tenant(r.InstallationID), records.RepoKey(r.FullName), &state)
+	state, err := loadRepoRecord(ctx, g.v4.store, r.RepoRef)
 	if err != nil && !errors.Is(err, records.ErrNoRecord) {
 		return SetupState{}, err
 	}

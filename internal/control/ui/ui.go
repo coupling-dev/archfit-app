@@ -166,6 +166,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 
 	mux.Handle("GET /api/session", s.apiSignedIn(s.apiSession))
 	mux.Handle("GET /api/admin/installations", s.apiOperator(s.apiAdmin))
+	mux.Handle("GET /api/admin/waiting", s.apiOperator(s.apiWaiting))
 	mux.Handle("POST /api/admin/installations/{id}/approve", s.apiOperator(s.apiApprove))
 	mux.Handle("POST /api/admin/installations/{id}/revoke", s.apiOperator(s.apiRevoke))
 	mux.Handle("GET /api/repos", s.apiSignedIn(s.apiRepos))

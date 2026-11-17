@@ -13,7 +13,8 @@ import (
 type snapshotKey struct{}
 
 // HomeSnapshot holds only immutable default-branch inputs for a single Home request.
-// Approval records, PR heads, permission checks and action eligibility are never cached.
+// Approval records, PR heads, permission checks and action eligibility are never kept across requests;
+// WithRequestMemo covers the reads that repeat inside one.
 type HomeSnapshot struct {
 	repo         api.Repo
 	tipOnce      sync.Once
