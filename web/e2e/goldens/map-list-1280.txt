@@ -55,6 +55,8 @@ Full screen
 cmd
 core
 No layer
+1
+1
 app
 Volatility: high
 util

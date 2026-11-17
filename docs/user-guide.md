@@ -16,19 +16,37 @@ After an owner approves the onboarding pull request, the App sets `archfit/gate`
 
 The App's setup API reads the policy and workflow at one default-branch commit and reports admission, first approval and ruleset advice. It does not change GitHub rulesets. Home keeps setup visible until the applicable required-check settings are confirmed, even after owner approval. A proposed policy or workflow is labelled as present in its PR, not yet on the default branch. Unavailable ruleset features do not block setup progress; unknown settings still need an administrator to check them. Setup progress is not an enforcement verdict.
 
-**Owner approval** distinguishes a signed PR from active default-branch files. **Approved for PR #N.
-Waiting for merge.** means the current head and both file digests match the recorded signature; no
-second approval is offered. After a known merge, **Approval recorded; checking activation** remains
-until push processing confirms activation. A changed head needs a new review. **Could not confirm
-approval** is not success. A first approval of an existing default-branch policy can take effect without
-a PR merge. **Require the gate** remains actionable independently of these approval stages.
+**Owner approval** distinguishes a pull request the owner approved from active default-branch files.
+**Approved for pull request #N. Waiting for merge.** means the current head and both file digests match the
+recorded approval; no second approval is offered. After a known merge, **Approval recorded; checking
+activation** remains until push processing confirms activation. A changed head needs a new approval, and
+**Could not confirm approval** is not success. A first approval of an existing default-branch policy can take
+effect without a pull request merge.
 
-**Require the gate** is **On** when the App confirms both required pull requests and the `archfit/gate` check on the default branch. Missing enforcement facts keep the step incomplete; unreadable rulesets show **Check with an admin**. Bypass settings, policy-push restrictions, and GitHub approval-count advice do not hold this step back. **Verify yourself** marks advice the App could not verify, not a successful check. The App deliberately lacks Administration permission: inspect each default-branch ruleset's **Bypass list** yourself and keep it empty or administrators-only for emergencies. Each row links to the relevant GitHub settings and names the values to set. **Does not apply** means no action is needed for that feature. After saving GitHub changes, select **Check** to reload setup; it does not change GitHub settings.
+Setup has four steps. Each shows one chip: **done**, **to do**, or **after step N** when it waits for an earlier
+step. A done step collapses to one line; select **Details** to open it. Step 4, **Require the archfit/gate
+check**, is done when the App confirms both required pull requests and the `archfit/gate` check on the default
+branch. Missing settings keep it **to do**. It does not wait for approval.
+
+Each ruleset row ends with one word: **on**, **off**, **optional**, **verify in GitHub** or **does not apply**.
+**Optional** rows, such as bypass lists and approval counts, do not hold step 4 back. **Verify in GitHub** means
+the App could not read the setting, so it is not a successful check. The App deliberately lacks Administration
+permission: inspect each default-branch ruleset's **Bypass list** yourself and keep it empty or
+administrators-only for emergencies. The shared GitHub steps appear once under step 4; each row names only what to
+tick. After saving changes on GitHub, select **Check again** to read the settings again; it changes nothing in
+GitHub. A policy-push row appears only when it applies to the repository.
+
+When setup is complete, Home shows one line, **Setup complete · archfit/gate required**, with the details behind a
+disclosure.
 
 With no passkey, **Register a passkey to approve** does not prevent reading the review. An unreadable
 passkey inventory is shown separately from an empty inventory. **Manage passkeys** is a secondary link.
 
-The setup heading shows one **Next** action. Amber chips need action, neutral chips indicate waiting or an unavailable feature, and green chips mark completed steps. **Policy and workflow pull request** is complete when an existing setup PR is **Ready for review**. It is also complete when both files are already present on the default branch. This step does not mean that the PR is approved or merged. **View PR #N on GitHub** opens an existing workflow PR. The separate PR link opens its App page. When no setup PR exists and files are missing, **Create a pull request on GitHub** opens the compare page. An administrator must enable the required check in the repository settings: the App cannot change rulesets without Administration permission.
+Step 2, **Open a pull request with both files**, is done when an existing setup pull request is open or when both
+files are already on the default branch. That does not mean the pull request is approved or merged. **View pull
+request #N on GitHub** opens an existing workflow pull request. When no setup pull request exists and files are
+missing, **Create a pull request on GitHub** opens the compare page. An administrator must enable the required
+check in the repository settings: the App cannot change rulesets without Administration permission.
 
 For a workflow change, an owner named in the approved policy can follow the review action from Home or **Review workflow change** from the pull page. Being a repository administrator alone does not qualify. You can read either review before registering a passkey; the final approval still requires one.
 
@@ -38,13 +56,20 @@ Open `/` after signing in to choose a repository or continue setup. The **Reposi
 
 ## Home and the map
 
-Open `/r/<owner>/<repo>` for **Home**. Home, Pull and Owner pages start with one title and repository identity,
-then the status and a row of next actions. Home puts the eligible setup review link beside **View policy**.
-Otherwise it links to setup or policy. The review link opens a read-only page. The note below the row says that
-approval needs your passkey. **Needs you** appears directly below setup-free Home pages and lists open requests,
-exceptions near their date, drift and owner actions. Each item opens its page. A request's record folds away.
-Before the first policy is approved, Home shows the setup steps, what is missing and the ruleset advice
-instead of the map. Owner actions open the pages below.
+Open `/r/<owner>/<repo>` for **Home**. The title is the repository. Under it, one status shows the repository
+state (`clean`, `drift`, `expired`, `changed outside the flow`, `not set up` or `unknown`) and one sentence that
+says what it means. Next to the title sit at most two buttons. The primary button is the oldest item that waits
+for you, such as **Review workflow change**, or else the action of the setup step you are on, such as
+**Create a pull request on GitHub** or **Open ruleset settings**. With nothing to do there is no primary
+button. **View policy** appears only when the default branch has a policy. A button that leaves for GitHub
+shows an external-link icon.
+
+**Needs you** comes directly after the head and appears only when something waits. It lists open requests,
+exceptions near their date, drift and owner actions, one row each with an icon for its kind. Each item opens its
+page, or its GitHub issue. A request's record folds away. Setup comes after **Needs you**. Before the first
+policy is approved, Home shows the setup steps, what is missing and the ruleset advice instead of the map.
+The review link opens a read-only page; the note under the status says that approval needs your passkey.
+Owner actions open the pages below.
 
 ![Home: a request and the map](images/home.png)
 
@@ -62,7 +87,12 @@ The matrix shows **Policy and review status**, not observed imports. Rows are so
 | !      | Drift.                                                                      |
 | ◷      | An exception; select the cell for its expiry and server-reported days left. |
 
-Every payload status remains in its cell, including multiple rules, requests and exceptions. A blank means
+From 12 modules the matrix is compact: 32 px cells, vertical column names and a 220 px row header, so 24 modules fit
+a laptop page without horizontal scrolling. Names break only after `_` and `-`; hover a name for the full text.
+A cell shows its strongest status (drift, deny, request, allow) and, when it has several statuses, how many. An
+exception that ends within seven days (or has ended) is ringed and ranks just below deny; a later exception is grey
+and does not change the symbol. An exception with no date is never read as a pass: it shows ◷ in the usual colour. Every status remains in the cell's accessible name and in its details, including
+multiple rules, requests and exceptions. A blank means
 **no explicit relationship in this payload**, not “no imports” or “permitted”. Deny status is not fully evaluated
 for all pairs. Select a cell for all rules, request links, exception dates and evidence scope. Tab enters the
 table; arrow keys move between cells (the shaded diagonal is skipped), Enter opens details, and Escape closes details
@@ -79,14 +109,18 @@ status per pair. Use Matrix for complete pair details, including when the diagra
 ![Diagram: modules by layer, with the legend and toolbar above](images/diagram-1280.png)
 
 The diagram sits in a box of fixed height, so the page does not grow with it. It opens with module names at
-least 11 px high; on a large repository it starts at that size at the top left and you move from there.
+least 11 px high. Layers with many modules wrap into rows, so a large repository still fits about one page wide.
+
+Until you pick a module, the diagram draws one line for each pair of layers, in the margin on the left, with
+the number of dependencies it stands for. The line takes the strongest kind among them (drift first). Picking a
+module draws its own lines.
 
 - **Move:** drag, or use the arrow keys on the focused diagram.
 - **Zoom:** Ctrl or Cmd with the mouse wheel, pinch, double-click, the **+** and **−** buttons, or the **+** and
   **-** keys. A plain wheel keeps scrolling the page.
 - **Fit** and **100%** reset the zoom; **0** fits from the keyboard. **Full screen** fills the screen where the
   browser allows it.
-- **Focus a module:** click it, or Tab to it. Its lines stay, the rest dim, and each of its lines is named by
+- **Focus a module:** click it, or Tab to it. Its own lines appear, the rest dim, and each line is named by
   both ends, for example `handlers → api · exception until 2027-01-15`. Click it again or press Esc to clear.
 - **Find a module:** type or pick a name; the diagram moves to it and focuses it.
 
@@ -173,17 +207,22 @@ The App accepts a `merge_group` upload and binds it to GitHub queue authority. R
 
 ## Owner actions
 
-Each page names the action and repository (and PR when present), then shows the status and files.
-The GitHub pull-request and **View policy** links are secondary navigation. The confirmation after the files
-is the only strong action and asks for your passkey before it submits. GitHub issue links and direct loads
-use the same pages.
+Each page is titled with its action, such as **Approve the first policy**, and names the repository and the pull request
+when there is one. It then shows the status, as `unknown — <why>`, and the files. The GitHub pull request and
+**View policy** links are secondary navigation. The button after the files (**Approve with passkey**, **Confirm with
+passkey** or **Revert with passkey**) is the only strong action and asks for your passkey before it submits. GitHub
+issue links and direct loads use the same pages.
+
+A policy changed outside the flow is one the default branch received without an owner's approval. **Confirm the
+policy** keeps that change and makes it the approved policy. **Revert the policy** restores the approved policy. Each
+page links to the other.
 
 For a workflow change, **unknown** means no verdict until the change is approved: the App cannot use the
 changed workflow's result without your approval. The workflow diff compares with the named default-branch
 commit; the policy diff compares with the named pull-request base commit. Added and removed lines have
 `+` and `-` signs and green and red backgrounds, with a legend. An unchanged policy appears as a compact
 row, but its bytes are still included in the approval. Unchanged from the pull-request base does not mean
-previously approved. The confirmation names both files, the PR number and its head commit.
+previously approved. The confirmation names both files, the pull request number and its head commit.
 
 **Full files and approval details** opens the complete file versions, grouped by file and labelled by version
 and commit. Use these to inspect unchanged lines or compare another copy. Each version's **Technical details**
@@ -226,10 +265,13 @@ whether an invalid policy is still being prepared in a first-policy pull request
 editor leaves the policy read-only and shows the server's reason. It does not ask you to fix YAML
 just because setup has not finished.
 
-An old owner-action link can show **This approval is not needed**, **No policy confirmation needed**,
-or **Nothing to revert**. Follow **View current setup** or **View policy** instead of repeatedly reloading
-that action. A changed artifact still prevents submission; **Reload the change** fetches the new contents
-before you confirm anything. Policy and Owner read/service failures offer **Try again**; not-found and stale-action states do not.
+An old owner-action link keeps its title and says why there is nothing to do, in one notice with one button. For
+example: **The first policy is already approved.**, **Nothing to confirm: the policy has not changed outside the
+flow.**, **Nothing to revert: the policy has not changed outside the flow.** or **Nothing to approve: pull request
+#213 is merged.** A merged pull request is a normal state, not an error. **Open the repository** (or **Open pull
+request #213**) is the next step; do not reload the action. A changed artifact still prevents submission; **Reload
+the change** fetches the new contents before you confirm anything. Policy and Owner read/service failures offer **Try
+again**; not-found and stale-action states do not.
 
 **Page not available** uses the same message for a missing resource and one your account cannot access.
 Its **Repositories** link returns to `/`; no repository-specific recovery link is shown.
@@ -270,7 +312,7 @@ Only an owner named in the current policy can answer. The requester may answer i
 
 Open `/r/<owner>/<repo>/pull/<number>` to see the check result. The page and the GitHub comment use the same status,
 records, and instructions for the author and owner. A result can be **pass**, **fail**, **waiting**, or **unknown**.
-Unknown is not a pass. A request number links to the request page.
+Unknown is not a pass. A request number links to the request page. An unknown result says why under its heading in one sentence. A pull request with no check result yet says so and that the check runs on the next push. Unknown results have no author line: each record's `next:` line names the step and who takes it.
 
 ![Pull request waiting for a request](images/pull.png)
 
@@ -303,6 +345,6 @@ An accepted default-branch result that reports drift opens or updates an `archfi
 | A workflow changed                         | An owner must approve the workflow change with a passkey unless only the Action ref moved to an approved commit. |
 | A request shows **as reported**            | Treat its measurements as a claim. Read the source and a current pull-request result.                            |
 | The App cannot confirm a ruleset or bypass | Ask a repository administrator to inspect the ruleset in GitHub.                                                 |
-| A passkey prompt fails or the policy moved | Start the action again and read the new preview. A step-up is bound to one action and expires.                   |
+| A passkey prompt fails or the policy moved | Start the action again and read the new preview. A passkey confirmation is bound to one action and expires.      |
 
 For operators, see [configuration](architecture.md#configuration) and [cloud operations](design/cloud/operations.md).

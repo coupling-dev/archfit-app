@@ -1,5 +1,6 @@
 {
-  "status": "the check could not read every place",
+  "state": "unknown",
+  "status": "The last check could not read every file, so the state is unknown. Nothing needs you.",
   "map": {
     "layers": [
       "cmd",

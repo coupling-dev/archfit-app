@@ -1,9 +1,6 @@
-Owner action
+Approve the first policy
 
 acme/app
 
-This approval is not needed
-View current setup
-View policy
-
-Open current setup or policy to see what to do next.
+The first policy is already approved.
+Open the repository

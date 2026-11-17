@@ -1,9 +1,7 @@
-Owner action
+Approve the first policy
 
 acme/app
 
-This approval is not available. Open current setup to find the policy that needs approval.
+This pull request cannot be approved. It must be open, from this repository, into the default branch, with a policy and a workflow file.
 View current setup
 View policy
-
-Open current setup or policy to see what to do next.

@@ -7,6 +7,7 @@ import "github.com/alexei-led/archfit-app/internal/wire/result"
 type Page struct {
 	Status     result.Status `json:"status"`
 	StatusLine string        `json:"status_line"`
+	Note       string        `json:"note,omitempty"`
 	Records    []Record      `json:"records"`
 	Author     string        `json:"author,omitempty"`
 	Owner      string        `json:"owner,omitempty"`
@@ -38,7 +39,7 @@ func BuildPage(r result.Result) Page {
 
 func (v view) page() Page {
 	p := Page{
-		Status: v.result.Status, StatusLine: heading(v.result.Summary),
+		Status: v.result.Status, StatusLine: heading(v.result.Summary), Note: unknownNote(v.result),
 		Records: make([]Record, 0, len(v.result.Errors)+len(v.result.Unknown)),
 		Author:  v.author, Owner: v.owner,
 	}
@@ -61,3 +62,15 @@ func (v view) page() Page {
 	}
 	return p
 }
+
+// unknownNote is the one plain sentence under an unknown heading. It is true for every unknown reason: the reasons
+// share causes, so a sentence about a cause would state a fact that some of them contradict.
+func unknownNote(r result.Result) string {
+	if r.Status != result.StatusUnknown {
+		return ""
+	}
+	return unknownSentence
+}
+
+// unknownSentence says why there is no verdict; the record below says what to do.
+const unknownSentence = "Archfit could not check this pull request. The record below says what to do."

@@ -41,6 +41,7 @@ Fit
 Full screen
 adapters
 No layer
+1
 pkg_tc
 Volatility: high
 pkg_util
