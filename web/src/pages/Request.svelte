@@ -33,7 +33,7 @@
   import { repoPage, type Repo } from '../lib/route';
   import { passkeyFailure } from '../lib/webauthn';
 
-  // Preview reads never answer a request. Only the adjacent confirmation starts the existing answer ceremony.
+  // Preview reads never answer a request. Only the confirmation in the answer controls starts the existing answer ceremony.
   let { route, session, here }: { route: Repo & { number: number }; session: Session; here: string } = $props();
 
   const api = (suffix: string) => repoAPI(route.owner, route.name, suffix);
