@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"github.com/alexei-led/archfit-app/internal/control/answers"
 	"github.com/alexei-led/archfit-app/internal/gate"
@@ -16,10 +18,54 @@ type reviewJSON struct {
 	Href  string `json:"href,omitempty"`
 }
 
+// reviewConcurrency bounds how many owner reviews of one response run at once.
+const reviewConcurrency = 4
+
+// reviewPermission is the signed-in user's admin status on one repository, read once per request.
+// Only the owner review reads it; an approval reads it fresh.
+type reviewPermission struct {
+	repo, token string
+	once        sync.Once
+	admin       bool
+}
+
+type reviewPermissionKey struct{}
+
+// withReviewPermission lets the owner reviews of one request share one permission read on that repository.
+func withReviewPermission(ctx context.Context, sc scope) context.Context {
+	return context.WithValue(ctx, reviewPermissionKey{}, &reviewPermission{repo: sc.repo.FullName, token: sc.user.Token})
+}
+
+func (s *server) reviewAdmin(ctx context.Context, sc scope) bool {
+	memo, ok := ctx.Value(reviewPermissionKey{}).(*reviewPermission)
+	if !ok || memo.repo != sc.repo.FullName || memo.token != sc.user.Token {
+		memo = &reviewPermission{}
+	}
+	memo.once.Do(func() {
+		permission, err := s.gh.users.Permission(ctx, sc.user.Token, sc.repo.FullName)
+		memo.admin = err == nil && permission == permAdmin
+	})
+	return memo.admin
+}
+
+// forEachBounded calls fn for every index with at most limit calls in flight and returns when all have finished.
+// Each call writes only its own result slot, so the caller reads results in index order.
+func forEachBounded(n, limit int, fn func(int)) {
+	slots := make(chan struct{}, limit)
+	var calls sync.WaitGroup
+	for i := range n {
+		calls.Go(func() {
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			fn(i)
+		})
+	}
+	calls.Wait()
+}
+
 func (s *server) ownerReview(r *http.Request, sc scope, pull int) *reviewJSON {
-	done := api.StartStage(r.Context(), "owner_review")
-	probes := 0
-	defer func() { done(probes, 0) }()
+	ctx := r.Context()
+	done := api.StartStage(ctx, "owner_review")
 	actions := []answers.OwnerAction{}
 	if pull > 0 {
 		actions = append(actions, answers.OwnerAction{Kind: gate.OwnerFirst, Pull: pull})
@@ -28,13 +74,18 @@ func (s *server) ownerReview(r *http.Request, sc scope, pull int) *reviewJSON {
 	if pull > 0 {
 		actions = append(actions, answers.OwnerAction{Kind: gate.OwnerWorkflow, Pull: pull})
 	}
-	u := gate.OwnerUser{ID: sc.user.UserID, Login: sc.user.Login}
-	permission, permissionErr := s.gh.users.Permission(r.Context(), sc.user.Token, sc.repo.FullName)
-	u.Admin = permissionErr == nil && permission == permAdmin
-	for _, a := range actions {
-		probes++
-		err := s.owners.OwnerReview(r.Context(), sc.repo, a, u)
-		switch {
+	defer func() { done(len(actions), 0) }()
+	u := gate.OwnerUser{ID: sc.user.UserID, Login: sc.user.Login, Admin: s.reviewAdmin(ctx, sc)}
+	// The probes are independent reads. The answer is the first decisive one in action order, as the sequential
+	// probes gave it, so it never depends on which probe finishes first.
+	errs := make([]error, len(actions))
+	var probes sync.WaitGroup
+	for i, a := range actions {
+		probes.Go(func() { errs[i] = s.owners.OwnerReview(ctx, sc.repo, a, u) })
+	}
+	probes.Wait()
+	for i, a := range actions {
+		switch err := errs[i]; {
 		case errors.Is(err, gate.ErrOwnerNotDue), errors.Is(err, gate.ErrOwnerNotPossible):
 			continue
 		case errors.Is(err, gate.ErrOwnerNotAdmin):

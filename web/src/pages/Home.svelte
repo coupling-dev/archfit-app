@@ -48,7 +48,7 @@
 {/if}
 {#if body && (!body.setup || body.setup.state === 'approved' || body.setup.state === 'outside_flow')}
   <section class="box" aria-labelledby="home-needs">
-    <div class="box-head"><h2 id="home-needs">Needs you</h2></div>
+    <div class="box-head"><h2 class="title-box" id="home-needs">Needs you</h2></div>
     {#each body.needs_you as need, i (i)}
       {@const href = homeHref(route, need.href)}
       <div class="box-row">
@@ -59,15 +59,14 @@
   </section>
   {#if body.map}
     <section class="box" aria-labelledby="home-map">
-      <div class="box-head"><h2 id="home-map">The map</h2></div>
+      <div class="box-head"><h2 class="title-box" id="home-map">The map</h2></div>
       <div class="box-body"><RepositoryMap model={body.map} repo={route.fullName} /></div>
     </section>
   {:else}<p>The map is not available.</p>{/if}
 {/if}
 
 <style>
-  a { text-decoration: underline; text-underline-offset: 2px; }
-  section { margin-top: 16px; min-width: 0; }
+  section { min-width: 0; }
   .box-row { overflow-wrap: anywhere; }
   details { margin-top: 8px; }
   pre { max-width: 100%; overflow: auto; }

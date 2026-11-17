@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/alexei-led/archfit-app/internal/control/answers"
@@ -29,11 +30,12 @@ func TestPullReviewLinks(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			e := newEnv(t)
-			calls := 0
+			var calls atomic.Int32
+			var wrongViewer atomic.Bool
 			e.owners.review = func(a answers.OwnerAction, u gate.OwnerUser) error {
-				calls++
+				calls.Add(1)
 				if u.Login != "alice" || u.Admin != (tt.permission == permAdmin) {
-					t.Fatalf("wrong viewer: %+v", u)
+					wrongViewer.Store(true)
 				}
 				if a.Kind != tt.kind || a.Pull != 4 {
 					return gate.ErrOwnerNotDue
@@ -47,13 +49,16 @@ func TestPullReviewLinks(t *testing.T) {
 			homePut(t, e, "publication/4/"+sha(4), map[string]any{"schema": "archfit-app.publication.v1", "head_sha": sha(4), "run_id": 42, "run_attempt": 1, "result": raw, "digest": envelope.PayloadDigest(raw), "source": "sweep"})
 			response := e.as("alice", tt.permission).get("/api/repos/acme/app/pulls/4")
 			wantStatus(t, response, http.StatusOK)
+			if wrongViewer.Load() {
+				t.Fatal("review received the wrong viewer")
+			}
 			var body pullJSON
 			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 				t.Fatal(err)
 			}
 			if tt.status == "pass" || errors.Is(tt.refusal, gate.ErrOwnerNotDue) {
-				if body.Review != nil || tt.status == "pass" && calls != 0 {
-					t.Fatalf("unexpected review: %+v (%d calls)", body.Review, calls)
+				if body.Review != nil || tt.status == "pass" && calls.Load() != 0 {
+					t.Fatalf("unexpected review: %+v (%d calls)", body.Review, calls.Load())
 				}
 				return
 			}
