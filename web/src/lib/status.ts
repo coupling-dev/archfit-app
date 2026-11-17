@@ -33,8 +33,8 @@ const styles = new Map<string, StatusStyle>([
   ['Workflow review', { tone: 'accent', icon: 'info' }],
   // Optional: the reader may choose; this is not an action and does not share the attention tone.
   ['optional', { tone: 'neutral', icon: 'dot' }],
-  // Not known: never shown as a pass.
-  ['unknown', { tone: 'neutral', icon: 'question' }],
+  // Not known: never shown as a pass, and never inert.
+  ['unknown', { tone: 'attention', icon: 'question' }],
   ['Check', { tone: 'neutral', icon: 'question' }],
   ['verify in GitHub', { tone: 'neutral', icon: 'question' }],
   // Not applicable.
