@@ -1,13 +1,9 @@
-Home
-
 acme/app
+clean
 
-1 exception expires in 9 days
+The default branch follows the policy. 1 exception expires in 9 days. Nothing needs you.
+
 View policy
-Needs you
-
-Nothing needs you.
-
 The map
 Matrix
 Diagram

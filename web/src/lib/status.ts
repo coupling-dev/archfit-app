@@ -18,6 +18,8 @@ const styles = new Map<string, StatusStyle>([
   ['Policy approved', { tone: 'success', icon: 'check-circle' }],
   // Failing: the check did not pass.
   ['fail', { tone: 'danger', icon: 'x-circle' }],
+  // The one repository state with colour: an expired exception fails every pull request.
+  ['expired', { tone: 'danger', icon: 'x-circle' }],
   // Waiting on someone else.
   ['waiting', { tone: 'attention', icon: 'clock' }],
   ['Waiting', { tone: 'attention', icon: 'clock' }],

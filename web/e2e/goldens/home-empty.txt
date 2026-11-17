@@ -1,13 +1,9 @@
-Home
-
 acme/app
-
 clean
+
+The default branch follows the policy. Nothing needs you.
+
 View policy
-Needs you
-
-Nothing needs you.
-
 The map
 Matrix
 Diagram

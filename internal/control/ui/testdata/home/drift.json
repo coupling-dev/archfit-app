@@ -1,5 +1,6 @@
 {
-  "status": "drift",
+  "state": "drift",
+  "status": "The default branch has dependencies the policy does not allow. Issue #72.",
   "needs_you": [
     {
       "kind": "drift",

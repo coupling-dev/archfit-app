@@ -211,3 +211,65 @@ test('policy reading: long identifiers and expanded details fit a phone in both 
   await page.getByRole('region', { name: 'Modules', exact: true }).locator('td summary').click();
   await expectClean(page);
 });
+
+test('policy reading: exceptions group by rule, show twenty at a time and drop empty columns', async ({ page }) => {
+  const many = Array.from({ length: 25 }, (_, i) => ({
+    rule: i < 22 ? 'coupling' : 'duplication',
+    from: `pkg_${i}`,
+    why: 'Migration.',
+  }));
+  await open(page, path, { [api]: () => [200, { ...pumba, exceptions: many }] });
+  const exceptions = page.getByRole('region', { name: 'Exceptions', exact: true });
+  await expect(exceptions.getByText('25 exceptions have no end date.', { exact: true })).toBeVisible();
+  await expect(exceptions.locator('thead th')).toHaveText(['Rule / boundary']);
+  await expect(exceptions.getByText('coupling · 22', { exact: true })).toBeVisible();
+  await expect(exceptions.getByText('duplication · 3', { exact: true })).toBeVisible();
+  await expect(exceptions.locator('tbody tr:not(.group)')).toHaveCount(20);
+  await expect(exceptions.getByText('pkg_24', { exact: true })).toHaveCount(0);
+  await expect(exceptions.getByText('Showing 20 of 25', { exact: true })).toBeVisible();
+  await expect(exceptions.getByText('Bars show', { exact: false })).toHaveCount(0);
+  await exceptions.getByRole('button', { name: 'Show all', exact: true }).click();
+  await expect(exceptions.locator('tbody tr:not(.group)')).toHaveCount(25);
+  await expect(exceptions.getByRole('button', { name: 'Show all', exact: true })).toHaveCount(0);
+  await expectClean(page);
+});
+
+test('policy reading: exception screenshots for the docs @docs', async ({ page }) => {
+  if (!process.env.ARCHFIT_DOCS_SHOTS) test.skip();
+  const rules: [string, number][] = [
+    ['coupling', 62],
+    ['duplication', 41],
+    ['graph', 19],
+    ['cycle', 8],
+  ];
+  const undated: Policy = {
+    ...pumba,
+    exceptions: rules.flatMap(([rule, n]) =>
+      Array.from({ length: n }, (_, i) => ({ rule, from: `pkg_${rule}_${i}`, to: 'pkg_util', why: 'Migration.' })),
+    ),
+  };
+  const dated: Policy = {
+    ...pumba,
+    exceptions: [
+      { rule: 'coupling', from: 'pkg_chaos', to: 'pkg_runtime', why: 'Move to container.Client.', days_left: 12, expires: '2026-11-29', request: 431, request_href: '/r/acme/app/requests/431' },
+      { rule: 'coupling', from: 'pkg_tc', to: 'pkg_util', why: 'Remove the copy.', days_left: -1, expires: '2026-11-16' },
+      { rule: 'duplication', from: 'cmd', to: 'pkg_chaos', why: 'Shared flag.', days_left: 45, expires: '2027-01-31' },
+    ],
+  };
+  for (const [name, body, width] of [
+    ['policy-exceptions-130-1280', undated, 1280],
+    ['policy-exceptions-130-390', undated, 390],
+    ['policy-exceptions-dated-1280', dated, 1280],
+  ] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    await open(page, path, { [api]: () => [200, body] });
+    const exceptions = page.getByRole('region', { name: 'Exceptions', exact: true });
+    await exceptions.scrollIntoViewIfNeeded();
+    await expect(exceptions.locator('thead th').first()).toBeVisible();
+    await page.screenshot({
+      path: new URL(`../../docs/images/${name}.png`, import.meta.url).pathname,
+      fullPage: true,
+      animations: 'disabled',
+    });
+  }
+});

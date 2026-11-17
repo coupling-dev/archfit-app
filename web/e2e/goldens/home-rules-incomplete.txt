@@ -1,9 +1,10 @@
-Home
-
 acme/app
-
 clean
-Continue setup
+
+The default branch follows the policy.
+
+Open ruleset settings
+(opens GitHub)
 View policy
 Set up Archfit
 
@@ -52,7 +53,6 @@ Action needed
 
 This step turns green when GitHub requires pull requests and archfit/gate on the default branch. Bypass and policy-push advice does not block this step; Verify yourself means the App has not checked that setting.
 
-Open ruleset settings
 Check
 
 After saving changes on GitHub, select Check to read the settings again. Check does not change any GitHub settings.
@@ -68,10 +68,6 @@ If you use classic branch protection instead, edit the default-branch rule under
 
 Repository rulesets
 Classic branch protection
-Needs you
-
-Nothing needs you.
-
 The map
 Matrix
 Diagram

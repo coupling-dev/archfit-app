@@ -23,7 +23,7 @@ test('a page reads its data beside the session and shows its frame at once', asy
   await home; // asked before the session answered
   await expect(page.getByRole('status', { name: 'Loading' })).toBeVisible();
   release();
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'acme/app', exact: true })).toBeVisible();
   await expect(page.getByRole('status', { name: 'Loading' })).toHaveCount(0);
   await expectClean(page);
 });

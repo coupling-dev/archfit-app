@@ -230,7 +230,5 @@
   h2, h3 { overflow-wrap: anywhere; }
   .box-head.stack-sm { align-items: stretch; }
   .status-line { display: block; }
-  /* StatusLabel carries the global .status class, whose ::before is a dot; the label's own icon is the mark here. */
-  .status-line :global(.status)::before { content: none; }
   .pull-line { margin: 0; color: var(--fg-muted); font-size: 14px; }
 </style>
