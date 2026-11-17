@@ -1,9 +1,8 @@
-Home
-
 acme/app
-
 clean
-Continue setup
+
+The default branch follows the policy. Nothing needs you.
+
 View policy
 Set up Archfit
 
@@ -79,10 +78,6 @@ If you use classic branch protection instead, edit the default-branch rule under
 
 Repository rulesets
 Classic branch protection
-Needs you
-
-Nothing needs you.
-
 The map
 Matrix
 Diagram

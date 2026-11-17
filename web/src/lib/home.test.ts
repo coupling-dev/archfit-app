@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  homeAction,
   homeHref,
+  homeStateLabel,
+  homeStates,
+  needIcon,
   readHome,
+  type Home,
   readOwnerReview,
   setupChipClass,
   setupPullStep,
@@ -17,6 +22,7 @@ const active = { status: 'active', kind: 'first' } as const;
 describe('Home boundary', () => {
   it('rejects an unreadable or incomplete answer instead of showing clean', () => {
     const missingPasskey = {
+      state: 'clean',
       status: 'clean',
       needs_you: [],
       setup: { state: 'approved', policy: true, workflow: true, missing: [], rules: [] },
@@ -25,8 +31,9 @@ describe('Home boundary', () => {
       null,
       {},
       { status: 12 },
-      { status: 'clean', map: {} },
-      { status: 'clean', needs_you: [{}] },
+      { state: 'healthy', status: 'clean', needs_you: [] },
+      { state: 'clean', status: 'clean', map: {} },
+      { state: 'clean', status: 'clean', needs_you: [{}] },
       missingPasskey,
     ])
       expect(() => readHome(body)).toThrow('The Home answer could not be read.');
@@ -272,5 +279,101 @@ describe('server-resolved owner actions', () => {
         owner_action: { label: 'Review workflow change', href: '/r/acme/app/owner/workflow?pull=203' },
       }).approval,
     ).toBe('Review needed');
+  });
+});
+
+describe('repository state', () => {
+  it('names every state in the words of the design and refuses another word', () => {
+    expect(homeStates.map(homeStateLabel)).toEqual([
+      'clean',
+      'drift',
+      'expired',
+      'changed outside the flow',
+      'not set up',
+      'unknown',
+    ]);
+    expect(readHome({ state: 'outside_flow', status: 'x', needs_you: [] }).state).toBe('outside_flow');
+    expect(readHome({ status: 'clean', needs_you: [] }).state).toBe('unknown');
+  });
+});
+
+describe('the one primary action', () => {
+  const repo = { owner: 'acme', name: 'app', fullName: 'acme/app' };
+  const github = 'https://github.com/acme/app';
+  const home = (over: Partial<Home>): Home => ({ state: 'clean', status: '', needs_you: [], ...over });
+  const setup = (over: Partial<HomeSetup>): HomeSetup => ({
+    approval: needed,
+    passkey_known: true,
+    state: 'not_admitted',
+    policy: true,
+    workflow: true,
+    passkey: true,
+    open_pull: 0,
+    missing: [],
+    rules: [],
+    ...over,
+  });
+  const gateOff = [
+    { code: 'pull_requests', state: 'warning', text: '' },
+    { code: 'gate_check', state: 'warning', text: '' },
+  ];
+  const workflowNeed = { kind: 'workflow', text: 'Review workflow change · PR #417', href: '/r/acme/app/owner/workflow?pull=417' };
+
+  it.each([
+    ['a workflow change names its verb', home({ needs_you: [workflowNeed] }), 'Review workflow change', '/r/acme/app/owner/workflow?pull=417', false],
+    [
+      'a drift issue opens GitHub',
+      home({ needs_you: [{ kind: 'drift', text: 'x', href: `${github}/issues/72` }] }),
+      'Open the drift issue',
+      `${github}/issues/72`,
+      true,
+    ],
+    [
+      'the first owner item with a reachable link wins',
+      home({ needs_you: [{ kind: 'workflow', text: 'Workflow change in #4 waits for an owner.', href: '' }, { kind: 'request', text: 'Request #9 waits.', href: '/r/acme/app/requests/9' }] }),
+      'Open the request',
+      '/r/acme/app/requests/9',
+      false,
+    ],
+    [
+      'an owner item beats a setup step',
+      home({ needs_you: [workflowNeed], setup: setup({ approval: active, state: 'approved', rules: gateOff }) }),
+      'Review workflow change',
+      '/r/acme/app/owner/workflow?pull=417',
+      false,
+    ],
+    [
+      'an eligible owner reviews first',
+      home({ state: 'not_set_up', setup: setup({ open_pull: 5, owner_action: { label: 'Review', href: '/r/acme/app/owner/workflow?pull=5' } }) }),
+      'Review and approve',
+      '/r/acme/app/owner/workflow?pull=5',
+      false,
+    ],
+    ['step 1 has no button', home({ state: 'not_set_up', setup: setup({ policy: false, workflow: false, first_pull: undefined }) }), undefined, undefined, undefined],
+    ['step 4 opens the ruleset settings', home({ setup: setup({ approval: active, state: 'approved', rules: gateOff }) }), 'Open ruleset settings', `${github}/settings/rules`, true],
+  ])('%s', (_name, input, label, href, external) => {
+    const action = homeAction(input, repo);
+    expect(action?.label).toBe(label);
+    expect(action?.href).toBe(href);
+    expect(action?.external).toBe(external);
+  });
+
+  it('flags only the setup review as needing a passkey', () => {
+    const review = { label: 'Review', href: '/r/acme/app/owner/workflow?pull=5' };
+    expect(homeAction(home({ setup: setup({ open_pull: 5, owner_action: review }) }), repo)?.needsPasskey).toBe(true);
+    expect(homeAction(home({ needs_you: [workflowNeed] }), repo)?.needsPasskey).toBeUndefined();
+  });
+
+  it('offers nothing when nothing is due and never an in-page anchor', () => {
+    expect(homeAction(home({}), repo)).toBeUndefined();
+    expect(homeAction(home({ needs_you: [{ kind: 'drift', text: 'x', href: 'https://github.com/other/app/issues/1' }] }), repo)).toBeUndefined();
+    const created = homeAction(home({ state: 'not_set_up', setup: setup({ policy: true, workflow: false, open_pull: 0 }) }), repo);
+    expect(created).toEqual({ label: 'Create a pull request on GitHub', href: `${github}/compare`, external: true });
+    expect(created?.href.startsWith('#')).toBe(false);
+  });
+
+  it('marks work to fix and work that waits with different icons', () => {
+    expect(['drift', 'confirm', 'revert'].map(needIcon)).toEqual(['alert', 'alert', 'alert']);
+    expect(['request', 'workflow', 'exception'].map(needIcon)).toEqual(['clock', 'clock', 'clock']);
   });
 });

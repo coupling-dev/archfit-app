@@ -126,7 +126,25 @@ export function setupRuleStatus(state: string, code = ''): string {
   return 'Action needed';
 }
 
+// The repository state words of the Archfit 4 design, as the App sends them. An unknown word is refused.
+export const homeStates = ['clean', 'drift', 'expired', 'outside_flow', 'not_set_up', 'unknown'] as const;
+export type HomeState = (typeof homeStates)[number];
+
+const stateLabels: Record<HomeState, string> = {
+  clean: 'clean',
+  drift: 'drift',
+  expired: 'expired',
+  outside_flow: 'changed outside the flow',
+  not_set_up: 'not set up',
+  unknown: 'unknown',
+};
+
+export function homeStateLabel(state: HomeState): string {
+  return stateLabels[state];
+}
+
 export interface Home {
+  state: HomeState;
   status: string;
   needs_you: HomeNeed[];
   map?: MapModel;
@@ -193,7 +211,11 @@ export function readApproval(value: unknown): ApprovalSummary {
 
 export function readHome(value: unknown): Home {
   const v = object(value);
+  // A missing state is shown as unknown, never as clean; a word the App does not define is refused.
+  const state = v.state === undefined ? 'unknown' : homeStates.find((s) => s === v.state);
+  if (!state) throw new Error('The Home answer could not be read.');
   const home: Home = {
+    state,
     status: string(v.status),
     needs_you: array(v.needs_you ?? []).map((n) => {
       const need = object(n);
@@ -285,5 +307,51 @@ export function homeHref(repo: Repo, href: string): string | undefined {
       '/' +
       issue[4]
     );
+  return undefined;
+}
+
+export interface HomeAction {
+  label: string;
+  href: string;
+  external: boolean;
+  needsPasskey?: boolean; // the review is the owner's approval, which asks for a passkey
+}
+
+const needLabels: Record<string, string> = {
+  confirm: 'Confirm the policy change',
+  revert: 'Revert the policy change',
+  request: 'Open the request',
+  exception: 'Open the exception',
+  drift: 'Open the drift issue',
+  workflow: 'Review workflow change',
+};
+
+// The icon marks the kind of work: a problem to fix, or something that waits for an answer.
+export function needIcon(kind: string): 'alert' | 'clock' {
+  return kind === 'request' || kind === 'workflow' || kind === 'exception' ? 'clock' : 'alert';
+}
+
+export function isExternalHref(href: string): boolean {
+  return href.startsWith('https://');
+}
+
+// The one primary button: the first owner item with a link that leaves nowhere unreachable, else the active setup
+// step's own action, else none. A button never points at an anchor on the same page.
+export function homeAction(home: Home, repo: Repo): HomeAction | undefined {
+  for (const need of home.needs_you) {
+    const href = homeHref(repo, need.href);
+    if (!href) continue;
+    // A workflow item for an eligible owner already reads "Review workflow change · PR #n"; keep that verb.
+    const label = need.kind === 'workflow' && need.text.includes(' · ') ? need.text.split(' · ')[0] : needLabels[need.kind];
+    if (label) return { label, href, external: isExternalHref(href) };
+  }
+  const setup = home.setup;
+  if (!setup) return undefined;
+  const github = `https://github.com/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`;
+  const review = approvalNeedsReview(setup) && setup.owner_action?.href ? homeHref(repo, setup.owner_action.href) : undefined;
+  if (review) return { label: ownerReviewLabel(setup), href: review, external: false, needsPasskey: true };
+  const active = setupStepState(setup).done.indexOf(false);
+  if (active === 1) return { label: 'Create a pull request on GitHub', href: `${github}/compare`, external: true };
+  if (active === 3) return { label: 'Open ruleset settings', href: `${github}/settings/rules`, external: true };
   return undefined;
 }

@@ -93,7 +93,7 @@ for (const width of [390, 1280]) {
   test('shell: skip link and touch controls at ' + width, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await open(page, '/r/acme/app', { 'GET /api/repos/acme/app/home': () => [200, home] });
-    await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'acme/app', exact: true })).toBeVisible();
     await page.keyboard.press('Tab');
     const skip = page.getByRole('link', { name: 'Skip to main content' });
     await expect(skip).toBeFocused();

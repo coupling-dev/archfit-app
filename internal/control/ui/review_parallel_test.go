@@ -60,7 +60,7 @@ func TestHomeOwnerReviewsOfWorkflowChangesRunTogether(t *testing.T) {
 			t.Fatalf("needs you = %+v", body.NeedsYou)
 		}
 		for i, need := range body.NeedsYou {
-			if want := fmt.Sprintf("Review workflow change · PR #%d", need.Pull); need.Text != want || need.Href != "/r/acme/app/owner/workflow?pull="+fmt.Sprint(need.Pull) {
+			if want := fmt.Sprintf("Review workflow change · pull request #%d", need.Pull); need.Text != want || need.Href != "/r/acme/app/owner/workflow?pull="+fmt.Sprint(need.Pull) {
 				t.Fatalf("need %d = %+v, want %q", i, need, want)
 			}
 		}

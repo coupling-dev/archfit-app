@@ -38,13 +38,20 @@ Open `/` after signing in to choose a repository or continue setup. The **Reposi
 
 ## Home and the map
 
-Open `/r/<owner>/<repo>` for **Home**. Home, Pull and Owner pages start with one title and repository identity,
-then the status and a row of next actions. Home puts the eligible setup review link beside **View policy**.
-Otherwise it links to setup or policy. The review link opens a read-only page. The note below the row says that
-approval needs your passkey. **Needs you** appears directly below setup-free Home pages and lists open requests,
-exceptions near their date, drift and owner actions. Each item opens its page. A request's record folds away.
-Before the first policy is approved, Home shows the setup steps, what is missing and the ruleset advice
-instead of the map. Owner actions open the pages below.
+Open `/r/<owner>/<repo>` for **Home**. The title is the repository. Under it, one status shows the repository
+state (`clean`, `drift`, `expired`, `changed outside the flow`, `not set up` or `unknown`) and one sentence that
+says what it means. Next to the title sit at most two buttons. The primary button is the oldest item that waits
+for you, such as **Review workflow change**, or else the action of the setup step you are on, such as
+**Create a pull request on GitHub** or **Open ruleset settings**. With nothing to do there is no primary
+button. **View policy** appears only when the default branch has a policy. A button that leaves for GitHub
+shows an external-link icon.
+
+**Needs you** comes directly after the head and appears only when something waits. It lists open requests,
+exceptions near their date, drift and owner actions, one row each with an icon for its kind. Each item opens its
+page, or its GitHub issue. A request's record folds away. Setup comes after **Needs you**. Before the first
+policy is approved, Home shows the setup steps, what is missing and the ruleset advice instead of the map.
+The review link opens a read-only page; the note under the status says that approval needs your passkey.
+Owner actions open the pages below.
 
 ![Home: a request and the map](images/home.png)
 

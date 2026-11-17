@@ -372,16 +372,16 @@ func TestHomeDoesNotCallOldEvidenceCleanOrMissDigestMismatch(t *testing.T) {
 		edit func(map[string]any)
 		want string
 	}{
-		{"old result", func(r map[string]any) { r["drift"].(map[string]any)["head"] = "old" }, "repository state is not known"},
-		{"unjudged policy push", func(r map[string]any) { r["approved_digest"] = "sha256:other" }, "policy changed outside the flow"},
+		{"old result", func(r map[string]any) { r["drift"].(map[string]any)["head"] = "old" }, homeStateUnknown},
+		{"unjudged policy push", func(r map[string]any) { r["approved_digest"] = "sha256:other" }, homeStateOutsideFlow},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			e := newHomeEnv(t, homePolicy)
 			homeEditRepo(t, e, tt.edit)
 			var got homeJSON
 			e.as("alice", permRead).getJSON(homeAPI, &got)
-			if !strings.Contains(got.Status, tt.want) {
-				t.Fatalf("status = %q, want %q", got.Status, tt.want)
+			if got.State != tt.want {
+				t.Fatalf("state = %q (%q), want %q", got.State, got.Status, tt.want)
 			}
 		})
 	}
@@ -400,7 +400,7 @@ func TestHomeOutsideFlowCanRestoreMissingOrInvalidPolicy(t *testing.T) {
 			}
 			var got homeJSON
 			e.as("alice", permRead).getJSON(homeAPI, &got)
-			if !strings.Contains(got.Status, "policy changed outside the flow") || got.Map != nil {
+			if got.State != homeStateOutsideFlow || got.Map != nil {
 				t.Fatalf("got %+v", got)
 			}
 			if !slices.ContainsFunc(got.NeedsYou, func(n homeNeedJSON) bool { return n.Kind == "revert" }) {
@@ -422,5 +422,46 @@ func TestHomeDenyPathSelectorUsesActualErrorModules(t *testing.T) {
 	e.as("alice", permRead).getJSON(homeAPI, &got)
 	if !slices.ContainsFunc(got.Map.Lines, func(l homeLineJSON) bool { return l.Kind == "deny" && l.From == "app" && l.To == "other" }) {
 		t.Fatalf("deny missing: %+v", got.Map.Lines)
+	}
+}
+
+func TestHomeBodyChoosesOneStateAndSaysWhatWaits(t *testing.T) {
+	known := gate.HomeState{DriftKnown: true}
+	with := func(edit func(*gate.HomeState)) gate.HomeState {
+		v := known
+		edit(&v)
+		return v
+	}
+	today := time.Date(2026, 11, 17, 0, 0, 0, 0, time.UTC)
+	for _, tt := range []struct {
+		name       string
+		view       gate.HomeState
+		state      string
+		status     string
+		needsCount int
+	}{
+		{"clean and nothing waits", known, homeStateClean, "The default branch follows the policy. Nothing needs you.", 0},
+		{"drift names its issue", with(func(v *gate.HomeState) { v.Drift = []gate.HomeError{{}}; v.DriftIssue = 210 }), homeStateDrift,
+			"The default branch has dependencies the policy does not allow. Issue #210.", 1},
+		{"drift beats an unread file", with(func(v *gate.HomeState) { v.Drift = []gate.HomeError{{}}; v.DriftUnread = true }), homeStateDrift,
+			"The default branch has dependencies the policy does not allow.", 1},
+		{"an unread file is unknown, never clean", with(func(v *gate.HomeState) { v.DriftUnread = true }), homeStateUnknown,
+			"The last check could not read every file, so the state is unknown. Nothing needs you.", 0},
+		{"no evidence is unknown", gate.HomeState{}, homeStateUnknown, "The state of the default branch is not known. Nothing needs you.", 0},
+		{"expired beats drift", with(func(v *gate.HomeState) { v.RepositoryState = "expired"; v.Drift = []gate.HomeError{{}} }), homeStateExpired,
+			"An exception passed its date and the code still breaks the rule, so every pull request fails.", 1},
+		{"outside the flow beats expired", with(func(v *gate.HomeState) { v.OutsideFlow = true; v.RepositoryState = "expired" }), homeStateOutsideFlow,
+			"The policy on the default branch changed without a recorded approval, so every pull request is unknown.", 1},
+		{"waiting work is said after the state", with(func(v *gate.HomeState) {
+			v.Requests = []gate.HomeRequest{{Number: 5}, {Number: 6}}
+			v.WorkflowPulls = []int{4}
+		}), homeStateClean, "The default branch follows the policy. 2 requests wait. 1 workflow change waits.", 3},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := homeBody(tt.view, setupJSON{}, repoName, today)
+			if got.State != tt.state || got.Status != tt.status || len(got.NeedsYou) != tt.needsCount {
+				t.Fatalf("state %q status %q needs %d; want %q %q %d", got.State, got.Status, len(got.NeedsYou), tt.state, tt.status, tt.needsCount)
+			}
+		})
 	}
 }
