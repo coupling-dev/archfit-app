@@ -84,14 +84,18 @@ status per pair. Use Matrix for complete pair details, including when the diagra
 ![Diagram: modules by layer, with the legend and toolbar above](images/diagram-1280.png)
 
 The diagram sits in a box of fixed height, so the page does not grow with it. It opens with module names at
-least 11 px high; on a large repository it starts at that size at the top left and you move from there.
+least 11 px high. Layers with many modules wrap into rows, so a large repository still fits about one page wide.
+
+Until you pick a module, the diagram draws one line for each pair of layers, in the margin on the left, with
+the number of dependencies it stands for. The line takes the strongest kind among them (drift first). Picking a
+module draws its own lines.
 
 - **Move:** drag, or use the arrow keys on the focused diagram.
 - **Zoom:** Ctrl or Cmd with the mouse wheel, pinch, double-click, the **+** and **−** buttons, or the **+** and
   **-** keys. A plain wheel keeps scrolling the page.
 - **Fit** and **100%** reset the zoom; **0** fits from the keyboard. **Full screen** fills the screen where the
   browser allows it.
-- **Focus a module:** click it, or Tab to it. Its lines stay, the rest dim, and each of its lines is named by
+- **Focus a module:** click it, or Tab to it. Its own lines appear, the rest dim, and each line is named by
   both ends, for example `handlers → api · exception until 2027-01-15`. Click it again or press Esc to clear.
 - **Find a module:** type or pick a name; the diagram moves to it and focuses it.
 
