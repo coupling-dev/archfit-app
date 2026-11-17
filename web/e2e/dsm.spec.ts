@@ -91,7 +91,7 @@ test('DSM preserves all statuses, keyboard navigation and modal focus return', a
   const blank = page.getByRole('button', { name: 'api to web: no rule' });
   await expect(blank).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('dialog')).toContainText('The policy says nothing about this pair.');
+  await expect(page.getByRole('dialog')).toContainText('The matrix shows no status for this pair.');
   await page.getByRole('button', { name: 'Close details' }).click();
   await expect(blank).toBeFocused();
 });

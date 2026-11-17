@@ -2,7 +2,7 @@
   import { tick } from 'svelte';
   import { repoPage } from '../../lib/route';
   import { mapLayers, type MapModel } from './model';
-  import { breakable, cellView, compactFrom, filtersFrom, isNavKey, nextCell, pairIndex, pairKey, statusLabel, symbols, visibleModules, type Cell } from './dsm';
+  import { breakable, cellView, compactFrom, filtersFrom, isNavKey, kindWords, nextCell, pairIndex, pairKey, statusLabel, symbols, visibleModules, type Cell } from './dsm';
 
   let { model, repo }: { model: MapModel; repo: string } = $props();
   const id = $props.id();
@@ -103,12 +103,12 @@
   {:else}
   <p class="orientation"><strong>Policy and review status</strong> · row depends on column.</p>
   <ul class="legend" aria-label="Matrix legend">
-    <li>✓ An allowed dependency</li><li>× One a rule denies</li><li>? A requested dependency</li><li>! Drift</li><li>◷ An exception</li>
+    <li>{symbols.allowed} {kindWords.allowed}</li><li>{symbols.deny} {kindWords.deny}</li><li>{symbols.requested} {kindWords.requested}</li><li>{symbols.drift} {kindWords.drift}</li><li>{symbols.exception} {kindWords.exception}</li>
   </ul>
-  <p class="muted small" id={id + '-scope'}>Blank: the policy says nothing about this pair. It does not mean the dependency is allowed.</p>
+  <p class="muted small" id={id + '-scope'}>Blank: the matrix shows no status for this pair. It does not mean the dependency is allowed.</p>
   <details class="about small">
     <summary>About this view</summary>
-    <p>Deny status is only known for touched, requested or drift pairs. Full deny evaluation is not available.</p>
+    <p>Deny status is only shown for touched, requested or drift pairs. A blank pair may still be denied by a rule.</p>
   </details>
 
   {#if model.modules.length >= filtersFrom}
@@ -207,7 +207,7 @@
             <a href={repoPage(repo, `/requests/${line.request}`)}>Open request #{line.request}</a>
           {/if}
         </li>
-      {:else}<li>The policy says nothing about this pair.</li>{/each}
+      {:else}<li>The matrix shows no status for this pair. A deny rule may still apply; see About this view.</li>{/each}
     </ul>
     <h4>About this pair</h4>
     <p>Allowed entries are policy declarations, not observed imports. Exception dates are the policy's own; an exception

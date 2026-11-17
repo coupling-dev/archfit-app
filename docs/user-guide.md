@@ -67,7 +67,7 @@ a laptop page without horizontal scrolling. Names break only after `_` and `-`; 
 A cell shows its strongest status (drift, deny, request, allow) and, when it has several statuses, how many. A later
 exception is grey and does not change the symbol. An exception with no date is never read as a pass.
 
-A blank means **the policy says nothing about this pair**. It does not mean the dependency is allowed. Deny status is
+A blank means **the matrix shows no status for this pair**. It does not mean the dependency is allowed, and a deny rule may still apply. Deny status is
 only known for touched, requested or drift pairs; **About this view** explains this. Every status remains in the cell's
 accessible name and in its details, including multiple rules, requests and exception dates. Select a cell for details.
 Tab enters the table; arrow keys move between cells (the shaded diagonal is skipped), Enter opens details, and Escape

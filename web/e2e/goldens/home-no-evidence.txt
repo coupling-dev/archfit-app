@@ -20,7 +20,7 @@ Policy and review status · row depends on column.
 ! Drift
 ◷ An exception
 
-Blank: the policy says nothing about this pair. It does not mean the dependency is allowed.
+Blank: the matrix shows no status for this pair. It does not mean the dependency is allowed.
 
 About this view
 
