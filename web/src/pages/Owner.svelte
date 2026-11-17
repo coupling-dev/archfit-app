@@ -1,8 +1,9 @@
 <script lang="ts">
   import Status from '../components/Status.svelte';
+  import Diff from '../components/ui/Diff.svelte';
   import Skeleton from '../components/Skeleton.svelte';
   import { ApiError, explain, explainLoad, getJSON, postJSON, repoAPI, type Session } from '../lib/api';
-  import { ownerViewPath, outcomeText, readOwnerView, ownerFileVersion, ownerDiffLines, type OwnerOutcome, type OwnerRoute, type OwnerView } from '../lib/owner';
+  import { ownerViewPath, outcomeText, readOwnerView, ownerFileVersion, type OwnerOutcome, type OwnerRoute, type OwnerView } from '../lib/owner';
   import { canRetryRead, ownerUnavailable } from '../lib/recovery';
   import { confirm } from '../lib/passkey';
   import { repoPage } from '../lib/route';
@@ -108,9 +109,7 @@
       </div>
       {#if diff.text}
         <div class="box-body stack-sm">
-          <p class="small diff-legend"><span class="addition">+ Added</span> <span class="deletion">- Removed</span></p>
-          <!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users must be able to scroll the unwrapped diff.) -->
-          <pre class="diff" role="region" tabindex="0" aria-label={`Diff: ${diff.title} (${diff.path})`}><code>{#each ownerDiffLines(diff.text) as line, lineIndex (lineIndex)}<span class={`diff-line ${line.kind}`}>{line.text}</span>{/each}</code></pre>
+          <Diff text={diff.text} label={`Diff: ${diff.title} (${diff.path})`} />
         </div>
       {/if}
     </section>
@@ -194,12 +193,5 @@
   section { min-width: 0; }
   h2, h3 { overflow-wrap: anywhere; }
   .box-head.stack-sm { align-items: stretch; }
-  .diff code { display: block; width: max-content; min-width: 100%; }
-  .diff-line { display: block; }
-  .addition { background: var(--success-subtle); }
-  .deletion { background: var(--danger-subtle); }
-  .hunk, .header { color: var(--fg-muted); }
-  .diff-legend { display: flex; gap: 16px; }
-  .diff-legend span { padding: 0 4px; }
   .btn.approval { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 </style>

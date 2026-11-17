@@ -166,11 +166,11 @@ for (const changed of [false, true]) {
       await expect(page.getByText('Approve the workflow and policy shown for PR #7 at commit 3333333.')).toBeVisible();
       const workflowDiff = page.getByRole('region', { name: `Diff: The workflow change (${workflow})` });
       await expect(workflowDiff.locator('.hunk')).toHaveText('@@ -1,1 +1,1 @@\n');
-      await expect(workflowDiff.locator('.addition')).toHaveText('+name: archfit\n');
-      await expect(workflowDiff.locator('.deletion')).toHaveText('-name: old\n');
+      await expect(workflowDiff.locator('.add')).toHaveText('+name: archfit\n');
+      await expect(workflowDiff.locator('.del')).toHaveText('-name: old\n');
       expect(await workflowDiff.textContent()).toBe(body.diffs[0].text);
       const lineTops = await workflowDiff
-        .locator('.diff-line')
+        .locator('.line')
         .evaluateAll((lines) => lines.map((line) => line.getBoundingClientRect().top));
       expect(lineTops.every((top, index) => index === 0 || top > lineTops[index - 1])).toBe(true);
       await workflowDiff.focus();
