@@ -67,7 +67,7 @@
       <h2 class="title-box" id="your-passkeys">Your passkeys <span class="counter">{list.length}</span></h2>
       <div class="stack-sm passkey-add">
         <button class="btn sm primary" type="button" disabled={busy} onclick={add}>Add a passkey</button>
-        <p class="small muted">{list.length ? 'A passkey after your first is confirmed with one you have.' : 'Only an owner named in the policy can add one.'}</p>
+        <p class="small muted">{list.length ? 'A passkey after your first is confirmed with one you have.' : 'Only an owner named in the policy can add one, or a repository administrator before the first policy.'}</p>
       </div>
     </div>
     {#if list.length}

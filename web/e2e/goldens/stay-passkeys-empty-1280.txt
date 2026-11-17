@@ -23,7 +23,7 @@ Your passkeys work in every repository of this account where the policy names yo
 Your passkeys 0
 Add a passkey
 
-Only an owner named in the policy can add one.
+Only an owner named in the policy can add one, or a repository administrator before the first policy.
 
 No passkeys yet. Add one to approve policy changes.
 
