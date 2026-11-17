@@ -105,8 +105,8 @@ is a known limit, not a gap in the header: fixing it means sharing the stats thr
 writer, which only pays off once slow requests need the stages, so it waits for that.
 
 The map imports its Diagram component only while the diagram disclosure is open; closing it aborts
-layout work. The list view never starts the ELK worker. Desktop still starts with the diagram selected;
-phone starts with the list. Browser tests assert zero worker requests before phone diagram selection.
+layout work. The list view never starts the ELK worker. The diagram starts closed at every width; phone starts
+with the list open. Browser tests assert zero worker requests before the diagram opens.
 
 For an approved repository the response has `status`, optional `needs_you` rows, and `map`. Each row has
 `kind`, `text`, `href`, and the applicable request, pull, rule, modules, expiry date, days left or request record.

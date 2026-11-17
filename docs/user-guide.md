@@ -65,7 +65,8 @@ The matrix shows **Policy and review status**, not observed imports. Rows are so
 Every payload status remains in its cell, including multiple rules, requests and exceptions. A blank means
 **no explicit relationship in this payload**, not “no imports” or “permitted”. Deny status is not fully evaluated
 for all pairs. Select a cell for all rules, request links, exception dates and evidence scope. Tab enters the
-table; arrow keys move between cells, Enter opens details, and Escape closes details and returns focus.
+table; arrow keys move between cells (the shaded diagonal is skipped), Enter opens details, and Escape closes details
+and returns focus. A repository with one module shows "One module is declared, so there is nothing to draw."
 
 Headers stay visible while the table scrolls in either direction. At 50 or more modules, search names or layers,
 focus on explicit inbound/outbound neighbors, collapse layers, or use **Needs attention** to show modules
@@ -75,9 +76,9 @@ with denies, requests, drift or exceptions. Filters use the same modules on both
 volatility. Its line precedence is drift, deny, request, exception, allow: unlike Matrix, it draws only one
 status per pair. Use Matrix for complete pair details, including when the diagram cannot load.
 
-On request pages, the map still has **Show the map as a list** and **Show the map as a diagram** disclosures.
-Below 720px the list opens first and no diagram worker loads until the diagram is opened. On wider screens
-the SVG opens fitted to its box. The list remains available if the layout worker fails.
+On request pages, the map has **Show the map as a list** and **Show the map as a diagram** disclosures.
+The diagram is closed at every width, so no layout worker loads until you open it. Below 720px the list opens
+first. The list remains available if the layout worker fails.
 
 Use **Skip to main content** (the first keyboard link) to bypass the header. Theme and action controls have
 larger hit areas on narrow screens and touch devices. Request fields use the selected light or dark theme.
