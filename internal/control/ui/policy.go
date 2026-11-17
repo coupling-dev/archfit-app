@@ -8,8 +8,13 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
 )
+
+// policyMissing is the conflict of a readable repository with no .archfit.yaml on its default branch. The policy page
+// matches this exact sentence to show its setup state; a repository the user cannot see stays a 404.
+const policyMissing = "No policy on the default branch yet."
 
 type policyPageJSON struct {
 	Owners     []string              `json:"owners"`
@@ -79,6 +84,9 @@ type policyEditJSON struct {
 func (s *server) apiPolicy(r *http.Request, sc scope) (any, error) {
 	ctx := r.Context()
 	raw, _, err := s.gh.files.File(ctx, sc.repo.RepoRef, sc.repo.DefaultBranch, ".archfit.yaml")
+	if errors.Is(err, api.ErrNotFound) {
+		return nil, conflict(policyMissing)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -1,31 +1,42 @@
-import type { Policy } from './api';
+import type { ApiError, Policy } from './api';
 
 type PolicyModule = Policy['modules'][number];
 type Exception = Policy['exceptions'][number];
 
+// policyMissing is the server's sentence for a readable repository with no .archfit.yaml on its default branch.
+export const policyMissing = 'No policy on the default branch yet.';
+
+export function isPolicyMissing(error: ApiError): boolean {
+  return error.status === 409 && error.message === policyMissing;
+}
+
 export interface PolicyRule {
   id: string;
-  title: string;
   mode: string;
   summary: string;
   why?: string;
   instead?: string;
 }
 
+// The built-in rules carry their fixed ids, as on the pull request and request pages, and the design's sentences.
 export function policyRules(policy: Policy): PolicyRule[] {
   const builtin = [
-    ['graph', 'Module dependencies', 'Only declared module dependencies.'],
-    ['coupling', 'Coupling', `Minimum balance: ${policy.builtin.min_balance ?? 'Not provided'}.`],
-    ['duplication', 'Duplication', 'Check for copied code.'],
-    ['cycle', 'Module cycles', 'No dependency cycles between modules.'],
-    ['layers', 'Layer direction', 'Respect the declared layer order.'],
-    ['unowned', 'Module coverage', 'Code must belong to a module.'],
+    ['graph', 'A dependency between two modules must be an allowed dependency.'],
+    [
+      'coupling',
+      policy.builtin.min_balance == null
+        ? 'New knowledge across a module boundary needs a minimum balance, the coupling number out of 10.'
+        : `New knowledge across a module boundary needs a balance of at least ${policy.builtin.min_balance}. Balance is the coupling number, out of 10.`,
+    ],
+    ['duplication', 'Knowledge that another module already owns is not copied.'],
+    ['cycle', 'No new cycle between modules.'],
+    ['layers', 'Dependencies follow the layer order.'],
+    ['unowned', 'New production code belongs to a module.'],
   ] as const;
   return [
-    ...builtin.map(([id, title, summary]) => ({ id, title, summary, mode: policy.builtin[id] })),
+    ...builtin.map(([id, summary]) => ({ id, summary, mode: policy.builtin[id] })),
     ...policy.rules.map((rule) => ({
       id: rule.id,
-      title: rule.id,
       mode: rule.not_checked ? 'note' : rule.deny || rule.only ? 'deny' : '',
       summary: rule.deny
         ? `Deny: ${rule.deny.from.join(', ')} → ${rule.deny.to.join(', ')}`
@@ -49,7 +60,7 @@ export function ruleMode(mode: string): string {
     case 'note':
       return 'Not checked';
     default:
-      return mode || 'Not provided';
+      return mode || 'unknown';
   }
 }
 
@@ -80,9 +91,11 @@ export function groupExceptions(exceptions: Exception[]): { rule: string; items:
 }
 
 export function policyCounts(policy: Policy) {
+  const rules = policyRules(policy);
   return {
+    rules: rules.length,
     modules: policy.modules.length,
-    blocking: policyRules(policy).filter((rule) => rule.mode === 'ask' || rule.mode === 'deny').length,
+    askDeny: rules.filter((rule) => rule.mode === 'ask' || rule.mode === 'deny').length,
     exceptions: policy.exceptions.length,
     expiring: policy.exceptions.filter((e) => e.days_left != null && e.days_left >= 0 && e.days_left <= 30).length,
     expired: policy.exceptions.filter((e) => e.days_left != null && e.days_left < 0).length,
@@ -97,7 +110,7 @@ export function filterPolicy(policy: Policy, query: string) {
       matches([m.name, m.layer, m.volatility, m.subdomain, ...(m.paths ?? []), ...(m.public ?? []), ...m.depends_on]),
     ),
     rules: policyRules(policy).filter((r) =>
-      matches([r.id, r.title, r.mode, ruleMode(r.mode), r.summary, r.why, r.instead]),
+      matches([r.id, r.mode, ruleMode(r.mode), r.summary, r.why, r.instead]),
     ),
     exceptions: policy.exceptions.filter((e) =>
       matches([

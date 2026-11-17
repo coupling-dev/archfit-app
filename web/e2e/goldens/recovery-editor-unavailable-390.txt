@@ -1,6 +1,6 @@
 Policy
 
-acme/app · default branch
+acme/app
 
 View source
 Policy editor unavailable
@@ -10,23 +10,21 @@ Change control has not started.
 The policy below is read-only.
 
 View current setup
-Policy owners
+Owners
 alexei-led
-Layers · inner first
-core · cmd
-Check mode · configured
-required
-Approval
-Not provided
+Layers, inner first
+core, cmd
+The check
+required — a failing rule makes archfit/gate fail
 
-Live enforcement and approval evidence are not provided by this response.
+Whether GitHub requires the check is shown on Home.
 
 3
 Modules
 Declared boundaries
 8
-Blocking rules
-Configured ask / deny
+Ask and deny rules
+of 9 rules
 1
 Exceptions
 No recorded expiry has passed
@@ -39,25 +37,21 @@ Expand a row for details.
 
 Rules
 
-Read the rule before changing an import. Expand for why and what to use instead.
+Expand a rule to see why it exists and what to do instead.
+
+A note is not checked. It tells the reader what to do.
 
 View source
-Module dependencies
 graph
 Ask owner
-Coupling
 coupling
 Deny
-Duplication
 duplication
 Ask owner
-Module cycles
 cycle
 Deny
-Layer direction
 layers
 Deny
-Module coverage
 unowned
 Deny
 no-chaos-to-runtime
@@ -81,7 +75,7 @@ Expires in 59 days
 Bars show days remaining within a 30-day window, not exception age. Expired records are not active exceptions.
 Modules
 
-Inspect paths and allowed dependencies. The graph is a secondary view.
+Paths and allowed dependencies of each module. Volatility is how often a module is expected to change. Subdomain is its business role.
 
 Module / paths	Layer	Allowed dependencies
 pkg_chaos
