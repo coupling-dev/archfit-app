@@ -6,7 +6,7 @@
   "view": {
     "status": "unknown",
     "status_line": "Archfit: unknown, no verdict",
-    "note": "The Archfit check finished without uploading a result.",
+    "note": "Archfit could not check this pull request. The record below says what to do.",
     "records": [
       {
         "rule": "tool",

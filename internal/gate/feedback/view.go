@@ -211,8 +211,8 @@ func (v view) annotations() []api.Annotation {
 	return out
 }
 
-// comment is the comment of design 12.5, without its markers: the status line as the heading, one Markdown record
-// per error and unknown reason, then the author line and the owner line. Records that do not fit in budget are left
+// comment is the comment of design 12.5, without its markers: the status line as the heading, the unknown note under
+// it when there is one, one Markdown record per error and unknown reason, then the author line and the owner line. Records that do not fit in budget are left
 // out after a line that counts them.
 func (v view) comment(budget int) string {
 	p := v.page()

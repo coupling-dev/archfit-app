@@ -15,7 +15,7 @@
   interface PullPage {
     message?: string;
     owner_action?: OwnerReview;
-    view?: { status: string; status_line: string; records: RecordLine[]; author?: string; owner?: string };
+    view?: { status: string; status_line: string; note?: string; records: RecordLine[]; author?: string; owner?: string };
   }
 
   let { route, here }: { route: Repo & { number: number }; here: string } = $props();

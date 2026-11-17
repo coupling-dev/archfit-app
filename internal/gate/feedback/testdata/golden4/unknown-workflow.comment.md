@@ -1,6 +1,6 @@
 ## Archfit: unknown, no verdict
 
-The Archfit check finished without uploading a result.
+Archfit could not check this pull request. The record below says what to do.
 
 `.github/workflows/archfit.yaml` **tool** differs from main
 - why: a pull request runs its own workflow file

@@ -57,7 +57,7 @@ func TestPullPageEvidence(t *testing.T) {
 		wantStatus, wantMessage string
 		wantErr                 bool
 	}{
-		{name: "missing artifact", artifactErr: api.ErrNotFound, digest: envelope.PayloadDigest(raw), wantMessage: "No check has reported for this pull request. It runs on the next push."},
+		{name: "missing artifact", artifactErr: api.ErrNotFound, digest: envelope.PayloadDigest(raw), wantMessage: resultGone},
 		{name: "digest mismatch", artifact: raw, digest: envelope.PayloadDigest([]byte("other")), wantMessage: "The stored result cannot be trusted."},
 		{name: "infrastructure", artifactErr: errors.New("network"), digest: envelope.PayloadDigest(raw), wantErr: true},
 		{name: "artifact", artifact: raw, digest: envelope.PayloadDigest(raw), wantStatus: string(decoded.Status)},
@@ -237,7 +237,7 @@ func TestPullPageNeverShowsPreviousHeadsPass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.View != nil || got.Record != nil || got.Message != "No check has reported for this pull request. It runs on the next push." {
+	if got.View != nil || got.Record != nil || got.Message != noCheckYet {
 		t.Fatalf("previous head displayed: %+v", got)
 	}
 }

@@ -293,7 +293,7 @@ func TestUpload4GivesUnknown(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if page.View != nil || page.Message != "No check has reported for this pull request. It runs on the next push." {
+				if page.View != nil || page.Message != noResultYet {
 					t.Fatalf("unpublished page %+v", page)
 				}
 				if n := w.gh.writes(); n != 0 {

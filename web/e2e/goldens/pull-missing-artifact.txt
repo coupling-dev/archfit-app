@@ -4,7 +4,7 @@ acme/app
 
 no result
 
-No check has reported for this pull request. It runs on the next push.
+The check result is no longer available. Run the check again.
 
 Pull request #4 on GitHub
 View policy

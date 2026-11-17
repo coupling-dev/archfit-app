@@ -1,6 +1,6 @@
 ## Archfit: unknown, no verdict
 
-Archfit could not read a valid policy on the default branch.
+Archfit could not check this pull request. The record below says what to do.
 
 `.archfit.yaml` **policy** differs from origin/main
 - why: only owners change the policy

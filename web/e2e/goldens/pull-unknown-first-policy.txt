@@ -6,7 +6,7 @@ unknown
 
 Archfit: unknown, no verdict
 
-Archfit could not read a valid policy on the default branch.
+Archfit could not check this pull request. The record below says what to do.
 
 Review first policy
 Pull request #4 on GitHub

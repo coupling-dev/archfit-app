@@ -63,19 +63,14 @@ func (v view) page() Page {
 	return p
 }
 
-// unknownNote is the one plain sentence under an unknown heading: why no verdict, from the first unknown reason's cause.
-// A cause the App does not name gets no sentence, and the heading still says unknown.
+// unknownNote is the one plain sentence under an unknown heading. It is true for every unknown reason: the reasons
+// share causes, so a sentence about a cause would state a fact that some of them contradict.
 func unknownNote(r result.Result) string {
-	if len(r.Unknown) == 0 {
+	if r.Status != result.StatusUnknown {
 		return ""
 	}
-	return unknownNotes[r.Unknown[0].Cause]
+	return unknownSentence
 }
 
-// The sentences of unknownNote, by the causes the wire result carries (wire/result: policy, base, tool, import).
-var unknownNotes = map[string]string{
-	"policy": "Archfit could not read a valid policy on the default branch.",
-	"base":   "Archfit could not compare this pull request with the default branch.",
-	"tool":   "The Archfit check finished without uploading a result.",
-	"import": "Archfit could not read the code that the check needs.",
-}
+// unknownSentence says why there is no verdict; the record below says what to do.
+const unknownSentence = "Archfit could not check this pull request. The record below says what to do."

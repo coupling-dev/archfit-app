@@ -1,6 +1,6 @@
 ## Archfit: unknown, no verdict
 
-The Archfit check finished without uploading a result.
+Archfit could not check this pull request. The record below says what to do.
 
 **tool** the check finished without an uploaded result
 - next: run the Archfit check again
