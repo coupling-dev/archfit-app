@@ -158,7 +158,7 @@ commit; the policy diff compares with the named pull-request base commit. Added 
 row, but its bytes are still included in the approval. Unchanged from the pull-request base does not mean
 previously approved. The confirmation names both files, the PR number and its head commit.
 
-**Full files and approval details** opens the complete file versions, grouped by file and labelled by version
+**Full files and approval details** opens the complete file versions, grouped by file and labeled by version
 and commit. Use these to inspect unchanged lines or compare another copy. Each version's **Technical details**
 contains its SHA-256 fingerprint, which identifies its bytes; you do not need to compare fingerprints to approve.
 
@@ -272,7 +272,7 @@ An accepted default-branch result that reports drift opens or updates an `archfi
 | Situation                                  | Action                                                                                                           |
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
 | The check is `unknown`                     | Read its reason and restore the named authority or input. Unknown is not a pass.                                 |
-| A policy changed outside the approval flow | An owner must confirm or revert it with a passkey. Read the issue and the policy before acting.                  |
+| A policy changed outside the flow | An owner must confirm or revert it with a passkey. Read the issue and the policy before acting.                  |
 | A workflow changed                         | An owner must approve the workflow change with a passkey unless only the Action ref moved to an approved commit. |
 | A request shows **as reported**            | Treat its measurements as a claim. Read the source and a current pull-request result.                            |
 | The App cannot confirm a ruleset or bypass | Ask a repository administrator to inspect the ruleset in GitHub.                                                 |
