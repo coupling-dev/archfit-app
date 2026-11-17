@@ -26,6 +26,10 @@ The gate facade supplies policy/request views, answers and owner actions; UI imp
   for operators, read by the header after the session shows; it answers -1 when the reads fail.
 - /api/repos lists accessible repositories in name order, at most 100, with state from the gate RepoStates façade and no historical check reads.
 
+Assets under `/assets/` ship with `.br` and `.gz` siblings from the web build; the server sends the one the client
+takes (`br` first) with `Vary: Accept-Encoding`. API JSON bodies over 1 KB are gzip-compressed when the client takes
+gzip. Nothing else is compressed.
+
 ## Security and checks
 
 The chain recovers panics, adds CSP/security headers, bounds request bodies, authenticates sessions,

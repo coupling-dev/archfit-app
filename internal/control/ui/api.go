@@ -100,8 +100,14 @@ func writeJSON(w http.ResponseWriter, r *http.Request, status int, body any) {
 		slog.Error("ui response encoding failed", "route", r.Pattern)
 		status, buf = http.StatusInternalServerError, []byte(`{"error":"internal error"}`)
 	}
-	w.Header().Set("Content-Type", mediaJSON)
-	w.Header().Set("Cache-Control", "no-store")
+	h := w.Header()
+	h.Set("Content-Type", mediaJSON)
+	h.Set("Cache-Control", "no-store")
+	h.Add("Vary", "Accept-Encoding")
+	if len(buf) > gzipMinBytes && accepts(r, "gzip") {
+		buf = gzipped(buf)
+		h.Set("Content-Encoding", "gzip")
+	}
 	w.WriteHeader(status)
 	_, _ = w.Write(buf)
 }
