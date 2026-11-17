@@ -4,12 +4,12 @@ import { open, expectClean, everyPage, rendered } from './fixtures';
 
 test('theme: the choice applies at once and survives a reload', async ({ page }) => {
   await open(page, '/');
-  await page.getByRole('button', { name: 'Dark' }).click();
+  await page.getByRole('radio', { name: 'Dark' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(page.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
-  await page.getByRole('button', { name: 'Auto' }).click();
+  await expect(page.getByRole('radio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true');
+  await page.getByRole('radio', { name: 'Auto' }).click();
   await expect(page.locator('html')).not.toHaveAttribute('data-theme', /./);
   await expectClean(page);
 });
