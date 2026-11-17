@@ -51,7 +51,7 @@ for (const count of [5, 10, 24])
         await expect(page.getByRole('button', { name: 'Matrix', exact: true })).toHaveAttribute('aria-pressed', 'true');
         await expect(page.getByRole('table', { name: tableName })).toBeVisible();
         await expect(page.locator('tbody tr')).toHaveCount(count);
-        await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toHaveCount(0);
+        await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toHaveCount(0);
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
         await expectClean(page, ['Policy and review status']);
         expect(errors).toEqual([]);
@@ -249,7 +249,7 @@ test('Matrix is the default without a worker; explicit Diagram choice survives r
   await expect(page.getByRole('table', { name: tableName })).toBeVisible();
   expect(workers).toEqual([]);
   await page.getByRole('button', { name: 'Diagram', exact: true }).click();
-  await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toBeVisible();
   await expect(page.getByText('Show the map as a diagram', { exact: true })).toHaveCount(0);
   expect(workers.some((url) => url.includes('layout.worker-'))).toBe(true);
   await page.reload();
@@ -272,7 +272,7 @@ test('Matrix works when browser storage is unavailable', async ({ page }) => {
   await open(page, '/r/acme/app', { [api]: () => [200, fixture(5)] });
   await expect(page.getByRole('table', { name: tableName })).toBeVisible();
   await page.getByRole('button', { name: 'Diagram', exact: true }).click();
-  await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toBeVisible();
   await expect(page.getByText('Show the map as a diagram', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Matrix', exact: true }).click();
   await expect(page.getByRole('table', { name: tableName })).toBeVisible();
