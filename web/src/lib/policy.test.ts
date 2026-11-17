@@ -3,6 +3,7 @@ import { ApiError, type Policy } from './api';
 import {
   exceptionExpiry,
   filterPolicy,
+  groupExceptions,
   isPolicyMissing,
   policyCounts,
   policyGraph,
@@ -130,7 +131,7 @@ describe('missing policy', () => {
 
 describe('exception expiry uses server days, not the browser clock', () => {
   it.each([
-    [undefined, 'Not provided', '', null],
+    [undefined, 'No end date', '', null],
     [-3, 'Expired 3 days ago', 'danger', 0],
     [-1, 'Expired 1 day ago', 'danger', 0],
     [0, 'Expires today', 'attention', 0],
@@ -217,5 +218,19 @@ describe('secondary module graph', () => {
     expect(new Set(graph.nodes.map((n) => `${n.x},${n.y}`)).size).toBe(10);
     expect(graph.nodes.every((n) => n.x >= 0 && n.x + 140 <= 480)).toBe(true);
     expect(policyGraph([], null)).toMatchObject({ nodes: [], links: [], missing: 0 });
+  });
+});
+
+describe('exceptions by rule', () => {
+  it('groups by rule, largest first, and keeps the file order inside a group', () => {
+    const items = [
+      { ...exception(), rule: 'duplication', from: 'a' },
+      { ...exception(), rule: 'coupling', from: 'b' },
+      { ...exception(), rule: 'coupling', from: 'c' },
+    ];
+    expect(groupExceptions(items).map((g) => [g.rule, g.items.map((i) => i.from)])).toEqual([
+      ['coupling', ['b', 'c']],
+      ['duplication', ['a']],
+    ]);
   });
 });
