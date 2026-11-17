@@ -502,6 +502,8 @@ test('request: no policy change hides merge control and does not submit its stal
       : preview(url);
   const writes = await open(page, path, handlers);
   const box = answerBox(page);
+  await box.getByRole('button', { name: 'Approve and merge', exact: true }).click();
+  await box.getByLabel('Merge the policy pull request now').uncheck();
   await box.getByRole('button', { name: 'Reject', exact: true }).click();
   await box.getByLabel('What to do instead').fill('Use a port.');
   await box.getByRole('button', { name: 'Preview reject' }).click();
@@ -530,7 +532,6 @@ test('request: failed preview cannot confirm; retry and a changed date require a
   await expect(box.locator('button.primary')).toHaveCount(0);
   handlers[`GET ${req}/preview`] = (_, url) => preview(url);
   await box.getByRole('button', { name: 'Preview approve and merge', exact: true }).click();
-  await answerBox(page).getByRole('button', { name: 'Approve and merge', exact: true }).click();
   await expect(box.getByRole('button', { name: 'Approve and merge policy PR' })).toBeVisible();
   await box.getByRole('button', { name: 'Approve until a date', exact: true }).click();
   await box.getByLabel('The exception ends on').fill('2027-01-15');

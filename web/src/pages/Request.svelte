@@ -247,7 +247,7 @@
     <div class="box-body stack">
       {#if body.state === 'open' && body.policy}
         <p class="small">Choose an answer and read its policy change before confirming. Previewing or leaving this page changes nothing.</p>
-        <div class="answer-choices" role="group" aria-label="Choose an answer">
+        <div class="btn-group" role="group" aria-label="Choose an answer">
           {#each kinds as { kind, title: kindTitle } (kind)}
             <button class="btn" type="button" aria-pressed={chosen && selected === kind} disabled={busy} onclick={() => choose(kind)}>{kindTitle}</button>
           {/each}
@@ -257,7 +257,7 @@
           <h3>{title}</h3>
           {#if selected === 'approve-until'}
             <label for="until">The exception ends on (yyyy-mm-dd)</label>
-            <input class="form-control" id="until" type="text" inputmode="numeric" placeholder="yyyy-mm-dd" pattern="\d{4}-\d{2}-\d{2}" bind:value={until} disabled={busy} oninput={() => invalidate('approve-until')} />
+            <input class="form-control" id="until" type="text" placeholder="yyyy-mm-dd" bind:value={until} disabled={busy} oninput={() => invalidate('approve-until')} />
             <p class="small">Enter a date as yyyy-mm-dd to preview. The exception is valid through that date, in UTC.</p>
           {:else if selected === 'reject'}
             <label for="instead">What to do instead</label>
@@ -302,6 +302,3 @@
   </section>
 {/if}
 
-<style>
-  .answer-choices { display: flex; flex-wrap: wrap; gap: 8px; }
-</style>
