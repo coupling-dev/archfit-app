@@ -8,7 +8,7 @@ import {
   readHome,
   type Home,
   readOwnerReview,
-  setupChipClass,
+  setupStepChip,
   setupPullStep,
   setupRuleStatus,
   setupStepState,
@@ -114,23 +114,26 @@ describe('setup step labels and progress', () => {
     rules: [],
   };
   it.each([
-    ['ok', 'On'],
-    ['unknown', 'Check'],
-    ['not_applicable', 'Does not apply'],
-    ['warning', 'Action needed'],
-  ])('maps rule state %s to %s', (state, label) => expect(setupRuleStatus(state)).toBe(label));
+    ['ok', 'on'],
+    ['unknown', 'verify in GitHub'],
+    ['not_applicable', 'does not apply'],
+    ['warning', 'off'],
+  ])('maps required rule state %s to %s', (state, label) => expect(setupRuleStatus(state, 'gate_check')).toBe(label));
 
   it.each([
-    ['Action needed', 'attention'],
-    ['Review needed', 'attention'],
-    ['Check', 'attention'],
-    ['Check with an admin', 'attention'],
-    ['Ready for review', 'good'],
-    ['Waiting', 'neutral'],
-    ['Does not apply', 'neutral'],
-    ['Done', 'good'],
-    ['On', 'good'],
-  ])('gives %s a %s chip', (status, tone) => expect(setupChipClass(status)).toBe(tone));
+    [base, 0, 'to do'],
+    [{ ...base, policy: true, workflow: true, first_pull: 12 }, 1, 'done'],
+    [{ ...base, policy: true }, 1, 'to do'],
+    [{ ...base, approval: needed }, 2, 'after step 2'],
+    [{ ...base, first_pull: 12, approval: active, state: 'approved' }, 2, 'done'],
+    [{ ...base, policy: true, workflow: true, first_pull: 12, approval: needed }, 2, 'to do'],
+  ])('labels step %#', (setup, index, chip) => {
+    expect(setupStepChip(setupStepState(setup).done, index)).toBe(chip);
+  });
+
+  it('never labels the gate step as waiting for the approval', () => {
+    expect(setupStepChip([true, true, false, false], 3)).toBe('to do');
+  });
 
   it.each([
     [base, 'Next: add the policy'],
@@ -152,13 +155,13 @@ describe('setup step labels and progress', () => {
   ])('shows one next action for %j', (setup, next) => expect(setupStepState(setup).next).toBe(next));
 
   it.each([
-    [base, { kind: 'create', status: 'Action needed' }, false],
-    [{ ...base, policy: true }, { kind: 'create', status: 'Action needed' }, false],
-    [{ ...base, workflow: true }, { kind: 'create', status: 'Action needed' }, false],
-    [{ ...base, first_pull: 12 }, { kind: 'first-policy', status: 'Ready for review', number: 12 }, true],
-    [{ ...base, policy: true, open_pull: 203 }, { kind: 'review', status: 'Ready for review', number: 203 }, true],
-    [{ ...base, policy: true, workflow: true }, { kind: 'current', status: 'Done' }, true],
-    [{ ...base, first_pull: 12, open_pull: 203 }, { kind: 'review', status: 'Ready for review', number: 203 }, true],
+    [base, { kind: 'create' }, false],
+    [{ ...base, policy: true }, { kind: 'create' }, false],
+    [{ ...base, workflow: true }, { kind: 'create' }, false],
+    [{ ...base, first_pull: 12 }, { kind: 'first-policy', number: 12 }, true],
+    [{ ...base, policy: true, open_pull: 203 }, { kind: 'review', number: 203 }, true],
+    [{ ...base, policy: true, workflow: true }, { kind: 'current' }, true],
+    [{ ...base, first_pull: 12, open_pull: 203 }, { kind: 'review', number: 203 }, true],
   ])('keeps the PR step and its completion consistent for %j', (setup, step, done) => {
     expect(setupPullStep(setup)).toEqual(step);
     expect(setupStepState(setup).done[1]).toBe(done);
@@ -168,9 +171,8 @@ describe('setup step labels and progress', () => {
     expect(setupStepState({ ...base, policy: true, rules: [{ code: 'pull_requests', state: 'ok', text: '' }, { code: 'gate_check', state: 'ok', text: '' }] })).toEqual({
       done: [true, false, false, true],
       completed: 2,
-      approval: 'Action needed',
+      approvalUnknown: false,
       approvalText: 'Review the proposed files before approving.',
-      gate: 'On',
       next: 'Next: create the pull request',
     });
     expect(
@@ -183,17 +185,15 @@ describe('setup step labels and progress', () => {
     ).toEqual({
       done: [true, true, false, false],
       completed: 2,
-      approval: 'Action needed',
+      approvalUnknown: false,
       approvalText: 'Review the proposed files before approving.',
-      gate: 'Check with an admin',
       next: 'Next: review owner approval',
     });
     expect(setupStepState({ ...base, policy: true, open_pull: 203 })).toEqual({
       done: [true, true, false, false],
       completed: 2,
-      approval: 'Action needed',
+      approvalUnknown: false,
       approvalText: 'Review the proposed files before approving.',
-      gate: 'Action needed',
       next: 'Next: review owner approval',
     });
     expect(
@@ -214,24 +214,24 @@ describe('setup enforcement facts and advisory findings', () => {
     { code: 'gate_check', state: 'ok', text: '' },
   ];
   it.each([
-    ['all enforcement on', enforced, true, 'On'],
-    ['administrator unreadable', [...enforced, { code: 'administrator_bypass', state: 'unknown', text: '' }], true, 'On'],
-    ['gate missing', [enforced[0]], false, 'Action needed'],
-    ['pull request rule missing', [enforced[1]], false, 'Action needed'],
-    ['gate not required', [enforced[0], { ...enforced[1], state: 'warning' }], false, 'Action needed'],
-    ['gate not confirmed', [enforced[0], { ...enforced[1], state: 'unknown' }], false, 'Action needed'],
-    ['rulesets unreadable', [...enforced, { code: 'rulesets', state: 'unknown', text: '' }], false, 'Check with an admin'],
-    ['branch rules unreadable', [{ code: 'branch_rules', state: 'unknown', text: '' }], false, 'Check with an admin'],
-    ['integration unavailable', [{ code: 'integration', state: 'unknown', text: '' }], false, 'Action needed'],
-    ['conflicting enforcement findings', [...enforced, { ...enforced[1], state: 'warning' }], false, 'Action needed'],
-    ['no findings', [], false, 'Action needed'],
-  ])('%s', (_name, rules, complete, gate) => {
+    ['all enforcement on', enforced, true],
+    ['administrator unreadable', [...enforced, { code: 'administrator_bypass', state: 'unknown', text: '' }], true],
+    ['gate missing', [enforced[0]], false],
+    ['pull request rule missing', [enforced[1]], false],
+    ['gate not required', [enforced[0], { ...enforced[1], state: 'warning' }], false],
+    ['gate not confirmed', [enforced[0], { ...enforced[1], state: 'unknown' }], false],
+    ['rulesets unreadable', [...enforced, { code: 'rulesets', state: 'unknown', text: '' }], false],
+    ['branch rules unreadable', [{ code: 'branch_rules', state: 'unknown', text: '' }], false],
+    ['integration unavailable', [{ code: 'integration', state: 'unknown', text: '' }], false],
+    ['conflicting enforcement findings', [...enforced, { ...enforced[1], state: 'warning' }], false],
+    ['no findings', [], false],
+  ])('%s', (_name, rules, complete) => {
     const state = setupStepState({
       approval: active, passkey_known: true, state: 'approved', policy: true,
       workflow: true, passkey: true, open_pull: 0, missing: [], rules,
     });
     expect(state.done[3]).toBe(complete);
-    expect(state.gate).toBe(gate);
+    expect(setupStepChip(state.done, 3)).toBe(complete ? 'done' : 'to do');
     expect(state.completed).toBe(complete ? 4 : 3);
   });
 
@@ -242,12 +242,11 @@ describe('setup enforcement facts and advisory findings', () => {
         workflow: true, passkey: true, open_pull: 0, missing: [], rules: [...enforced, { code, state, text: '' }],
       });
       expect(result.done[3]).toBe(true);
-      expect(result.gate).toBe('On');
     }
-    expect(setupRuleStatus('unknown', code)).toBe('Verify yourself');
-    expect(setupRuleStatus('warning', code)).toBe('Advisory');
-    expect(setupRuleStatus('not_applicable', code)).toBe('Does not apply');
-    expect(setupRuleStatus('ok', code)).toBe('On');
+    expect(setupRuleStatus('unknown', code)).toBe('verify in GitHub');
+    expect(setupRuleStatus('warning', code)).toBe('optional');
+    expect(setupRuleStatus('not_applicable', code)).toBe('does not apply');
+    expect(setupRuleStatus('ok', code)).toBe('on');
   });
 });
 
@@ -277,8 +276,8 @@ describe('server-resolved owner actions', () => {
         missing: [],
         rules: [],
         owner_action: { label: 'Review workflow change', href: '/r/acme/app/owner/workflow?pull=203' },
-      }).approval,
-    ).toBe('Review needed');
+      }).done[2],
+    ).toBe(false);
   });
 });
 

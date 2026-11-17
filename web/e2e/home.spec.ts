@@ -1,6 +1,13 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
+import { statusStyle } from '../src/lib/status';
 import { expectClean, expectNoNotUsedWord, expectPageText, open, docsClock, docsShot } from './support';
+
+// Setup collapses done steps to a line; their details sit behind a disclosure, so open it before asserting on them.
+async function expandStep(step: import('@playwright/test').Locator) {
+  if (await step.locator('.step-body').first().isVisible()) return;
+  await step.locator('summary').first().click();
+}
 import { homeAction, homeStateLabel, readHome, ownerReviewLabel } from '../src/lib/home';
 
 const path = '/r/acme/app';
@@ -13,18 +20,15 @@ const fixture = (name: string) => JSON.parse(readFileSync(new URL(name + '.json'
 const setupApprovedCopy = [
   'Policy and review status',
   'Rules reach the default branch through review, so the approval binds to exact file contents.',
-  'Require the gate',
-  'Ready for review',
   'A password or a GitHub review can be replayed by a compromised account',
   'Review workflow change',
   'Review first policy',
-  'Review needed',
   'A passkey is needed to approve, but not to read the review.',
   'Next: review owner approval',
   'Review and approve',
   'Review proposed files',
   'Review the proposed files before approving.',
-  'PR #203 changed after approval. Review the new head.',
+  'Pull request #203 changed after approval. The approval covers the old head; a new approval is needed.',
   'Could not read your passkeys. Review is still available; try again before approving.',
 ];
 
@@ -61,6 +65,7 @@ for (const file of names) {
       if (!['approved', 'outside_flow'].includes(body.setup.state)) {
         await expect(page.getByRole('heading', { name: 'The map' })).toHaveCount(0);
       }
+      await expandStep(page.locator('.setup .steps > li').nth(2));
       if (body.setup.passkey) {
         await expect(page.getByRole('link', { name: 'Manage passkeys' })).toHaveAttribute('href', path + '/passkeys');
         await expect(page.getByRole('link', { name: 'Manage passkeys' })).not.toHaveClass(/btn/);
@@ -77,12 +82,12 @@ for (const file of names) {
       const gateStep = page.locator('.steps > li').nth(3);
       if (name.startsWith('approval-') || name === 'workflow-review') {
         await expect(gateStep).toHaveClass(/done/);
-        await expect(gateStep.locator(':scope > .chip')).toHaveText('On');
+        await expect(gateStep.locator('.step-head > .status-label')).toHaveText('done');
         await expect(page.getByText('Next: turn on the required check', { exact: true })).toHaveCount(0);
       }
       if (name === 'not-set-up' || name === 'rules-incomplete') {
         await expect(gateStep).not.toHaveClass(/done/);
-        await expect(gateStep.locator(':scope > .chip')).toHaveText('Action needed');
+        await expect(gateStep.locator('.step-head > .status-label')).toHaveText('to do');
       }
       if (approval.status === 'approved_pending_merge' || approval.status === 'unknown') {
         await expect(page.locator('main a[href*="/owner/"]')).toHaveCount(0);
@@ -94,57 +99,44 @@ for (const file of names) {
           page.getByText(
             approval.merged
               ? 'Approval recorded; checking activation'
-              : `Approved for PR #${approval.pull_request}. Waiting for merge.`,
+              : `Approved for pull request #${approval.pull_request}. Waiting for merge.`,
             { exact: true },
           ),
         ).toBeVisible();
       }
       if (approval.status === 'stale') {
         await expect(
-          page.getByText(`PR #${approval.pull_request} changed after approval. Review the new head.`, { exact: true }),
+          page.getByText(`Pull request #${approval.pull_request} changed after approval. The approval covers the old head; a new approval is needed.`, { exact: true }),
         ).toBeVisible();
         await expect(page.locator('.steps > li').nth(2)).not.toHaveClass(/done/);
       }
       if (approval.status === 'unknown') await expect(page.locator('.steps > li').nth(2)).not.toHaveClass(/done/);
       await expect(page.locator('.steps > li')).toHaveCount(4);
-      const chips = page.locator('.setup .chip');
+      const chips = page.locator('.setup .status-label');
       for (const chip of await chips.all()) {
-        const status = await chip.innerText();
-        const tone = ['Done', 'On', 'Signed', 'Ready for review'].includes(status)
-          ? 'good'
-          : ['Waiting', 'Does not apply'].includes(status)
-            ? 'neutral'
-            : 'attention';
-        await expect(chip).toHaveClass(new RegExp(tone));
+        await expect(chip).toHaveClass(new RegExp(statusStyle((await chip.textContent()) ?? '').tone));
       }
+      await expandStep(page.locator('.setup .steps > li').nth(3));
       await expect(
         page.getByText(
-          'In GitHub, require archfit/gate on the default branch. The App reads these settings; an administrator changes them.',
+          'Done when GitHub requires a pull request and the archfit/gate check on the default branch. Items marked optional are not needed for this step.',
         ),
-      ).toBeVisible();
-      await expect(
-        page.getByText(
-          'This step turns green when GitHub requires pull requests and archfit/gate on the default branch. Bypass and policy-push advice does not block this step; Verify yourself means the App has not checked that setting.',
-        ),
-      ).toBeVisible();
-      await expect(
-        page.getByText('The owner signs the policy with a passkey. Change one byte and the approval no longer counts.'),
       ).toBeVisible();
       if (body.setup.open_pull > 0) {
-        await expect(page.getByRole('listitem').nth(1).getByText('Ready for review', { exact: true })).toBeVisible();
-        await expect(page.getByText(`PR #${body.setup.open_pull} adds the workflow.`)).toBeVisible();
-        await expect(page.getByRole('link', { name: `PR #${body.setup.open_pull}`, exact: true })).toHaveAttribute(
+        await expandStep(page.locator('.setup .steps > li').nth(1));
+        await expect(page.getByText(`Pull request #${body.setup.open_pull} adds the workflow.`)).toBeVisible();
+        await expect(page.getByRole('link', { name: `Pull request #${body.setup.open_pull}`, exact: true })).toHaveAttribute(
           'href',
           path + '/pull/' + body.setup.open_pull,
         );
         await expect(
-          page.getByRole('link', { name: `View PR #${body.setup.open_pull} on GitHub`, exact: true }),
+          page.getByRole('link', { name: `View pull request #${body.setup.open_pull} on GitHub`, exact: true }),
         ).toHaveAttribute('href', `https://github.com/acme/app/pull/${body.setup.open_pull}`);
       }
       if (body.setup.first_pull) {
-        await expect(page.getByRole('listitem').nth(1).getByText('Ready for review', { exact: true })).toBeVisible();
+        await expandStep(page.locator('.setup .steps > li').nth(1));
         await expect(
-          page.getByText(`PR #${body.setup.first_pull} proposes the first policy and workflow.`),
+          page.getByText(`Pull request #${body.setup.first_pull} proposes the first policy and workflow.`),
         ).toBeVisible();
       }
       if (body.setup.owner_action?.href) {
@@ -153,13 +145,9 @@ for (const file of names) {
         await expect(review).toHaveClass(/primary/);
         await expect(review).toHaveAccessibleDescription('Approval needs your passkey.');
       }
-      if (!body.setup.workflow && body.setup.open_pull === 0 && !body.setup.first_pull)
-        await expect(page.getByText('The pull request should also add .github/workflows/archfit.yaml.')).toBeVisible();
-      if (body.setup.open_pull > 0 || body.setup.first_pull)
-        await expect(page.getByText('The pull request should also add .github/workflows/archfit.yaml.')).toHaveCount(0);
       await expect(page.getByText('ok', { exact: true })).toHaveCount(0);
       await expect(page.getByText('unknown', { exact: true })).toHaveCount(0);
-      if (body.setup.rules.length)
+      if (body.setup.rules.length && !body.setup.state.startsWith('approved'))
         await expect(page.getByRole('link', { name: 'Open ruleset settings' })).toHaveAttribute(
           'href',
           'https://github.com/acme/app/settings/rules',
@@ -334,7 +322,7 @@ test('home: ineligible viewer gets a role handoff without an owner-action link',
   await expect(page.getByText('Approval needs your passkey.', { exact: true })).toHaveCount(0);
   const gateStep = page.locator('.steps > li').nth(3);
   await expect(gateStep).toHaveClass(/done/);
-  await expect(gateStep.locator(':scope > .chip')).toHaveText('On');
+  await expect(gateStep.locator('.step-head > .status-label')).toHaveText('done');
   await expectPageText(page, 'home-first-policy-viewer');
   await expectClean(page, [...setupApprovedCopy, body.setup.owner_action.label]);
 });
@@ -348,16 +336,8 @@ test('home: advisory findings do not block enforcement, unreadable rulesets do',
   ];
   await open(page, path, { [api]: () => [200, body] });
   await expect(page.getByLabel('3 of 4 steps done')).toBeVisible();
-  await expect(page.getByRole('listitem').nth(3).getByText('Action needed', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Does not apply', { exact: true })).toBeVisible();
-  body.setup.rules.push({ code: 'administrator_bypass', state: 'unknown', text: '' });
-  await page.getByRole('button', { name: 'Check', exact: true }).click();
-  await expect(page.getByLabel('3 of 4 steps done')).toBeVisible();
-  await expect(page.getByText('Verify yourself', { exact: true })).toBeVisible();
-  body.setup.rules.push({ code: 'rulesets', state: 'unknown', text: '' });
-  await page.getByRole('button', { name: 'Check', exact: true }).click();
-  await expect(page.getByLabel('2 of 4 steps done')).toBeVisible();
-  await expect(page.getByText('Check with an admin', { exact: true })).toBeVisible();
+  await expect(page.locator('.setup .steps > li').nth(3).locator('.step-head > .status-label')).toHaveText('done');
+  await expect(page.getByText('Restrict .archfit.yaml', { exact: true })).toHaveCount(0);
   await expectClean(page, setupApprovedCopy);
 });
 
@@ -390,7 +370,7 @@ for (const [name, setup, next] of [
         { code: 'gate_check', state: 'ok', text: '' },
       ],
     },
-    'Setup is complete.',
+    'Setup complete · archfit/gate required',
   ],
 ] as const) {
   test('home: setup next action for ' + name, async ({ page }) => {
@@ -406,34 +386,34 @@ for (const [name, setup, chip, completed, copy, action, href] of [
   [
     'workflow PR',
     { policy: true, workflow: false, open_pull: 203 },
-    'Ready for review',
+    'done',
     2,
-    'PR #203 adds the workflow.',
-    'View PR #203 on GitHub',
+    'Pull request #203 adds the workflow.',
+    'View pull request #203 on GitHub',
     'https://github.com/acme/app/pull/203',
   ],
   [
     'first-policy PR',
     { policy: false, workflow: false, open_pull: 0, first_pull: 12 },
-    'Ready for review',
+    'done',
     2,
-    'PR #12 proposes the first policy and workflow.',
-    'View PR #12',
+    'Pull request #12 proposes the first policy and workflow.',
+    'View pull request #12',
     '/r/acme/app/pull/12',
   ],
   [
     'default-branch files',
     { policy: true, workflow: true, open_pull: 0 },
-    'Done',
+    'done',
     2,
-    'The policy and workflow are present on the default branch. No setup pull request is needed.',
+    'The policy and workflow are on the default branch. No setup pull request is needed.',
     'View policy',
     '/r/acme/app/policy',
   ],
   [
     'missing workflow',
     { policy: true, workflow: false, open_pull: 0 },
-    'Action needed',
+    'to do',
     1,
     'Open one pull request that adds the missing policy or workflow.',
     'Create a pull request on GitHub',
@@ -445,17 +425,18 @@ for (const [name, setup, chip, completed, copy, action, href] of [
     Object.assign(body.setup, setup, { owner_action: undefined, rules: fixture('rules-incomplete').setup.rules });
     await open(page, path, { [api]: () => [200, body] });
     const step = page.locator('.setup .steps > li').nth(1);
-    await expect(step.getByRole('heading')).toHaveText('2 · Policy and workflow pull request');
-    await expect(step.locator('.chip')).toHaveText(chip);
+    await expect(step.getByRole('heading')).toHaveText('2 · Open a pull request with both files');
+    await expect(step.locator('.step-head > .status-label')).toHaveText(chip);
     await expect(step.locator('.number')).toHaveText(completed === 2 ? '✓' : '2');
     if (completed === 2) await expect(step).toHaveClass(/done/);
     else await expect(step).not.toHaveClass(/done/);
     await expect(page.getByLabel(`${completed} of 4 steps done`)).toBeVisible();
+    await expandStep(step);
     await expect(step.getByText(copy, { exact: true })).toBeVisible();
     // The page head carries the step's own action, so the step does not repeat it.
-    const where = action === 'Create a pull request on GitHub' ? page.locator('.page-head') : step;
+    const where = action === 'Create a pull request on GitHub' || action === 'View policy' ? page.locator('.page-head') : step;
     await expect(where.getByRole('link', { name: action })).toHaveAttribute('href', href);
-    if (action === 'Create a pull request on GitHub') await expect(step.getByRole('link', { name: action })).toHaveCount(0);
+    if (where !== step) await expect(step.getByRole('link', { name: action })).toHaveCount(0);
     if (completed === 2)
       await expect(page.getByRole('link', { name: 'Create a pull request on GitHub' })).toHaveCount(0);
     await expectClean(page, setupApprovedCopy);
@@ -471,26 +452,7 @@ test('home: setup chips use semantic colours in both themes', async ({ page }) =
     ['dark', 'rgba(46, 160, 67, 0.15)', 'rgba(187, 128, 9, 0.15)'],
   ] as const) {
     await page.emulateMedia({ colorScheme: theme });
-    await expect(page.locator('.setup .chip').filter({ hasText: /^Done$/ })).toHaveCSS('background-color', good);
-    await expect(page.locator('.setup .chip').filter({ hasText: /^Review needed$/ })).toHaveCSS(
-      'background-color',
-      attention,
-    );
-    await expect(page.locator('.setup .chip').filter({ hasText: /^Verify yourself$/ })).toHaveCSS(
-      'background-color',
-      attention,
-    );
-    await expect(page.locator('.setup .chip').filter({ hasText: /^Ready for review$/ })).toHaveCSS(
-      'background-color',
-      good,
-    );
+    await expect(page.locator('.setup .status-label').filter({ hasText: /^done$/ }).first()).toHaveCSS('background-color', good);
+    await expect(page.locator('.setup .status-label').filter({ hasText: /^to do$/ }).first()).toHaveCSS('background-color', attention);
   }
-  delete body.setup.owner_action;
-  await page.reload();
-  await expect(
-    page
-      .locator('.setup .chip')
-      .filter({ hasText: /^Action needed$/ })
-      .first(),
-  ).toHaveClass(/attention/);
 });

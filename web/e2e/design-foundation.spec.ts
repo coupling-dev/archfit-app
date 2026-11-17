@@ -15,7 +15,7 @@ const style = (locator: Locator, property: string) =>
 
 test('foundation: a link that looks like a button is never underlined, at rest or on hover', async ({ page }) => {
   await home(page, 'not-set-up');
-  const links = page.locator('main a.btn');
+  const links = page.locator('main a.btn').filter({ visible: true });
   await expect(links.first()).toBeVisible();
   expect(await links.count()).toBeGreaterThan(0);
   for (const link of await links.all()) {
@@ -57,7 +57,7 @@ test('foundation: the policy search is a 32px control and the copy button is 28p
 
 test('foundation: setup status text is not monospace and the sections keep one 24px gap', async ({ page }) => {
   await home(page, 'not-set-up');
-  const chip = page.locator('.setup .chip').first();
+  const chip = page.locator('.setup .status-label').first();
   await expect(chip).toBeVisible();
   expect(await style(chip, 'font-family')).not.toMatch(/mono|Menlo|Consolas/i);
   const gap = await page.locator('.page-head').evaluate((head) => {

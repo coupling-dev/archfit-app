@@ -10,7 +10,6 @@ const approvedCopy = [
   'Review workflow change',
   'Review first policy',
   'Rules reach the default branch through review, so the approval binds to exact file contents.',
-  'Require the gate',
   'Ready for review',
   'Review needed',
   'A password or a GitHub review can be replayed by a compromised account',
@@ -19,7 +18,7 @@ const approvedCopy = [
   "Review and approve",
   "Review proposed files",
   "Review the proposed files before approving.",
-  "PR #203 changed after approval. Review the new head.",
+  "PR #203 changed after approval. The approval covers the old head; a new approval is needed.",
   "Could not read your passkeys. Review is still available; try again before approving.",
 ];
 
@@ -154,9 +153,7 @@ for (const width of [390, 1280]) {
         await page.keyboard.press('Tab');
         await expect(actions.nth(1)).toBeFocused();
       }
-      await expect(
-        page.getByText('The owner signs the policy with a passkey. Change one byte and the approval no longer counts.'),
-      ).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Set up Archfit' })).toBeVisible();
       await expectClean(page, approvedCopy);
     });
   }

@@ -16,19 +16,37 @@ After an owner approves the onboarding pull request, the App sets `archfit/gate`
 
 The App's setup API reads the policy and workflow at one default-branch commit and reports admission, first approval and ruleset advice. It does not change GitHub rulesets. Home keeps setup visible until the applicable required-check settings are confirmed, even after owner approval. A proposed policy or workflow is labelled as present in its PR, not yet on the default branch. Unavailable ruleset features do not block setup progress; unknown settings still need an administrator to check them. Setup progress is not an enforcement verdict.
 
-**Owner approval** distinguishes a signed PR from active default-branch files. **Approved for PR #N.
-Waiting for merge.** means the current head and both file digests match the recorded signature; no
-second approval is offered. After a known merge, **Approval recorded; checking activation** remains
-until push processing confirms activation. A changed head needs a new review. **Could not confirm
-approval** is not success. A first approval of an existing default-branch policy can take effect without
-a PR merge. **Require the gate** remains actionable independently of these approval stages.
+**Owner approval** distinguishes a pull request the owner approved from active default-branch files.
+**Approved for pull request #N. Waiting for merge.** means the current head and both file digests match the
+recorded approval; no second approval is offered. After a known merge, **Approval recorded; checking
+activation** remains until push processing confirms activation. A changed head needs a new approval, and
+**Could not confirm approval** is not success. A first approval of an existing default-branch policy can take
+effect without a pull request merge.
 
-**Require the gate** is **On** when the App confirms both required pull requests and the `archfit/gate` check on the default branch. Missing enforcement facts keep the step incomplete; unreadable rulesets show **Check with an admin**. Bypass settings, policy-push restrictions, and GitHub approval-count advice do not hold this step back. **Verify yourself** marks advice the App could not verify, not a successful check. The App deliberately lacks Administration permission: inspect each default-branch ruleset's **Bypass list** yourself and keep it empty or administrators-only for emergencies. Each row links to the relevant GitHub settings and names the values to set. **Does not apply** means no action is needed for that feature. After saving GitHub changes, select **Check** to reload setup; it does not change GitHub settings.
+Setup has four steps. Each shows one chip: **done**, **to do**, or **after step N** when it waits for an earlier
+step. A done step collapses to one line; select **Details** to open it. Step 4, **Require the archfit/gate
+check**, is done when the App confirms both required pull requests and the `archfit/gate` check on the default
+branch. Missing settings keep it **to do**. It does not wait for approval.
+
+Each ruleset row ends with one word: **on**, **off**, **optional**, **verify in GitHub** or **does not apply**.
+**Optional** rows, such as bypass lists and approval counts, do not hold step 4 back. **Verify in GitHub** means
+the App could not read the setting, so it is not a successful check. The App deliberately lacks Administration
+permission: inspect each default-branch ruleset's **Bypass list** yourself and keep it empty or
+administrators-only for emergencies. The shared GitHub steps appear once under step 4; each row names only what to
+tick. After saving changes on GitHub, select **Check again** to read the settings again; it changes nothing in
+GitHub. A policy-push row appears only when it applies to the repository.
+
+When setup is complete, Home shows one line, **Setup complete · archfit/gate required**, with the details behind a
+disclosure.
 
 With no passkey, **Register a passkey to approve** does not prevent reading the review. An unreadable
 passkey inventory is shown separately from an empty inventory. **Manage passkeys** is a secondary link.
 
-The setup heading shows one **Next** action. Amber chips need action, neutral chips indicate waiting or an unavailable feature, and green chips mark completed steps. **Policy and workflow pull request** is complete when an existing setup PR is **Ready for review**. It is also complete when both files are already present on the default branch. This step does not mean that the PR is approved or merged. **View PR #N on GitHub** opens an existing workflow PR. The separate PR link opens its App page. When no setup PR exists and files are missing, **Create a pull request on GitHub** opens the compare page. An administrator must enable the required check in the repository settings: the App cannot change rulesets without Administration permission.
+Step 2, **Open a pull request with both files**, is done when an existing setup pull request is open or when both
+files are already on the default branch. That does not mean the pull request is approved or merged. **View pull
+request #N on GitHub** opens an existing workflow pull request. When no setup pull request exists and files are
+missing, **Create a pull request on GitHub** opens the compare page. An administrator must enable the required
+check in the repository settings: the App cannot change rulesets without Administration permission.
 
 For a workflow change, an owner named in the approved policy can follow the review action from Home or **Review workflow change** from the pull page. Being a repository administrator alone does not qualify. You can read either review before registering a passkey; the final approval still requires one.
 
