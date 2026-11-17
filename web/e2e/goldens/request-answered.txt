@@ -25,21 +25,26 @@ pkg/tc/netem.go:12 graph pkg_tc -> pkg_util is not an allowed dependency
 The map
 Show the map as a list
 Show the map as a diagram
-
-Diagram fitted to this box. Use the list above for full-size dependency labels.
-
-adapters
-No layer
-A rule denies this dependency · no-tc-to-util
-pkg_tc
-Volatility: high
-pkg_util
-Volatility: low
 An allowed dependency
 A requested dependency
 One a rule denies
 An exception (with its date)
 Drift
+
+An arrow points at the module it depends on. Outer layer on top. Allowed dependencies, not observed imports.
+
+Find a module
++
+−
+Fit
+100%
+Full screen
+adapters
+No layer
+pkg_tc
+Volatility: high
+pkg_util
+Volatility: low
 
 Dependencies not allowed by this policy need a request.
 
