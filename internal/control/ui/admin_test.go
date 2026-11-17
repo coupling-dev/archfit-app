@@ -44,8 +44,8 @@ func TestRepositoryOfWaitingAccountAnswersWaiting(t *testing.T) {
 		if want := r.FullName == strangerRepo; r.Waiting != want {
 			t.Errorf("%s: waiting = %v; want %v", r.FullName, r.Waiting, want)
 		}
-		if r.Waiting && r.State != stateWaiting {
-			t.Errorf("%s: state = %q; want %q", r.FullName, r.State, stateWaiting)
+		if r.Waiting && r.State != stateNotAdmitted {
+			t.Errorf("%s: state = %q; want %q", r.FullName, r.State, stateNotAdmitted)
 		}
 	}
 }

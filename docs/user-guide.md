@@ -52,7 +52,12 @@ For a workflow change, an owner named in the approved policy can follow the revi
 
 ## Repositories
 
-Open `/` after signing in to choose a repository or continue setup. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** with a link back to `/`.
+Open `/` after signing in to choose a repository. Each row shows the repository's **State** (`clean`, `drift`,
+`expired`, `changed outside the flow`, `not set up` or `unknown`) and its **archfit/gate** check: **required** when
+GitHub requires pull requests and the check on the default branch, **not required** when either is confirmed off,
+and **not confirmed** when the App cannot read the rulesets. A **Next step** appears only while setup is incomplete.
+A repository whose installation no operator has admitted shows **not admitted**; an operator admits, and an owner
+approves. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** with a link back to `/`.
 
 ## Home and the map
 

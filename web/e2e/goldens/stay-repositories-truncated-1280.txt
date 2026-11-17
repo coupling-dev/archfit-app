@@ -9,41 +9,32 @@ A
 Sign out
 Repositories
 
-Choose a repository or continue setup.
+Choose a repository to open its Home.
 
-Required check is separate from policy approval. Open Home for requests and other owner decisions; those counts are not checked here.
+Repository	State	archfit/gate	Next step
+acme/clean	
+clean	
+required	
+acme/drift	
+drift	
+not required	Review first policy
+acme/expired	
+expired	
+not confirmed	Turn on the required check
+acme/not-set-up	
+not set up	
+not confirmed	Continue setup
+acme/outside-flow	
+changed outside the flow	
+not confirmed	
+acme/unknown	
+unknown	
+not confirmed	Review workflow PR
+octo/tool	
+not admitted	
+not confirmed	Ask an operator to admit this installation.
 
-Repository	Setup	Needs attention	Next step
-acme/clean	Policy approved
-Required check:
-Required
-	Not checked here	Open Home
-acme/drift	First approval
-Required check:
-Not required
-	PR #8	Review first policy
-acme/expired	Policy approved
-Required check:
-Check
-	Not checked here	Open Home
-acme/not-set-up	Not started
-Required check:
-Check
-	Not checked here	Continue setup
-acme/outside-flow	Check
-
-The policy changed outside the approval flow.
-
-Required check:
-Check
-	Not checked here	Open Home
-acme/unknown	Workflow review
-Required check:
-Check
-	PR #203	Review workflow PR
-octo/tool	Waiting for installation approval	Installation approval	Open Home
-
-Check means the App could not confirm that archfit/gate is required; ask an admin.
+archfit/gate is required when GitHub requires pull requests and this check on the default branch. Not confirmed: the App cannot read the rulesets. Ask a repository administrator.
 
 Only the first repositories by name are listed.
 

@@ -48,26 +48,43 @@ func TestRepoEnforcementMatrix(t *testing.T) {
 	states := []string{"", "ok", "warning", "unknown", "not_applicable", "future"}
 	for _, gate := range states {
 		for _, pulls := range states {
-			t.Run("gate="+gate+"/pulls="+pulls, func(t *testing.T) {
-				report := onboarding.RulesetReport{}
-				if gate != "" {
-					report.Findings = append(report.Findings, onboarding.RulesetFinding{Code: "gate_check", State: gate})
-				}
-				if pulls != "" {
-					report.Findings = append(report.Findings, onboarding.RulesetFinding{Code: "pull_requests", State: pulls})
-				}
-				report.Findings = append(report.Findings, onboarding.RulesetFinding{Code: "policy_push", State: "not_applicable"})
-				want := "check"
-				if gate == "ok" {
-					want = "required"
-				} else if gate == "warning" && pulls == "ok" {
-					want = "not_required"
-				}
-				got, reason := repoEnforcement(report)
-				if got != want || (reason != "") != (want == "check") {
-					t.Fatalf("enforcement = %q, %q; want %q", got, reason, want)
-				}
-			})
+			for _, readable := range []string{"ok", "unknown"} {
+				t.Run("gate="+gate+"/pulls="+pulls+"/readable="+readable, func(t *testing.T) {
+					report := onboarding.RulesetReport{}
+					if gate != "" {
+						report.Findings = append(report.Findings, onboarding.RulesetFinding{Code: "gate_check", State: gate})
+					}
+					if pulls != "" {
+						report.Findings = append(report.Findings, onboarding.RulesetFinding{Code: "pull_requests", State: pulls})
+					}
+					report.Findings = append(report.Findings,
+						onboarding.RulesetFinding{Code: "rulesets", State: readable},
+						onboarding.RulesetFinding{Code: "branch_rules", State: readable},
+						onboarding.RulesetFinding{Code: "policy_push", State: "not_applicable"})
+					want := "check"
+					switch {
+					case gate == "ok" && pulls == "ok" && readable == "ok":
+						want = "required"
+					case gate == "warning" || pulls == "warning":
+						want = "not_required"
+					}
+					got, reason := repoEnforcement(report)
+					if got != want || (reason != "") != (want == "check") {
+						t.Fatalf("enforcement = %q, %q; want %q", got, reason, want)
+					}
+				})
+			}
 		}
+	}
+}
+
+// pumba: gate on, pull requests off. Home step 4 is not done, so the list must not say required.
+func TestRepoEnforcementDoesNotCallGateOnlyRequired(t *testing.T) {
+	report := onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{
+		{Code: "gate_check", State: "ok"}, {Code: "pull_requests", State: "warning"},
+		{Code: "rulesets", State: "ok"}, {Code: "branch_rules", State: "ok"},
+	}}
+	if got, _ := repoEnforcement(report); got != "not_required" {
+		t.Fatalf("enforcement = %q, want not_required", got)
 	}
 }

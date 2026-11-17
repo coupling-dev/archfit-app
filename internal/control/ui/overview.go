@@ -9,6 +9,9 @@ import (
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 )
 
+// An installation no operator has admitted: the list reads nothing from it. Operators admit; owners approve.
+const stateNotAdmitted = "not admitted"
+
 const (
 	maxOverviewRepos = 100
 	parallelLookups  = 8
@@ -55,7 +58,7 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 	var wg sync.WaitGroup
 	for i, repo := range repos {
 		if !admitted[repo.InstallationID] {
-			body.Repos[i] = uncheckedOverviewRow(repo.FullName, stateWaiting, "Installation approval is pending.")
+			body.Repos[i] = uncheckedOverviewRow(repo.FullName, stateNotAdmitted, "An operator has not admitted this installation yet.")
 			body.Repos[i].Waiting = true
 			continue
 		}
@@ -153,22 +156,22 @@ func repoSetupStage(setup onboarding.Setup) (stage, reason string) {
 	}
 }
 
+// repoEnforcement answers the same question as Home's step 4: required only when the gate and pull request rules
+// are both confirmed on and the rulesets that hold them are readable. A confirmed-off rule is not required; an
+// unreadable or missing finding is not confirmed.
 func repoEnforcement(report onboarding.RulesetReport) (state, reason string) {
-	var gateState, pullState string
+	findings := map[string]string{}
 	for _, finding := range report.Findings {
-		switch finding.Code {
-		case "gate_check":
-			gateState = finding.State
-		case "pull_requests":
-			pullState = finding.State
-		}
+		findings[finding.Code] = finding.State
 	}
+	gate, pulls := findings["gate_check"], findings["pull_requests"]
+	readable := findings["rulesets"] == "ok" && findings["branch_rules"] == "ok"
 	switch {
-	case gateState == "ok":
+	case gate == "ok" && pulls == "ok" && readable:
 		return "required", ""
-	case gateState == "warning" && pullState == "ok":
+	case gate == "warning" || pulls == "warning":
 		return "not_required", ""
 	default:
-		return "check", "The rules do not establish whether archfit/gate is required; check with an admin."
+		return "check", "The App could not confirm that archfit/gate is required; ask a repository administrator."
 	}
 }

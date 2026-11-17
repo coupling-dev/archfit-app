@@ -145,7 +145,7 @@ func TestReposAllStatesGolden(t *testing.T) {
 		}
 	}
 	e.setups.byRepo = map[string]onboarding.Setup{
-		"acme/clean":        {Policy: true, Workflow: true, State: "approved", Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{{Code: "gate_check", State: "ok"}}}},
+		"acme/clean":        {Policy: true, Workflow: true, State: "approved", Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{{Code: "gate_check", State: "ok"}, {Code: "pull_requests", State: "ok"}, {Code: "rulesets", State: "ok"}, {Code: "branch_rules", State: "ok"}}}},
 		"acme/drift":        {State: "first_approval", FirstPull: 8, Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{{Code: "gate_check", State: "warning"}, {Code: "pull_requests", State: "ok"}}}},
 		"acme/expired":      {Policy: true, Workflow: true, State: "approved"},
 		"acme/outside-flow": {Policy: true, Workflow: true, State: "outside_flow"},
