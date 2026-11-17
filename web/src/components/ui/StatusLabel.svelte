@@ -5,11 +5,12 @@
 
   // The one status element. The tone and icon come from the table in lib/status.ts, looked up by state (or by the
   // label when no state is given). The text keeps its case and copy; children render it when it holds links.
+  // It must not carry the global .status class: that class paints its own dot before the icon.
   let { label = '', state = label, children }: { label?: string; state?: string; children?: Snippet } = $props();
   const style = $derived(statusStyle(state));
 </script>
 
-<span class="status status-label {style.tone}"><Icon name={style.icon} size={12} />{#if children}{@render children()}{:else}{label}{/if}</span>
+<span class="status-label {style.tone}"><Icon name={style.icon} size={12} />{#if children}{@render children()}{:else}{label}{/if}</span>
 
 <style>
   .status-label {
