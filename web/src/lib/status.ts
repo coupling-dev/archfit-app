@@ -27,7 +27,6 @@ const styles = new Map<string, StatusStyle>([
   ['required', { tone: 'success', icon: 'check-circle' }],
   ['not required', { tone: 'attention', icon: 'alert' }],
   ['not confirmed', { tone: 'neutral', icon: 'question' }],
-  // In progress or ready for the reader to do: the next step is clear.
   // Optional: the reader may choose; this is not an action and does not share the attention tone.
   ['optional', { tone: 'neutral', icon: 'dot' }],
   // Not known: never shown as a pass, and never inert.

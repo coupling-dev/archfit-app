@@ -182,29 +182,25 @@ Each row separates:
   `FirstPull` identifies a first policy even when the default branch has none. `OpenPull` with policy
   present and workflow absent identifies workflow review, before first-approval state. Both files and
   `State == "approved"` are needed for Policy approved. Outside-flow or inconsistent approval facts
-  omit the stage and explain Check in `setup_reason`; they never become Policy approved.
-- `enforcement`: `required` only for the Setup rules report's `gate_check: ok`;
-  `not_required` for `gate_check: warning` plus `pull_requests: ok`; otherwise `check` with
-  `enforcement_reason`. Policy mode and unrelated rules findings do not determine this field.
-- Optional `attention`: only Setup's existing `FirstPull` / `OpenPull` PR number or first-approval state.
-  Request counts are **not read**: RepoStates and Setup expose none, and Home adds GitHub reads.
-  The UI says those counts are not checked here, never invents zero, and directs readers to Home.
-- `next_step`: a server-selected text/href pair to Home or a PR in the same repository.
-  First-policy and workflow PRs link to Pull, which resolves owner-action eligibility. First approval
-  without a PR links to Home, whose setup step resolves eligibility. The list never links directly
-  to an owner action page. The SPA accepts only same-repository Home and positive-number Pull routes.
-  Enforcement reasons stay in the API, but the page explains the Check chip once below the list.
-  Row-specific setup reasons remain inline.
+  omit the stage and show **not confirmed**; they never become Policy approved.
+- `enforcement`: `required` only when Home step 4 is done: `gate_check` and `pull_requests` are `ok` and no
+  `rulesets` or `branch_rules` finding is present with a state other than `ok` (an absent finding is readable).
+  `not_required` when either rule is `warning`. Otherwise `check`, which the page shows as **not confirmed**,
+  with `enforcement_reason`.
+- `next_step`: empty when the list names no step. Otherwise a server-selected text/href pair to Home or a PR in
+  the same repository. First-policy and workflow PRs link to Pull, which resolves owner-action eligibility. The
+  list never links directly to an owner action page. The SPA keeps only same-repository Home and positive-number
+  Pull routes. An empty destination, or a row whose setup is complete, names no step.
+- `state`: the stored repository state, or `not admitted` for an installation no operator has admitted. The list
+  reads nothing from a not-admitted installation.
 
 A probe error or a row beyond the probe limit retains stored evidence, omits the setup stage, and shows
-Check with a reason; stored-state failures still fail the request. Waiting installations show their own
-approval status, not repository readiness. The desktop table has Repository, Setup, Needs attention,
-and Next step columns; mobile has labelled cards with one destination each.
+**not confirmed** with a reason; stored-state failures still fail the request. The desktop table has Repository,
+State, archfit/gate and Next step columns; mobile has labelled cards. Each row links its repository name once; a
+next step links only to its own pull request page.
 
 `overview_test.go` covers stages/destinations and the rules-state matrix; `repos_test.go` covers admission,
 bounds, errors and JSON fixtures consumed by Playwright. `web/src/lib/repos.test.ts` tests vocabulary and
 destination restrictions. `web/e2e/repos.spec.ts` checks both widths, accessibility and CSP. The existing
 `stay.spec.ts` text goldens cover both widths without OS-specific pixel comparisons. Set
 `ARCHFIT_DOCS_SHOTS=1` when running the Repos spec to regenerate the reference images in `docs/images/`.
-The audit explicitly requires “Needs attention”, “Workflow review” and “Review …” navigation labels;
-wording checks allow only those exact phrases on this page, retaining the legacy check elsewhere.

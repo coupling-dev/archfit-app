@@ -145,7 +145,7 @@ func TestReposAllStatesGolden(t *testing.T) {
 		}
 	}
 	e.setups.byRepo = map[string]onboarding.Setup{
-		"acme/clean":        {Policy: true, Workflow: true, State: "approved", Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{{Code: "gate_check", State: "ok"}, {Code: "pull_requests", State: "ok"}, {Code: "rulesets", State: "ok"}, {Code: "branch_rules", State: "ok"}}}},
+		"acme/clean":        {Policy: true, Workflow: true, State: "approved", Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{{Code: "gate_check", State: "ok"}, {Code: "pull_requests", State: "ok"}}}},
 		"acme/drift":        {State: "first_approval", FirstPull: 8, Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{{Code: "gate_check", State: "warning"}, {Code: "pull_requests", State: "ok"}}}},
 		"acme/expired":      {Policy: true, Workflow: true, State: "approved"},
 		"acme/outside-flow": {Policy: true, Workflow: true, State: "outside_flow"},
@@ -190,7 +190,7 @@ func TestReposOnboardingStagesAreBoundedAndErrorsFallBack(t *testing.T) {
 	}
 	for _, i := range []int{4, 25, 29} {
 		row := body.Repos[i]
-		if row.SetupStage != "" || row.SetupReason == "" || row.Enforcement != "check" || row.EnforcementReason == "" || row.State != "not set up" {
+		if row.SetupStage != "" || row.Enforcement != "check" || row.EnforcementReason == "" || row.State != "not set up" {
 			t.Errorf("unread setup %d = %+v", i, row)
 		}
 	}

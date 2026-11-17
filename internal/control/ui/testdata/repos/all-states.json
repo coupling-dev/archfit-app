@@ -6,8 +6,8 @@
       "setup_stage": "policy_approved",
       "enforcement": "required",
       "next_step": {
-        "text": "Open Home",
-        "href": "/r/acme/clean"
+        "text": "",
+        "href": ""
       }
     },
     {
@@ -15,7 +15,6 @@
       "state": "drift",
       "setup_stage": "first_approval",
       "enforcement": "not_required",
-      "attention": "PR #8",
       "next_step": {
         "text": "Review first policy",
         "href": "/r/acme/drift/pull/8"
@@ -28,8 +27,8 @@
       "enforcement": "check",
       "enforcement_reason": "The App could not confirm that archfit/gate is required; ask a repository administrator.",
       "next_step": {
-        "text": "Open Home",
-        "href": "/r/acme/expired"
+        "text": "",
+        "href": ""
       }
     },
     {
@@ -46,12 +45,11 @@
     {
       "full_name": "acme/outside-flow",
       "state": "policy changed outside the flow",
-      "setup_reason": "The policy changed outside the approval flow.",
       "enforcement": "check",
       "enforcement_reason": "The App could not confirm that archfit/gate is required; ask a repository administrator.",
       "next_step": {
-        "text": "Open Home",
-        "href": "/r/acme/outside-flow"
+        "text": "",
+        "href": ""
       }
     },
     {
@@ -60,7 +58,6 @@
       "setup_stage": "workflow_review",
       "enforcement": "check",
       "enforcement_reason": "The App could not confirm that archfit/gate is required; ask a repository administrator.",
-      "attention": "PR #203",
       "next_step": {
         "text": "Review workflow PR",
         "href": "/r/acme/unknown/pull/203"
@@ -70,12 +67,11 @@
       "full_name": "octo/tool",
       "waiting": true,
       "state": "not admitted",
-      "setup_reason": "An operator has not admitted this installation yet.",
       "enforcement": "check",
       "enforcement_reason": "Required-check settings were not read.",
       "next_step": {
-        "text": "Open Home",
-        "href": "/r/octo/tool"
+        "text": "",
+        "href": ""
       }
     }
   ],

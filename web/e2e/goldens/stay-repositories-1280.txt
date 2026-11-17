@@ -34,7 +34,7 @@ octo/tool
 not admitted	
 not confirmed	Ask an operator to admit this installation.
 
-archfit/gate is required when GitHub requires pull requests and this check on the default branch. Not confirmed: the App cannot read the rulesets. Ask a repository administrator.
+archfit/gate is required when GitHub requires pull requests and this check on the default branch. Not confirmed: the App could not confirm this check. Ask a repository administrator.
 
 Documentation · Third-party licences
 About this App · v0.12.0

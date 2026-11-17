@@ -36,10 +36,8 @@ export function nextStep(row: RepoRow): RepoNext | undefined {
     return row.enforcement === 'required' ? undefined : { text: 'Turn on the required check' };
   }
   const next = row.next_step;
-  // "Open Home" is the App's fallback for a row it cannot place: it names no step, so the list shows none.
   if (
     !next?.text ||
-    next.text === 'Open Home' ||
     !(next.href === base || (next.href.startsWith(base + '/') && /^\/pull\/[1-9]\d*$/.test(next.href.slice(base.length))))
   )
     return undefined;

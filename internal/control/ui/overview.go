@@ -23,11 +23,9 @@ type overviewRow struct {
 	Waiting           bool             `json:"waiting,omitempty"` // no operator approved its installation: no state is read
 	State             string           `json:"state"`             // retained stored evidence, not a readiness verdict
 	SetupStage        string           `json:"setup_stage,omitempty"`
-	SetupReason       string           `json:"setup_reason,omitempty"`
 	Enforcement       string           `json:"enforcement"`
 	EnforcementReason string           `json:"enforcement_reason,omitempty"`
-	Attention         string           `json:"attention,omitempty"`
-	NextStep          overviewNextStep `json:"next_step"`
+	NextStep          overviewNextStep `json:"next_step"` // empty when the list names no step
 }
 
 type overviewNextStep struct {
@@ -58,7 +56,7 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 	var wg sync.WaitGroup
 	for i, repo := range repos {
 		if !admitted[repo.InstallationID] {
-			body.Repos[i] = uncheckedOverviewRow(repo.FullName, stateNotAdmitted, "An operator has not admitted this installation yet.")
+			body.Repos[i] = uncheckedOverviewRow(repo.FullName, stateNotAdmitted)
 			body.Repos[i].Waiting = true
 			continue
 		}
@@ -69,7 +67,7 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 			defer func() { <-slots }()
 			state, err := s.repoStates.RepoState(r.Context(), repo)
 			failures[i] = err
-			body.Repos[i] = uncheckedOverviewRow(repo.FullName, state, "Setup was not checked in this list; open Home to check.")
+			body.Repos[i] = uncheckedOverviewRow(repo.FullName, state)
 		}()
 	}
 	wg.Wait()
@@ -94,7 +92,6 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 			defer func() { <-slots }()
 			setup, err := s.setups.Setup(r.Context(), repo)
 			if err != nil {
-				body.Repos[i].SetupReason = "The App could not read setup; open Home to try again."
 				body.Repos[i].EnforcementReason = "The App could not read the required-check settings."
 				return // retain stored evidence; one GitHub failure must not break the list.
 			}
@@ -105,29 +102,25 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 	return body, nil
 }
 
-func uncheckedOverviewRow(name, state, reason string) overviewRow {
+func uncheckedOverviewRow(name, state string) overviewRow {
 	return overviewRow{
-		FullName: name, State: state, SetupReason: reason,
+		FullName: name, State: state,
 		Enforcement: "check", EnforcementReason: "Required-check settings were not read.",
-		NextStep: overviewNextStep{Text: "Open Home", Href: "/r/" + name},
 	}
 }
 
 func applyOverviewSetup(row *overviewRow, setup onboarding.Setup) {
-	row.SetupStage, row.SetupReason = repoSetupStage(setup)
+	row.SetupStage = repoSetupStage(setup)
 	row.Enforcement, row.EnforcementReason = repoEnforcement(setup.Rules)
 	base := "/r/" + row.FullName
 	switch row.SetupStage {
 	case "workflow_review":
-		row.Attention = fmt.Sprintf("PR #%d", setup.OpenPull)
 		// Setup establishes an accepted workflow in a PR, not owner-action eligibility.
 		row.NextStep = overviewNextStep{Text: "Review workflow PR", Href: fmt.Sprintf("%s/pull/%d", base, setup.OpenPull)}
 	case "first_approval":
 		if setup.FirstPull > 0 {
-			row.Attention = fmt.Sprintf("PR #%d", setup.FirstPull)
 			row.NextStep = overviewNextStep{Text: "Review first policy", Href: fmt.Sprintf("%s/pull/%d", base, setup.FirstPull)}
 		} else if setup.Policy && setup.Workflow {
-			row.Attention = "First approval"
 			row.NextStep = overviewNextStep{Text: "Review first policy", Href: base}
 		} else {
 			row.NextStep = overviewNextStep{Text: "Continue setup", Href: base}
@@ -137,35 +130,39 @@ func applyOverviewSetup(row *overviewRow, setup onboarding.Setup) {
 	}
 }
 
-func repoSetupStage(setup onboarding.Setup) (stage, reason string) {
+func repoSetupStage(setup onboarding.Setup) string {
 	switch {
 	case setup.State == "outside_flow":
-		return "", "The policy changed outside the approval flow."
+		return ""
 	case setup.Policy && !setup.Workflow && setup.OpenPull > 0:
-		return "workflow_review", ""
+		return "workflow_review"
 	case setup.FirstPull > 0 || setup.State == "first_approval":
-		return "first_approval", ""
+		return "first_approval"
 	case setup.Policy && setup.Workflow && setup.State == "approved":
-		return "policy_approved", ""
+		return "policy_approved"
 	case setup.State != "" && setup.State != "not_admitted":
-		return "", "The setup facts do not establish a current policy approval."
-	case !setup.Policy:
-		return "not_started", ""
+		return ""
 	default:
-		return "not_started", "Continue setup to add the workflow and approve the policy."
+		return "not_started"
 	}
 }
 
 // repoEnforcement answers the same question as Home's step 4: required only when the gate and pull request rules
-// are both confirmed on and the rulesets that hold them are readable. A confirmed-off rule is not required; an
-// unreadable or missing finding is not confirmed.
+// are both confirmed on and no rules finding says the rulesets are unreadable. A confirmed-off rule is not
+// required; an unknown or missing gate or pull request finding is not confirmed.
 func repoEnforcement(report onboarding.RulesetReport) (state, reason string) {
 	findings := map[string]string{}
 	for _, finding := range report.Findings {
 		findings[finding.Code] = finding.State
 	}
 	gate, pulls := findings["gate_check"], findings["pull_requests"]
-	readable := findings["rulesets"] == "ok" && findings["branch_rules"] == "ok"
+	// Home reads a missing rules finding as readable; only a finding the App could not read blocks the check.
+	readable := true
+	for _, code := range []string{"rulesets", "branch_rules"} {
+		if state, ok := findings[code]; ok && state != "ok" {
+			readable = false
+		}
+	}
 	switch {
 	case gate == "ok" && pulls == "ok" && readable:
 		return "required", ""

@@ -7,8 +7,8 @@
       "enforcement": "check",
       "enforcement_reason": "The App could not confirm that archfit/gate is required; ask a repository administrator.",
       "next_step": {
-        "text": "Open Home",
-        "href": "/r/acme/app"
+        "text": "",
+        "href": ""
       }
     }
   ],

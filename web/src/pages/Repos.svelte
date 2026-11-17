@@ -65,7 +65,7 @@
   </div>
   <p class="muted small">
     archfit/gate is required when GitHub requires pull requests and this check on the default branch. Not confirmed:
-    the App cannot read the rulesets. Ask a repository administrator.
+    the App could not confirm this check. Ask a repository administrator.
   </p>
   {#if body.truncated}
     <p class="muted small">Only the first repositories by name are listed.</p>
