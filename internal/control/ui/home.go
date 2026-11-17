@@ -189,7 +189,8 @@ func homeBody(view gate.HomeState, setup setupJSON, shown *setupJSON, repo strin
 		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "exception", Text: text, Href: issueHref(view.ExceptionIssues[key]), Rule: x.Rule,
 			From: x.From, To: x.To, Expires: x.Expires, DaysLeft: &left})
 	}
-	drift := len(view.Drift) > 0 || view.DriftIssue > 0
+	// Errors stored for an older head are not current; only an open issue, which is real on GitHub, stands without them.
+	drift := view.DriftKnown && len(view.Drift) > 0 || view.DriftIssue > 0
 	if drift {
 		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "drift", Text: "Drift on the default branch.", Href: issueHref(view.DriftIssue)})
 	}

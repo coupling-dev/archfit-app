@@ -454,6 +454,8 @@ func TestHomeBodyChoosesOneStateAndSaysWhatWaits(t *testing.T) {
 			"The last check could not read every file, so the state is unknown. Nothing needs you.", 0},
 		{"no evidence is unknown", gate.HomeState{}, homeStateUnknown, "The state of the default branch is not known. Nothing needs you.", 0},
 		{"a result for an older head is unknown, not expired", gate.HomeState{RepositoryState: "expired", Drift: []gate.HomeError{{}}}, homeStateUnknown,
+			"The state of the default branch is not known. Nothing needs you.", 0},
+		{"an open drift issue stands when the stored result is old", gate.HomeState{DriftIssue: 210}, homeStateUnknown,
 			"The state of the default branch is not known.", 1},
 		{"an unread result is unknown before expired", with(func(v *gate.HomeState) { v.RepositoryState = "expired"; v.DriftUnread = true }), homeStateUnknown,
 			"The last check could not read every file, so the state is unknown. Nothing needs you.", 0},
