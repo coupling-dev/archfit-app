@@ -10,73 +10,65 @@ Set up Archfit
 
 Next: review owner approval
 
-Policy approval and required-check settings are separate. Complete the applicable steps below.
-
 2 of 4 done
 ✓
 1 · Add the policy
-
-Your architecture rules live in .archfit.yaml, in the repository.
-
-Done
-
-A version 3 policy is proposed in PR #12; it is not yet on the default branch.
-
+done
+Details
 ✓
-2 · Policy and workflow pull request
+2 · Open a pull request with both files
+done
+Details
 
-Rules reach the default branch through review, so the approval binds to exact file contents.
+Pull request #12 proposes the first policy and workflow.
 
-Ready for review
-
-PR #12 proposes the first policy and workflow.
-
-View PR #12
+View pull request #12
 3
 3 · Owner approval
 
-The owner signs the policy with a passkey. Change one byte and the approval no longer counts.
+The owner approves the policy with a passkey. The approval covers these exact files; any later edit needs a new approval.
 
-Review needed
+to do
 
 Review the proposed files before approving.
 
-View PR #12 and approval record
+View pull request #12 and approval record
 
 Manage passkeys
 
 Why a passkey?
 4
-4 · Require the gate
+4 · Require the archfit/gate check
 
-In GitHub, require archfit/gate on the default branch. The App reads these settings; an administrator changes them.
+GitHub does not merge a change until archfit/gate passes on the default branch.
 
-Action needed
+to do
+Show this step
 
-This step turns green when GitHub requires pull requests and archfit/gate on the default branch. Bypass and policy-push advice does not block this step; Verify yourself means the App has not checked that setting.
+Done when GitHub requires a pull request and the archfit/gate check on the default branch. Items marked optional are not needed for this step.
+
+In GitHub, open Settings → Rules → Rulesets, then create or edit a branch ruleset for the default branch. Set Enforcement status to Active, then tick what each row names below.
 
 Open ruleset settings
-Check
+Check again
 
-After saving changes on GitHub, select Check to read the settings again. Check does not change any GitHub settings.
+After you save on GitHub, select Check again to read the settings again. It changes nothing in GitHub.
 
-Require pull requests
-Action needed
+Require a pull request before merging
+off
 
-Direct pushes can skip pull request checks; require a pull request for default-branch changes.
+Without this, a change can be pushed straight to the default branch.
 
-Open Repository rulesets, create or edit a branch ruleset, set Enforcement status to Active, and target the default branch. Enable Require a pull request before merging and save changes. In classic branch protection, enable the same option for the default branch.
+Tick Require a pull request before merging.
 
 Repository rulesets
-Classic branch protection
 Require archfit/gate
-Action needed
+off
 
-archfit/gate reports a result; GitHub only stops a merge when that check is required.
+Until this is on, a failing archfit/gate check does not block a merge.
 
-Open Repository rulesets, create or edit a branch ruleset, set Enforcement status to Active, and target the default branch. Enable Require status checks to pass, add archfit/gate, and select the Archfit app as its source. Save changes.
+Tick Require status checks to pass, add archfit/gate, and choose the Archfit app as its source.
 
-If you use classic branch protection instead, edit the default-branch rule under Branches → Require status checks to pass before merging → add archfit/gate and select the Archfit app. If the check is not listed yet, run the Archfit workflow on a pull request first.
+If the check is not listed yet, run the Archfit workflow on a pull request first.
 
 Repository rulesets
-Classic branch protection
