@@ -1,7 +1,7 @@
 {
   "kind": "workflow",
   "pull_request": 7,
-  "status": "unknown: the workflow changed.",
+  "status": "unknown — no verdict until this workflow change is approved.",
   "note": "This approves the policy and workflow at this pull request's head.",
   "main_action": "Approve the workflow change",
   "passkey": true,

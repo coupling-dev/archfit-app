@@ -1,8 +1,9 @@
-Home
-
 acme/app
+changed outside the flow
 
-policy changed outside the flow
+The policy on the default branch changed without a recorded approval, so every pull request is unknown.
+
+Confirm the policy change
 View policy
 Needs you
 Confirm the policy changed outside the flow.

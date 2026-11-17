@@ -19,26 +19,39 @@ export function policyReadFailure(error: ApiError): string {
   return error.message;
 }
 
-// The existing API has no structured stale-action reason. Match only its exact known
-// conflict sentences; other failures must remain errors rather than "nothing to do".
-export function ownerUnavailable(error: unknown, action: OwnerKind, pull: number): string {
-  if (!(error instanceof ApiError) || error.status !== 409) return '';
-  if (error.message === 'The repository no longer needs this action. Reload the page.') {
-    return action === 'confirm' ? 'No policy confirmation needed' : 'This approval is not needed';
+// An owner link can outlive its action. The API has no structured reason, so match only its exact known conflict
+// sentences (internal/control/ui/wording.go); any other failure stays an error rather than "nothing to do".
+export interface OwnerStale {
+  reason: string;
+  // Where the one next step goes: the repository, or the pull request page of a merged pull request.
+  next: 'repository' | 'pull';
+}
+
+const noLongerNeeded = 'The repository no longer needs this action. Reload the page.';
+const notOutside = 'The policy has no change outside the flow to revert. Reload the page.';
+const nothingToRevert = 'The policy already matches the approved policy. There is nothing to revert.';
+const merged = 'This pull request is merged. There is nothing to approve.';
+
+export function ownerStale(error: unknown, action: OwnerKind, pull: number): OwnerStale | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null;
+  const message = error.message;
+  if (message === noLongerNeeded) {
+    const reason = {
+      first: 'The first policy is already approved.',
+      workflow: 'Nothing to approve: this repository does not need a workflow approval now.',
+      confirm: 'Nothing to confirm: the policy has not changed outside the flow.',
+      revert: 'Nothing to revert: the policy has not changed outside the flow.',
+    }[action];
+    return { reason, next: 'repository' };
   }
-  if (
-    action === 'revert' &&
-    (error.message === 'The policy has no change outside the flow to revert. Reload the page.' ||
-      error.message === 'The policy already matches the approved policy. There is nothing to revert.')
-  ) {
-    return 'Nothing to revert';
+  if (action === 'revert' && message === notOutside) {
+    return { reason: 'Nothing to revert: the policy has not changed outside the flow.', next: 'repository' };
   }
-  if (
-    action === 'first' &&
-    !pull &&
-    error.message === 'This pull request cannot be approved. Check its policy, workflow, head and target branch.'
-  ) {
-    return 'This approval is not available. Open current setup to find the policy that needs approval.';
+  if (action === 'revert' && message === nothingToRevert) {
+    return { reason: 'Nothing to revert: the default branch already holds the approved policy.', next: 'repository' };
   }
-  return '';
+  if (pull > 0 && message === merged) {
+    return { reason: `Nothing to approve: pull request #${pull} is merged.`, next: 'pull' };
+  }
+  return null;
 }

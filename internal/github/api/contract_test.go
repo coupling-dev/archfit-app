@@ -847,7 +847,10 @@ func TestUsersContract(t *testing.T) {
 			case "unauth":
 				w.WriteHeader(http.StatusUnauthorized)
 			default:
-				writeJSON(w, http.StatusOK, map[string]any{"full_name": "o/" + name, "permissions": perms[name]})
+				writeJSON(w, http.StatusOK, map[string]any{
+					"id": 7, "full_name": "o/" + name, "private": true, "visibility": "private", "default_branch": "trunk",
+					"owner": map[string]any{"type": "Organization"}, "permissions": perms[name],
+				})
 			}
 		})
 		mux.HandleFunc("GET /user/installations", func(w http.ResponseWriter, _ *http.Request) {
@@ -874,6 +877,18 @@ func TestUsersContract(t *testing.T) {
 	}
 	if got != "" {
 		t.Errorf("Permission on 401 = %q", got)
+	}
+
+	before := len(env.gh.requests())
+	perm, repo, err := env.c.Access(ctx, token, "o/admin")
+	if err != nil || perm != "admin" {
+		t.Fatalf("Access = %q, %v; want admin", perm, err)
+	}
+	if want := (Repo{RepoRef: RepoRef{FullName: "o/admin"}, ID: 7, Private: true, OwnerType: "Organization", Visibility: "private", DefaultBranch: "trunk"}); repo != want {
+		t.Errorf("Access repo = %+v, want %+v", repo, want)
+	}
+	if n := len(env.gh.requests()) - before; n != 1 {
+		t.Errorf("Access made %d GitHub calls, want 1", n)
 	}
 
 	repos, err := env.c.UserRepos(ctx, token)
@@ -1073,5 +1088,22 @@ func TestCheckRunAnnotationBatches(t *testing.T) {
 	}
 	if reqs := env.gh.requests(); len(reqs) != 0 {
 		t.Errorf("an oversized batch sent %v", reqs)
+	}
+}
+
+func TestSuspendedInstallationIsNotInstalled(t *testing.T) {
+	env := muxEnv(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /repos/o/suspended/installation", func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]any{"id": 9, "suspended_at": "2026-11-01T00:00:00Z"})
+		})
+		mux.HandleFunc("GET /repos/o/live/installation", func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]any{"id": 9})
+		})
+	})
+	if _, err := env.c.InstallationID(context.Background(), "o/suspended"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("InstallationID of a suspended installation: err = %v, want ErrNotFound", err)
+	}
+	if id, err := env.c.InstallationID(context.Background(), "o/live"); err != nil || id != 9 {
+		t.Errorf("InstallationID = %d, %v; want 9", id, err)
 	}
 }

@@ -1,13 +1,9 @@
-Home
-
 acme/app
+unknown
 
-repository state is not known
+The state of the default branch is not known. Nothing needs you.
+
 View policy
-Needs you
-
-Nothing needs you.
-
 The map
 Matrix
 Diagram

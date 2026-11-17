@@ -1,5 +1,6 @@
 {
-  "status": "repository state is not known",
+  "state": "unknown",
+  "status": "The state of the default branch is not known. Nothing needs you.",
   "map": {
     "layers": [
       "cmd",

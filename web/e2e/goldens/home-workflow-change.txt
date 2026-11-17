@@ -1,11 +1,12 @@
-Home
-
 acme/app
+clean
 
-1 workflow change waits
+The default branch follows the policy. 1 workflow change waits.
+
+Review workflow change
 View policy
 Needs you
-Review workflow change · PR #4
+Review workflow change · pull request #4
 The map
 Matrix
 Diagram

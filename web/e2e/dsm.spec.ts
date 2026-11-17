@@ -48,7 +48,7 @@ for (const count of [5, 10, 24])
         const errors: string[] = [];
         page.on('pageerror', (error) => errors.push(error.message));
         await open(page, '/r/acme/app', { [api]: () => [200, fixture(count)] });
-        await expect(page.getByRole('button', { name: 'Matrix', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await expect(page.getByRole('radio', { name: 'Matrix', exact: true })).toHaveAttribute('aria-checked', 'true');
         await expect(page.getByRole('table', { name: tableName })).toBeVisible();
         await expect(page.locator('tbody tr')).toHaveCount(count);
         await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toHaveCount(0);
@@ -264,15 +264,15 @@ test('Matrix is the default without a worker; explicit Diagram choice survives r
   await open(page, '/r/acme/app', { [api]: () => [200, fixture(5)] });
   await expect(page.getByRole('table', { name: tableName })).toBeVisible();
   expect(workers).toEqual([]);
-  await page.getByRole('button', { name: 'Diagram', exact: true }).click();
+  await page.getByRole('radio', { name: 'Diagram', exact: true }).click();
   await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toBeVisible();
   await expect(page.getByText('Show the map as a diagram', { exact: true })).toHaveCount(0);
   expect(workers.some((url) => url.includes('layout.worker-'))).toBe(true);
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Diagram', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('radio', { name: 'Diagram', exact: true })).toHaveAttribute('aria-checked', 'true');
   await page.setViewportSize({ width: 1280, height: 844 });
-  await expect(page.getByRole('button', { name: 'Diagram', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await page.getByRole('button', { name: 'Matrix', exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'Diagram', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await page.getByRole('radio', { name: 'Matrix', exact: true }).click();
   await page.reload();
   await expect(page.getByRole('table', { name: tableName })).toBeVisible();
 });
@@ -287,10 +287,10 @@ test('Matrix works when browser storage is unavailable', async ({ page }) => {
   );
   await open(page, '/r/acme/app', { [api]: () => [200, fixture(5)] });
   await expect(page.getByRole('table', { name: tableName })).toBeVisible();
-  await page.getByRole('button', { name: 'Diagram', exact: true }).click();
+  await page.getByRole('radio', { name: 'Diagram', exact: true }).click();
   await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toBeVisible();
   await expect(page.getByText('Show the map as a diagram', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Matrix', exact: true }).click();
+  await page.getByRole('radio', { name: 'Matrix', exact: true }).click();
   await expect(page.getByRole('table', { name: tableName })).toBeVisible();
 });
 
@@ -298,10 +298,10 @@ test('Diagram import failure reports an error and leaves Matrix available', asyn
   await page.route('**/assets/Diagram-*.js', (route) => route.abort());
   await open(page, '/r/acme/app', { [api]: () => [200, fixture(5)] });
   await expect(page.getByRole('table', { name: tableName })).toBeVisible();
-  await page.getByRole('button', { name: 'Diagram', exact: true }).click();
+  await page.getByRole('radio', { name: 'Diagram', exact: true }).click();
   await expect(page.getByRole('alert')).toHaveText('The diagram could not load. Select Matrix for relationship details.');
   await expect(page.getByText('Show the map as a diagram', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Matrix', exact: true }).click();
+  await page.getByRole('radio', { name: 'Matrix', exact: true }).click();
   await expect(page.getByRole('table', { name: tableName })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
 });

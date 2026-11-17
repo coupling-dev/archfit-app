@@ -1,6 +1,6 @@
 Request #431
 
-answered Request #431 is answered.
+approved An owner approved this request.
 
 Reason
 
@@ -10,16 +10,7 @@ Rule graph · pkg_tc -> pkg_util · asked until 2026-12-01
 
 Request #431 on GitHub
 
-Answer
-
-Approved until 2027-01-15.
-
-No answer is open. The request on GitHub names the owner who answered and the passkey used.
-
-Record
-
-Balance: 9/10 (min 7)
-
+As checked when the request was made
 pkg/tc/netem.go:12 graph pkg_tc -> pkg_util is not an allowed dependency
   balance: 9/10 (min 7)
 The map
@@ -41,16 +32,14 @@ Fit
 Full screen
 adapters
 No layer
+1
 pkg_tc
 Volatility: high
 pkg_util
 Volatility: low
-
-Dependencies not allowed by this policy need a request.
-
 Why the balance
 
-Balance: 9/10 (min 7)
+Balance: 9/10 (min 7). The balance is the value the policy checks against its minimum.
 
 The policy declares the volatility of each module:
 
@@ -60,3 +49,6 @@ pkg_util: Volatility low · subdomain generic
 
 Earlier answers 1
 Exception to graph for pkg_tc -> pkg_util until 2026-10-01. Why: Until the port lands.
+Answer
+
+Approved until 2027-01-15. The request on GitHub names the owner and the passkey.

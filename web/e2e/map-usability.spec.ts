@@ -70,25 +70,25 @@ for (const width of [390, 1280]) {
     await expect(legend).toContainText('A requested dependency');
     expect(await diagram.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThanOrEqual(width - 32);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-    await page.getByRole('button', { name: 'Dark', exact: true }).click();
+    await page.getByRole('radio', { name: 'Dark', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await expect(diagram).toBeVisible();
     await page.screenshot({ path: '../tmp/map-touch/after-dark-' + width + '.png', fullPage: true });
-    await page.getByRole('button', { name: 'Auto', exact: true }).click();
+    await page.getByRole('radio', { name: 'Auto', exact: true }).click();
     await expectClean(page);
   });
 
   test('shell: skip link and touch controls at ' + width, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await open(page, '/r/acme/app', { 'GET /api/repos/acme/app/home': () => [200, home] });
-    await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'acme/app', exact: true })).toBeVisible();
     await page.keyboard.press('Tab');
     const skip = page.getByRole('link', { name: 'Skip to main content' });
     await expect(skip).toBeFocused();
     await expect(skip).toBeInViewport();
     await page.keyboard.press('Enter');
     await expect(page.locator('main')).toBeFocused();
-    const dark = page.getByRole('button', { name: 'Dark', exact: true });
+    const dark = page.getByRole('radio', { name: 'Dark', exact: true });
     await dark.focus();
     await expect(dark).toHaveCSS('outline-style', 'solid');
     if (width < 720) {
@@ -96,7 +96,7 @@ for (const width of [390, 1280]) {
         dark,
         page.getByRole('button', { name: 'Sign out' }),
         page.getByRole('link', { name: 'Policy', exact: true }),
-        page.getByRole('button', { name: 'Diagram', exact: true }),
+        page.getByRole('radio', { name: 'Diagram', exact: true }),
       ]) {
         const box = await control.boundingBox();
         expect(box?.height).toBeGreaterThanOrEqual(44);
@@ -115,7 +115,7 @@ for (const width of [390, 1280]) {
     const text = page.getByLabel('What to do instead');
     await page.getByRole('radio', { name: 'Approve until a date', exact: true }).check();
     await expect(date).toHaveClass(/form-control/);
-    await page.getByRole('button', { name: 'Dark', exact: true }).click();
+    await page.getByRole('radio', { name: 'Dark', exact: true }).click();
     await expect(date).toHaveCSS('background-color', 'rgb(13, 17, 23)');
     await date.fill('2027-01-15');
     await expect(date).toHaveValue('2027-01-15');

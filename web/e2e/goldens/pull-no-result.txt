@@ -2,6 +2,9 @@ Pull request #4
 
 acme/app
 
-No result yet.
+no result
+
+No check has reported for this pull request. It runs on the next push.
+
 Pull request #4 on GitHub
 View policy
