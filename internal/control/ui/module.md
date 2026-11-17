@@ -67,15 +67,19 @@ No report cache, old graph builder, Archfit 3 renderer or consent reader remains
 `Deps.HomeViews` is `gate.HomeViews`; `control` imports no gate child. The constructor receives it from
 `control.New`, which calls `gate.NewHome`. The handler reuses `Setups.Setup` through the existing setup API.
 Before first approval it returns `status` and `setup` (the missing steps, first pull and ruleset settings),
-without loading Home data or a map.
+with no Home data or map. The Home reads still start beside Setup, since they do not depend on it; for any state
+other than `approved` or `outside_flow` their result and their error are dropped.
 
 Home reads the protected tip once per authorized request and shares its immutable policy (including its
 byte digest and decode result) and workflow between Setup and Home. The read-only approval summary also
 reuses the protected file bytes and tip, without changing the fresh inputs of Review or Act. It never caches repository approval
-records, candidate PR heads or owner eligibility. Passkey inventory runs alongside Setup; policy and
+records, candidate PR heads or owner eligibility. Passkey inventory and the Home reads run alongside Setup; policy and
 workflow reads run concurrently at that same tip. The approval summary runs alongside rules, using the
 same exact-head/digest predicate as Review. Ruleset details and each Home record batch have at
-most four concurrent reads. Error priority follows input order, not completion order; unreadable rules
+most four concurrent reads, and so do the workflow file reads of the open pull requests and the owner reviews of workflow
+changes. The probes of one owner review run together and the answer is the first decisive probe in action order; the
+signed-in user's permission is read once per request for those reviews (an approval always reads it fresh).
+Error priority follows input order, not completion order; unreadable rules
 remain unknown and inventory errors return both `passkey: false` and `passkey_known: false`. HTTP client timeouts,
 request cancellation and rate-limit backoff remain in effect.
 
