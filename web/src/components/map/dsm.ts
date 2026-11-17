@@ -113,6 +113,8 @@ export function nextCell(key: string, ctrl: boolean, from: Cell, size: number, o
 
 // From this many modules the matrix draws 32 px cells and vertical column names, so 24 columns fit a laptop page.
 export const compactFrom = 12;
+// From this many modules the search, focus, layer and attention filters appear; below it they only add noise.
+export const filtersFrom = 12;
 // The App opens an expiry issue seven days before an exception ends, so that is "near" here too.
 export const soonDays = 7;
 
