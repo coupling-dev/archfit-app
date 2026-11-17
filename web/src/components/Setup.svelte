@@ -21,7 +21,7 @@
 </script>
 
 <section class="box setup" aria-labelledby="setup-title">
-  <div class="box-head"><div><h2 id="setup-title">Set up Archfit</h2><p>{state.next}</p><p>Policy approval and required-check settings are separate. Complete the applicable steps below.</p></div></div>
+  <div class="box-head"><div><h2 class="title-box" id="setup-title">Set up Archfit</h2><p>{state.next}</p><p>Policy approval and required-check settings are separate. Complete the applicable steps below.</p></div></div>
   <div class="box-body">
     <div class="progress" aria-label="{completed} of 4 steps done"><span>{completed} of 4 done</span><span class="bar" aria-hidden="true"><span style="width: {completed * 25}%"></span></span></div>
     <ol class="steps">
@@ -29,7 +29,7 @@
         {@const status = i === 0 ? done[i] ? 'Done' : 'Action needed' : i === 1 ? pullStep.status : i === 2 ? state.approval : state.gate}
         <li class:done={done[i]} class:now={!done[i] && (i === 0 || done[i - 1])}>
           <span class="number" aria-hidden="true">{done[i] ? '✓' : i + 1}</span>
-          <div class="step-copy"><h3>{i + 1} · {step.title}</h3><p>{step.text}</p></div>
+          <div class="step-copy"><h3 class="title-box">{i + 1} · {step.title}</h3><p>{step.text}</p></div>
           <span class="chip" class:good={setupChipClass(status) === 'good'} class:attention={setupChipClass(status) === 'attention'} class:neutral={setupChipClass(status) === 'neutral'}>{status}</span>
           <div class="step-body">
             {#if i === 0}
@@ -40,16 +40,16 @@
             {:else if i === 1}
               {#if pullStep.kind === 'review'}
                 <p><a href={repoPage(repo.fullName, '/pull/' + pullStep.number)}>PR #{pullStep.number}</a> adds the workflow.</p>
-                <a class="btn ghost" href={`${githubRepo}/pull/${pullStep.number}`}>View PR #{pullStep.number} on GitHub</a>
+                <a class="btn" href={`${githubRepo}/pull/${pullStep.number}`}>View PR #{pullStep.number} on GitHub</a>
               {:else if pullStep.kind === 'first-policy'}
                 <p>PR #{pullStep.number} proposes the first policy and workflow.</p>
-                <a class="btn ghost" href={repoPage(repo.fullName, '/pull/' + pullStep.number)}>View PR #{pullStep.number}</a>
+                <a class="btn" href={repoPage(repo.fullName, '/pull/' + pullStep.number)}>View PR #{pullStep.number}</a>
               {:else if pullStep.kind === 'current'}
                 <p>The policy and workflow are present on the default branch. No setup pull request is needed.</p>
-                <a class="btn ghost" href={repoPage(repo.fullName, '/policy')}>View policy</a>
+                <a class="btn" href={repoPage(repo.fullName, '/policy')}>View policy</a>
               {:else}
                 <p>Open one pull request that adds the missing policy or workflow.</p>
-                <a class="btn ghost" href={`${githubRepo}/compare`}>Create a pull request on GitHub</a>
+                <a class="btn" href={`${githubRepo}/compare`}>Create a pull request on GitHub</a>
               {/if}
               {#if !setup.workflow && setup.open_pull === 0 && !setup.first_pull}<p>The pull request should also add <code>.github/workflows/archfit.yaml</code>.</p>{/if}
             {:else if i === 2}
@@ -62,7 +62,7 @@
               {#if !setup.passkey_known}
                 <p>Could not read your passkeys. Review is still available; try again before approving.</p>
               {:else if !setup.passkey && approvalNeedsReview(setup)}
-                <a class="btn ghost" href={repoPage(repo.fullName, '/passkeys')}>Register a passkey to approve</a>
+                <a class="btn" href={repoPage(repo.fullName, '/passkeys')}>Register a passkey to approve</a>
                 <p>A passkey is needed to approve, but not to read the review.</p>
               {:else if setup.passkey}
                 <p><a href={repoPage(repo.fullName, '/passkeys')}>Manage passkeys</a></p>
@@ -71,13 +71,13 @@
             {:else}
               <p>This step turns green when GitHub requires pull requests and archfit/gate on the default branch. Bypass and policy-push advice does not block this step; Verify yourself means the App has not checked that setting.</p>
               <div class="rules">
-                <div class="rule-actions"><a class="btn ghost" href={`${githubRepo}/settings/rules`}>Open ruleset settings</a><button class="btn ghost" onclick={() => window.location.reload()}>Check</button></div>
+                <div class="rule-actions"><a class="btn" href={`${githubRepo}/settings/rules`}>Open ruleset settings</a><button class="btn" onclick={() => window.location.reload()}>Check</button></div>
                 <p>After saving changes on GitHub, select Check to read the settings again. Check does not change any GitHub settings.</p>
                 {#each setup.rules as rule, ri (`${rule.code}-${ri}`)}
                   {@const help = setupRuleHelp(rule, repo)}
                   <div class="rule">
                     <div class="rule-head">
-                      <h4>{help.title}</h4>
+                      <h4 class="title-box">{help.title}</h4>
                       <span class="chip" class:good={rule.state === 'ok'} class:attention={rule.state !== 'ok' && rule.state !== 'not_applicable'} class:neutral={rule.state === 'not_applicable'}>{setupRuleStatus(rule.state, rule.code)}</span>
                     </div>
                     <p>{help.explanation}</p>
@@ -97,8 +97,6 @@
 </section>
 
 <style>
-  .setup { margin-top: 16px; }
-  .setup a { text-decoration: underline; text-underline-offset: 2px; }
   .box-head p { margin: 4px 0 0; color: var(--fg-muted); }
   .progress { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; color: var(--fg-muted); font-size: 13px; }
   .bar { flex: 1; height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; }
@@ -106,28 +104,27 @@
   .steps { list-style: none; padding: 0; margin: 0; }
   .steps li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 12px; padding: 14px 0; border-top: 1px solid var(--border); }
   .number { width: 28px; height: 28px; border: 2px solid var(--border); border-radius: 50%; display: grid; place-items: center; color: var(--fg-muted); }
-  .done .number { background: var(--success); color: white; }
-  .step-copy h3 { margin: 0 0 3px; font-size: 15px; }
+  .done .number { background: var(--success-emphasis); border-color: var(--success-emphasis); color: var(--fg-onEmphasis); }
+  .step-copy h3 { margin: 0 0 4px; }
   .step-copy p, .step-body p { margin: 0; color: var(--fg-muted); }
-  .chip { align-self: start; border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 600; background: var(--bg-subtle); }
+  .chip { align-self: start; border: 1px solid var(--border); border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 600; background: var(--bg-subtle); }
   .chip.good { background: var(--success-subtle); color: var(--success); border-color: var(--success-border); }
   .chip.attention { background: var(--attention-subtle); color: var(--attention); border-color: var(--attention-border); }
   .chip.neutral { background: var(--neutral-subtle); color: var(--fg-muted); }
-  .step-body { grid-column: 2 / 4; margin-top: 4px; }
-  .step-body p + p { margin-top: 8px; }
-  .btn { display: inline-block; margin: 4px 8px 4px 0; }
+  .step-body { grid-column: 2 / 4; margin-top: 4px; display: flex; flex-direction: column; gap: 8px; }
+  .step-body > .btn { align-self: flex-start; }
   details { margin-top: 8px; }
   summary { cursor: pointer; }
-  details p { margin-top: 8px !important; }
+  details p { margin-top: 8px; }
   .command { margin: 8px 0; padding: 10px 12px; border-radius: var(--radius); background: var(--bg-subtle); overflow-x: auto; }
   .rules { border-top: 1px solid var(--border); margin-top: 8px; }
   .rule { padding: 14px 0; border-bottom: 1px dashed var(--border); overflow-wrap: anywhere; }
   .rule-head, .rule-actions { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; }
   .rule-head { justify-content: space-between; }
-  .rule h4 { margin: 0; font-size: 14px; }
+  .rule h4 { margin: 0; }
   .rule-links { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 13px; }
   .rule-head .chip { flex-shrink: 0; }
   .rule:last-child { border-bottom: 0; }
   .rule p { font-size: 13px; margin-top: 3px; }
-  @media (max-width: 520px) { .steps li { grid-template-columns: 30px minmax(0, 1fr); } .steps li > .chip { grid-column: 2; grid-row: 2; justify-self: start; } .step-body { grid-column: 2; } }
+  @media (max-width: 640px) { .steps li { grid-template-columns: 30px minmax(0, 1fr); } .steps li > .chip { grid-column: 2; grid-row: 2; justify-self: start; } .step-body { grid-column: 2; } }
 </style>

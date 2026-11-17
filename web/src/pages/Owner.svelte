@@ -91,7 +91,7 @@
   {#each view.diffs as diff, i (diff.title)}
     <section class="box" aria-labelledby={`diff-${i}`}>
       <div class="stack-sm" class:box-head={!!diff.text} class:box-body={!diff.text}>
-        <h2 id={`diff-${i}`}>{#if view.kind === 'workflow'}{diff.path === '.archfit.yaml' ? 'Policy' : 'Workflow'} — <code>{diff.path}</code>{:else}{diff.title}{/if}</h2>
+        <h2 class="title-box" id={`diff-${i}`}>{#if view.kind === 'workflow'}{diff.path === '.archfit.yaml' ? 'Policy' : 'Workflow'} — <code>{diff.path}</code>{:else}{diff.title}{/if}</h2>
         {#if view.kind === 'workflow'}
           <p class="small">
             {#if diff.path === '.archfit.yaml'}
@@ -122,7 +122,7 @@
       <p>These are the file versions included in this approval. Use them to inspect unchanged lines or compare another copy. SHA-256 fingerprints identify the file bytes. You do not need to compare them to approve.</p>
       {#each view.proposals as proposal (proposal.id)}
         <section class="stack-sm">
-          <h2>Approved answers in #{proposal.pull_request}</h2>
+          <h2 class="title-box">Approved answers in #{proposal.pull_request}</h2>
           <p class="small">Pull request at commit <code>{proposal.head}</code></p>
           <details>
             <summary>Technical details</summary>
@@ -133,10 +133,10 @@
       {/each}
       {#each [...new Set(view.files.map((file) => file.path))] as path (path)}
         <section class="stack-sm">
-          <h2>{path}</h2>
+          <h2 class="title-box">{path}</h2>
           {#each view.files.filter((file) => file.path === path) as file (file.role)}
             <section class="stack-sm">
-              <h3>{ownerFileVersion(file.role)} {#if file.ref}— commit <code>{file.ref}</code>{/if}</h3>
+              <h3 class="title-box">{ownerFileVersion(file.role)} {#if file.ref}— commit <code>{file.ref}</code>{/if}</h3>
               {#if file.missing}<p>This file is not present at this commit.</p>
               {:else}
                 <!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users must be able to scroll the full file.) -->
@@ -159,7 +159,7 @@
     {/if}
   {:else}
     <section class="box" aria-labelledby="passkey">
-      <div class="box-head"><h2 id="passkey">Confirm with your passkey</h2></div>
+      <div class="box-head"><h2 class="title-box" id="passkey">Confirm with your passkey</h2></div>
       <form class="box-body stack-sm" onsubmit={(event) => { event.preventDefault(); void act(); }}>
         <input type="hidden" name="view_digest" value={view.digest} />
         <input type="hidden" name="digest" value={view.action_digest} />
@@ -190,18 +190,16 @@
 <style>
   pre { max-width: 100%; overflow: auto; white-space: pre; }
   code { overflow-wrap: anywhere; }
-  a { text-decoration: underline; }
-  summary { padding: 1rem; cursor: pointer; }
+  summary { padding: 16px; cursor: pointer; }
   section { min-width: 0; }
   h2, h3 { overflow-wrap: anywhere; }
   .box-head.stack-sm { align-items: stretch; }
-  .box-body > h2 { font-size: 14px; }
   .diff code { display: block; width: max-content; min-width: 100%; }
   .diff-line { display: block; }
   .addition { background: var(--success-subtle); }
   .deletion { background: var(--danger-subtle); }
   .hunk, .header { color: var(--fg-muted); }
-  .diff-legend { display: flex; gap: 1rem; }
-  .diff-legend span { padding: 0 0.25rem; }
+  .diff-legend { display: flex; gap: 16px; }
+  .diff-legend span { padding: 0 4px; }
   .btn.approval { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 </style>

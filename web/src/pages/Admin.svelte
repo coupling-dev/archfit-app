@@ -70,7 +70,7 @@
   {:else if row.repos.length}
     <ul class="chips" aria-label="Repositories of {row.account}">
       {#each row.repos as r (r.name)}
-        <li class="chip" class:priv={r.private}>
+        <li class="repo-chip" class:priv={r.private}>
           {#if accessible.includes(`${row.account}/${r.name}`)}<a href={repoPage(`${row.account}/${r.name}`)}>{r.name}</a>{:else}{r.name}{/if}{r.private ? ' · private' : ''}
         </li>
       {/each}
@@ -89,7 +89,7 @@
   {/if}
 
   <section class="box" aria-labelledby="waiting">
-    <div class="box-head"><h2 id="waiting">Waiting <span class="counter">{body.waiting.length}</span></h2></div>
+    <div class="box-head"><h2 class="title-box" id="waiting">Waiting <span class="counter">{body.waiting.length}</span></h2></div>
     {#each body.waiting as row (row.id)}
       <div class="box-row acct">
         {@render who(row)}
@@ -110,7 +110,7 @@
   </section>
 
   <section class="box" aria-labelledby="approved">
-    <div class="box-head"><h2 id="approved">Approved <span class="counter">{body.approved.length}</span></h2></div>
+    <div class="box-head"><h2 class="title-box" id="approved">Approved <span class="counter">{body.approved.length}</span></h2></div>
     {#each body.approved as row (row.id)}
       <div class="box-row acct">
         {@render who(row)}
