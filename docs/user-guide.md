@@ -65,7 +65,8 @@ The matrix shows **Policy and review status**, not observed imports. Rows are so
 Every payload status remains in its cell, including multiple rules, requests and exceptions. A blank means
 **no explicit relationship in this payload**, not “no imports” or “permitted”. Deny status is not fully evaluated
 for all pairs. Select a cell for all rules, request links, exception dates and evidence scope. Tab enters the
-table; arrow keys move between cells, Enter opens details, and Escape closes details and returns focus.
+table; arrow keys move between cells (the shaded diagonal is skipped), Enter opens details, and Escape closes details
+and returns focus. A repository with one module shows "One module is declared, so there is nothing to draw."
 
 Headers stay visible while the table scrolls in either direction. At 50 or more modules, search names or layers,
 focus on explicit inbound/outbound neighbors, collapse layers, or use **Needs attention** to show modules
