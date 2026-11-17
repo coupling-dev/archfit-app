@@ -2,7 +2,7 @@
   import { tick } from 'svelte';
   import { repoPage } from '../../lib/route';
   import { mapLayers, type MapModel } from './model';
-  import { pairIndex, pairKey, statusLabel, symbols, visibleModules } from './dsm';
+  import { isNavKey, nextCell, pairIndex, pairKey, statusLabel, symbols, visibleModules, type Cell } from './dsm';
 
   let { model, repo }: { model: MapModel; repo: string } = $props();
   const id = $props.id();
@@ -14,30 +14,75 @@
   let collapsed = $state<string[]>([]);
   const modules = $derived(visibleModules(model, { search, focus, direction, attention, collapsed }));
   let selected = $state<{ from: string; to: string } | null>(null);
-  let active = $state({ from: '', to: '' });
-  const activeVisible = $derived(modules.some((m) => m.name === active.from) && modules.some((m) => m.name === active.to));
   let dialog: HTMLDialogElement;
   let table = $state<HTMLTableElement>();
+  // The active cell is plain DOM state, not reactive: moving it must touch two rows and two columns, not every cell.
+  let active: { from: string; to: string } | null = null;
+
+  const hasLines = (from: string, to: string) => index.has(pairKey(from, to));
+  const open = (cell: Cell) =>
+    cell.row !== cell.col || hasLines(modules[cell.row].name, modules[cell.row].name);
+  const button = (row: number, col: number) =>
+    table?.tBodies[0].rows[row]?.cells[col + 1]?.querySelector('button') ?? null;
+  function cellOf(event: Event): { el: HTMLButtonElement; row: number; col: number } | null {
+    const el = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('td > button') : null;
+    return el ? { el, row: Number(el.dataset.row), col: Number(el.dataset.col) } : null;
+  }
+  function highlight(row: number, col: number, on: boolean) {
+    const rows = table?.tBodies[0].rows;
+    if (!rows?.[row] || !table) return;
+    for (const cell of rows[row].cells) cell.classList.toggle('highlight', on);
+    table.tHead?.rows[0].cells[col + 1]?.classList.toggle('highlight', on);
+    for (const r of rows) r.cells[col + 1]?.classList.toggle('highlight', on);
+  }
+  function indexOfActive() {
+    const row = modules.findIndex((m) => m.name === active?.from);
+    const col = modules.findIndex((m) => m.name === active?.to);
+    return row >= 0 && col >= 0 ? { row, col } : null;
+  }
+  function activate(from: string, to: string, row: number, col: number) {
+    const old = indexOfActive();
+    if (old) {
+      button(old.row, old.col)?.setAttribute('tabindex', '-1');
+      highlight(old.row, old.col, false);
+    }
+    active = { from, to };
+    button(row, col)?.setAttribute('tabindex', '0');
+    highlight(row, col, true);
+  }
+  // After the axes change, the cells are new: keep the active cell if it is still drawn, else the first reachable one.
+  $effect(() => {
+    if (!table) return;
+    for (const b of table.querySelectorAll('td > button')) b.setAttribute('tabindex', '-1');
+    table.querySelectorAll('.highlight').forEach((el) => el.classList.remove('highlight'));
+    const found = indexOfActive();
+    if (found && open(found)) return activate(modules[found.row].name, modules[found.col].name, found.row, found.col);
+    active = null;
+    for (let row = 0; row < modules.length; row++) {
+      const col = modules.findIndex((_, c) => open({ row, col: c }));
+      if (col >= 0) return button(row, col)?.setAttribute('tabindex', '0');
+    }
+  });
 
   async function details(from: string, to: string) {
     selected = { from, to };
     await tick();
     dialog.showModal();
   }
-  function move(event: KeyboardEvent, row: number, col: number) {
-    const last = modules.length - 1;
-    let nextRow = row, nextCol = col;
-    switch (event.key) {
-      case 'ArrowDown': nextRow = Math.min(last, row + 1); break;
-      case 'ArrowUp': nextRow = Math.max(0, row - 1); break;
-      case 'ArrowRight': nextCol = Math.min(last, col + 1); break;
-      case 'ArrowLeft': nextCol = Math.max(0, col - 1); break;
-      case 'Home': nextCol = 0; if (event.ctrlKey) nextRow = 0; break;
-      case 'End': nextCol = last; if (event.ctrlKey) nextRow = last; break;
-      default: return;
-    }
+  function onfocusin(event: FocusEvent) {
+    const cell = cellOf(event);
+    if (cell) activate(modules[cell.row].name, modules[cell.col].name, cell.row, cell.col);
+  }
+  function onkeydown(event: KeyboardEvent) {
+    const cell = cellOf(event);
+    if (!cell || !isNavKey(event.key)) return;
     event.preventDefault();
-    table?.querySelectorAll<HTMLButtonElement>('td button')[nextRow * modules.length + nextCol]?.focus();
+    const to = nextCell(event.key, event.ctrlKey, cell, modules.length, open);
+    button(to.row, to.col)?.focus();
+  }
+  function onclick(event: MouseEvent) {
+    const cell = cellOf(event);
+    if (cell) void details(modules[cell.row].name, modules[cell.col].name);
   }
   function reset() { search = ''; focus = ''; direction = 'outbound'; attention = false; collapsed = []; }
   function toggleLayer(layer: string) {
@@ -46,6 +91,9 @@
 </script>
 
 <div class="dsm">
+  {#if model.modules.length === 1 && !model.lines.length}
+    <p>One module is declared, so there is nothing to draw.</p>
+  {:else}
   <p class="orientation"><strong>Policy and review status</strong> · row depends on column.</p>
   <ul class="legend" aria-label="Matrix legend">
     <li>✓ Explicit allow</li><li>× Explicit deny</li><li>? Request</li><li>! Drift</li><li>◷ Exception (expiry in details)</li>
@@ -84,12 +132,14 @@
   {:else}
     <p class="muted small">Select a cell for details. Use arrow keys within the table; Enter opens details.</p>
     <div class="viewport" role="region" aria-label="Scrollable relationship matrix">
-      <table bind:this={table} aria-describedby={id + '-scope'}>
+      <!-- The buttons are the interactive elements; the table only delegates their focus, key and click events. -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <table bind:this={table} aria-describedby={id + '-scope'} {onfocusin} {onkeydown} {onclick}>
         <caption class="sr-only">Policy and review status matrix</caption>
         <thead><tr>
           <th class="corner" scope="col">Source ↓<br />Target →</th>
           {#each modules as target (target.name)}
-            <th scope="col" class:highlight={active.to === target.name}>
+            <th scope="col">
               <span class="layer">{target.layer || 'No layer'}</span>{target.name}
             </th>
           {/each}
@@ -97,31 +147,35 @@
         <tbody>
           {#each modules as source, row (source.name)}
             <tr class:layer-start={row > 0 && modules[row - 1].layer !== source.layer}>
-              <th scope="row" class:highlight={active.from === source.name}>
+              <th scope="row">
                 <span class="layer">{source.layer || 'No layer'}</span>{source.name}
               </th>
               {#each modules as target, col (target.name)}
                 {@const lines = index.get(pairKey(source.name, target.name)) ?? []}
-                <td class:highlight={active.from === source.name || active.to === target.name}>
-                  <button
-                    tabindex={activeVisible ? (active.from === source.name && active.to === target.name ? 0 : -1) : (row === 0 && col === 0 ? 0 : -1)}
-                    aria-label={source.name + ' → ' + target.name + ': ' + (lines.length ? lines.map(statusLabel).join('; ') : 'No explicit relationship in this payload; deny status not fully evaluated')}
-                    aria-haspopup="dialog"
-                    onfocus={() => active = { from: source.name, to: target.name }}
-                    onkeydown={(event) => move(event, row, col)}
-                    onclick={() => details(source.name, target.name)}
-                  >
-                    {#each lines as line, i (i)}
-                      <span class={'mark ' + line.kind} aria-hidden="true">{symbols[line.kind]}</span>
-                    {/each}
-                  </button>
-                </td>
+                {#if row === col && !lines.length}
+                  <td class="self"></td>
+                {:else}
+                  <td>
+                    <button
+                      tabindex="-1"
+                      data-row={row}
+                      data-col={col}
+                      aria-label={source.name + ' to ' + target.name + ': ' + (lines.length ? lines.map(statusLabel).join('; ') : 'no rule')}
+                      aria-haspopup="dialog"
+                    >
+                      {#each lines as line, i (i)}
+                        <span class={'mark ' + line.kind} aria-hidden="true">{symbols[line.kind]}</span>
+                      {/each}
+                    </button>
+                  </td>
+                {/if}
               {/each}
             </tr>
           {/each}
         </tbody>
       </table>
     </div>
+  {/if}
   {/if}
 </div>
 
@@ -169,8 +223,10 @@
   td button { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px; padding: 8px; width: 100%; min-height: 48px; min-width: 64px; border: 0; border-radius: 0; background: transparent; color: var(--fg); cursor: pointer; }
   td button:hover { background: var(--accent-subtle); }
   td button:focus-visible { outline-offset: -3px; }
-  .highlight { background: var(--accent-subtle); }
-  th.highlight { background: var(--bg-subtle); box-shadow: inset 0 -3px var(--accent); }
+  :where(td.self) { background: var(--bg-subtle); }
+  /* Set by script on the active row and column, so Svelte cannot see the class. */
+  table :global(.highlight) { background: var(--accent-subtle); }
+  table :global(th.highlight) { background: var(--bg-subtle); box-shadow: inset 0 -3px var(--accent); }
   .mark { font-size: 18px; font-weight: 700; }
   .allowed { color: var(--success); }
   .deny, .drift { color: var(--danger); }
