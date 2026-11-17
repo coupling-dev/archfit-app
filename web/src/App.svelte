@@ -88,7 +88,7 @@
   {repo}
   tab={route.kind === 'repo'
     ? 'home'
-    : route.kind === 'policy'
+    : route.kind === 'policy' || route.kind === 'passkeys'
       ? route.kind
       : ''}
   pull={route.kind === 'pull' ? route.number : 0}
