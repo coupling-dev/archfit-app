@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { open, reposApprovedCopy } from './fixtures';
+import { open } from './fixtures';
 import { pageRoutes } from './page-routes';
 import { expectNoNotUsedWord } from './support';
 
@@ -12,6 +12,6 @@ for (const route of pageRoutes) {
     await expect(page.getByRole('heading', { name: route.heading, level: 1 })).toBeVisible();
     await expect(page.getByRole('status', { name: 'Loading' })).toHaveCount(0);
     await expect(page.getByRole('alert')).toHaveCount(0);
-    await expectNoNotUsedWord(page, route.path === '/' ? reposApprovedCopy : route.kind === 'repo' ? ['Policy and review status'] : []);
+    await expectNoNotUsedWord(page);
   });
 }

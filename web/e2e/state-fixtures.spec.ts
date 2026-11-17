@@ -61,8 +61,8 @@ for (const width of [390, 1280]) {
       const text = (await page.locator('main').innerText()).replace(/[ \t]+$/gm, '');
       expect(text).toMatchSnapshot(`state-${state.name}-${width}.txt`);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-      await expectClean(page, state.approvedCopy);
-      await docsShot(page, `states/${state.name}-${width}`, state.approvedCopy);
+      await expectClean(page);
+      await docsShot(page, `states/${state.name}-${width}`);
       expect(writes).toEqual([]);
     });
   }

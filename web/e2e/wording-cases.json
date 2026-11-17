@@ -7,5 +7,6 @@
   {"text":"the gate is closed", "want":["gate"]},
   {"text":"A Finding, a WAIVER", "want":["waiver", "finding"]},
   {"text":"éconfigé config𐐀 config_", "want":[]},
-  {"text":"needs\u00a0attention", "want":[]}
+  {"text":"needs\u00a0attention", "want":[]},
+  {"text":"Review workflow change", "want":[]}
 ]

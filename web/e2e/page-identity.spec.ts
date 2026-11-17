@@ -4,23 +4,6 @@ import { docsClock, docsShot, expectClean, open } from './support';
 
 const fixture = (path: string) =>
   JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/' + path + '.json', import.meta.url), 'utf8'));
-const approvedCopy = [
-  'Policy and review status',
-  'Review workflow change',
-  'Review first policy',
-  'Rules reach the default branch through review, so the approval binds to exact file contents.',
-  'Require the gate',
-  'Ready for review',
-  'Review needed',
-  'A password or a GitHub review can be replayed by a compromised account',
-  'A passkey is needed to approve, but not to read the review.',
-  "Next: review owner approval",
-  "Review and approve",
-  "Review proposed files",
-  "Review the proposed files before approving.",
-  "PR #203 changed after approval. Review the new head.",
-  "Could not read your passkeys. Review is still available; try again before approving.",
-];
 
 for (const width of [390, 1280]) {
   for (const [name, path, api, title] of [
@@ -63,7 +46,7 @@ for (const width of [390, 1280]) {
       await expect(page.locator('.page-head .primary')).toHaveAttribute('href', '#setup-title');
       await expect(page.getByText('An owner must act.', { exact: true })).toBeVisible();
       await expect(page.getByRole('link', { name: 'An owner must act.' })).toHaveCount(0);
-      await expectClean(page, approvedCopy);
+      await expectClean(page);
     });
   }
 
@@ -120,8 +103,8 @@ for (const width of [390, 1280]) {
           .boundingBox();
         expect(approvalBox!.y).toBeGreaterThan(diffBox!.y + diffBox!.height);
       }
-      await expectClean(page, approvedCopy);
-      await docsShot(page, `page-identity/${name}-${width}`, approvedCopy);
+      await expectClean(page);
+      await docsShot(page, `page-identity/${name}-${width}`);
       expect(writes).toEqual([]);
     });
   }
@@ -163,7 +146,7 @@ for (const width of [390, 1280]) {
       await expect(
         page.getByText('The owner signs the policy with a passkey. Change one byte and the approval no longer counts.'),
       ).toBeVisible();
-      await expectClean(page, approvedCopy);
+      await expectClean(page);
     });
   }
 }

@@ -39,7 +39,6 @@ interface StateFixture {
   reply: Reply;
   heading: string;
   text: string;
-  approvedCopy?: string[];
 }
 
 export const stateFixtures: StateFixture[] = [
@@ -90,7 +89,6 @@ export const stateFixtures: StateFixture[] = [
     reply: [200, fixture('pull/unknown-workflow-viewer')],
     heading: 'Pull request #4',
     text: 'An architecture owner named in the approved policy can review this.',
-    approvedCopy: ['An architecture owner named in the approved policy can review this.'],
   },
   {
     name: 'unknown-ruleset',
@@ -99,22 +97,6 @@ export const stateFixtures: StateFixture[] = [
     reply: [200, unknownRuleset],
     heading: 'Home',
     text: 'Check with an admin',
-    approvedCopy: [
-      'Rules reach the default branch through review, so the approval binds to exact file contents.',
-      'Require the gate',
-      'Turn on the ruleset so the default branch cannot change unless archfit/gate passes.',
-      'A password or a GitHub review can be replayed by a compromised account',
-      'Review first policy',
-      'Review needed',
-      'Ready for review',
-      'A passkey is needed to approve, but not to read the review.',
-  "Next: review owner approval",
-  "Review and approve",
-  "Review proposed files",
-  "Review the proposed files before approving.",
-  "PR #203 changed after approval. Review the new head.",
-  "Could not read your passkeys. Review is still available; try again before approving.",
-    ],
   },
   {
     name: 'stale-owner-action',

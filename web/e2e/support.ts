@@ -54,9 +54,17 @@ export async function open(page: Page, path: string, handlers: Handlers, readOnl
   return writes;
 }
 
-export async function expectNoNotUsedWord(page: Page, approvedCopy: string[] = []) {
-  let text = await page.locator('body').innerText();
-  for (const phrase of approvedCopy) text = text.replaceAll(phrase, ' ');
+// expectNoNotUsedWord reads every text node, including closed dialogs and folded disclosures, which innerText skips.
+// Phrases are never exempt: fix the copy.
+export async function expectNoNotUsedWord(page: Page) {
+  const text = await page.evaluate(() => {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const parts: string[] = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.parentElement?.closest('script, style, noscript, template')) parts.push(node.textContent ?? '');
+    }
+    return parts.join(' ');
+  });
   expect(notUsedIn(text)).toEqual([]);
 }
 
@@ -66,10 +74,10 @@ export async function expectPageText(page: Page, name: string) {
 
 // expectClean fails on a CSP violation, an axe violation in either scheme, a word of the "Not used" column, or a page
 // wider than a phone at phone width.
-export async function expectClean(page: Page, approvedCopy: string[] = []) {
+export async function expectClean(page: Page) {
   const violations = await page.evaluate(() => (window as unknown as { cspViolations: string[] }).cspViolations);
   expect(violations).toEqual([]);
-  await expectNoNotUsedWord(page, approvedCopy);
+  await expectNoNotUsedWord(page);
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     const axe = await new AxeBuilder({ page }).analyze();
@@ -178,9 +186,9 @@ export async function docsClock(page: Page) {
   await page.clock.setFixedTime(new Date('2026-11-13T12:00:00Z'));
 }
 
-export async function docsShot(page: Page, name: string, approvedCopy: string[] = []) {
+export async function docsShot(page: Page, name: string) {
   if (!process.env.ARCHFIT_DOCS_SHOTS) return;
-  await expectNoNotUsedWord(page, approvedCopy);
+  await expectNoNotUsedWord(page);
   await page.emulateMedia({ colorScheme: 'light' });
   await page.screenshot({ path: new URL(`../../docs/images/${name}.png`, import.meta.url).pathname, fullPage: true, animations: 'disabled' });
 }

@@ -1,6 +1,6 @@
-import { expectNoNotUsedWord } from './support';
+import { expectClean, expectNoNotUsedWord } from './support';
 import { expect, test } from '@playwright/test';
-import { session, open, expectClean } from './fixtures';
+import { session, open } from './fixtures';
 
 
 test('admin: an operator approves a waiting account and revokes one after asking once', async ({ page }) => {

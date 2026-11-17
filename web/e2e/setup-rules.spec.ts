@@ -9,16 +9,6 @@ const fixture = () =>
       readFileSync(new URL('../../internal/control/ui/testdata/home/not-set-up.json', import.meta.url), 'utf8'),
     ),
   );
-const approvedCopy = [
-  'Require the gate',
-  'Rules reach the default branch through review, so the approval binds to exact file contents.',
-  'Next: review owner approval',
-  'Ready for review',
-  'Review needed',
-  'Review and approve',
-  'Review the proposed files before approving.',
-  'A password or a GitHub review can be replayed by a compromised account',
-];
 
 for (const width of [390, 1280]) {
   test(`setup rule guidance: enforcement and manual advice at ${width}`, async ({ page }, testInfo) => {
@@ -73,7 +63,7 @@ for (const width of [390, 1280]) {
     await expect(policy.getByText('Does not apply', { exact: true })).toBeVisible();
     await expect(policy).toContainText('nothing to do');
     await expect(step.getByText('Not available', { exact: true })).toHaveCount(0);
-    await expectClean(page, approvedCopy);
+    await expectClean(page);
     await step.screenshot({ path: testInfo.outputPath(`setup-step4-${width}.png`) });
     expect(writes).toEqual([]);
   });

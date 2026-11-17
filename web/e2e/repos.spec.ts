@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { session, open, reposApprovedCopy } from './fixtures';
+import { session, open } from './fixtures';
 import { expectClean, docsShot } from './support';
 
 for (const width of [1280, 390]) {
@@ -54,8 +54,8 @@ for (const width of [1280, 390]) {
       }
     }
     await page.emulateMedia({ colorScheme: 'light' });
-    await docsShot(page, `repos-stages-${width}`, reposApprovedCopy);
-    await expectClean(page, reposApprovedCopy);
+    await docsShot(page, `repos-stages-${width}`);
+    await expectClean(page);
   });
 }
 
@@ -93,5 +93,5 @@ test('repositories: unread setup explains Check and offers Home without a false 
       exact: true,
     }),
   ).toHaveCount(1);
-  await expectClean(page, reposApprovedCopy);
+  await expectClean(page);
 });

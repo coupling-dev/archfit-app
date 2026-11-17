@@ -11,8 +11,7 @@ for (const state of states) {
     await expect(page.locator('.page-head .status')).toBeVisible();
     await expectPageText(page, `pull-${state}`);
     if (state === 'waiting') await docsShot(page, 'pull');
-    const approvedCopy = ['Review workflow change', 'Review first policy', 'An architecture owner named in the approved policy can review this.'];
-    await expectClean(page, approvedCopy);
+    await expectClean(page);
     if (state === 'unknown-workflow' || state === 'unknown-first-policy') {
       const first = state === 'unknown-first-policy';
       const link = page.getByRole('link', { name: first ? 'Review first policy' : 'Review workflow change', exact: true });

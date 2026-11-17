@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { open, reposApprovedCopy, type Mock } from './fixtures';
+import { open, type Mock } from './fixtures';
 import { expectClean, expectNoNotUsedWord, docsClock, docsShot } from './support';
 
 const reposGolden = (name: string) =>
@@ -79,7 +79,7 @@ for (const width of [1280, 390]) {
       await expect(page.locator('body')).toContainText('Documentation');
       expect(await page.locator('body').innerText()).toMatchSnapshot(`stay-${c.name}-${width}.txt`);
       if (c.name === 'passkeys' && width === 1280) await docsShot(page, 'passkeys');
-      await expectClean(page, c.path === '/' && c.name.startsWith('repositories') ? reposApprovedCopy : []);
+      await expectClean(page);
 
       const target = page
         .getByRole(c.keyboard.startsWith('Approve') || c.keyboard === 'Add a passkey' ? 'button' : 'link', {
@@ -97,7 +97,7 @@ for (const width of [1280, 390]) {
       for (const detail of await page.locator('details').all()) {
         await detail.locator('summary').click();
       }
-      await expectNoNotUsedWord(page, c.path === '/' && c.name.startsWith('repositories') ? reposApprovedCopy : []);
+      await expectNoNotUsedWord(page);
     });
   }
 }
