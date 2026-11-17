@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate"
@@ -57,10 +58,22 @@ type homeLineJSON struct {
 
 func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 	ctx, snapshot := gate.WithHomeSnapshot(r.Context(), sc.repo)
+	ctx = withReviewPermission(ctx, sc)
 	r = r.WithContext(ctx)
 	snapshotDone := api.StartStage(ctx, "snapshot")
 	defer func() { snapshotDone(1, int(snapshot.CacheHits())) }()
+	// Home's reads do not depend on Setup, so they run beside it. Their result is used only for an approved
+	// repository, as before: for any other state the Home result and its error are dropped.
+	var view gate.HomeState
+	var homeErr error
+	var homeReads sync.WaitGroup
+	homeReads.Go(func() {
+		recordsDone := api.StartStage(ctx, "home_records")
+		view, homeErr = s.home.Home(ctx, sc.repo)
+		recordsDone(len(view.Requests)+len(view.Touched)+len(view.WorkflowPulls), 0)
+	})
 	setup, err := s.apiSetup(r, sc)
+	homeReads.Wait()
 	if err != nil {
 		return nil, err
 	}
@@ -79,11 +92,8 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 		}
 		return homeJSON{Status: "Set up this repository.", Setup: &state}, nil
 	}
-	recordsDone := api.StartStage(ctx, "home_records")
-	view, err := s.home.Home(r.Context(), sc.repo)
-	recordsDone(len(view.Requests)+len(view.Touched)+len(view.WorkflowPulls), 0)
-	if err != nil {
-		return nil, err
+	if homeErr != nil {
+		return nil, homeErr
 	}
 	today := s.now().UTC().Truncate(24 * time.Hour)
 	body := homeBody(view, state, sc.repo.FullName, today)
@@ -91,12 +101,19 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 		state.Approval.Status == string(gate.ApprovalStale) || state.Approval.Status == string(gate.ApprovalUnknown) {
 		body.Setup = &state
 	}
-	for i := range body.NeedsYou {
-		need := &body.NeedsYou[i]
-		if need.Kind != "workflow" {
-			continue
+	var workflowNeeds []int
+	for i, need := range body.NeedsYou {
+		if need.Kind == "workflow" {
+			workflowNeeds = append(workflowNeeds, i)
 		}
-		if review := s.ownerReview(r, sc, need.Pull); review != nil {
+	}
+	reviews := make([]*reviewJSON, len(workflowNeeds))
+	forEachBounded(len(workflowNeeds), reviewConcurrency, func(j int) {
+		reviews[j] = s.ownerReview(r, sc, body.NeedsYou[workflowNeeds[j]].Pull)
+	})
+	for j, i := range workflowNeeds {
+		if review := reviews[j]; review != nil {
+			need := &body.NeedsYou[i]
 			need.Text, need.Href = fmt.Sprintf("%s · PR #%d", review.Label, need.Pull), review.Href
 		}
 	}

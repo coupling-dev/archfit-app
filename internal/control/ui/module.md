@@ -67,15 +67,19 @@ No report cache, old graph builder, Archfit 3 renderer or consent reader remains
 `Deps.HomeViews` is `gate.HomeViews`; `control` imports no gate child. The constructor receives it from
 `control.New`, which calls `gate.NewHome`. The handler reuses `Setups.Setup` through the existing setup API.
 Before first approval it returns `status` and `setup` (the missing steps, first pull and ruleset settings),
-without loading Home data or a map.
+with no Home data or map. The Home reads still start beside Setup, since they do not depend on it; for any state
+other than `approved` or `outside_flow` their result and their error are dropped.
 
 Home reads the protected tip once per authorized request and shares its immutable policy (including its
 byte digest and decode result) and workflow between Setup and Home. The read-only approval summary also
 reuses the protected file bytes and tip, without changing the fresh inputs of Review or Act. It never caches repository approval
-records, candidate PR heads or owner eligibility. Passkey inventory runs alongside Setup; policy and
+records, candidate PR heads or owner eligibility. Passkey inventory and the Home reads run alongside Setup; policy and
 workflow reads run concurrently at that same tip. The approval summary runs alongside rules, using the
 same exact-head/digest predicate as Review. Ruleset details and each Home record batch have at
-most four concurrent reads. Error priority follows input order, not completion order; unreadable rules
+most four concurrent reads, and so do the workflow file reads of the open pull requests and the owner reviews of workflow
+changes. The probes of one owner review run together and the answer is the first decisive probe in action order; the
+signed-in user's permission is read once per request for those reviews (an approval always reads it fresh).
+Error priority follows input order, not completion order; unreadable rules
 remain unknown and inventory errors return both `passkey: false` and `passkey_known: false`. HTTP client timeouts,
 request cancellation and rate-limit backoff remain in effect.
 
@@ -86,6 +90,13 @@ setup/approval-summary/snapshot invocations, rules API reads, returned passkeys,
 and owner eligibility probes respectively. Cache hits count session authorization reuse or request-local
 protected-input reuse, not approval reuse. Stages contain no tokens, file bytes or upstream error text.
 Existing `gh_calls` and `gh_ms` still measure real GitHub round trips, including retries.
+
+Responses the handlers write carry the same numbers in a `Server-Timing` header for browser devtools: `total` (time
+to the header), `gh` (summed GitHub time, call count in `desc`), one metric per stage finished before the header, and
+`cold` on the first request the instance serves. Only numbers and the fixed stage names go out. A response that the
+55 s timeout cuts short (503 from `http.TimeoutHandler`) carries none: the timeout writes it outside this chain. That
+is a known limit, not a gap in the header: fixing it means sharing the stats through the context with the timeout
+writer, which only pays off once slow requests need the stages, so it waits for that.
 
 The map imports its Diagram component only while the diagram disclosure is open; closing it aborts
 layout work. The list view never starts the ELK worker. The diagram starts closed at every width; phone starts

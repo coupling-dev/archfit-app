@@ -357,6 +357,8 @@ func TestErrorPagesAreTheShell(t *testing.T) {
 // A repository page is one shell for every repository: one the user reads, one of another tenant, one that does not
 // exist. The bytes and headers are the same but for the nonce, and serving it asks GitHub nothing. The API then answers
 // a repository the user cannot see exactly as one that does not exist.
+var timingDurations = regexp.MustCompile(`dur=[0-9.]+`)
+
 func TestRepositoryPagesAreOneShell(t *testing.T) {
 	e := newEnv(t)
 	c := e.as("alice", permRead)
@@ -367,6 +369,8 @@ func TestRepositoryPagesAreOneShell(t *testing.T) {
 		}
 		h := res.Header().Clone()
 		h.Del("X-Request-Id") // per request, as the nonce
+		// Durations vary per request; the metric names must not.
+		h.Set("Server-Timing", timingDurations.ReplaceAllString(h.Get("Server-Timing"), "dur=N"))
 		return strings.ReplaceAll(fmt.Sprint(res.Code, h, res.Body.String()), m[1], "NONCE")
 	}
 	for _, suffix := range []string{"", "/pull/4", "/passkeys", "/policy", "/policy?edit=1"} {
