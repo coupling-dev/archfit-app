@@ -18,6 +18,12 @@
   let table = $state<HTMLTableElement>();
   // The active cell is plain DOM state, not reactive: moving it must touch two rows and two columns, not every cell.
   let active: { from: string; to: string } | null = null;
+  let stop: HTMLButtonElement | null = null; // The one cell in the tab order.
+  function setStop(next: HTMLButtonElement | null) {
+    stop?.setAttribute('tabindex', '-1');
+    stop = next;
+    next?.setAttribute('tabindex', '0');
+  }
 
   const hasLines = (from: string, to: string) => index.has(pairKey(from, to));
   const open = (cell: Cell) =>
@@ -42,25 +48,23 @@
   }
   function activate(from: string, to: string, row: number, col: number) {
     const old = indexOfActive();
-    if (old) {
-      button(old.row, old.col)?.setAttribute('tabindex', '-1');
-      highlight(old.row, old.col, false);
-    }
+    if (old) highlight(old.row, old.col, false);
     active = { from, to };
-    button(row, col)?.setAttribute('tabindex', '0');
+    setStop(button(row, col));
     highlight(row, col, true);
   }
   // After the axes change, the cells are new: keep the active cell if it is still drawn, else the first reachable one.
   $effect(() => {
     if (!table) return;
     for (const b of table.querySelectorAll('td > button')) b.setAttribute('tabindex', '-1');
+    stop = null;
     table.querySelectorAll('.highlight').forEach((el) => el.classList.remove('highlight'));
     const found = indexOfActive();
     if (found && open(found)) return activate(modules[found.row].name, modules[found.col].name, found.row, found.col);
     active = null;
     for (let row = 0; row < modules.length; row++) {
       const col = modules.findIndex((_, c) => open({ row, col: c }));
-      if (col >= 0) return button(row, col)?.setAttribute('tabindex', '0');
+      if (col >= 0) return setStop(button(row, col));
     }
   });
 

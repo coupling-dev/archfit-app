@@ -136,6 +136,15 @@ test('DSM moving the active cell touches only the old and new row and column', a
   expect(touched).toBeLessThanOrEqual(2 * 2 * (2 * count + 2));
 });
 
+test('DSM keeps one tab stop after a click moves the active cell', async ({ page }) => {
+  await open(page, '/r/acme/app', { [api]: () => [200, fixture(5)] });
+  await expect(page.locator('td > button[tabindex="0"]')).toHaveCount(1);
+  await page.getByRole('button', { name: 'storage to billing: no rule' }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('td > button[tabindex="0"]')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'storage to billing: no rule' })).toHaveAttribute('tabindex', '0');
+});
+
 test('DSM keeps a self-pair that has a status focusable', async ({ page }) => {
   const data = fixture(5);
   data.map.lines.push({ from: 'web', to: 'web', kind: 'drift', rule: 'graph' });
