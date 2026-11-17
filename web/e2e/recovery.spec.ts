@@ -194,8 +194,8 @@ for (const width of [390, 1280]) {
       'GET /api/admin/installations': () => [200, { waiting: [], approved: [managed], unreadable: 0 }],
       'GET /api/repos': () => [200, { repos: [{ full_name: 'alexei-led/ccgram' }], truncated: false }],
     });
-    await expect(page.getByText('Managed by configuration')).toBeVisible();
-    await expect(page.getByText('No installation is waiting.')).toBeVisible();
+    await expect(page.getByText('Managed by configuration', { exact: true })).toBeVisible();
+    await expect(page.getByText('No installation is waiting to be admitted.')).toBeVisible();
     await expect(page.getByRole('main').getByRole('button')).toHaveCount(0);
     await expect(page.getByRole('main')).not.toContainText('Revoke');
     const link = page.getByRole('link', { name: 'ccgram', exact: true });
@@ -218,7 +218,7 @@ for (const list of [
       'GET /api/admin/installations': () => [200, installations],
       'GET /api/repos': () => (list ? [200, list] : [503, { error: 'Unavailable' }]),
     });
-    await expect(page.getByText('Managed by configuration')).toBeVisible();
+    await expect(page.getByText('Managed by configuration', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'ccgram', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Revoke acme' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Revoke alexei-led' })).toHaveCount(0);

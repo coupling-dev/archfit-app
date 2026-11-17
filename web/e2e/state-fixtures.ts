@@ -47,9 +47,9 @@ export const stateFixtures: StateFixture[] = [
     name: 'waiting-installation',
     path: '/r/octo/tool',
     api: '/api/repos/octo/tool/home',
-    reply: [403, { error: 'This account is waiting for approval.', waiting: 'octo' }],
+    reply: [403, { error: 'This account is waiting to be admitted.', waiting: 'octo' }],
     heading: 'Check pull requests against your architecture policy',
-    text: 'Your installation on octo is waiting for approval.',
+    text: 'Your installation on octo is waiting to be admitted.',
   },
   {
     name: 'empty-list',

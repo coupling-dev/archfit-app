@@ -13,10 +13,9 @@ for (const theme of ['light', 'dark'] as const) {
       '.btn.primary',
       '.pitch-flow li',
       '.pitch-flow .ic',
-      '.status.success',
-      '.status.danger',
-      '.status.attention',
-      '.status.neutral',
+      '.status-label.success',
+      '.status-label.danger',
+      '.status-label.attention',
       '.app-footer',
     ];
     const colours: Record<string, object | string> = {};

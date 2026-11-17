@@ -35,7 +35,7 @@ test('an operator page waits for the session, and the waiting count follows it',
   await expect(page.getByRole('status', { name: 'Loading' })).toBeVisible();
   release();
   await expect(page.getByRole('heading', { name: 'Installations', exact: true })).toBeVisible();
-  await expect(page.getByText('1 waiting')).toBeVisible();
+  await expect(page.getByText('1 to admit')).toBeVisible();
   await expectClean(page);
 });
 
