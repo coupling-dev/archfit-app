@@ -75,6 +75,23 @@ with denies, requests, drift or exceptions. Filters use the same modules on both
 volatility. Its line precedence is drift, deny, request, exception, allow: unlike Matrix, it draws only one
 status per pair. Use Matrix for complete pair details, including when the diagram cannot load.
 
+![Diagram: modules by layer, with the legend and toolbar above](images/diagram-1280.png)
+
+The diagram sits in a box of fixed height, so the page does not grow with it. It opens with module names at
+least 11 px high; on a large repository it starts at that size at the top left and you move from there.
+
+- **Move:** drag, or use the arrow keys on the focused diagram.
+- **Zoom:** Ctrl or Cmd with the mouse wheel, pinch, double-click, the **+** and **−** buttons, or the **+** and
+  **-** keys. A plain wheel keeps scrolling the page.
+- **Fit** and **100%** reset the zoom; **0** fits from the keyboard. **Full screen** fills the screen where the
+  browser allows it.
+- **Focus a module:** click it, or Tab to it. Its lines stay, the rest dim, and each of its lines is named by
+  both ends, for example `handlers → api · exception until 2027-01-15`. Click it again or press Esc to clear.
+- **Find a module:** type or pick a name; the diagram moves to it and focuses it.
+
+An arrow points at the module it depends on. The outer layer is on top. The lines are allowed dependencies,
+not observed imports.
+
 On request pages, the map has **Show the map as a list** and **Show the map as a diagram** disclosures.
 The diagram is closed at every width, so no layout worker loads until you open it. Below 720px the list opens
 first. The list remains available if the layout worker fails.
