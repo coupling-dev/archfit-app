@@ -82,7 +82,7 @@
 {:else}
   {#if body.unreadable}
     <p class="flash warn">
-      The approval of {body.unreadable} installation{body.unreadable === 1 ? '' : 's'} could not be read. They are listed
+      The admission of {body.unreadable} installation{body.unreadable === 1 ? '' : 's'} could not be read. They are listed
       as waiting, and Archfit does not run for them. Try again in a minute.
     </p>
   {/if}
@@ -120,8 +120,7 @@
           <span class="label">{row.type}</span>
           {#if row.auto}<span class="label">Managed by configuration</span>{/if}
           <div class="muted small">
-            {#if row.auto}Set in the App settings{:else}Admitted by {row.approved_by} on {day(row.approved_at ?? '')}{/if}
-            · {repoCount(row)}
+            {#if !row.auto}Admitted by {row.approved_by} on {day(row.approved_at ?? '')}{' · '}{/if}{repoCount(row)}
           </div>
           {@render repos(row)}
         </div>

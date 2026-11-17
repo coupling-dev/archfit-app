@@ -29,7 +29,7 @@ Revoke
 acme
 A
 alexei-led User Managed by configuration
-Set in the App settings · 1 repository
+1 repository
 ccgram
 Accounts managed by configuration are set in the App settings, by pull request. This page cannot change them.
 Revoke stops Archfit from the account's next event on. Checks already on GitHub stay.
