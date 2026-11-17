@@ -267,8 +267,8 @@
           </defs>
           {#each placed.bands as band (band.name)}
             <g class="map-band">
-              <rect x="8" y={band.y} width={placed.width - 16} height={band.height} rx="6" />
-              <text x="20" y={band.y + 20}>{band.name || 'No layer'}</text>
+              <rect x={placed.left} y={band.y} width={placed.width - placed.left - 8} height={band.height} rx="6" />
+              <text x={placed.left + 12} y={band.y + 20}>{band.name || 'No layer'}</text>
             </g>
           {/each}
           {#each placed.links as link (link.from + '\u0000' + link.to)}
@@ -277,6 +277,9 @@
               <path d={link.path} marker-end={`url(#${id}-arrow)`} />
               <text x={link.labelX} y={link.labelY} text-anchor="middle">{link.count}</text>
             </g>
+          {/each}
+          {#each routes as route (route.line)}
+            <g class={'map-edge ' + route.line.kind}><path d={route.path} marker-end={`url(#${id}-arrow)`} /></g>
           {/each}
           {#each placed.nodes as node (node.name)}
             <g
@@ -299,10 +302,7 @@
             </g>
           {/each}
           {#each routes as route (route.line)}
-            <g class={'map-edge ' + route.line.kind}>
-              <path d={route.path} marker-end={`url(#${id}-arrow)`} />
-              <text x={route.labelX} y={route.labelY} text-anchor="middle">{focusLabel(route.line)}</text>
-            </g>
+            <text class={'map-label ' + route.line.kind} x={route.labelX} y={route.labelY} text-anchor="middle">{focusLabel(route.line)}</text>
           {/each}
         </svg>
       {/if}
@@ -343,12 +343,14 @@
   .dim { opacity: 0.2; }
   .map-edge, .map-link { color: var(--fg-muted); }
   .map-edge path, .map-link path { fill: none; stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-  .map-edge text, .map-link text { font-size: 14px; font-weight: 600; paint-order: stroke; stroke: var(--bg-subtle); stroke-width: 4; stroke-linejoin: round; }
+  .map-label, .map-link text { font-size: 14px; font-weight: 600; paint-order: stroke; stroke: var(--bg-subtle); stroke-width: 4; stroke-linejoin: round; }
   .map-edge.requested path, .map-link.requested path { stroke-width: 2; stroke-dasharray: 8 5; }
   .map-edge.exception path, .map-link.exception path { stroke-width: 2; stroke-dasharray: 2 4; }
   .map-edge.deny path, .map-link.deny path { stroke-width: 3; stroke-dasharray: 12 3 2 3; }
   .map-edge.drift path, .map-link.drift path { stroke-width: 4; }
   .map-edge.drift, .map-link.drift, .sample.drift { color: var(--danger); }
+  .map-label { color: var(--fg); }
+  .map-label.drift { color: var(--danger); }
   .map-legend { display: flex; flex-wrap: wrap; gap: 12px 20px; list-style: none; padding: 0; margin-block: 8px; }
   .map-legend li { display: flex; align-items: center; gap: 8px; font-size: 12px; }
   .sample { display: inline-block; width: 32px; border-top: 1.5px solid currentColor; flex: none; }

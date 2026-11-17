@@ -151,13 +151,13 @@ test('diagram: a module in focus keeps its lines, dims the rest, and names both 
   expect(mine.length).toBeGreaterThan(3);
   await page.locator('[data-module="handlers"]').click();
   await expect(page.locator('.map-node.selected')).toHaveCount(1);
-  await expect(page.locator('.map-edge text')).toHaveCount(mine.length);
+  await expect(page.locator('.map-label')).toHaveCount(mine.length);
   await expect(page.locator('.map-edge')).toHaveCount(mine.length);
   await expect(page.locator('.map-link.dim')).toHaveCount(3);
   const neighbours = new Set(mine.flatMap((l) => [l.from, l.to]));
   await expect(page.locator('.map-node:not(.dim)')).toHaveCount(neighbours.size);
   const first = mine[0];
-  const labels = await page.locator('.map-edge text').allTextContents();
+  const labels = await page.locator('.map-label').allTextContents();
   expect(labels.some((t) => t.startsWith(`${first.from} → ${first.to} · `))).toBe(true);
   // Clicking again clears; so does Escape.
   await page.locator('[data-module="handlers"]').click();

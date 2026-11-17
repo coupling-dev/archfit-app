@@ -161,7 +161,7 @@ test('request: the reason, the record with its balance, the two modules, the pre
   await map.getByText('Show the map as a diagram', { exact: true }).click();
   await expect(map.locator('.map-node')).toHaveCount(2);
   await map.locator('[data-module]').first().click();
-  await expect(map.locator('.map-edge.requested text')).toContainText('requested #431');
+  await expect(map.locator('.map-label.requested')).toContainText('requested #431');
   const why = page.getByRole('region', { name: 'Why the balance' });
   await expect(why).toContainText('Layer adapters · Volatility high');
   await expect(why).toContainText('Volatility low · subdomain generic');

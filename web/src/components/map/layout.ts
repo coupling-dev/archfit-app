@@ -23,6 +23,8 @@ export interface MapLink {
   labelY: number;
 }
 export interface MapLayout {
+  // Where the bands start: the lines between layers run in the margin to the left of them.
+  left: number;
   width: number;
   height: number;
   nodes: MapNode[];
@@ -96,7 +98,7 @@ export async function placeBands(model: MapModel, layout: Layout): Promise<MapLa
       },
       children: modules.map((m, i) => ({ id: String(i), width: widths[i], height: NODE_HEIGHT })),
     });
-    const height = Math.max(LABEL + (graph.height ?? NODE_HEIGHT) + PAD, LABEL + (slots.get(name) ?? 0) * SLOT);
+    const height = Math.max(LABEL + (graph.height ?? NODE_HEIGHT) + PAD, LABEL + (slots.get(name) ?? 0) * SLOT + PAD);
     for (const [i, m] of modules.entries()) {
       const p = graph.children?.find((n) => n.id === String(i));
       if (!p) throw new Error('A module could not be placed.');
@@ -109,8 +111,8 @@ export async function placeBands(model: MapModel, layout: Layout): Promise<MapLa
   const bandOf = (name: string) => bands.find((b) => b.name === name)!;
   const links = ends.map(({ p, a, b }, i): MapLink => {
     const x = 12 + i * PAIR;
-    const ya = bandOf(p.from).y + 16 + a * SLOT;
-    const yb = bandOf(p.to).y + 16 + b * SLOT;
+    const ya = bandOf(p.from).y + LABEL + a * SLOT;
+    const yb = bandOf(p.to).y + LABEL + b * SLOT;
     return {
       ...p,
       path: `M ${gutter} ${ya} H ${x} V ${yb} H ${gutter - 2}`,
@@ -118,7 +120,7 @@ export async function placeBands(model: MapModel, layout: Layout): Promise<MapLa
       labelY: (ya + yb) / 2,
     };
   });
-  return { width: Math.max(360, gutter + width + 8), height: Math.max(100, y), nodes, bands, links };
+  return { left: gutter, width: Math.max(360, gutter + width + 8), height: Math.max(100, y), nodes, bands, links };
 }
 
 // One worker per mounted map; abort/unmount terminates it. Worker errors reject, never leave an empty picture.

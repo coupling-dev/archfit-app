@@ -40,3 +40,16 @@ describe('routeLines', () => {
     expect(routes[0].path).not.toMatch(/NaN|undefined/);
   });
 });
+
+describe('route labels', () => {
+  it('do not cover one another', () => {
+    const many = [node('hub', 100, 100), ...Array.from({ length: 6 }, (_, i) => node('m' + i, 100 + i * 12, 400))];
+    const routes = routeLines(many, many.slice(1).map((n) => line('hub', n.name)), 'hub');
+    const boxes = routes.map((r) => {
+      const half = (`hub → ${r.line.to} · allowed`.length * 7.6) / 2;
+      return { x0: r.labelX - half, x1: r.labelX + half, y0: r.labelY - 18, y1: r.labelY };
+    });
+    for (const [i, a] of boxes.entries())
+      for (const b of boxes.slice(i + 1)) expect(a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1).toBe(false);
+  });
+});

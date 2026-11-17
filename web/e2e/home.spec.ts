@@ -272,8 +272,8 @@ test('home: SVG names both ends of a line when its module is in focus, and draws
     await expect(page.locator('.map-edge')).toHaveCount(0);
     await page.locator('[data-module="app"]').click();
     await expect(page.locator('.map-edge')).toHaveCount(2);
-    await expect(page.locator('.map-edge.' + kind + ' text')).toHaveText(label);
-    await expect(page.locator('.map-edge.allowed text')).toHaveText('app → util · allowed');
+    await expect(page.locator('.map-label.' + kind)).toHaveText(label);
+    await expect(page.locator('.map-label.allowed')).toHaveText('app → util · allowed');
     await expect(page.locator('.map-edge.allowed')).toHaveCount(1);
     await expectNoNotUsedWord(page, ['Review workflow change']);
   }
