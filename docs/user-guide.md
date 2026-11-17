@@ -106,13 +106,23 @@ larger hit areas on narrow screens and touch devices. Request fields use the sel
 
 ## Policy
 
-The repository tabs are **Home** and **Policy**. Policy starts with owners, layers in inner-first order, the configured
-check mode, and counts. Approval and live enforcement are **Not provided**: this response does not carry that evidence.
-**Blocking rules** counts configured ask/deny rules, not off settings or unchecked notes. It does not prove that checks are required.
+The repository tabs are **Home**, **Policy** and **Passkeys**. Policy starts with owners, layers in inner-first order, **The check**,
+and counts. **The check** is the `gate` key: `advisory` means rules are reported and `archfit/gate` does not fail; `required`
+means a failing rule makes `archfit/gate` fail. Whether GitHub requires the check is shown on Home.
+**Ask and deny rules** counts the rules set to `ask` or `deny`, not off settings or notes.
 
-Search filters rules, exceptions, and modules without changing the totals. Expand a rule for its scope, **Why**, and
-**Instead**. Notes remain **Not checked**. Exceptions show server-supplied days remaining, including today in the next
-30 days. Bars show the remaining days capped at 30, not exception age. Missing expiry or ownership stays **Not provided**.
+A repository with no `.archfit.yaml` on its default branch shows **No policy on the default branch yet.** with
+**Continue setup**, which opens Home. A repository you cannot see shows **Page not available**.
+
+Search filters rules, exceptions, and modules without changing the totals. Each rule is named by its id, as on the
+pull request and request pages. Expand a rule for its scope, **Why**, and **Instead**. A note is **Not checked**: it
+tells the reader what to do.
+
+Exceptions are grouped by rule, largest group first, with a count for each (for example **coupling · 62**). The first
+20 rows show, then **Show all**. A column appears only when a shown row has its fact: **Expiry** when an end date
+exists, **Request** when a request link exists. Exceptions without an end date say so once above the table. Exceptions
+show server-supplied days remaining, including today in the next 30 days. Bars appear only when a shown row has an end
+date and show the remaining days capped at 30, not exception age.
 Request links appear only when the response supplies a safe destination.
 
 The module table follows the rules and exceptions. Expand a module for public paths, volatility, and subdomain.
@@ -216,7 +226,7 @@ API flow referenced by the GitHub issue instead.
 ### Unavailable policy or owner action
 
 If the policy cannot be read, **View current setup** leads back to Home. The Policy page does not infer
-whether the policy is missing, invalid, or still being prepared in a first-policy PR. An unavailable
+whether an invalid policy is still being prepared in a first-policy pull request. An unavailable
 editor leaves the policy read-only and shows the server's reason. It does not ask you to fix YAML
 just because setup has not finished.
 
