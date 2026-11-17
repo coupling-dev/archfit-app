@@ -6,7 +6,7 @@ import {
   groupExceptions,
   isPolicyMissing,
   policyCounts,
-  policyGraph,
+  policyMap,
   policyRules,
   ruleMode,
 } from './policy';
@@ -185,39 +185,25 @@ describe('policy search', () => {
   });
 });
 
-describe('secondary module graph', () => {
-  it('draws declared dependencies, counts missing targets, and preserves the input', () => {
+describe('policy map', () => {
+  it('draws each declared dependency as an allowed line, counts missing targets, and keeps the input', () => {
     const modules = [module('app', 'entry', ['util', 'absent']), module('util')];
-    const graph = policyGraph(modules, ['core', 'entry']);
-    expect(graph.links.map(({ from, to }) => [from, to])).toEqual([['app', 'util']]);
-    expect(graph.missing).toBe(1);
-    expect(graph.nodes.map(({ module }) => module.name)).toEqual(['app', 'util']);
-    expect(graph.nodes[0]?.y).toBeLessThan(graph.nodes[1]?.y ?? 0);
+    const { model, missing } = policyMap(modules, ['core', 'entry']);
+    expect(model.lines).toEqual([{ kind: 'allowed', from: 'app', to: 'util' }]);
+    expect(missing).toBe(1);
+    expect(model.modules.map((m) => m.name)).toEqual(['app', 'util']);
     expect(modules.map((m) => m.depends_on)).toEqual([['util', 'absent'], []]);
   });
 
-  it('places same-layer consumers above their dependencies', () => {
-    const graph = policyGraph([module('a', 'core', ['b']), module('b', 'core', ['c']), module('c')], ['core']);
-    const y = new Map(graph.nodes.map((node) => [node.module.name, node.y]));
-    expect(y.get('a')).toBeLessThan(y.get('b') ?? 0);
-    expect(y.get('b')).toBeLessThan(y.get('c') ?? 0);
+  it('lists layers outer-first, the reverse of the policy file', () => {
+    const { model } = policyMap([module('a', 'core'), module('b', 'entry')], ['core', 'entry']);
+    expect(model.layers).toEqual(['entry', 'core']);
   });
 
-  it('supports cycles, self-dependencies and undeclared layers without recursion', () => {
-    const graph = policyGraph([module('a', '', ['a', 'b']), module('b', 'other', ['a'])], null);
-    expect(graph.links).toHaveLength(3);
-    expect(graph.links.every((link) => !link.path.includes('NaN'))).toBe(true);
-    expect(graph.layers).toEqual(['', 'other']);
-  });
-
-  it('wraps large layers in three-column rows and handles an empty policy', () => {
-    const graph = policyGraph(
-      Array.from({ length: 10 }, (_, i) => module(String(i))),
-      ['core'],
-    );
-    expect(new Set(graph.nodes.map((n) => `${n.x},${n.y}`)).size).toBe(10);
-    expect(graph.nodes.every((n) => n.x >= 0 && n.x + 140 <= 480)).toBe(true);
-    expect(policyGraph([], null)).toMatchObject({ nodes: [], links: [], missing: 0 });
+  it('keeps a self-dependency and a cycle as lines, and an empty policy as nothing', () => {
+    const cyclic = policyMap([module('a', '', ['a', 'b']), module('b', 'other', ['a'])], null);
+    expect(cyclic.model.lines).toHaveLength(3);
+    expect(policyMap([], null)).toEqual({ model: { layers: [], modules: [], lines: [] }, missing: 0 });
   });
 });
 

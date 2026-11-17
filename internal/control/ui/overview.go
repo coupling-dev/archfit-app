@@ -7,6 +7,8 @@ import (
 	"sync"
 
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
+	"github.com/alexei-led/archfit-app/internal/gate"
+	"github.com/alexei-led/archfit-app/internal/github/api"
 )
 
 // An installation no operator has admitted: the list reads nothing from it. Operators admit; owners approve.
@@ -25,7 +27,7 @@ type overviewRow struct {
 	SetupStage        string           `json:"setup_stage,omitempty"`
 	Enforcement       string           `json:"enforcement"`
 	EnforcementReason string           `json:"enforcement_reason,omitempty"`
-	NextStep          overviewNextStep `json:"next_step"` // empty when the list names no step
+	NextStep          overviewNextStep `json:"next_step"`
 }
 
 type overviewNextStep struct {
@@ -38,7 +40,8 @@ type overviewBody struct {
 	Truncated bool          `json:"truncated"`
 }
 
-// apiRepos lists stored evidence separately from a bounded read of setup and required-check facts.
+// apiRepos lists stored evidence separately from a bounded read of setup and required-check facts. Each row runs its
+// own state read and, for the first maxSetupProbes admitted rows, its own Setup probe: no row waits for another.
 func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 	repos, err := s.gh.users.UserRepos(r.Context(), sc.user.Token)
 	if err != nil {
@@ -51,6 +54,15 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 	}
 	body.Repos = make([]overviewRow, len(repos))
 	admitted := s.admittedSet(r.Context(), repos)
+	// The probed rows are chosen before any read starts, so each row's goroutine decides alone.
+	probed := make([]bool, len(repos))
+	probes := 0
+	for i, repo := range repos {
+		if admitted[repo.InstallationID] && probes < maxSetupProbes {
+			probed[i] = true
+			probes++
+		}
+	}
 	failures := make([]error, len(repos))
 	slots := make(chan struct{}, parallelLookups)
 	var wg sync.WaitGroup
@@ -68,6 +80,10 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 			state, err := s.repoStates.RepoState(r.Context(), repo)
 			failures[i] = err
 			body.Repos[i] = uncheckedOverviewRow(repo.FullName, state)
+			// Stored evidence stays when the state read fails: the list then answers the error, as before.
+			if err == nil && probed[i] {
+				s.overviewProbe(r, repo, &body.Repos[i])
+			}
 		}()
 	}
 	wg.Wait()
@@ -76,30 +92,19 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 			return nil, err
 		}
 	}
-
-	// Stored drift state says nothing about setup or required checks. Reuse the existing bounded Setup probe
-	// for the first 25 admitted rows, including approved records; never add a second GitHub read path.
-	probes := 0
-	for i, repo := range repos {
-		if !admitted[repo.InstallationID] || probes >= maxSetupProbes {
-			continue
-		}
-		probes++
-		wg.Add(1)
-		slots <- struct{}{}
-		go func() {
-			defer wg.Done()
-			defer func() { <-slots }()
-			setup, err := s.setups.Setup(r.Context(), repo)
-			if err != nil {
-				body.Repos[i].EnforcementReason = "The App could not read the required-check settings."
-				return // retain stored evidence; one GitHub failure must not break the list.
-			}
-			applyOverviewSetup(&body.Repos[i], setup)
-		}()
-	}
-	wg.Wait()
 	return body, nil
+}
+
+// overviewProbe reads one row's Setup through the existing probe. Its own Home snapshot reads the default branch's tip,
+// policy and workflow once for this row, so the approval summary does not read them again.
+func (s *server) overviewProbe(r *http.Request, repo api.Repo, row *overviewRow) {
+	ctx, _ := gate.WithHomeSnapshot(r.Context(), repo)
+	setup, err := s.setups.Setup(ctx, repo)
+	if err != nil {
+		row.EnforcementReason = "The App could not read the required-check settings."
+		return // retain stored evidence; one GitHub failure must not break the list.
+	}
+	applyOverviewSetup(row, setup)
 }
 
 func uncheckedOverviewRow(name, state string) overviewRow {
@@ -159,7 +164,7 @@ func repoEnforcement(report onboarding.RulesetReport) (state, reason string) {
 	// Home reads a missing rules finding as readable; only a finding the App could not read blocks the check.
 	readable := true
 	for _, code := range []string{"rulesets", "branch_rules"} {
-		if state, ok := findings[code]; ok && state != "ok" {
+		if found, ok := findings[code]; ok && found != "ok" {
 			readable = false
 		}
 	}

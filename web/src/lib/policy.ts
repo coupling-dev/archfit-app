@@ -1,6 +1,6 @@
+import type { MapLine, MapModel } from '../components/map/model';
 import type { ApiError, Policy } from './api';
 
-type PolicyModule = Policy['modules'][number];
 type Exception = Policy['exceptions'][number];
 
 // policyMissing is the server's sentence for a readable repository with no .archfit.yaml on its default branch.
@@ -127,65 +127,19 @@ export function filterPolicy(policy: Policy, query: string) {
   };
 }
 
-export function policyGraph(modules: PolicyModule[], layers: string[] | null) {
-  // Fixed three-column rows keep labels readable without a layout engine. The table remains authoritative.
-  const order = [...new Set([...[...(layers ?? [])].reverse(), ...modules.map((m) => m.layer)])].filter((name) => modules.some((m) => m.layer === name));
-  const nodes: { module: PolicyModule; index: number; x: number; y: number; layer: number }[] = [];
-  let row = 0;
-  for (const [layer, name] of order.entries()) {
-    const group = modules.flatMap((module, index) => (module.layer === name ? [{ module, index }] : []));
-    const remaining = new Map(group.map((entry) => [entry.module.name, entry]));
-    while (remaining.size) {
-      const incoming = new Set([...remaining.values()].flatMap(({ module }) => module.depends_on));
-      const ready = [...remaining.values()].filter(({ module }) => !incoming.has(module.name));
-      // A cycle has no first module. Keep all remaining nodes visible rather than inventing an order.
-      const batch = ready.length ? ready : [...remaining.values()];
-      const parentCenter = (name: string) => {
-        const parents = nodes.filter((node) => node.module.depends_on.includes(name));
-        return parents.length ? parents.reduce((sum, node) => sum + node.x, 0) / parents.length : 240;
-      };
-      batch.sort((a, b) => parentCenter(a.module.name) - parentCenter(b.module.name));
-      for (const [i, entry] of batch.entries()) {
-        const columns = Math.min(3, batch.length - Math.floor(i / 3) * 3);
-        nodes.push({
-          ...entry,
-          x: (480 - columns * 152) / 2 + (i % 3) * 152,
-          y: 24 + (row + Math.floor(i / 3)) * 96,
-          layer,
-        });
-        remaining.delete(entry.module.name);
-      }
-      row += Math.ceil(batch.length / 3);
-    }
-  }
-  const byName = new Map(nodes.map((node) => [node.module.name, node]));
-  const links: { from: string; to: string; path: string }[] = [];
-  let missing = 0;
-  for (const source of nodes) {
-    for (const name of source.module.depends_on) {
-      const target = byName.get(name);
-      if (!target) {
-        missing++;
-        continue;
-      }
-      const sx = source.x + 70;
-      const tx = target.x + 70;
-      const sameRow = source.y === target.y;
-      const sy = source.y + (source.y <= target.y ? 44 : 0);
-      const ty = target.y + (source.y >= target.y ? 44 : 0);
-      const bend = sameRow ? sy + 38 : (sy + ty) / 2;
-      const path =
-        source === target
-          ? `M${sx - 20},${sy} C${sx - 45},${sy + 40} ${sx + 45},${sy + 40} ${sx + 20},${sy}`
-          : `M${sx},${sy} C${sx},${bend} ${tx},${bend} ${tx},${ty}`;
-      links.push({ from: source.module.name, to: name, path });
-    }
-  }
+// The policy's declared dependencies as the Home map's model: one allowed line per dependency whose target is in the
+// module list. Layers are outer-first there; the policy lists them inner-first. Missing targets are counted, not drawn.
+export function policyMap(modules: Policy['modules'], layers: string[] | null): { model: MapModel; missing: number } {
+  const names = new Set(modules.map((m) => m.name));
+  const lines = modules.flatMap((m) =>
+    m.depends_on.filter((to) => names.has(to)).map((to): MapLine => ({ kind: 'allowed', from: m.name, to })),
+  );
   return {
-    nodes,
-    links,
-    missing,
-    height: Math.max(120, row * 96 + 8),
-    layers: order,
+    model: {
+      layers: [...(layers ?? [])].reverse(),
+      modules: modules.map((m) => ({ name: m.name, layer: m.layer, volatility: m.volatility })),
+      lines,
+    },
+    missing: modules.reduce((n, m) => n + m.depends_on.filter((to) => !names.has(to)).length, 0),
   };
 }
