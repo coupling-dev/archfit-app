@@ -1,6 +1,6 @@
 Request #431
 
-approved Request #431 is answered.
+approved An owner approved this request.
 
 Reason
 
@@ -51,6 +51,4 @@ Earlier answers 1
 Exception to graph for pkg_tc -> pkg_util until 2026-10-01. Why: Until the port lands.
 Answer
 
-Approved until 2027-01-15.
-
-No answer is open. The request on GitHub names the owner who answered and the passkey used.
+Approved until 2027-01-15. The request on GitHub names the owner and the passkey.

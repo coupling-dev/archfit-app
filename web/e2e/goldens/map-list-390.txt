@@ -1,6 +1,6 @@
 Request #415
 
-waiting Request #415 waits for an owner to answer. Its numbers are as reported: no pull request confirmed them yet.
+waiting Waiting for an owner to answer. Its numbers are as reported: no pull request confirmed them yet.
 
 Reason
 

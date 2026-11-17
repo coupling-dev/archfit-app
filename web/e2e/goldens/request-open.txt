@@ -1,6 +1,6 @@
 Request #431
 
-waiting Request #431 waits for an owner to answer.
+waiting Waiting for an owner to answer.
 
 Reason
 

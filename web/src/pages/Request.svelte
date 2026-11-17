@@ -222,11 +222,13 @@
   <section class="box" aria-labelledby="earlier">
     <div class="box-head"><h2 class="title-box" id="earlier">Earlier answers <span class="counter">{body.earlier.length}</span></h2></div>
     {#if body.earlier.length}
-      <ul class="box-body plain stack-sm">
-        {#each body.earlier as e, i (i)}
-          <li>{earlierLine(e)}{#if e.why}<span class="muted">{` Why: ${e.why}`}</span>{/if}</li>
-        {/each}
-      </ul>
+      <div class="box-body">
+        <ul class="plain stack-sm">
+          {#each body.earlier as e, i (i)}
+            <li>{earlierLine(e)}{#if e.why}<span class="muted">{` Why: ${e.why}`}</span>{/if}</li>
+          {/each}
+        </ul>
+      </div>
     {:else}
       <p class="box-row muted">No earlier answer about these modules.</p>
     {/if}
@@ -272,12 +274,11 @@
       {:else if body.state === 'open'}
         <p>Add <code>.archfit.yaml</code> of version 3 to the default branch, then answer.</p>
       {:else}
-        {#if body.answer}
-          {#if body.answer.kind === 'approve'}<p>Approved.</p>
-          {:else if body.answer.kind === 'approve-until'}<p>Approved until {body.answer.until}.</p>
-          {:else}<p>Rejected. What to do instead: {body.answer.instead}</p>{/if}
-        {/if}
-        <p>No answer is open. The request on GitHub names the owner who answered and the passkey used.</p>
+        {#if body.answer?.kind === 'approve'}<p>Approved. The request on GitHub names the owner and the passkey.</p>
+        {:else if body.answer?.kind === 'approve-until'}<p>Approved until {body.answer.until}. The request on GitHub names the owner and the passkey.</p>
+        {:else if body.answer}<p>Rejected. What to do instead: {body.answer.instead}. The request on GitHub names the owner and the passkey.</p>
+        {:else if body.state === 'closed'}<p>No answer is open. The request on GitHub names the owner who answered and the passkey used.</p>
+        {:else}<p>The request on GitHub names the owner who answered and the passkey used.</p>{/if}
       {/if}
       {#if busy}<p class="small" role="status">Answering…</p>{/if}
       {#if answered}

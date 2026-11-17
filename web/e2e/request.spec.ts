@@ -144,7 +144,7 @@ test('request: the reason, the record with its balance, the two modules, the pre
   const { handlers, reads } = owner({});
   const writes = await open(page, path, handlers);
   await expect(page.getByRole('heading', { name: 'Request #431', level: 1 })).toBeVisible();
-  await expect(page.locator('.lede')).toHaveText('waiting Request #431 waits for an owner to answer.');
+  await expect(page.locator('.lede')).toHaveText('waiting Waiting for an owner to answer.');
   await expect(page.getByRole('region', { name: 'Reason' })).toContainText(request.reason);
   await expect(page.getByRole('region', { name: 'Reason' })).toContainText(
     'Rule graph · pkg_tc -> pkg_util · asked until 2026-12-01',
@@ -211,7 +211,7 @@ test('request: Approve and merge takes the digest, a passkey step-up for it, the
   expect(writes[1].postDataJSON()).toEqual({ action: 'approve', request: 431, digest });
   expect(writes[3].postDataJSON()).toEqual({ answer: 'approve', token: 'step-up-token' });
   // The page reads the request again: answered, so no answer is offered.
-  await expect(page.locator('.lede')).toHaveText('answered Request #431 is answered.');
+  await expect(page.locator('.lede')).toHaveText('answered An owner answered this request.');
   await expect(answerBox(page).getByRole('button')).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Preview' })).toHaveCount(0);
   await expectClean(page);
@@ -368,7 +368,7 @@ for (const [name, data] of [
 
 test('request: old answered record links to issue without inventing an answer', async ({ page }) => {
   await open(page, path, { [`GET ${req}`]: () => [200, { ...request, state: 'answered' }] });
-  await expect(answerBox(page)).toContainText('No answer is open.');
+  await expect(answerBox(page)).toContainText('names the owner who answered and the passkey used.');
   await expect(answerBox(page)).not.toContainText('Approved.');
   await expect(answerBox(page).getByRole('button')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Request #431 on GitHub' })).toBeVisible();
