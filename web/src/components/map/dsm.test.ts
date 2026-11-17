@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readHome } from '../../lib/home';
-import { pairIndex, pairKey, statusLabel, visibleModules } from './dsm';
+import { isNavKey, nextCell, pairIndex, pairKey, statusLabel, visibleModules, type Cell } from './dsm';
 import type { MapModel, MapLine } from './model';
 
 const lines: MapLine[] = [
@@ -90,5 +90,32 @@ describe('DSM axes', () => {
     expect(visibleModules({ ...model, lines: [lines[5]] }, { ...filters, attention: true }).map((m) => m.name)).toEqual(
       ['app', 'store'],
     );
+  });
+});
+
+describe('DSM cell navigation', () => {
+  const offDiagonal = (c: Cell) => c.row !== c.col;
+  it.each([
+    ['ArrowRight', false, { row: 0, col: 1 }, { row: 0, col: 2 }],
+    ['ArrowRight', false, { row: 1, col: 0 }, { row: 1, col: 2 }],
+    ['ArrowDown', false, { row: 0, col: 1 }, { row: 2, col: 1 }],
+    ['ArrowLeft', false, { row: 2, col: 3 }, { row: 2, col: 1 }],
+    ['ArrowUp', false, { row: 2, col: 1 }, { row: 0, col: 1 }],
+    ['Home', false, { row: 2, col: 3 }, { row: 2, col: 0 }],
+    ['Home', false, { row: 0, col: 3 }, { row: 0, col: 1 }],
+    ['End', false, { row: 3, col: 0 }, { row: 3, col: 2 }],
+    ['Home', true, { row: 2, col: 3 }, { row: 0, col: 1 }],
+    ['End', true, { row: 0, col: 1 }, { row: 3, col: 2 }],
+  ])('%s (ctrl %s) from %j goes to %j on a diagonal-skipping 4x4 grid', (key, ctrl, from, want) => {
+    expect(nextCell(key, ctrl, from, 4, offDiagonal)).toEqual(want);
+  });
+  it('stays on the cell at an edge, or when nothing else can take focus', () => {
+    expect(nextCell('ArrowLeft', false, { row: 0, col: 1 }, 4, offDiagonal)).toEqual({ row: 0, col: 1 });
+    expect(nextCell('ArrowUp', false, { row: 1, col: 0 }, 4, offDiagonal)).toEqual({ row: 1, col: 0 });
+    expect(nextCell('End', false, { row: 0, col: 0 }, 1, offDiagonal)).toEqual({ row: 0, col: 0 });
+  });
+  it('knows which keys it handles', () => {
+    expect(['ArrowUp', 'Home', 'End'].every(isNavKey)).toBe(true);
+    expect(['Enter', 'Tab', 'a'].some(isNavKey)).toBe(false);
   });
 });
