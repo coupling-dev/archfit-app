@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/answers"
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
@@ -20,9 +21,11 @@ type fakeSetups struct {
 	repos  []api.Repo
 	byRepo map[string]onboarding.Setup
 	errors map[string]error
+	delay  time.Duration // virtual or real time one Setup takes, outside the lock
 }
 
 func (f *fakeSetups) Setup(_ context.Context, r api.Repo) (onboarding.Setup, error) {
+	time.Sleep(f.delay)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.repos = append(f.repos, r)
