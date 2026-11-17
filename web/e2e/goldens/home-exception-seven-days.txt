@@ -1,11 +1,14 @@
-Home
-
 acme/app
+clean
 
-1 exception expires in 7 days
+The default branch follows the policy. 1 exception expires in 7 days.
+
+Open the exception
+(opens GitHub)
 View policy
 Needs you
 1 exception expires in 7 days
+(opens GitHub)
 The map
 Matrix
 Diagram

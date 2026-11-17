@@ -3,7 +3,7 @@
   import { setupRuleHelp } from '../lib/setup-rules';
   import { approvalNeedsReview, ownerReviewLabel, homeHref, setupChipClass, setupPullStep, setupRuleStatus, setupStepState, type HomeSetup } from '../lib/home';
 
-  let { setup, repo, showOwnerAction = true }: { setup: HomeSetup; repo: Repo; showOwnerAction?: boolean } = $props();
+  let { setup, repo, showOwnerAction = true, primaryHref = '' }: { setup: HomeSetup; repo: Repo; showOwnerAction?: boolean; primaryHref?: string } = $props();
   const steps = [
     { title: 'Add the policy', text: 'Your architecture rules live in .archfit.yaml, in the repository.' },
     { title: 'Policy and workflow pull request', text: 'Rules reach the default branch through review, so the approval binds to exact file contents.' },
@@ -49,7 +49,7 @@
                 <a class="btn" href={repoPage(repo.fullName, '/policy')}>View policy</a>
               {:else}
                 <p>Open one pull request that adds the missing policy or workflow.</p>
-                <a class="btn" href={`${githubRepo}/compare`}>Create a pull request on GitHub</a>
+                {#if primaryHref !== `${githubRepo}/compare`}<a class="btn" href={`${githubRepo}/compare`}>Create a pull request on GitHub</a>{/if}
               {/if}
               {#if !setup.workflow && setup.open_pull === 0 && !setup.first_pull}<p>The pull request should also add <code>.github/workflows/archfit.yaml</code>.</p>{/if}
             {:else if i === 2}
@@ -71,7 +71,7 @@
             {:else}
               <p>This step turns green when GitHub requires pull requests and archfit/gate on the default branch. Bypass and policy-push advice does not block this step; Verify yourself means the App has not checked that setting.</p>
               <div class="rules">
-                <div class="rule-actions"><a class="btn" href={`${githubRepo}/settings/rules`}>Open ruleset settings</a><button class="btn" onclick={() => window.location.reload()}>Check</button></div>
+                <div class="rule-actions">{#if primaryHref !== `${githubRepo}/settings/rules`}<a class="btn" href={`${githubRepo}/settings/rules`}>Open ruleset settings</a>{/if}<button class="btn" onclick={() => window.location.reload()}>Check</button></div>
                 <p>After saving changes on GitHub, select Check to read the settings again. Check does not change any GitHub settings.</p>
                 {#each setup.rules as rule, ri (`${rule.code}-${ri}`)}
                   {@const help = setupRuleHelp(rule, repo)}

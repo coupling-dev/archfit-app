@@ -1,9 +1,10 @@
 {
-  "status": "1 workflow change waits",
+  "state": "clean",
+  "status": "The default branch follows the policy. 1 workflow change waits.",
   "needs_you": [
     {
       "kind": "workflow",
-      "text": "Review workflow change · PR #4",
+      "text": "Review workflow change · pull request #4",
       "href": "/r/acme/app/owner/workflow?pull=4",
       "pull_request": 4
     }

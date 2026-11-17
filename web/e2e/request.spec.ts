@@ -160,7 +160,8 @@ test('request: the reason, the record with its balance, the two modules, the pre
   await expect(map.locator('.map-node')).toHaveCount(0);
   await map.getByText('Show the map as a diagram', { exact: true }).click();
   await expect(map.locator('.map-node')).toHaveCount(2);
-  await expect(map.locator('.map-edge.requested')).toContainText('Requested dependency · #431');
+  await map.locator('[data-module]').first().click();
+  await expect(map.locator('.map-label.requested')).toContainText('requested #431');
   const why = page.getByRole('region', { name: 'Why the balance' });
   await expect(why).toContainText('Layer adapters · Volatility high');
   await expect(why).toContainText('Volatility low · subdomain generic');
@@ -340,12 +341,16 @@ for (const [name, data] of [
     await open(page, path, { [`GET ${req}`]: () => [200, data], [`GET ${req}/preview`]: (_, url) => preview(url) });
     await expect(page.getByRole('heading', { name: 'Request #431' })).toBeVisible();
     await page.getByText('Show the map as a diagram', { exact: true }).click();
-    await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toBeVisible();
     if (!('answer' in data)) await expect(page.getByLabel('Approve: the change to .archfit.yaml')).toBeVisible();
     else {
       await expect(answerBox(page).getByRole('button')).toHaveCount(0);
+      const module = page.locator('[data-module]').first();
+      await module.click();
       await expect(page.locator('.map-edge.' + (data.answer.kind === 'reject' ? 'deny' : 'exception'))).toHaveCount(1);
       await expect(page.locator('.map-edge.allowed')).toHaveCount(0);
+      await module.click();
+      await expect(page.locator('.map-edge')).toHaveCount(0);
       await expect(answerBox(page)).toContainText(
         data.answer.kind === 'reject' ? 'Rejected. What to do instead: Use a port.' : 'Approved until 2027-01-15.',
       );
