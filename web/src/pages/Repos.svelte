@@ -29,7 +29,7 @@
   <Skeleton rows={4} />
 {:else if body.repos.length === 0}
   <div class="box blankslate">
-    <h2>No repository yet</h2>
+    <h2 class="title-box">No repository yet</h2>
     <p>No repository is available to you through an Archfit installation yet.</p>
   </div>
 {:else}
@@ -92,9 +92,10 @@
   .repo-list { overflow: hidden; }
   td { vertical-align: top; overflow-wrap: anywhere; }
   .repository { width: 25%; }
-  td a { text-decoration: underline; text-underline-offset: .15em; }
-  .reason { margin: .35rem 0 0; max-width: 36ch; }
-  .enforcement { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .6rem; }
+  /* Each cell also holds a hidden label for the phone layout, so axe reads the link as running text: underline it. */
+  td a { text-decoration: underline; text-underline-offset: 2px; }
+  .reason { margin: 6px 0 0; max-width: 36ch; }
+  .enforcement { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
   .mobile-label, .mobile-name { display: none; }
 
   @media (max-width: 640px) {
@@ -102,10 +103,10 @@
     table, tbody, tr, td { display: block; width: 100%; }
     .repository { width: 100%; }
     thead, .desktop-name { display: none; }
-    tr { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 1rem; padding: 1rem; background: var(--bg); }
-    table.data td { border: 0; padding: 0 0 .9rem; }
+    tr { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; padding: 16px; background: var(--bg); }
+    table.data td { border: 0; padding: 0 0 12px; }
     table.data td:last-child { padding-bottom: 0; }
-    .mobile-label { display: block; font-size: .75rem; color: var(--fg-muted); margin-bottom: .3rem; }
+    .mobile-label { display: block; font-size: 12px; color: var(--fg-muted); margin-bottom: 4px; }
     .mobile-name { display: block; }
   }
 </style>

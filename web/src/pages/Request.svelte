@@ -138,7 +138,7 @@
   </div>
 
   <section class="box" aria-labelledby="reason">
-    <div class="box-head"><h2 id="reason">Reason</h2></div>
+    <div class="box-head"><h2 class="title-box" id="reason">Reason</h2></div>
     <div class="box-body stack-sm">
       <p>{body.reason}</p>
       <p class="small">
@@ -149,7 +149,7 @@
   </section>
 
   <section class="box" aria-labelledby="answer">
-    <div class="box-head"><h2 id="answer">Answer</h2></div>
+    <div class="box-head"><h2 class="title-box" id="answer">Answer</h2></div>
     <div class="box-body stack">
       {#if body.state === 'open' && body.policy}
         <p class="small">Choose an answer and read its policy change before confirming. Previewing or leaving this page changes nothing.</p>
@@ -180,7 +180,7 @@
           {#if shown.preview && decision.ready}
             {@const p = shown.preview}
             <div class="stack-sm" aria-label={`${title}: preview`}>
-              <h4>Policy change</h4>
+              <h4 class="title-box">Policy change</h4>
               <p class="small">
                 {p.loosens ? 'Loosens the policy: it needs your passkey.' : 'Tightens the policy: no passkey needed.'}
                 {#if p.until}Exception until {p.until}, inclusive (UTC).{/if}
@@ -190,7 +190,7 @@
                 <!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users must be able to scroll the unwrapped diff.) -->
                 <pre tabindex="0" role="region" aria-label={`${title}: the change to .archfit.yaml`}>{p.diff}</pre>
               {:else}<p class="small">It writes no line in <code>.archfit.yaml</code>.</p>{/if}
-              <h4>Affected pull requests</h4>
+              <h4 class="title-box">Affected pull requests</h4>
               {#if p.pulls.length}
                 <ul class="plain small stack-sm" aria-label={`${title}: open pull requests`}>
                   {#each p.pulls as e (e.number)}
@@ -237,7 +237,7 @@
   </section>
 
   <section class="box" aria-labelledby="record">
-    <div class="box-head"><h2 id="record">Record</h2></div>
+    <div class="box-head"><h2 class="title-box" id="record">Record</h2></div>
     <div class="box-body stack-sm">
       {#if balance}<p>Balance: <strong>{balance}</strong></p>{/if}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users must be able to scroll the original record.) -->
@@ -247,11 +247,11 @@
 
   {#if body.modules.length}
     <section class="box" aria-labelledby="modules">
-      <div class="box-head"><h2 id="modules">The map</h2></div>
+      <div class="box-head"><h2 class="title-box" id="modules">The map</h2></div>
       <div class="box-body"><Map model={requestMap(body)} repo={route.fullName} /></div>
     </section>
     <section class="box" aria-labelledby="balance-why">
-      <div class="box-head"><h2 id="balance-why">Why the balance</h2></div>
+      <div class="box-head"><h2 class="title-box" id="balance-why">Why the balance</h2></div>
       <div class="box-body stack-sm">
         {#if balance}<p>Balance: <strong>{balance}</strong></p>{:else}<p>The record has no balance.</p>{/if}
         <p>The policy declares the volatility of each module:</p>
@@ -261,7 +261,7 @@
   {/if}
 
   <section class="box" aria-labelledby="earlier">
-    <div class="box-head"><h2 id="earlier">Earlier answers <span class="counter">{body.earlier.length}</span></h2></div>
+    <div class="box-head"><h2 class="title-box" id="earlier">Earlier answers <span class="counter">{body.earlier.length}</span></h2></div>
     {#if body.earlier.length}
       <ul class="box-body plain stack-sm">
         {#each body.earlier as e, i (i)}
