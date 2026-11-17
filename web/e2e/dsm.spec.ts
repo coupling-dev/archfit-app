@@ -109,7 +109,15 @@ test('DSM compact density: 24 modules fit 1280px; 11 stay comfortable', async ({
   const head = page.getByRole('columnheader', { name: /module-10/ });
   await expect(head).toHaveAttribute('title', 'module-10');
   expect(await head.evaluate((el) => getComputedStyle(el).overflowWrap)).toBe('normal');
-  await page.screenshot({ path: '../tmp/matrix/compact-24-1280.png', fullPage: true });
+  await page.screenshot({ path: '../docs/images/matrix-24-1280.png', fullPage: true });
+});
+
+test('DSM 24 modules at a phone width: screenshot for review', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, '/r/acme/app', { [api]: () => [200, fixture(24)] });
+  await expect(page.getByRole('table', { name: tableName })).toHaveClass(/compact/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.getByRole('region', { name: 'Scrollable relationship matrix' }).screenshot({ path: '../docs/images/matrix-24-390.png' });
 });
 
 test('DSM comfortable below 12 modules, with counts and names that break only at _ and -', async ({ page }) => {
