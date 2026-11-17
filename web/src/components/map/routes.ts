@@ -33,6 +33,19 @@ export interface Area {
   avoid: Box[];
 }
 
+// Label offsets from the wanted spot: the spot itself, then rings of steps (36 px sideways, one line down or up),
+// nearest ring first, so the search reaches 50 lines above or below and never skips the wanted spot.
+const CANDIDATES: [number, number][] = (() => {
+  const out: [number, number][] = [[0, 0]];
+  for (let r = 1; r <= 50; r++) {
+    const ring: [number, number][] = [];
+    for (let a = -r; a <= r; a++)
+      for (let b = -r; b <= r; b++) if (Math.max(Math.abs(a), Math.abs(b)) === r) ring.push([a * 36, b * LINE]);
+    out.push(...ring.sort((p, q) => Math.abs(p[0]) - Math.abs(q[0]) || p[0] - q[0] || p[1] - q[1]));
+  }
+  return out;
+})();
+
 export function routeLines(nodes: MapNode[], lines: MapLine[], focused: string, area: Area): Route[] {
   const byName = new Map(nodes.map((n) => [n.name, n]));
   const mine = lines.filter((l) => l.from === focused || l.to === focused);
@@ -65,15 +78,21 @@ export function routeLines(nodes: MapNode[], lines: MapLine[], focused: string, 
     const x = Math.min(Math.max(wanted, half + 4), Math.max(half + 4, area.width - half - 4));
     // Where nothing is free, the position that covers the least is used, and it is reserved like any other.
     let best = { at: y, hits: Infinity };
-    for (let n = 0; n < 200 && best.hits > 0; n++) {
-      const dy = (n % 2 ? 1 : -1) * Math.ceil(n / 2) * LINE;
+    // Candidates start at the wanted spot, then grow in rings, so a crowded line finds room near its own path.
+    let bestX = x;
+    for (const [dx, dy] of CANDIDATES) {
+      if (best.hits === 0) break;
+      const cx = Math.min(Math.max(x + dx, half + 4), Math.max(half + 4, area.width - half - 4));
       const at = Math.min(Math.max(y + dy, LINE + 2), area.height - 4);
-      const box = { x0: x - half, x1: x + half, y0: at - LINE, y1: at };
+      const box = { x0: cx - half, x1: cx + half, y0: at - LINE, y1: at };
       const hits = taken.filter((t) => box.x0 < t.x1 && t.x0 < box.x1 && box.y0 < t.y1 && t.y0 < box.y1).length;
-      if (hits < best.hits) best = { at, hits };
+      if (hits < best.hits) {
+        best = { at, hits };
+        bestX = cx;
+      }
     }
-    taken.push({ x0: x - half, x1: x + half, y0: best.at - LINE, y1: best.at });
-    return [x, best.at];
+    taken.push({ x0: bestX - half, x1: bestX + half, y0: best.at - LINE, y1: best.at });
+    return [bestX, best.at];
   };
   return mine.flatMap((line): Route[] => {
     const from = byName.get(line.from);
