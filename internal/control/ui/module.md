@@ -87,6 +87,10 @@ and owner eligibility probes respectively. Cache hits count session authorizatio
 protected-input reuse, not approval reuse. Stages contain no tokens, file bytes or upstream error text.
 Existing `gh_calls` and `gh_ms` still measure real GitHub round trips, including retries.
 
+Every response carries the same numbers in a `Server-Timing` header for browser devtools: `total` (time to the
+header), `gh` (summed GitHub time, call count in `desc`), one metric per stage finished before the header, and `cold`
+on the first request the instance serves. Only numbers and the fixed stage names go out.
+
 The map imports its Diagram component only while the diagram disclosure is open; closing it aborts
 layout work. The list view never starts the ELK worker. Desktop still starts with the diagram selected;
 phone starts with the list. Browser tests assert zero worker requests before phone diagram selection.
