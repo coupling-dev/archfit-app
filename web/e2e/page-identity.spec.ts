@@ -26,7 +26,7 @@ for (const width of [390, 1280]) {
   for (const [name, path, api, title] of [
     ['home', '', 'home', 'acme/app'],
     ['pull', '/pull/4', 'pulls/4', 'Pull request #4'],
-    ['owner', '/owner/first?pull=12', 'owner/first/view', 'Owner action'],
+    ['owner', '/owner/first?pull=12', 'owner/first/view', 'Approve the first policy'],
   ]) {
     test(`page identity: ${name} loading and read failure at ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
@@ -48,7 +48,7 @@ for (const width of [390, 1280]) {
       await expect(head.getByRole('alert')).toHaveText('The page could not be read.');
       await expect(page.locator('main h1')).toHaveText(title);
       await expect(head.locator('.status, .status-label')).toHaveCount(0);
-      if (name === 'owner') await expect(head.locator('.lede')).toContainText('PR #12');
+      if (name === 'owner') await expect(head).toContainText('Pull request #12');
       await expectClean(page);
     });
   }
@@ -84,15 +84,17 @@ for (const width of [390, 1280]) {
       const head = page.locator('.page-head');
       await expect(page.locator('main h1')).toHaveText(title);
       if (name !== 'home') await expect(head.locator('.lede')).toContainText('acme/app');
-      const status = head.locator(name === 'home' ? '.status-line' : name === 'pull' ? '.page-status' : '.status');
+      const status = head.locator(
+        name === 'home' ? '.status-line' : name === 'owner' || name === 'pull' ? '.page-status' : '.status',
+      );
       await expect(status).toContainText(body.view?.status_line ?? body.status);
       const actions = head.locator(name === 'home' ? '.actions a' : '.row a');
       if (name === 'pull') {
         expect(await page.locator('main .primary').count()).toBeLessThanOrEqual(1);
         await expect(actions.first()).not.toHaveClass(/primary/);
       } else if (name === 'owner') {
-        await expect(page.locator('main .primary')).toHaveCount(0);
-        await expect(page.locator('main button.approval')).toHaveCount(1);
+        await expect(page.locator('main .primary')).toHaveCount(1);
+        await expect(page.locator('main button.approval.primary')).toHaveCount(1);
         await expect(actions.first()).not.toHaveClass(/btn/);
       } else if (name === 'home') {
         await expect(page.locator('main .primary')).toHaveCount(1);
@@ -116,7 +118,7 @@ for (const width of [390, 1280]) {
       if (name === 'owner') {
         await expect(actions.first()).toHaveAttribute('href', '/r/acme/app/policy');
         await expect(page.getByRole('link', { name: 'Read the change' })).toHaveCount(0);
-        const approval = page.getByRole('button', { name: body.main_action, exact: true });
+        const approval = page.getByRole('button', { name: 'Approve with passkey', exact: true });
         await expect(approval).toBeEnabled();
         const approvalBox = await approval.boundingBox();
         const diffBox = await page

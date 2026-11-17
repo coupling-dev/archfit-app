@@ -1,9 +1,6 @@
-Owner action
+Confirm the policy
 
 acme/app
 
-No policy confirmation needed
-View current setup
-View policy
-
-Open current setup or policy to see what to do next.
+Nothing to confirm: the policy has not changed outside the flow.
+Open the repository

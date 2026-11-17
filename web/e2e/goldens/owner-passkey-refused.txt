@@ -1,8 +1,10 @@
 Approve the workflow change
 
-acme/app · PR #7
+acme/app
 
 unknown — no verdict until this workflow change is approved.
+
+Pull request #7
 
 This pull request changes the workflow that runs Archfit. The App cannot use its result without your approval.
 
@@ -51,7 +53,7 @@ Compared with this pull request's base at 0000000. These policy bytes are includ
 Full files and approval details
 Confirm with your passkey
 
-Approve the workflow and policy shown for PR #7 at commit 0000000.
+Approve the workflow and policy shown for pull request #7 at commit 0000000.
 
 Your passkey confirms exactly the change shown above. Nothing is approved until this step finishes.
 
@@ -59,6 +61,5 @@ Why a passkey?
 
 Manage your passkeys
 
-The passkey step-up could not be started. Try again.
-
-Approve the workflow change
+Passkey confirmation could not start. Try again.
+Approve with passkey

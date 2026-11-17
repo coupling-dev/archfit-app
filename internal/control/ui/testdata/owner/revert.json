@@ -1,8 +1,8 @@
 {
   "kind": "revert",
   "pull_request": 0,
-  "status": "unknown: the policy changed outside the flow.",
-  "note": "This restores the approved policy.",
+  "status": "unknown — the policy changed outside the flow.",
+  "note": "The policy on the default branch changed without an owner's approval. Revert restores the approved policy.",
   "main_action": "Revert the policy",
   "passkey": true,
   "action_digest": "sha256:a49056135eb339d7bc6e720eb737f2d526eae8c89145c1f6edf791c165c79d32",
