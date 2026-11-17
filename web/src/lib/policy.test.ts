@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import type { Policy } from './api';
-import { exceptionExpiry, filterPolicy, policyCounts, policyGraph, policyRules, ruleMode } from './policy';
+import { ApiError, type Policy } from './api';
+import {
+  exceptionExpiry,
+  filterPolicy,
+  isPolicyMissing,
+  policyCounts,
+  policyGraph,
+  policyRules,
+  ruleMode,
+} from './policy';
 
 const module = (name: string, layer = 'core', deps: string[] = []): Policy['modules'][number] => ({
   name,
@@ -51,11 +59,18 @@ const policy: Policy = {
 
 describe('policy summary', () => {
   it('counts ask and deny rules, not off settings, notes, or the minimum balance', () => {
-    expect(policyCounts(policy)).toEqual({ modules: 2, blocking: 6, exceptions: 6, expiring: 3, expired: 1 });
+    expect(policyCounts(policy)).toEqual({
+      rules: 9,
+      modules: 2,
+      askDeny: 6,
+      exceptions: 6,
+      expiring: 3,
+      expired: 1,
+    });
     expect(policyCounts({ ...policy, gate: 'required' })).toEqual(policyCounts(policy));
   });
 
-  it('does not call unknown modes or unchecked declarations blocking', () => {
+  it('does not count unknown modes or unchecked declarations as ask or deny', () => {
     const body = {
       ...policy,
       builtin: { ...policy.builtin, graph: 'future-mode' },
@@ -64,9 +79,9 @@ describe('policy summary', () => {
         { id: 'unchecked-deny', deny: { from: ['app'], to: ['util'] }, not_checked: true, why: '' },
       ],
     };
-    expect(policyCounts(body).blocking).toBe(3);
+    expect(policyCounts(body).askDeny).toBe(3);
     expect(ruleMode('future-mode')).toBe('future-mode');
-    expect(ruleMode('')).toBe('Not provided');
+    expect(ruleMode('')).toBe('unknown');
   });
 
   it('retains repeated custom IDs and their distinct explanations', () => {
@@ -76,6 +91,40 @@ describe('policy summary', () => {
         .slice(6)
         .map((r) => r.why),
     ).toEqual(['Independence', 'One adapter', 'Shared limits']);
+  });
+});
+
+describe('policy rules', () => {
+  it('names every rule by its id, built-in rules first', () => {
+    expect(policyRules(policy).map((r) => r.id)).toEqual([
+      'graph',
+      'coupling',
+      'duplication',
+      'cycle',
+      'layers',
+      'unowned',
+      'boundary',
+      'sdk',
+      'note',
+    ]);
+  });
+
+  it('states the minimum balance and what balance means', () => {
+    const coupling = policyRules({ ...policy, builtin: { ...policy.builtin, min_balance: 8 } })[1];
+    expect(coupling?.summary).toBe(
+      'New knowledge across a module boundary needs a balance of at least 8. Balance is the coupling number, out of 10.',
+    );
+  });
+});
+
+describe('missing policy', () => {
+  it.each([
+    [409, 'No policy on the default branch yet.', true],
+    [404, 'No policy on the default branch yet.', false],
+    [409, 'The policy on the default branch could not be read. Fix .archfit.yaml first.', false],
+    [502, 'GitHub or an Archfit service failed. Nothing was changed. Try again.', false],
+  ])('%i %s', (status, message, missing) => {
+    expect(isPolicyMissing(new ApiError(status, message))).toBe(missing);
   });
 });
 
