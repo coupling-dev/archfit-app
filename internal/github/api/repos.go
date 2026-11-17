@@ -80,11 +80,16 @@ func (c *Client) InstallationID(ctx context.Context, fullName string) (int64, er
 		return 0, err
 	}
 	var inst struct {
-		ID int64 `json:"id"`
+		ID          int64   `json:"id"`
+		SuspendedAt *string `json:"suspended_at"`
 	}
 	k := call{cred: appCred, method: http.MethodGet, route: "/repos/{r}/installation", url: apiURL(base+"/installation", nil)}
 	if err := c.send(ctx, k, &inst); err != nil {
 		return 0, err
+	}
+	if inst.SuspendedAt != nil {
+		// A suspended installation grants nothing: it is refused as if the App were not installed.
+		return 0, ErrNotFound
 	}
 	if _, err := instCred(inst.ID); err != nil {
 		return 0, k.errorf("invalid response")

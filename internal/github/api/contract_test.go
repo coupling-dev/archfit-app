@@ -1090,3 +1090,20 @@ func TestCheckRunAnnotationBatches(t *testing.T) {
 		t.Errorf("an oversized batch sent %v", reqs)
 	}
 }
+
+func TestSuspendedInstallationIsNotInstalled(t *testing.T) {
+	env := muxEnv(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /repos/o/suspended/installation", func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]any{"id": 9, "suspended_at": "2026-11-01T00:00:00Z"})
+		})
+		mux.HandleFunc("GET /repos/o/live/installation", func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]any{"id": 9})
+		})
+	})
+	if _, err := env.c.InstallationID(context.Background(), "o/suspended"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("InstallationID of a suspended installation: err = %v, want ErrNotFound", err)
+	}
+	if id, err := env.c.InstallationID(context.Background(), "o/live"); err != nil || id != 9 {
+		t.Errorf("InstallationID = %d, %v; want 9", id, err)
+	}
+}

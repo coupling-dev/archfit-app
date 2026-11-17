@@ -58,7 +58,7 @@ needs one. It is a wide leaf on purpose: role interfaces keep each consumer's kn
 - Base URL `https://api.github.com`, fixed; tests replace the transport of the `*http.Client` **[default]**.
   Headers: `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28` (pinned),
   `User-Agent: archfit-app`. A `nil` client means a client with a 10 s timeout **[default]**.
-- Credential per call: App JWT for `ListInstallations`, `ResolveRepo` (installation lookup) and `GET /app`;
+- Credential per call: App JWT for `ListInstallations`, `InstallationID` and `ResolveRepo` (installation lookup) and `GET /app`;
   the installation token of `RepoRef.InstallationID` for every `RepoRef` method; the caller's token for `Users`.
 - `GET /app` is called once and kept for the process: App ID (check-run filter) and bot login `<slug>[bot]`.
   `CheckApp` is the exception: it sends `GET /app` with a fresh App JWT on every call and never uses the kept
@@ -135,7 +135,9 @@ on one answer, at most 300: 300 files set `Truncated`.
   Each `Installation` carries the account login, its type (`Organization` or `User`, from `account.type`) and the
   install time (`created_at`).
 - `ListRepos`: `GET /installation/repositories`.
-- `ResolveRepo`: `GET /repos/{r}/installation` (JWT) then `GET /repos/{r}` with that installation's token.
+- `InstallationID`: `GET /repos/{r}/installation` (JWT); a suspended installation is `ErrNotFound`.
+- `ResolveRepo`: `InstallationID`, then `GET /repos/{r}` with that installation's token.
+- `Access`: `GET /repos/{r}` with the user token, one call: the permission and the repository as the user sees it.
 - `File`: `GET /repos/{r}/contents/{path}?ref=`; `type` must be `file`; base64 body; over 1 MiB → error
   **[default]** (GitHub's contents API returns no inline content above that size); a directory, symlink or
   submodule → error. Consequence for an oversized settings, policy or baseline file: the caller fails closed,
@@ -310,6 +312,8 @@ type Installation struct {
 type Repos interface {
     ListInstallations(ctx context.Context) ([]Installation, error)
     ListRepos(ctx context.Context, installationID int64) ([]Repo, error)
+    // InstallationID returns the installation that covers fullName, using the App JWT. ErrNotFound if none does.
+    InstallationID(ctx context.Context, fullName string) (int64, error)
     // ResolveRepo finds the installation that covers fullName using the App JWT.
     ResolveRepo(ctx context.Context, fullName string) (Repo, error)
     // File returns the raw bytes and git blob SHA of path at ref. ErrNotFound if absent. A response without a valid
@@ -557,6 +561,8 @@ type Commits interface {
 type Users interface {
     // Permission returns "admin" | "write" | "read" | "none" for the user on the repository.
     Permission(ctx context.Context, userToken, fullName string) (string, error)
+    // Access is Permission plus the repository as the user sees it, from the same call (InstallationID unset).
+    Access(ctx context.Context, userToken, fullName string) (string, Repo, error)
     // UserRepos lists repositories the user can access through App installations.
     UserRepos(ctx context.Context, userToken string) ([]Repo, error)
 }

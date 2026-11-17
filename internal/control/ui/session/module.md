@@ -94,7 +94,7 @@ because it builds the OAuth redirect URL as `BaseURL + "/auth/callback"`.
 - `User` returns false for a missing, malformed, tampered, wrong-key, or expired cookie. It never returns an error and never writes a response.
 - `Authorize` returns `ErrForbidden` when: the permission is below `minPermission`; the permission is `none` or unknown;
   `minPermission` is not one of the three values; `fullName` is not `owner/name`; GitHub answers "not found" for the
-  permission or for `Repos.ResolveRepo` (App not installed on it). `ErrForbidden` is the sentinel callers test with `errors.Is`.
+  permission or for `Repos.InstallationID` (App not installed on it, or its installation suspended). `ErrForbidden` is the sentinel callers test with `errors.Is`.
 - `Permission` answers `api.ErrUserTokenRejected` (the user's token expired or was revoked): `Authorize` returns an error that
   wraps it, caches nothing, and logs outcome `token_rejected` at Info. The session cookie can outlive the token, for
   example after a revocation on GitHub or a cookie sealed by an older build, so this is an expected end of a session, not a fault.
@@ -151,7 +151,7 @@ type OAuth interface {
 - **LCA / Rank / Distance**: root / 3 / 3
 - **Volatility**: low
 - **Balanced?**: yes — contract coupling tolerates the distance
-- **Shared knowledge**: `Users.Permission` with the user's token, `Repos.ResolveRepo` with the App JWT. Session calls no
+- **Shared knowledge**: `Users.Access` with the user's token (one call; the repository it returns has no installation ID), `Repos.InstallationID` with the App JWT. Both run at once on a cache miss. Session calls no
   other method of `Repos`. `ErrNotFound` is the sentinel github/api returns for an unknown or uncovered repository;
   `ErrRateLimited` is the sentinel it returns after bounded backoff; `ErrUserTokenRejected` is the sentinel it returns for
   a `401` on the user's token. `api.Status(err)` gives the HTTP status of an answer that maps to no sentinel, for the log.
@@ -228,10 +228,10 @@ type Repos interface {
 
 ## Constraints and Invariants
 
-- Tenant identity comes only from `Authorize`: the installation ID is the one `Repos.ResolveRepo` returns. Session
+- Tenant identity comes only from `Authorize`: the installation ID is the one `Repos.InstallationID` returns. Session
   reads no installation or repository ID from the URL, query, form, header, or cookie payload.
-- Authorization uses the user's own token. App credentials are used only to find the covering installation, and only
-  after the user's permission was established.
+- Authorization uses the user's own token. App credentials are used only to find the covering installation. It is asked at
+  once with the user's permission, not after it, and its answer is used only when the user has some permission.
 - Fail closed: every error path ends without a `Repo` and without a session cookie.
 - Cookies: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` when `BaseURL` is `https`. Names `archfit_session` and
   `archfit_oauth` **[default]**. Expiry is inside the ciphertext and checked against the injected clock; the browser's
