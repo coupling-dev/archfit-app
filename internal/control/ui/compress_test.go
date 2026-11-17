@@ -28,6 +28,8 @@ func TestAssetsSendTheCodingTheClientTakes(t *testing.T) {
 		{"raw for identity", "/assets/app.js", "identity", raw, ""},
 		{"a wildcard names no coding", "/assets/app.js", "*", raw, ""},
 		{"no sibling, raw", "/assets/plain.js", "br, gzip", "only raw", ""},
+		{"q=0 in any spelling refuses", "/assets/app.js", "br;q=0.000, gzip;q=0.0", raw, ""},
+		{"a positive q is taken", "/assets/app.js", "br;q=0.1", brotli, "br"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

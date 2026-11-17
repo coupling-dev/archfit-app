@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { brotliCompressSync, gzipSync } from 'node:zlib';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
@@ -9,20 +10,18 @@ const csp = readFileSync(new URL('./csp.txt', import.meta.url), 'utf8').trim();
 const lic = licenses();
 
 // precompress writes a .br and a .gz sibling of every script and stylesheet, so the Go server sends them as they are
-// (internal/control/ui/spa.go). Brotli and gzip are node's own; no dependency.
+// (internal/control/ui/spa.go). It runs after the bundle is written, so each sibling holds the bytes of the file that
+// ships. Brotli and gzip are node's own; no dependency.
 const precompress = {
   name: 'precompress',
   apply: 'build' as const,
-  generateBundle(
-    this: { emitFile(file: { type: 'asset'; fileName: string; source: Uint8Array }): unknown },
-    _: unknown,
-    bundle: Record<string, { type: string; fileName: string; code?: string; source?: string | Uint8Array }>,
-  ) {
+  writeBundle(options: { dir?: string }, bundle: Record<string, { fileName: string }>) {
     for (const item of Object.values(bundle)) {
-      if (!/\.(js|css)$/.test(item.fileName)) continue;
-      const raw = Buffer.from(item.type === 'chunk' ? item.code! : item.source!);
-      this.emitFile({ type: 'asset', fileName: `${item.fileName}.br`, source: brotliCompressSync(raw) });
-      this.emitFile({ type: 'asset', fileName: `${item.fileName}.gz`, source: gzipSync(raw, { level: 9 }) });
+      if (!/\.(js|css)$/.test(item.fileName) || !options.dir) continue;
+      const file = join(options.dir, item.fileName);
+      const raw = readFileSync(file);
+      writeFileSync(`${file}.br`, brotliCompressSync(raw));
+      writeFileSync(`${file}.gz`, gzipSync(raw, { level: 9 }));
     }
   },
 };
