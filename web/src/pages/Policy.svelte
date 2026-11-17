@@ -120,7 +120,7 @@
       {/if}
       {#if preview?.errors.length}
         <Banner tone="danger" role="alert" title="Fix the policy">
-          <ul>{#each preview.errors as error (error)}<li>{error}</li>{/each}</ul>
+          <ul>{#each preview.errors as error, i (i)}<li>{error}</li>{/each}</ul>
         </Banner>
       {/if}
       {#if preview && preview.errors.length === 0 && !preview.diff}

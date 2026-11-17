@@ -71,9 +71,11 @@ func (s *server) apiEditPreview(r *http.Request, sc scope) (any, error) {
 
 var (
 	problemLine   = regexp.MustCompile(`^\.archfit\.yaml:(\d+): policy: (.*)$`)
-	unknownKey    = regexp.MustCompile(`^field (\S+) not found in type policy3\.\w+$`)
+	unknownKey    = regexp.MustCompile(`^field (.+) not found in type policy3\.\w+$`)
 	missingGlob   = regexp.MustCompile(`^modules\.(\S+?)\.paths: required: list at least one glob$`)
 	badVolatility = regexp.MustCompile(`^modules\.(\S+?)\.volatility: "([^"]*)" is not one of low, medium, high$`)
+	wrongType     = regexp.MustCompile(`^cannot unmarshal .*|want a list$|^modules\.\S+: want`)
+	goTypeName    = regexp.MustCompile(`policy3\.|!!|\[\]|map\[`)
 )
 
 // editProblem says one decoder problem in the words of the policy, with its line. The Go type names of the decoder
@@ -92,6 +94,9 @@ func editProblem(problem string) string {
 	}
 	if v := badVolatility.FindStringSubmatch(text); v != nil {
 		return fmt.Sprintf("Line %s: volatility must be low, medium or high (got \"%s\").", line, v[2])
+	}
+	if wrongType.MatchString(text) || goTypeName.MatchString(text) {
+		return fmt.Sprintf("Line %s: this value has the wrong type for its key.", line)
 	}
 	return fmt.Sprintf("Line %s: %s.", line, strings.TrimSuffix(text, "."))
 }
