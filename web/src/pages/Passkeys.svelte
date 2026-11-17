@@ -81,11 +81,11 @@
             <div class="stack-sm passkey-remove">
               {#if removing === p.id}
                 <span class="btn-group">
-                  <button class="btn sm" type="button" aria-describedby={list.length === 1 ? 'last-key' : undefined} disabled={busy} onclick={() => remove(p.id)}>Confirm removal</button>
+                  <button class="btn sm danger" type="button" aria-describedby={list.length === 1 ? 'last-key' : undefined} disabled={busy} onclick={() => remove(p.id)}>Confirm removal</button>
                   <button class="btn sm" type="button" disabled={busy} onclick={() => (removing = '')}>Keep it</button>
                 </span>
               {:else}
-                <button class="btn sm" type="button" aria-label={`Remove the passkey added ${day(p.created)} (ID ${p.id.slice(0, 8)})`}
+                <button class="btn sm danger" type="button" aria-label={`Remove the passkey added ${day(p.created)} (ID ${p.id.slice(0, 8)})`}
                   aria-describedby={list.length === 1 ? 'last-key' : undefined} disabled={busy} onclick={() => (removing = p.id)}>Remove</button>
               {/if}
               {#if list.length === 1}<p class="small" id="last-key">Removing your last passkey opens an issue for the owners. You need a passkey to confirm an approval.</p>{/if}
@@ -101,3 +101,9 @@
     {#if error}<p class="flash error" role="alert">{error}</p>{/if}
   </section>
 {/if}
+
+<style>
+  .passkey-remove { align-items: flex-end; text-align: right; flex: none; }
+  .passkey-remove .btn { width: auto; }
+  .passkey-add { align-items: flex-end; text-align: right; }
+</style>
