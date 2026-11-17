@@ -121,8 +121,8 @@ export const stateFixtures: StateFixture[] = [
     path: '/r/acme/app/owner/workflow?pull=7',
     api: '/api/repos/acme/app/owner/workflow/view',
     reply: [409, { error: 'The repository no longer needs this action. Reload the page.' }],
-    heading: 'Owner action',
-    text: 'This approval is not needed',
+    heading: 'Approve the workflow change',
+    text: 'Nothing to approve: this repository does not need a workflow approval now.',
   },
   {
     name: 'long-names',

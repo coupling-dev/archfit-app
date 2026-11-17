@@ -21,6 +21,10 @@ import (
 // ErrOwnerFileUnreadable refuses a file whose exact bytes cannot be shown as text.
 var ErrOwnerFileUnreadable = errors.New("gate: owner file is not readable text")
 
+// ErrOwnerMerged is ErrOwnerNotPossible for a pull request that is merged, so the page can say there is nothing to
+// approve instead of showing a refusal. It is only a reason: the action is refused either way.
+var ErrOwnerMerged = errors.New("gate: the pull request is merged")
+
 // OwnerView is the complete, read-only artifact an owner's page shows.
 // ActionDigest remains the M2 action binding; Digest binds all displayed inputs and rendering.
 type OwnerView struct {
@@ -83,10 +87,10 @@ func (g *Gate) OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerVie
 			return OwnerView{}, err
 		}
 		v.ActionDigest, v.Tip, v.Approved, v.Proposals = rev.Digest, rev.Tip, rev.ApprovedCommit, rev.Proposals
-		v.Status, v.MainAction = "unknown: the policy changed outside the flow.", "Revert the policy"
-		v.Note = "This restores the approved policy."
+		v.Status, v.MainAction = statusOutsideFlow, "Revert the policy"
+		v.Note = "The policy on the default branch changed without an owner's approval. Revert restores the approved policy."
 		for _, p := range rev.Proposals {
-			v.Note += " It keeps the approved answers in #" + strconv.Itoa(p.Pull) + "."
+			v.Note += " It keeps the approved answers in pull request #" + strconv.Itoa(p.Pull) + "."
 		}
 		for _, f := range []struct {
 			role, ref string
@@ -106,7 +110,7 @@ func (g *Gate) OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerVie
 	}
 	c, err := g.approvals.Bind(ctx, t.Repo, a)
 	if err != nil {
-		return OwnerView{}, err
+		return OwnerView{}, g.ownerMergedReason(ctx, t, a, err)
 	}
 	v.ActionDigest = c.Digest()
 	var repo records.Repo
@@ -173,8 +177,8 @@ func (g *Gate) OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerVie
 	}
 	switch a.Kind {
 	case OwnerFirst:
-		v.Status, v.MainAction = "unknown: the first policy needs approval.", "Approve the first policy"
-		v.Note = "There is no approved policy yet. Approving makes every line below the approved policy."
+		v.Status, v.MainAction = "unknown — the first policy needs approval.", "Approve the first policy"
+		v.Note = "No policy is approved yet. If you approve, the policy below becomes the approved policy."
 		diff("The first policy", approvals.PolicyPath, nil, head)
 		if a.Pull > 0 {
 			// The first approval admits both files at the head.
@@ -190,20 +194,35 @@ func (g *Gate) OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerVie
 			diff("The workflow change", approvals.WorkflowPath, old, next)
 		}
 	case OwnerWorkflow:
-		v.Status, v.MainAction = "unknown: the workflow changed.", "Approve the workflow change"
+		v.Status, v.MainAction = "unknown — no verdict until this workflow change is approved.", "Approve the workflow change"
 		v.Note = "This approves the policy and workflow at this pull request's head."
 		diff("The policy change", approvals.PolicyPath, base, head)
 	case OwnerConfirm:
 		if repo.OutsideFlow == nil || repo.OutsideFlow.Digest != c.Policy {
 			return OwnerView{}, ErrOwnerMoved
 		}
-		v.Status, v.MainAction = "unknown: the policy changed outside the flow.", "Confirm the policy"
-		v.Note = "This makes the current policy the approved policy."
+		v.Status, v.MainAction = statusOutsideFlow, "Confirm the policy"
+		v.Note = "The policy on the default branch changed without an owner's approval. Confirm makes the current policy the approved policy."
 		diff("The policy change", approvals.PolicyPath, base, head)
 	default:
 		return OwnerView{}, ErrOwnerNotPossible
 	}
 	return finishOwnerView(t.Repo, v), nil
+}
+
+const statusOutsideFlow = "unknown — the policy changed outside the flow."
+
+// ownerMergedReason says why a workflow approval cannot be made on a merged pull request. Any other error, and a
+// failed read of the pull request, is returned as it was.
+func (g *Gate) ownerMergedReason(ctx context.Context, t Target, a OwnerAction, err error) error {
+	// A merged first approval is not "nothing to approve": the repository may still lack its first policy.
+	if a.Kind != OwnerWorkflow || a.Pull == 0 || !errors.Is(err, ErrOwnerNotPossible) {
+		return err
+	}
+	if pl, perr := g.pulls.Pull(ctx, t.Repo.RepoRef, a.Pull); perr == nil && pl.Merged {
+		return fmt.Errorf("%w: %w", ErrOwnerMerged, err)
+	}
+	return err
 }
 
 func finishOwnerView(repo api.Repo, v OwnerView) OwnerView {
