@@ -29,7 +29,6 @@
   const hasRequest = $derived(shownRows.some((e) => !!e.request && !!safeHref(e.request_href)));
   const hasBars = $derived(shownRows.some((e) => e.days_left != null));
   const noEnd = $derived(filtered.exceptions.filter((e) => !e.expires).length);
-  const columns = $derived(1 + (hasEnd ? 1 : 0) + (hasRequest ? 1 : 0));
   const matches = $derived(filtered.modules.length + filtered.rules.length + filtered.exceptions.length);
   const hasNotes = $derived(policy.rules.some((rule) => rule.not_checked));
   // The gate key says what a failing rule does to archfit/gate; it does not say whether GitHub requires the check. Any other value is shown as it is.
@@ -114,44 +113,50 @@
   <div class="box-head"><div><h2 class="title-box" id="exceptions">Exceptions</h2><p>Follow the linked request to renew or replace an exception.</p></div></div>
   {#if total}
     {#if noEnd > 0}<p class="box-body small muted">{noEnd === 1 ? '1 exception has' : `${noEnd} exceptions have`} no end date.</p>{/if}
-    <table class="data cards exceptions">
-      <thead><tr>
-        <th>Rule / boundary</th>
-        {#if hasEnd}<th>Expiry</th>{/if}
-        {#if hasRequest}<th>Request</th>{/if}
-      </tr></thead>
-      <tbody>
-        {#each view as section (section.group.rule)}
-          <tr class="group"><th colspan={columns} scope="colgroup">{section.group.rule} · {section.group.items.length}</th></tr>
-          {#each section.items as exception, i (i)}
-          <tr>
-            <td><p class="boundary">{exception.from}{exception.to ? ` → ${exception.to}` : ''}</p>
-              {#if exception.why}<details><summary>Reason</summary><p>{exception.why}</p></details>{/if}
-            </td>
-            {#if hasEnd}
-              {@const expiry = exceptionExpiry(exception)}
-              <td data-label="Expiry">
-                <div class="expiry">
-                  <span class={'label ' + expiry.tone}>{expiry.label}</span>
-                  {#if exception.expires}<time datetime={exception.expires}>{exception.expires}</time>{/if}
-                  {#if expiry.remaining !== null}
-                    <progress max="30" value={expiry.remaining} class:expired={expiry.tone === 'danger'} aria-label="Days remaining, capped at 30"></progress>
-                  {/if}
-                </div>
-              </td>
-            {/if}
-            {#if hasRequest}
-              <td data-label="Request">
-                {#if exception.request && safeHref(exception.request_href)}
-                  <a href={safeHref(exception.request_href)}>Request #{exception.request}</a>
-                {:else}<span class="muted">None</span>{/if}
-              </td>
-            {/if}
-          </tr>
-          {/each}
-        {/each}
-      </tbody>
-    </table>
+    {#each view as section (section.group.rule)}
+      <details class="exception-group" open={section.items.length > 0}>
+        <summary>{section.group.rule} · {section.group.items.length}</summary>
+        {#if section.items.length}
+          <table class="data cards exceptions">
+            <thead><tr>
+              <th>Rule / boundary</th>
+              {#if hasEnd}<th>Expiry</th>{/if}
+              {#if hasRequest}<th>Request</th>{/if}
+            </tr></thead>
+            <tbody>
+              {#each section.items as exception, i (i)}
+              <tr>
+                <td><p class="boundary">{exception.from}{exception.to ? ` → ${exception.to}` : ''}</p>
+                  {#if exception.why}<details><summary>Reason</summary><p>{exception.why}</p></details>{/if}
+                </td>
+                {#if hasEnd}
+                  {@const expiry = exceptionExpiry(exception)}
+                  <td data-label="Expiry">
+                    <div class="expiry">
+                      <span class={'label ' + expiry.tone}>{expiry.label}</span>
+                      {#if exception.expires}<time datetime={exception.expires}>{exception.expires}</time>{/if}
+                      {#if expiry.remaining !== null}
+                        <progress max="30" value={expiry.remaining} class:expired={expiry.tone === 'danger'} aria-label="Days remaining, capped at 30"></progress>
+                      {/if}
+                    </div>
+                  </td>
+                {/if}
+                {#if hasRequest}
+                  <td data-label="Request">
+                    {#if exception.request && safeHref(exception.request_href)}
+                      <a href={safeHref(exception.request_href)}>Request #{exception.request}</a>
+                    {:else}<span class="muted">None</span>{/if}
+                  </td>
+                {/if}
+              </tr>
+              {/each}
+            </tbody>
+          </table>
+        {:else}
+          <p class="muted">Show all to see these exceptions.</p>
+        {/if}
+      </details>
+    {/each}
     {#if total > previewRows && !showAll}
       <div class="box-foot row-between"><span class="small muted">Showing {previewRows} of {total}</span><button class="btn sm" type="button" onclick={() => showAll = true}>Show all</button></div>
     {/if}
@@ -229,7 +234,8 @@
   table { table-layout: fixed; }
   table td { overflow-wrap: anywhere; padding: 12px; }
   .exceptions th:first-child { width: 50%; }
-  tr.group th { text-align: left; background: var(--bg-subtle); font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
+  .exception-group > summary { cursor: pointer; padding: 10px 16px; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; border-top: 1px solid var(--border-muted); background: var(--bg-subtle); }
+  .exception-group > p { padding: 10px 16px; font-size: 13px; margin: 0; }
   .modules .label { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
   .modules th:first-child { width: 45%; }
   .modules th:nth-child(2) { width: 20%; }
