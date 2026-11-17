@@ -140,17 +140,18 @@ body {
   font: 14px/1.5 var(--font);
 }
 /* Links read as links by colour in lists, tables and navigation. Inside a sentence colour alone is not enough, so a link
-   in a paragraph or in .prose is underlined. A button is never underlined. */
+   in a paragraph is underlined. A button is never underlined. */
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
-p a, .prose a, a.inline { text-decoration: underline; text-underline-offset: 2px; }
+p a, a.inline { text-decoration: underline; text-underline-offset: 2px; }
 a.btn, a.btn:hover { text-decoration: none; }
 /* The ring is an outline only: the element keeps its own corners. */
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Size by class, not by heading level: a page title, a section title (16) and a box title (14). */
 h1, h2, h3, h4 { margin: 0; line-height: 1.25; text-wrap: balance; font-weight: 600; }
 h1 { font-size: 24px; }
-h2, h3, h4 { font-size: 16px; }
+h2, h3 { font-size: 16px; }
+h4 { font-size: 14px; }
 .title-box { font-size: 14px; }
 p { margin: 0; }
 code { font-family: var(--mono); font-size: 12px; }
@@ -356,8 +357,8 @@ dl.kv dt { color: var(--fg-muted); }
 dl.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 
 /* ---------- responsive ----------
-   Three breakpoints, written the same way everywhere: 640 (phone), 768 (tablet), 1012 (desktop). A media query cannot
-   read a custom property, so the numbers are repeated; search for "max-width" before adding a fourth. */
+   Two breakpoints in this file: 640 (phone) and 768 (tablet). A media query cannot read a custom property, so the
+   numbers are repeated; reuse these two rather than adding a third. */
 @media (max-width: 640px) {
   .app-header { padding: 10px 16px; }
   .unav { padding: 0 8px; }

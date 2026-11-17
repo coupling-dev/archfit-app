@@ -29,7 +29,7 @@
   <Skeleton rows={4} />
 {:else if body.repos.length === 0}
   <div class="box blankslate">
-    <h2 class="title-box">No repository yet</h2>
+    <h2>No repository yet</h2>
     <p>No repository is available to you through an Archfit installation yet.</p>
   </div>
 {:else}

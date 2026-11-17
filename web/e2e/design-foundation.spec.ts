@@ -15,15 +15,17 @@ const style = (locator: Locator, property: string) =>
 
 test('foundation: a link that looks like a button is never underlined, at rest or on hover', async ({ page }) => {
   await home(page, 'not-set-up');
-  for (const link of await page.locator('main a.btn').all()) {
-    await expect(link).toBeVisible();
+  const links = page.locator('main a.btn');
+  await expect(links.first()).toBeVisible();
+  expect(await links.count()).toBeGreaterThan(0);
+  for (const link of await links.all()) {
     expect(await style(link, 'text-decoration-line')).toBe('none');
     await link.hover();
     expect(await style(link, 'text-decoration-line')).toBe('none');
   }
 });
 
-test('foundation: a link in a table or a list is plain, a link in a sentence is underlined', async ({ page }) => {
+test('foundation: a link in a box heading is plain, a link in a sentence is underlined', async ({ page }) => {
   await open(page, '/r/acme/app/policy', { 'GET /api/repos/acme/app/policy': () => [200, pumba] });
   const rules = page.getByRole('region', { name: 'Rules', exact: true });
   expect(await style(rules.getByRole('link', { name: 'View source' }), 'text-decoration-line')).toBe('none');
@@ -45,7 +47,7 @@ test('foundation: the focus ring is an outline and keeps the corners of the elem
   expect(radius).toBe('6px');
 });
 
-test('foundation: the policy search and the policy editor field are 32px controls', async ({ page }) => {
+test('foundation: the policy search is a 32px control and the copy button is 28px', async ({ page }) => {
   await open(page, '/r/acme/app/policy', { 'GET /api/repos/acme/app/policy': () => [200, pumba] });
   const search = page.getByRole('searchbox', { name: 'Search policy' });
   expect((await search.boundingBox())?.height).toBe(32);

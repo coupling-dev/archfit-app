@@ -115,7 +115,7 @@
   .step-body > .btn { align-self: flex-start; }
   details { margin-top: 8px; }
   summary { cursor: pointer; }
-  details p { margin-top: 8px; }
+  .step-body details p { margin-top: 8px; }
   .command { margin: 8px 0; padding: 10px 12px; border-radius: var(--radius); background: var(--bg-subtle); overflow-x: auto; }
   .rules { border-top: 1px solid var(--border); margin-top: 8px; }
   .rule { padding: 14px 0; border-bottom: 1px dashed var(--border); overflow-wrap: anywhere; }
