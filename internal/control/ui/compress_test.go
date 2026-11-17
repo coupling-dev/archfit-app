@@ -30,6 +30,7 @@ func TestAssetsSendTheCodingTheClientTakes(t *testing.T) {
 		{"no sibling, raw", "/assets/plain.js", "br, gzip", "only raw", ""},
 		{"q=0 in any spelling refuses", "/assets/app.js", "br;q=0.000, gzip;q=0.0", raw, ""},
 		{"a positive q is taken", "/assets/app.js", "br;q=0.1", brotli, "br"},
+		{"the q name is case-insensitive", "/assets/app.js", "br;Q=0, gzip", gz, "gzip"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

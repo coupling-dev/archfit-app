@@ -20,13 +20,21 @@ func accepts(r *http.Request, token string) bool {
 		if !strings.EqualFold(strings.TrimSpace(name), token) {
 			continue
 		}
-		if v, ok := strings.CutPrefix(strings.TrimSpace(params), "q="); ok {
+		if v, ok := cutQ(strings.TrimSpace(params)); ok {
 			q, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
 			return err == nil && q > 0
 		}
 		return true
 	}
 	return false
+}
+
+// cutQ returns the value of a q parameter; the name is case-insensitive.
+func cutQ(params string) (string, bool) {
+	if len(params) < 2 || !strings.EqualFold(params[:2], "q=") {
+		return "", false
+	}
+	return params[2:], true
 }
 
 // gzipped is b compressed with gzip. Writing to a bytes.Buffer cannot fail, so the error is not checked.
