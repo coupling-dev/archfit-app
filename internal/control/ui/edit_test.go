@@ -94,7 +94,7 @@ func TestEditPreviewShowsAllLineErrorsAndNoPasskey(t *testing.T) {
 		t.Fatalf("errors %+v", body.Errors)
 	}
 	for _, line := range body.Errors {
-		if !strings.HasPrefix(line, ".archfit.yaml:") || !strings.Contains(line, ": policy: ") {
+		if !strings.HasPrefix(line, "Line ") || strings.Contains(line, "policy3.") {
 			t.Error(line)
 		}
 		if words := wording.NotUsedIn(line); len(words) > 0 {

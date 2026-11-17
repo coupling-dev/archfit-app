@@ -2,6 +2,8 @@
   import Skeleton from '../components/Skeleton.svelte';
   import PolicyRead from '../components/PolicyRead.svelte';
   import PageHead from '../components/ui/PageHead.svelte';
+  import Banner from '../components/ui/Banner.svelte';
+  import Diff from '../components/ui/Diff.svelte';
   import { explain, explainLoad, postJSON, repoAPI, type ApiError, type Policy, type Session, type Answered } from '../lib/api';
   import { canRetryRead, policyReadFailure } from '../lib/recovery';
   import { confirm } from '../lib/passkey';
@@ -105,9 +107,10 @@
   <section class="box" aria-labelledby="edit-policy">
     <div class="box-head"><h2 class="title-box" id="edit-policy">Edit the policy</h2></div>
     <div class="box-body stack-sm">
-      <p>Every YAML edit needs your passkey and goes through the policy pull request.</p>
+      <p>Owners can edit here. Each edit needs your passkey and goes through the policy pull request.</p>
       <label for="policy-yaml">Policy YAML</label>
       <textarea class="form-control code" id="policy-yaml" rows="20" bind:value={yaml} disabled={busy || answered !== null || body.edit.recovery === true}
+        aria-invalid={preview?.errors.length ? 'true' : undefined}
         oninput={() => { preview = null; editError = ''; }} spellcheck="false"></textarea>
       <p>preview it: <code>archfit check --policy &lt;file&gt;</code></p>
       {#if editError}<p class="flash error" role="alert">{editError}</p>{/if}
@@ -116,11 +119,15 @@
         <button class="btn primary" disabled={busy} onclick={reloadEditor}>Reload the policy</button>
       {/if}
       {#if preview?.errors.length}
-        <div role="alert"><h3>Fix the policy</h3><ul>{#each preview.errors as error (error)}<li>{error}</li>{/each}</ul></div>
+        <Banner tone="danger" role="alert" title="Fix the policy">
+          <ul>{#each preview.errors as error (error)}<li>{error}</li>{/each}</ul>
+        </Banner>
       {/if}
-      {#if preview && preview.errors.length === 0}
+      {#if preview && preview.errors.length === 0 && !preview.diff}
+        <p>Nothing to approve. Change the YAML first.</p>
+      {:else if preview && preview.errors.length === 0}
         <h3>Diff against the current policy</h3>
-        <pre aria-label="The policy change">{preview.diff || 'No text changed.'}</pre>
+        <Diff text={preview.diff} label="The policy change" />
         <p>Confirm this edit with your passkey.</p>
         <button class="btn primary" disabled={busy} onclick={approve}>{busy ? 'Confirming…' : 'Approve and merge with passkey'}</button>
       {:else if !answered && !body.edit.recovery}
@@ -144,5 +151,6 @@
 {/if}
 
 <style>
-  pre, li { white-space: pre-wrap; overflow-wrap: anywhere; }
+  li { overflow-wrap: anywhere; }
+  textarea[aria-invalid='true'] { border-color: var(--danger); }
 </style>

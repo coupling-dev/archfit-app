@@ -2,7 +2,9 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/alexei-led/archfit-app/internal/control/answers"
@@ -60,7 +62,38 @@ func (s *server) apiEditPreview(r *http.Request, sc scope) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return editPreviewJSON{Digest: v.Digest, Target: v.Target, Diff: v.Diff, Errors: v.Errors}, nil
+	problems := make([]string, 0, len(v.Errors))
+	for _, p := range v.Errors {
+		problems = append(problems, editProblem(p))
+	}
+	return editPreviewJSON{Digest: v.Digest, Target: v.Target, Diff: v.Diff, Errors: problems}, nil
+}
+
+var (
+	problemLine   = regexp.MustCompile(`^\.archfit\.yaml:(\d+): policy: (.*)$`)
+	unknownKey    = regexp.MustCompile(`^field (\S+) not found in type policy3\.\w+$`)
+	missingGlob   = regexp.MustCompile(`^modules\.(\S+?)\.paths: required: list at least one glob$`)
+	badVolatility = regexp.MustCompile(`^modules\.(\S+?)\.volatility: "([^"]*)" is not one of low, medium, high$`)
+)
+
+// editProblem says one decoder problem in the words of the policy, with its line. The Go type names of the decoder
+// do not reach the page; a problem no rule below names keeps its words and gets its line.
+func editProblem(problem string) string {
+	m := problemLine.FindStringSubmatch(problem)
+	if m == nil {
+		return problem
+	}
+	line, text := m[1], m[2]
+	if k := unknownKey.FindStringSubmatch(text); k != nil {
+		return fmt.Sprintf("Line %s: `%s` is not a policy key.", line, k[1])
+	}
+	if g := missingGlob.FindStringSubmatch(text); g != nil {
+		return fmt.Sprintf("Line %s: module %s needs at least one path glob.", line, g[1])
+	}
+	if v := badVolatility.FindStringSubmatch(text); v != nil {
+		return fmt.Sprintf("Line %s: volatility must be low, medium or high (got \"%s\").", line, v[2])
+	}
+	return fmt.Sprintf("Line %s: %s.", line, strings.TrimSuffix(text, "."))
 }
 
 func (s *server) apiEdit(r *http.Request, sc scope) (any, error) {
