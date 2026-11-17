@@ -189,17 +189,22 @@ The App accepts a `merge_group` upload and binds it to GitHub queue authority. R
 
 ## Owner actions
 
-Each page names the action and repository (and PR when present), then shows the status and files.
-The GitHub pull-request and **View policy** links are secondary navigation. The confirmation after the files
-is the only strong action and asks for your passkey before it submits. GitHub issue links and direct loads
-use the same pages.
+Each page is titled with its action, such as **Approve the first policy**, and names the repository and the pull request
+when there is one. It then shows the status, as `unknown — <why>`, and the files. The GitHub pull request and
+**View policy** links are secondary navigation. The button after the files (**Approve with passkey**, **Confirm with
+passkey** or **Revert with passkey**) is the only strong action and asks for your passkey before it submits. GitHub
+issue links and direct loads use the same pages.
+
+A policy changed outside the flow is one the default branch received without an owner's approval. **Confirm the
+policy** keeps that change and makes it the approved policy. **Revert the policy** restores the approved policy. Each
+page links to the other.
 
 For a workflow change, **unknown** means no verdict until the change is approved: the App cannot use the
 changed workflow's result without your approval. The workflow diff compares with the named default-branch
 commit; the policy diff compares with the named pull-request base commit. Added and removed lines have
 `+` and `-` signs and green and red backgrounds, with a legend. An unchanged policy appears as a compact
 row, but its bytes are still included in the approval. Unchanged from the pull-request base does not mean
-previously approved. The confirmation names both files, the PR number and its head commit.
+previously approved. The confirmation names both files, the pull request number and its head commit.
 
 **Full files and approval details** opens the complete file versions, grouped by file and labelled by version
 and commit. Use these to inspect unchanged lines or compare another copy. Each version's **Technical details**
@@ -242,10 +247,13 @@ whether an invalid policy is still being prepared in a first-policy pull request
 editor leaves the policy read-only and shows the server's reason. It does not ask you to fix YAML
 just because setup has not finished.
 
-An old owner-action link can show **This approval is not needed**, **No policy confirmation needed**,
-or **Nothing to revert**. Follow **View current setup** or **View policy** instead of repeatedly reloading
-that action. A changed artifact still prevents submission; **Reload the change** fetches the new contents
-before you confirm anything. Policy and Owner read/service failures offer **Try again**; not-found and stale-action states do not.
+An old owner-action link keeps its title and says why there is nothing to do, in one notice with one button. For
+example: **The first policy is already approved.**, **Nothing to confirm: the policy has not changed outside the
+flow.**, **Nothing to revert: the policy has not changed outside the flow.** or **Nothing to approve: pull request
+#213 is merged.** A merged pull request is a normal state, not an error. **Open the repository** (or **Open pull
+request #213**) is the next step; do not reload the action. A changed artifact still prevents submission; **Reload
+the change** fetches the new contents before you confirm anything. Policy and Owner read/service failures offer **Try
+again**; not-found and stale-action states do not.
 
 **Page not available** uses the same message for a missing resource and one your account cannot access.
 Its **Repositories** link returns to `/`; no repository-specific recovery link is shown.
@@ -319,6 +327,6 @@ An accepted default-branch result that reports drift opens or updates an `archfi
 | A workflow changed                         | An owner must approve the workflow change with a passkey unless only the Action ref moved to an approved commit. |
 | A request shows **as reported**            | Treat its measurements as a claim. Read the source and a current pull-request result.                            |
 | The App cannot confirm a ruleset or bypass | Ask a repository administrator to inspect the ruleset in GitHub.                                                 |
-| A passkey prompt fails or the policy moved | Start the action again and read the new preview. A step-up is bound to one action and expires.                   |
+| A passkey prompt fails or the policy moved | Start the action again and read the new preview. A passkey confirmation is bound to one action and expires.      |
 
 For operators, see [configuration](architecture.md#configuration) and [cloud operations](design/cloud/operations.md).
