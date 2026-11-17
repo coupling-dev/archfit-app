@@ -74,6 +74,9 @@ type pullViews struct {
 // NewPullViews reads the recorded result and publication receipt for a pull.
 func NewPullViews(gh pullPageGitHub, s store.Store) PullViews { return &pullViews{gh: gh, store: s} }
 
+// noCheckYet is what a pull request shows before any check has reported for its head.
+const noCheckYet = "No check has reported for this pull request. It runs on the next push."
+
 func (v *pullViews) PullPage(ctx context.Context, r api.Repo, number int) (PullPage, error) {
 	out := PullPage{Waiting: []int{}}
 	pl, err := v.gh.PullSummary(ctx, r.RepoRef, number)
@@ -137,7 +140,7 @@ func (v *pullViews) PullPage(ctx context.Context, r api.Repo, number int) (PullP
 			return out, nil
 		}
 		if pub.Unpublished {
-			out.Message = "No result yet."
+			out.Message = noCheckYet
 			return out, nil
 		}
 		if pub.Pending {
@@ -162,7 +165,7 @@ func (v *pullViews) PullPage(ctx context.Context, r api.Repo, number int) (PullP
 		return out, nil
 	}
 	if rec.RunID == 0 {
-		out.Message = "No result yet."
+		out.Message = noCheckYet
 		return out, nil
 	}
 	if rec.PolicyDigest == "" {
@@ -171,7 +174,7 @@ func (v *pullViews) PullPage(ctx context.Context, r api.Repo, number int) (PullP
 	}
 	raw, err := v.gh.Artifact(ctx, r.RepoRef, rec.RunID, asks.ArtifactName, 5<<20)
 	if errors.Is(err, api.ErrNotFound) || errors.Is(err, api.ErrArtifactInvalid) {
-		out.Message = "No result yet."
+		out.Message = noCheckYet
 		return out, nil
 	}
 	if err != nil {

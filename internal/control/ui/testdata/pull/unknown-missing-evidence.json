@@ -6,6 +6,7 @@
   "view": {
     "status": "unknown",
     "status_line": "Archfit: unknown, no verdict",
+    "note": "The Archfit check finished without uploading a result.",
     "records": [
       {
         "rule": "tool",
@@ -16,7 +17,6 @@
         },
         "show_next": true
       }
-    ],
-    "author": "do the `next` step of each record."
+    ]
   }
 }

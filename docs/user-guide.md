@@ -243,7 +243,7 @@ Only an owner named in the current policy can answer. The requester may answer i
 
 Open `/r/<owner>/<repo>/pull/<number>` to see the check result. The page and the GitHub comment use the same status,
 records, and instructions for the author and owner. A result can be **pass**, **fail**, **waiting**, or **unknown**.
-Unknown is not a pass. A request number links to the request page.
+Unknown is not a pass. A request number links to the request page. An unknown result says why under its heading in one sentence. A pull request with no check result yet says so and that the check runs on the next push. Unknown results have no author line: each record's `next:` line names the step and who takes it.
 
 ![Pull request waiting for a request](images/pull.png)
 

@@ -2,10 +2,15 @@ Pull request #4
 
 acme/app
 
+unknown
+
 Archfit: unknown, no verdict
+
+The Archfit check finished without uploading a result.
+
 Pull request #4 on GitHub
 View policy
-tool the check finished without an uploaded result
-next: run the Archfit check again
 
-Author: do the next step of each record.
+tool the check finished without an uploaded result
+
+next: run the Archfit check again

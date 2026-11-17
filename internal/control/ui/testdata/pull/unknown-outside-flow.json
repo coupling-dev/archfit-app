@@ -18,6 +18,7 @@
   "view": {
     "status": "unknown",
     "status_line": "Archfit: unknown, no verdict",
+    "note": "Archfit could not read a valid policy on the default branch.",
     "records": [
       {
         "path": ".archfit.yaml",
@@ -30,7 +31,6 @@
         },
         "show_next": true
       }
-    ],
-    "author": "do the `next` step of each record."
+    ]
   }
 }

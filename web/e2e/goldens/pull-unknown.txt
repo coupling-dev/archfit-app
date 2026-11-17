@@ -2,11 +2,17 @@ Pull request #4
 
 acme/app
 
+unknown
+
 Archfit: unknown, no verdict
+
+Archfit could not read a valid policy on the default branch.
+
 Pull request #4 on GitHub
 View policy
-.archfit.yaml policy differs from origin/main
-why: only owners change the policy
-next: git checkout origin/main -- .archfit.yaml
 
-Author: do the next step of each record.
+.archfit.yaml policy differs from origin/main
+
+why: only owners change the policy
+
+next: git checkout origin/main -- .archfit.yaml

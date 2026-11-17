@@ -85,10 +85,13 @@ for (const width of [390, 1280]) {
       const head = page.locator('.page-head');
       await expect(page.locator('main h1')).toHaveText(title);
       await expect(head.locator('.lede')).toContainText('acme/app');
-      const status = head.locator('.status');
+      const status = head.locator(name === 'pull' ? '.page-status' : '.status');
       await expect(status).toContainText(body.view?.status_line ?? body.status);
       const actions = head.locator('.row a');
-      if (name === 'owner') {
+      if (name === 'pull') {
+        expect(await page.locator('main .primary').count()).toBeLessThanOrEqual(1);
+        await expect(actions.first()).not.toHaveClass(/primary/);
+      } else if (name === 'owner') {
         await expect(page.locator('main .primary')).toHaveCount(0);
         await expect(page.locator('main button.approval')).toHaveCount(1);
         await expect(actions.first()).not.toHaveClass(/btn/);
@@ -103,7 +106,8 @@ for (const width of [390, 1280]) {
       const statusBox = await status.boundingBox();
       const actionBox = await actions.first().boundingBox();
       expect(statusBox!.y).toBeGreaterThan(headingBox!.y);
-      expect(actionBox!.y).toBeGreaterThan(statusBox!.y);
+      // From 768px the actions sit beside the title; below it they wrap under the status (PageHead).
+      if (name !== 'pull' || width < 768) expect(actionBox!.y).toBeGreaterThan(statusBox!.y);
       await actions.first().focus();
       for (let i = 1; i < (await actions.count()); i++) {
         await page.keyboard.press('Tab');

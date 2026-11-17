@@ -1,5 +1,7 @@
 <script lang="ts">
-  import Status from '../components/Status.svelte';
+  import PageHead from '../components/ui/PageHead.svelte';
+  import StatusLabel from '../components/ui/StatusLabel.svelte';
+  import Icon from '../components/ui/Icon.svelte';
   import { homeHref, type OwnerReview } from '../lib/home';
   import Skeleton from '../components/Skeleton.svelte';
   import { explainLoad, repoAPI, type ApiError } from '../lib/api';
@@ -37,43 +39,41 @@
   {/each}
 {/snippet}
 
-<div class="page-head">
-  <div class="stack-sm page-identity">
-    <h1>Pull request #{route.number}</h1>
-    <p class="lede">{route.fullName}</p>
+<PageHead title={`Pull request #${route.number}`} repo={route.fullName}>
+  {#snippet status()}
     {#if failure}<p class="flash error" role="alert">{failure}</p>
-    {:else if body?.view}
-      <Status state={body.view.status} tone={body.view.status === 'pass' ? 'success' : body.view.status === 'fail' ? 'danger' : body.view.status === 'waiting' ? 'attention' : 'neutral'}>{@render linked(body.view.status_line)}</Status>
-    {:else if body}<Status>{body.message}</Status>{/if}
+    {:else if body?.view}<div class="stack-sm"><StatusLabel label={body.view.status} /><p>{@render linked(body.view.status_line)}</p>{#if body.view.note}<p>{body.view.note}</p>{/if}</div>
+    {:else if body}<div class="stack-sm"><StatusLabel label="no result" /><p>{body.message}</p></div>{/if}
+  {/snippet}
+  {#snippet actions()}
     {#if body}
-      {#if body.owner_action && !reviewHref}<p>{body.owner_action.label}</p>{/if}
-      <div class="row">
-        {#if reviewHref && body.owner_action}<a class="btn primary" href={reviewHref}>{body.owner_action.label}</a>{/if}
-        <a class="btn" class:primary={!reviewHref} href={github}>Pull request #{route.number} on GitHub</a>
-        <a class="btn" href={repoPage(route.fullName, '/policy')}>View policy</a>
-      </div>
+      {#if reviewHref && body.owner_action}<a class="btn primary" href={reviewHref}>{body.owner_action.label}</a>{/if}
+      <a class="btn" href={github}>Pull request #{route.number} on GitHub <Icon name="link-external" size={12} /></a>
+      <a class="btn" href={repoPage(route.fullName, '/policy')}>View policy</a>
     {/if}
-  </div>
-</div>
+  {/snippet}
+  {#if body?.owner_action && !reviewHref}<p>{body.owner_action.label}</p>{/if}
+</PageHead>
 
 {#if !body && !failure}
   <Skeleton rows={2} box={false} />
 {:else if body?.view}
   <section aria-label="Pull request">
     {#each body.view.records as record, i (i)}
-      <div class="pull-record">
-        <div>{record.path ? record.path + (record.line ? `:${record.line}` : '') + ' ' : ''}{record.rule}{record.what ? ` ${record.what}` : ''}</div>
-        {#if record.why}<div>why: {record.why}</div>{/if}
-        {#if record.instead}<div>instead: {record.instead}</div>{/if}
-        {#if record.balance}<div>balance: {record.balance.value}/10 (min {record.balance.min})</div>{/if}
-        {#if record.show_next}<div>next: {@render linked(record.next.text)}{#if record.next.note} ({record.next.note}){/if}</div>{/if}
-      </div>
+      <article class="pull-record">
+        <p>{record.path ? `${record.path}${record.line ? `:${record.line}` : ''} ` : ''}<strong>{record.rule}</strong>{record.what ? ` ${record.what}` : ''}</p>
+        {#if record.why}<p class="record-field">why: {record.why}</p>{/if}
+        {#if record.instead}<p class="record-field">instead: {record.instead}</p>{/if}
+        {#if record.balance}<p class="record-field">balance: {record.balance.value}/10 (min {record.balance.min})</p>{/if}
+        {#if record.show_next}<p class="record-field">next: {@render linked(record.next.text)}{#if record.next.note} ({record.next.note}){/if}</p>{/if}
+      </article>
     {/each}
-    {#if body.view.author}<p>Author: {@render linked(body.view.author, true)}</p>{/if}
-    {#if body.view.owner}<p>Owner: {@render linked(body.view.owner, true)}</p>{/if}
+    {#if body.view.author}<p class="small">Author: {@render linked(body.view.author, true)}</p>{/if}
+    {#if body.view.owner}<p class="small">Owner: {@render linked(body.view.owner, true)}</p>{/if}
   </section>
 {/if}
 
 <style>
-  .pull-record { margin-block: 16px; overflow-wrap: anywhere; }
+  .pull-record { padding-block: 12px; border-bottom: 1px solid var(--border-muted); overflow-wrap: anywhere; }
+  .record-field { margin: 4px 0 0; font-size: 14px; color: var(--fg-muted); }
 </style>

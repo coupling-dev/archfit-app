@@ -6,7 +6,7 @@ describe('status words', () => {
     ['pass', 'success', 'check-circle'],
     ['fail', 'danger', 'x-circle'],
     ['waiting', 'attention', 'clock'],
-    ['unknown', 'neutral', 'question'],
+    ['unknown', 'attention', 'question'],
     ['Action needed', 'attention', 'alert'],
     ['Ready for review', 'accent', 'info'],
   ])('shows %s as %s with %s', (word, tone, icon) => {

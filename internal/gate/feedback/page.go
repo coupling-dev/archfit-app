@@ -7,6 +7,7 @@ import "github.com/alexei-led/archfit-app/internal/wire/result"
 type Page struct {
 	Status     result.Status `json:"status"`
 	StatusLine string        `json:"status_line"`
+	Note       string        `json:"note,omitempty"`
 	Records    []Record      `json:"records"`
 	Author     string        `json:"author,omitempty"`
 	Owner      string        `json:"owner,omitempty"`
@@ -38,7 +39,7 @@ func BuildPage(r result.Result) Page {
 
 func (v view) page() Page {
 	p := Page{
-		Status: v.result.Status, StatusLine: heading(v.result.Summary),
+		Status: v.result.Status, StatusLine: heading(v.result.Summary), Note: unknownNote(v.result),
 		Records: make([]Record, 0, len(v.result.Errors)+len(v.result.Unknown)),
 		Author:  v.author, Owner: v.owner,
 	}
@@ -60,4 +61,21 @@ func (v view) page() Page {
 		})
 	}
 	return p
+}
+
+// unknownNote is the one plain sentence under an unknown heading: why no verdict, from the first unknown reason's cause.
+// A cause the App does not name gets no sentence, and the heading still says unknown.
+func unknownNote(r result.Result) string {
+	if len(r.Unknown) == 0 {
+		return ""
+	}
+	return unknownNotes[r.Unknown[0].Cause]
+}
+
+// The sentences of unknownNote, by the causes the wire result carries (wire/result: policy, base, tool, import).
+var unknownNotes = map[string]string{
+	"policy": "Archfit could not read a valid policy on the default branch.",
+	"base":   "Archfit could not compare this pull request with the default branch.",
+	"tool":   "The Archfit check finished without uploading a result.",
+	"import": "Archfit could not read the code that the check needs.",
 }
