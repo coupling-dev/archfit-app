@@ -1,6 +1,6 @@
-import { expectNoNotUsedWord } from './support';
+import { expectClean, expectNoNotUsedWord } from './support';
 import { expect, test } from '@playwright/test';
-import { open, expectClean } from './fixtures';
+import { open } from './fixtures';
 
 
 test('waiting: a repository of an account no operator approved shows the pitch and its status, no tabs', async ({

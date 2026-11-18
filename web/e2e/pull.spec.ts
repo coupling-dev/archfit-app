@@ -11,11 +11,11 @@ for (const state of states) {
     await expect(page.locator('.page-status')).toBeVisible();
     await expectPageText(page, `pull-${state}`);
     if (state === 'waiting') await docsShot(page, 'pull');
-    const approvedCopy = ['Review workflow change', 'Review first policy', 'An architecture owner named in the approved policy can review this.'];
-    await expectClean(page, approvedCopy);
+    
+    await expectClean(page);
     for (const width of [390, 1280]) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
-      await docsShot(page, `pull-states/${state}-${width}`, approvedCopy);
+      await docsShot(page, `pull-states/${state}-${width}`);
     }
     if (state === 'unknown-workflow' || state === 'unknown-first-policy') {
       const first = state === 'unknown-first-policy';

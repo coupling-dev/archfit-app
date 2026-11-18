@@ -61,7 +61,7 @@ test('diagram: opens readable, bounded, with the legend and caption above it', a
   expect(natural).toBeLessThan(frame.width / (11 / 14) + 1);
   expect(svg!.width).toBeLessThanOrEqual(frame.width);
   await docsClock(page);
-  await docsShot(page, 'diagram-1280', ['Review workflow change']);
+  await docsShot(page, 'diagram-1280');
 });
 
 test('diagram: wheel scrolls the page, Ctrl or Cmd with wheel zooms at the pointer, double-click zooms in', async ({ page }) => {
@@ -226,7 +226,7 @@ for (const width of [390, 1280]) {
     await expect(viewport(page)).toBeVisible();
     await page.screenshot({ path: `../tmp/diagram/focus-dark-${width}.png` });
     await page.getByRole('radio', { name: 'Auto', exact: true }).click();
-    await expectClean(page, ['Review workflow change']);
+    await expectClean(page);
   });
 }
 

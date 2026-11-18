@@ -9,15 +9,6 @@ const fixture = () =>
       readFileSync(new URL('../../internal/control/ui/testdata/home/not-set-up.json', import.meta.url), 'utf8'),
     ),
   );
-const approvedCopy = [
-  'Require archfit/gate',
-  'Rules reach the default branch through review, so the approval binds to exact file contents.',
-  'Next: review owner approval',
-  'to do',
-  'Review and approve',
-  'Review the proposed files before approving.',
-  'A password or a GitHub review can be replayed by a compromised account',
-];
 
 for (const width of [390, 1280]) {
   test(`setup rule guidance: enforcement and manual advice at ${width}`, async ({ page }, testInfo) => {
@@ -59,7 +50,7 @@ for (const width of [390, 1280]) {
     await expect(row('Let the App write policy pull requests')).toContainText('with mode Always');
     await expect(step.getByRole('heading', { name: 'Restrict .archfit.yaml', exact: true })).toHaveCount(0);
     await expect(step.getByText('Not available', { exact: true })).toHaveCount(0);
-    await expectClean(page, approvedCopy);
+    await expectClean(page);
     await step.screenshot({ path: testInfo.outputPath(`setup-step4-${width}.png`) });
     expect(writes).toEqual([]);
   });

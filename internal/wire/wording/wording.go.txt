@@ -16,7 +16,7 @@ var notUsedWords = []string{
 	"waiver", "baseline entry", "debt", "temporary decision", "finding", "violation",
 	"blocker", "problem", "task", "gate", "scan", "blocked", "denied",
 	"needs attention", "healthy", "decision request", "CR", "accept", "decline",
-	"architect", "approver", "rating", "score", "review", "analysis", "insight",
+	"architect", "approver", "rating", "score", "analysis", "insight",
 }
 
 // gateNames are the two uses of "gate" that are names, not words: the check

@@ -17,20 +17,6 @@ const names = readdirSync(fixtures)
   .filter((n) => n.endsWith('.json'))
   .sort();
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(name + '.json', fixtures), 'utf8'));
-const setupApprovedCopy = [
-  'Policy and review status',
-  'Rules reach the default branch through review, so the approval binds to exact file contents.',
-  'A password or a GitHub review can be replayed by a compromised account',
-  'Review workflow change',
-  'Review first policy',
-  'A passkey is needed to approve, but not to read the review.',
-  'Next: review owner approval',
-  'Review and approve',
-  'Review proposed files',
-  'Review the proposed files before approving.',
-  'Pull request #203 changed after approval. The approval covers the old head; a new approval is needed.',
-  'Could not read your passkeys. Review is still available; try again before approving.',
-];
 
 for (const file of names) {
   const name = file.replace(/\.json$/, '');
@@ -157,7 +143,7 @@ for (const file of names) {
           'href',
           'https://github.com/acme/app/settings/rules',
         );
-      if (name === 'workflow-review') await docsShot(page, 'home-setup', setupApprovedCopy);
+      if (name === 'workflow-review') await docsShot(page, 'home-setup');
     } else {
       await expect(page.getByRole('link', { name: 'See what needs you' })).toHaveCount(0);
     }
@@ -172,16 +158,13 @@ for (const file of names) {
         'home-' + name + '.txt',
       );
     else await expectPageText(page, 'home-' + name);
-    if (name === 'one-request') await docsShot(page, 'home', ['Policy and review status']);
+    if (name === 'one-request') await docsShot(page, 'home');
     if (body.map) {
       for (const m of body.map.modules)
         await expect(page.getByRole('rowheader').filter({ hasText: m.name })).toBeVisible();
-      await expectNoNotUsedWord(
-        page,
-        body.setup ? setupApprovedCopy : ['Review workflow change', 'Policy and review status'],
-      );
+      await expectNoNotUsedWord(page);
     }
-    await expectClean(page, body.setup ? setupApprovedCopy : ['Review workflow change', 'Policy and review status']);
+    await expectClean(page);
     expect(reads).toEqual(['/api/repos/acme/app/home']);
     expect(writes).toEqual([]);
   });
@@ -192,7 +175,7 @@ test('home: request opens its page and the record folds away', async ({ page }) 
   await expect(page.getByText('cmd/run.go:12:', { exact: false })).toBeHidden();
   await page.getByText('Show the record', { exact: true }).click();
   await expect(page.locator('pre')).toContainText('balance: 9/10 (min 7)');
-  await expectNoNotUsedWord(page, ['Review workflow change', 'Policy and review status']);
+  await expectNoNotUsedWord(page);
   await page.route('**/api/repos/acme/app/requests/431', (r) =>
     r.fulfill({ status: 404, json: { error: 'Not found.' } }),
   );
@@ -214,7 +197,7 @@ test('home: worker failure says so, and Matrix still works', async ({ page }) =>
     '/r/acme/app/requests/431',
   );
   await page.getByRole('button', { name: 'Close details' }).click();
-  await expectClean(page, ['Policy and review status']);
+  await expectClean(page);
 });
 
 for (const [name, response] of [
@@ -235,7 +218,7 @@ test('home: empty map is explicit', async ({ page }) => {
   await open(page, path, { [api]: () => [200, body] });
   await expect(page.getByText('No modules.', { exact: true })).toBeVisible();
   await expectPageText(page, 'home-empty');
-  await expectClean(page, ['Policy and review status']);
+  await expectClean(page);
 });
 
 test('home: phone map starts as a matrix, the diagram fits, and bands stay in order', async ({ page }) => {
@@ -280,7 +263,7 @@ test('home: SVG names both ends of a line when its module is in focus, and draws
     await expect(page.locator('.map-label.' + kind)).toHaveText(label);
     await expect(page.locator('.map-label.allowed')).toHaveText('app → util · allowed');
     await expect(page.locator('.map-edge.allowed')).toHaveCount(1);
-    await expectNoNotUsedWord(page, ['Review workflow change']);
+    await expectNoNotUsedWord(page);
   }
 });
 
@@ -298,7 +281,7 @@ test('home: unknown and cross-repository links stay text, and API text is escape
   await expect(page.getByRole('link', { name: 'Another repository' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Unknown page' })).toHaveCount(0);
   await expect(page.locator('main img')).toHaveCount(0);
-  await expectClean(page, ['Policy and review status']);
+  await expectClean(page);
 });
 
 for (const first of [true, false]) {
@@ -312,7 +295,7 @@ for (const first of [true, false]) {
     await expect(page.getByRole('link', { name: 'Register a passkey to approve' })).toBeVisible();
     await link.focus();
     await expect(link).toBeFocused();
-    await expectClean(page, setupApprovedCopy);
+    await expectClean(page);
   });
 }
 
@@ -333,7 +316,7 @@ test('home: ineligible viewer gets a role handoff without an owner-action link',
   await expect(gateStep).toHaveClass(/done/);
   await expect(gateStep.locator('.step-head > .status-label')).toHaveText('done');
   await expectPageText(page, 'home-first-policy-viewer');
-  await expectClean(page, [...setupApprovedCopy, body.setup.owner_action.label]);
+  await expectClean(page);
 });
 
 test('home: advisory findings do not block enforcement, unreadable rulesets do', async ({ page }) => {
@@ -347,7 +330,7 @@ test('home: advisory findings do not block enforcement, unreadable rulesets do',
   await expect(page.getByLabel('3 of 4 steps done')).toBeVisible();
   await expect(page.locator('.setup .steps > li').nth(3).locator('.step-head > .status-label')).toHaveText('done');
   await expect(page.getByText('Restrict .archfit.yaml', { exact: true })).toHaveCount(0);
-  await expectClean(page, setupApprovedCopy);
+  await expectClean(page);
 });
 
 for (const [name, setup, next] of [
@@ -448,7 +431,7 @@ for (const [name, setup, chip, completed, copy, action, href] of [
     if (where !== step) await expect(step.getByRole('link', { name: action })).toHaveCount(0);
     if (completed === 2)
       await expect(page.getByRole('link', { name: 'Create a pull request on GitHub' })).toHaveCount(0);
-    await expectClean(page, setupApprovedCopy);
+    await expectClean(page);
   });
 }
 

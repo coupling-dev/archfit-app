@@ -1,6 +1,6 @@
-import { docsShot, expectNoNotUsedWord } from './support';
+import { docsShot, expectClean, expectNoNotUsedWord } from './support';
 import { expect, test } from '@playwright/test';
-import { open, expectClean } from './fixtures';
+import { open } from './fixtures';
 
 
 test("a repository the user cannot see reads as one that does not exist: the API's Not found, no tabs", async ({

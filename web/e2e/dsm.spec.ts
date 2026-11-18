@@ -53,7 +53,7 @@ for (const count of [5, 10, 24])
         await expect(page.locator('tbody tr')).toHaveCount(count);
         await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toHaveCount(0);
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-        await expectClean(page, ['Policy and review status']);
+        await expectClean(page);
         expect(errors).toEqual([]);
       });
     }
@@ -83,7 +83,7 @@ test('DSM preserves all statuses, keyboard navigation and modal focus return', a
   await detail.screenshot({ path: '../docs/images/matrix-details-dialog.png' });
   await expect(detail).toContainText('not observed imports');
   await expect(detail).toContainText('expires 2027-01-01 · 0 days left');
-  await expectClean(page, ['Policy and review status']);
+  await expectClean(page);
   await page.keyboard.press('Escape');
   await expect(detail).toBeHidden();
   await expect(cell).toBeFocused();
@@ -252,7 +252,7 @@ test('DSM large map filters retain square axes and bounded two-axis scrolling', 
   await page.getByRole('button', { name: 'Reset filters' }).click();
   await expect(page.getByRole('rowheader')).toHaveCount(50);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await expectClean(page, ['Policy and review status']);
+  await expectClean(page);
 });
 
 test('Matrix is the default without a worker; explicit Diagram choice survives reload and resize', async ({ page }) => {

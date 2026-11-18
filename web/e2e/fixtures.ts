@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page, type Request } from '@playwright/test';
 
 
@@ -16,9 +15,6 @@ export const appBuild = {
 
 export const session = { login: 'alice', csrf: 'csrf-token-1', build: appBuild };
 
-
-// The audit explicitly requires these phrases; other copy still uses the legacy wording check.
-export const reposApprovedCopy = ['Review first policy', 'Review workflow change'];
 
 export const repos = JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/repos/all-states.json', import.meta.url), 'utf8'));
 
@@ -156,16 +152,6 @@ export async function open(page: Page, path: string, mock: Mock = {}) {
   return writes;
 }
 
-
-export async function expectClean(page: Page) {
-  const violations = await page.evaluate(() => (window as unknown as { cspViolations: string[] }).cspViolations);
-  expect(violations).toEqual([]);
-  for (const scheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme: scheme });
-    const axe = await new AxeBuilder({ page }).analyze();
-    expect(axe.violations.map((v) => `${scheme}: ${v.id} ${v.nodes.map((n) => n.target).join(', ')}`)).toEqual([]);
-  }
-}
 
 
 export const everyPage = [

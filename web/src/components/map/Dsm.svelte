@@ -108,7 +108,7 @@
   <p class="muted small" id={id + '-scope'}>Blank: the matrix shows no status for this pair. It does not mean the dependency is allowed.</p>
   <details class="about small">
     <summary>About this view</summary>
-    <p>Deny status is only shown for touched, requested or drift pairs. A blank pair may still be denied by a rule.</p>
+    <p>Deny status is only shown for touched, requested or drift pairs. A blank pair may still be refused by a rule.</p>
   </details>
 
   {#if model.modules.length >= filtersFrom}

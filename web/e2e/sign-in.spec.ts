@@ -1,6 +1,6 @@
-import { expectNoNotUsedWord } from './support';
+import { expectClean, expectNoNotUsedWord } from './support';
 import { expect, test } from '@playwright/test';
-import { open, expectClean } from './fixtures';
+import { open } from './fixtures';
 
 
 test('signed out: the landing page says what Archfit does, signs in and comes back', async ({ page }) => {

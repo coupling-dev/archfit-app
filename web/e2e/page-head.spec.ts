@@ -11,5 +11,5 @@ test('page head actions wrap at phone width', async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   const box = await page.locator('.page-actions').boundingBox();
   expect(box?.width ?? Infinity).toBeLessThanOrEqual(390);
-  await expectClean(page, ['Review workflow change', 'Review first policy', 'An architecture owner named in the approved policy can review this.']);
+  await expectClean(page);
 });

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { session, open, reposApprovedCopy } from './fixtures';
+import { session, open } from './fixtures';
 import { expectClean, docsShot } from './support';
 
 for (const width of [1280, 390]) {
@@ -35,8 +35,8 @@ for (const width of [1280, 390]) {
       }
     }
     await page.emulateMedia({ colorScheme: 'light' });
-    await docsShot(page, `repos-stages-${width}`, reposApprovedCopy);
-    await expectClean(page, reposApprovedCopy);
+    await docsShot(page, `repos-stages-${width}`);
+    await expectClean(page);
   });
 }
 
@@ -68,5 +68,5 @@ test('repositories: unread setup says not confirmed and names no stage', async (
   await expect(page.getByText('The App could not read the required-check settings.', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('row', { name: /acme\/app/ }).getByRole('link')).toHaveCount(1);
   await expect(page.getByText(/Ask a repository administrator/)).toBeVisible();
-  await expectClean(page, reposApprovedCopy);
+  await expectClean(page);
 });

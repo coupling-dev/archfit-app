@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { open, expectClean, everyPage, rendered } from './fixtures';
+import { expectClean } from './support';
+import { open, everyPage, rendered } from './fixtures';
 
 
 test('theme: the choice applies at once and survives a reload', async ({ page }) => {
