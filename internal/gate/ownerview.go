@@ -275,6 +275,17 @@ const statusOutsideFlow = "unknown — the policy changed outside the flow."
 // it only on a read-only request: a review after a write in the same request would see the old state.
 func WithReviewReads(ctx context.Context) context.Context { return inputs.WithReadMemo(ctx) }
 
+// SeedOpenPulls gives the owner reviews of the request the pull requests of an open-pull listing, so a review does not
+// read a pull request the listing already holds. A listing entry is used only when it carries every field the review
+// reads; any other entry is left to its GET, which fails closed as before.
+func SeedOpenPulls(ctx context.Context, r api.RepoRef, pulls []api.Pull) {
+	for _, p := range pulls {
+		if p.Number > 0 && p.State == "open" && !p.Merged && p.HeadSHA != "" && p.HeadRepo != "" && p.BaseRef != "" && p.BaseSHA != "" {
+			inputs.Seed(ctx, inputs.PullRead{Repo: r, Number: p.Number}, p)
+		}
+	}
+}
+
 // The reads of a review share the memo of its request with the approval checks it makes.
 func readFile(ctx context.Context, repos api.Repos, r api.RepoRef, ref, path string) ([]byte, error) {
 	return inputs.Memo(ctx, inputs.FileRead{Repo: r, At: ref, Path: path}, func() ([]byte, error) {
