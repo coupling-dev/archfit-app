@@ -39,6 +39,8 @@ func (f *fakeSetups) Setup(_ context.Context, r api.Repo) (onboarding.Setup, err
 }
 
 type fakeOwners struct {
+	mu      sync.Mutex // guards the recorded views: a review reads its view from several goroutines
+	onView  func()     // called when OwnerView starts, to order it against other reads
 	review  func(answers.OwnerAction, gate.OwnerUser) error
 	repos   []api.Repo
 	users   []gate.OwnerUser
@@ -258,6 +260,11 @@ func TestOwnerAPIRejectsInvalidActionsBeforeCallingGate(t *testing.T) {
 }
 
 func (f *fakeOwners) OwnerView(_ context.Context, r api.Repo, a answers.OwnerAction) (gate.OwnerView, error) {
+	if f.onView != nil {
+		f.onView()
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.repos = append(f.repos, r)
 	f.actions = append(f.actions, a)
 	return f.view, f.err
