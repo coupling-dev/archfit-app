@@ -51,3 +51,25 @@ test('back and forward walk the App history without a document load', async ({ p
   await expect(page.getByRole('heading', { name: 'Policy', exact: true })).toBeVisible();
   expect(await documentMarker(page)).toBe(1);
 });
+
+test('a read still in flight from a page the user left does not replace the page shown', async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await open(page, '/r/acme/gone/pull/9', {
+    'GET /api/repos/acme/gone/pulls/9': async () => {
+      await held;
+      return [404, { error: 'Repository not found.' }];
+    },
+    'GET /api/repos': () => [200, { repos: [], truncated: false }],
+  });
+
+  await page.getByRole('banner').getByRole('link', { name: 'Repositories', exact: true }).click();
+  await expect.poll(() => pathOf(page)).toBe('/');
+  await expect(page.getByRole('heading', { name: 'Repositories', exact: true })).toBeVisible();
+
+  const answered = page.waitForResponse((response) => response.url().includes('/pulls/9'));
+  release();
+  await answered;
+  await expect(page.getByRole('heading', { name: 'Repositories', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Page not available', exact: true })).toHaveCount(0);
+});

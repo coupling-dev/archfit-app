@@ -4,7 +4,7 @@
   import Skeleton from './components/Skeleton.svelte';
   import { ApiError, getJSON, type Repos as RepoList, type Session } from './lib/api';
   import { prefetch } from './lib/early';
-  import { refused, waiting } from './lib/gate';
+  import { refused, shown, waiting } from './lib/gate';
   import { missingSentence } from './lib/notfound';
   import { inAppURL } from './lib/nav';
   import { guideURL, parseRoute, repoPage, serverError } from './lib/route';
@@ -29,6 +29,7 @@
   let serverSentence = $state(errorAtStart);
   // Counts the App's visits: the page remounts on each, so a "Try again" to the same address reads the API again.
   let visit = $state(0);
+  shown.set(location.pathname + location.search);
   const pageError = $derived(serverSentence || $refused);
   const notFound = $derived(!!$refused || serverSentence === 'Not found.' || route.kind === 'unknown');
   // The repositories the signed-in user can see. A missing page names its repository only when it is in this list:
@@ -72,6 +73,7 @@
   function show(url: URL) {
     refused.set('');
     waiting.set('');
+    shown.set(url.pathname + url.search);
     serverSentence = '';
     at = url;
     visit++;
@@ -82,7 +84,8 @@
     const link = (event.target as Element | null)?.closest?.('a[href]');
     if (!(link instanceof HTMLAnchorElement) || (link.target && link.target !== '_self') || link.hasAttribute('download')) return;
     const url = inAppURL(link.getAttribute('href') ?? '', new URL(location.href));
-    if (!url) return;
+    // A failed session read is retried by the browser's own load, so a link is left to it.
+    if (!url || failure) return;
     event.preventDefault();
     const same = url.href === location.href;
     history[same ? 'replaceState' : 'pushState'](null, '', url);

@@ -9,3 +9,7 @@ export const refused = writable('');
 // waiting is the account of a repository API that answered "waiting for approval": the app then shows the Waiting page
 // instead of the route, the way it shows refused.
 export const waiting = writable('');
+
+// shown is the location the App is showing. A read still in flight from a page the user has left answers for its own
+// location, and must not replace the page now shown.
+export const shown = writable('');

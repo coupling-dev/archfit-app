@@ -139,7 +139,8 @@ export interface Registered {
   notice: string;
 }
 
-import { refused, waiting } from './gate';
+import { refused, shown, waiting } from './gate';
+import { get } from 'svelte/store';
 import { signInHref } from './route';
 
 // ApiError is a failed call: the sentence to show, and for a repository of an account no operator approved that account.
@@ -148,6 +149,8 @@ export class ApiError extends Error {
     readonly status: number,
     message: string,
     readonly waiting = '',
+    // from is the App location a read was started for; empty for a write or a read started before the App showed one.
+    readonly from = '',
   ) {
     super(message);
   }
@@ -157,7 +160,13 @@ const csrfHeader = 'X-CSRF-Token';
 const unreadable = 'The App did not answer. Try again in a minute.';
 
 export async function getJSON<T>(path: string): Promise<T> {
-  return answer<T>(await send(path, { headers: { Accept: 'application/json' } }));
+  const from = get(shown);
+  try {
+    return await answer<T>(await send(path, { headers: { Accept: 'application/json' } }));
+  } catch (e) {
+    if (e instanceof ApiError) throw new ApiError(e.status, e.message, e.waiting, from);
+    throw e;
+  }
 }
 
 export async function postJSON<T>(path: string, csrf: string, body: unknown): Promise<T> {
@@ -213,12 +222,13 @@ export function explain(e: ApiError, here: string, go: (url: string) => void = (
 // an account waiting for approval, with the Waiting page. Never for a write: a write's 404 stays a sentence on the
 // page, so a form keeps what the user typed.
 export function explainLoad(e: ApiError, here: string, go?: (url: string) => void): string {
+  const current = e.from === get(shown);
   if (e.waiting) {
-    waiting.set(e.waiting);
+    if (current) waiting.set(e.waiting);
     return '';
   }
   if (e.status !== 404) return explain(e, here, go);
-  refused.set(e.message);
+  if (current) refused.set(e.message);
   return '';
 }
 
