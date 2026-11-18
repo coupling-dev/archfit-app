@@ -12,6 +12,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/proposals"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
@@ -73,7 +74,10 @@ type Service struct {
 }
 
 // New returns a Service over gh and s.
-func New(gh GitHub, s store.Store) *Service { return &Service{gh: gh, store: s, now: time.Now} }
+// Under inputs.WithReadMemo its reads of records are shared with the other reads of the request.
+func New(gh GitHub, s store.Store) *Service {
+	return &Service{gh: gh, store: inputs.MemoStore(s), now: time.Now}
+}
 
 // Push is a push to the default branch.
 type Push struct {
