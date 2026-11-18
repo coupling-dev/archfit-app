@@ -3,6 +3,7 @@ package onboarding
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"sync"
@@ -284,4 +285,28 @@ func TestOpenPullPolicyAndWorkflowKeepTheSerialAnswer(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Five open pull requests with no policy and no workflow take two windows of one round each, not five serial rounds.
+func TestOpenPullScanTakesOneRoundPerWindow(t *testing.T) {
+	const latency = 290 * time.Millisecond
+	synctest.Test(t, func(t *testing.T) {
+		base := newSetupHub()
+		base.files["tip"] = map[string]string{".archfit.yaml": setupPolicy}
+		for i := range 5 {
+			base.pulls = append(base.pulls, api.Pull{Number: 400 + i, State: "open", BaseRef: "main", HeadRepo: setupRepo.FullName, HeadSHA: fmt.Sprintf("p%d", i)})
+		}
+		h := &slowHub{setupHub: base, latency: latency, calls: map[string]int{}}
+		s := &setups{gh: h, gate: setupView{}, actionApproved: func(string) bool { return false }}
+		start := time.Now()
+		if _, err := s.Setup(t.Context(), setupRepo); err != nil {
+			t.Fatal(err)
+		}
+		elapsed := time.Since(start)
+		t.Logf("Setup with 5 pulls took %v, calls %v", elapsed, h.calls)
+		// tip and policy/workflow at the tip take two rounds; the pulls take two windows of one round each.
+		if want := 4 * latency; elapsed != want {
+			t.Errorf("Setup took %v; want %v", elapsed, want)
+		}
+	})
 }
