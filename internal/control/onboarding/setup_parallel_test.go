@@ -3,6 +3,7 @@ package onboarding
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -111,5 +112,44 @@ func TestSetupAndHomeReuseProtectedInputsButReadFreshApproval(t *testing.T) {
 	view, err = home.Home(ctx, setupRepo)
 	if err != nil || !view.OutsideFlow {
 		t.Fatalf("fresh approval mismatch hidden: %+v, %v", view, err)
+	}
+}
+
+// rulesFirstHub holds the tip read until the rules read has started: Setup must start the rules beside BranchHead,
+// not after the tip, policy and workflow reads.
+type rulesFirstHub struct {
+	*setupHub
+	rulesStarted chan struct{}
+	once         sync.Once
+}
+
+func (h *rulesFirstHub) BranchPolicy(ctx context.Context, r api.RepoRef, branch string) ([]api.RepositoryRule, error) {
+	h.once.Do(func() { close(h.rulesStarted) })
+	return h.setupHub.BranchPolicy(ctx, r, branch)
+}
+
+func (h *rulesFirstHub) BranchHead(ctx context.Context, _ api.RepoRef, _ string) (string, error) {
+	select {
+	case <-h.rulesStarted:
+		return "tip", nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func TestSetupStartsRulesBesideTheTipRead(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	base := newSetupHub()
+	base.files["tip"] = map[string]string{".archfit.yaml": setupPolicy, workflowPath: setupWorkflow(setupCommit)}
+	base.branch = []api.RepositoryRule{{RulesetID: 1, Type: "pull_request"}}
+	h := &rulesFirstHub{setupHub: base, rulesStarted: make(chan struct{})}
+	s := &setups{gh: h, gate: setupView{}, actionApproved: func(ref string) bool { return ref == setupCommit }}
+	out, err := s.Setup(ctx, setupRepo)
+	if err != nil {
+		t.Fatalf("Setup = %v; the rules read did not overlap the tip read", err)
+	}
+	if !slices.ContainsFunc(out.Rules.Findings, func(f RulesetFinding) bool { return f.Code == "pull_requests" && f.State == "ok" }) {
+		t.Fatalf("rules findings = %+v", out.Rules.Findings)
 	}
 }
