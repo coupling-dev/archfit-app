@@ -59,6 +59,12 @@ and **not confirmed** when the App could not confirm it. A **Next step** appears
 A repository whose installation no operator has admitted shows **not admitted**; an operator admits, and an owner
 approves. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** and says the repositories are listed on the home page, with a link to `/`.
 
+When you come back to the repository list, a repository's Home, its policy or a pull request page you already opened in
+this tab, the App shows the last answer at once and a **waiting** line says it is reading the current one. The page then
+changes to the current answer. If the current answer cannot be read or is refused, the page shows that instead of the old
+answer. The App keeps these answers in memory only; a reload or **Sign out** drops them. Owner actions, requests and
+passkey pages are always read fresh.
+
 ## Home and the map
 
 Open `/r/<owner>/<repo>` for **Home**. The title is the repository. Under it, one status shows the repository
