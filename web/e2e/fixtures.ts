@@ -84,6 +84,7 @@ export interface Mock {
   serverError?: { status: number; sentence: string }; // the server answers the page as its error page
   holdSession?: Promise<void>; // /api/session answers once this settles
   holdRepos?: Promise<void>; // /api/repos answers once this settles, with or without its checks
+  holdList?: Promise<void>; // the list without its checks answers once this settles
   probeError?: boolean; // /api/repos?probe=1 fails; the list without it answers
   holdProbe?: Promise<void>; // /api/repos?probe=1 answers once this settles; the list without it does not wait
 }
@@ -137,6 +138,7 @@ export async function open(page: Page, path: string, mock: Mock = {}) {
         const probe = url.searchParams.get('probe') === '1';
         await mock.holdRepos;
         if (probe) await mock.holdProbe;
+        else await mock.holdList;
         if (probe && mock.probeError) return json(502, { error: 'The App did not answer. Try again in a minute.' });
         if (probe) return json(200, mock.repos ?? repos);
         return json(200, mock.repos ? unprobed(mock.repos as { repos: object[] }) : unprobedRepos);

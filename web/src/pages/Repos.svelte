@@ -17,16 +17,18 @@
   // rows later, so the list shows at once and its rows fill in when the probe returns.
   let probing = $state(true);
   let probeFailure = $state('');
+  let probeRows = false; // the probe's rows are in `body`; the list's rows never replace them, whichever answers first
 
   firstJSON<Repos>(list).then(
     (b) => {
-      if (probing) body = b; // the probe's rows are never replaced by the list's
+      if (!probeRows) body = b;
     },
     (e: ApiError) => (failure = explain(e, here)),
   );
   firstJSON<Repos>(probed).then(
     (b) => {
       body = b;
+      probeRows = true;
       probing = false;
     },
     (e: ApiError) => {

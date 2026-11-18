@@ -100,3 +100,17 @@ test('repositories: when the checks fail the rows stay and say so', async ({ pag
   await expect(page.getByText('not confirmed', { exact: true }).first()).toBeVisible();
   await expectClean(page);
 });
+
+test('repositories: a failed check that answers before the list does not hide the list', async ({ page }) => {
+  let release = () => {};
+  const holdList = new Promise<void>((resolve) => (release = resolve));
+  const failed = page.waitForResponse((r) => r.url().includes('probe=1') && r.status() === 502);
+  await open(page, '/', { holdList, probeError: true });
+  await failed;
+  await expect(page.getByRole('status', { name: 'Loading' })).toBeVisible();
+  release();
+  await expect(page.getByRole('link', { name: 'acme/clean' })).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('The App did not answer');
+  await expect(page.getByText('Checking…')).toHaveCount(0);
+  await expectClean(page);
+});
