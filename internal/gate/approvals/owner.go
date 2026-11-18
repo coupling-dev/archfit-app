@@ -408,7 +408,7 @@ func (s *Service) noteDone(ctx context.Context, r api.Repo, d *Done, login strin
 // pullAt, headAt and fileAt are the reads of an owner's action. Under inputs.WithReadMemo each is read once per request.
 func (s *Service) pullAt(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
 	return inputs.Memo(ctx, inputs.PullRead{Repo: r, Number: number}, func() (api.Pull, error) {
-		return s.gh.Pull(ctx, r, number)
+		return s.gh.PullSummary(ctx, r, number)
 	})
 }
 
