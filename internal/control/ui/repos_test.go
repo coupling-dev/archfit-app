@@ -93,7 +93,7 @@ func TestReposUnreadableRecordIsAnError(t *testing.T) {
 func checkReposGolden(t *testing.T, name string, response *httptest.ResponseRecorder) {
 	t.Helper()
 	// P0.2 explicitly names these navigation actions; retain the wording check for all other copy.
-	copy := strings.NewReplacer("Review first policy", "", "Review workflow PR", "").Replace(response.Body.String())
+	copy := strings.NewReplacer("Review first policy", "", "Review workflow change", "").Replace(response.Body.String())
 	if words := wording.NotUsedIn(copy); len(words) != 0 {
 		t.Fatalf("repositories use %v: %s", words, response.Body.String())
 	}

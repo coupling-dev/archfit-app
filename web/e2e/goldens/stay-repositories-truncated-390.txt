@@ -54,7 +54,7 @@ unknown
 archfit/gate
 not confirmed
 Next step
-Review workflow PR
+Review workflow change
 Repository
 octo/tool
 State
