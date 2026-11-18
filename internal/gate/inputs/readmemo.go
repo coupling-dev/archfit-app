@@ -12,7 +12,8 @@ import (
 // The reads of one owner review that several of its probes share. The keys are the same for every caller, so a read
 // made by one caller answers the others.
 type (
-	// FileRead is File of Path at At in Repo: the bytes at a commit, or nil when the file is absent.
+	// FileRead is File of Path at At in Repo. Every loader stores the raw answer, so an absent file is nil bytes with
+	// api.ErrNotFound: each caller decides whether that is an error.
 	FileRead struct {
 		Repo api.RepoRef
 		At   string
@@ -54,6 +55,9 @@ type readEntry struct {
 // errNoResult is what the others get when the read that owns the entry did not return, for example because it panicked.
 var errNoResult = errors.New("inputs: the read did not return")
 
+// errKeyType is what a caller gets when another caller stored a different type under its key.
+var errKeyType = errors.New("inputs: the key holds another type")
+
 // claim returns the entry of key and whether the caller owns it, so it must run the read.
 func (m *readMemo) claim(key any) (*readEntry, bool) {
 	m.mu.Lock()
@@ -77,7 +81,8 @@ func WithReadMemo(ctx context.Context) context.Context {
 }
 
 // Memo calls load once per key for the request that ctx belongs to and returns its result to every caller. Without
-// WithReadMemo it calls load each time. The value is shared: callers must not change it.
+// WithReadMemo it calls load each time. The value is shared: callers must not change it, and every caller of a key must
+// use the same T (another type fails with errKeyType).
 func Memo[T any](ctx context.Context, key any, load func() (T, error)) (T, error) {
 	m, ok := ctx.Value(readMemoKey{}).(*readMemo)
 	if !ok {
@@ -91,7 +96,10 @@ func Memo[T any](ctx context.Context, key any, load func() (T, error)) (T, error
 	} else {
 		<-e.done
 	}
-	v, _ := e.val.(T)
+	v, ok := e.val.(T)
+	if e.err == nil && e.val != nil && !ok {
+		return v, errKeyType
+	}
 	return v, e.err
 }
 

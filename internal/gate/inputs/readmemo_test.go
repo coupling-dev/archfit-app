@@ -104,6 +104,16 @@ func TestMemoFailsClosedWhenTheReadDidNotReturn(t *testing.T) {
 	}
 }
 
+func TestMemoRefusesAKeyHeldWithAnotherType(t *testing.T) {
+	ctx := WithReadMemo(context.Background())
+	if _, err := Memo(ctx, "k", func() (string, error) { return "text", nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Memo(ctx, "k", func() (int, error) { return 1, nil }); !errors.Is(err, errKeyType) {
+		t.Fatalf("err = %v, want %v", err, errKeyType)
+	}
+}
+
 func TestInstallingTheMemoTwiceKeepsTheFirst(t *testing.T) {
 	ctx := WithReadMemo(context.Background())
 	again := WithReadMemo(ctx)

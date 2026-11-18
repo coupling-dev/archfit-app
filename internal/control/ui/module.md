@@ -88,7 +88,7 @@ changes. The probes of one owner review run together and the answer is the first
 signed-in user's permission is read once per request for those reviews (an approval always reads it fresh).
 The reviews of one request also share each repository record, pull request, branch head and file read (`gate.WithReviewReads`):
 a need's probes and the other needs read them once, so the response waits for about two rounds of GitHub reads, not one per probe.
-Setup and Home do not use that memo.
+The pull page's review installs it too, so its probes share their reads. Setup and Home do not use that memo.
 Error priority follows input order, not completion order; unreadable rules
 remain unknown and inventory errors return both `passkey: false` and `passkey_known: false`. HTTP client timeouts,
 request cancellation and rate-limit backoff remain in effect.
