@@ -20,7 +20,8 @@ const keyOf = (path: string) => `${login}\n${path}`;
 
 // signedIn names the user the App is showing; another user (or none) starts with an empty memory.
 export function signedIn(next: string | null): void {
-  if (next !== login) forget();
+  // The first sign-in is not a change of user: reads that started beside the session answered for the same cookie.
+  if (login !== null && next !== login) forget();
   login = next;
 }
 
