@@ -28,7 +28,7 @@ are read only to prevent overwriting newer existing publications; this is not an
 Annotations are batched; newer runs and comments belonging to another current head are not overwritten.
 Producer text is bounded and made inert for Markdown/annotations.
 
-The shared result model also supplies `BuildPage(result.Result) Page`: status, status line,
+The shared result model also supplies `BuildPage(result.Result) Page`: status, status line, the unknown note,
 ordered `Record` values, author and owner lines. The comment renders those same page records.
 Each record retains its next step; `ShowNext` is false when the author line already names it.
 The author line names at most ten requests. Later requests keep their next-step lines.

@@ -1,0 +1,50 @@
+acme/app
+expired
+
+An exception passed its date and the code still breaks the rule, so every pull request fails.
+
+View policy
+Needs you
+1 exception expired
+The map
+Matrix
+Diagram
+
+Policy and review status · row depends on column.
+
+✓ An allowed dependency
+× One a rule denies
+? A requested dependency
+! Drift
+◷ An exception
+
+Blank: the matrix shows no status for this pair. It does not mean the dependency is allowed.
+
+About this view
+
+Select a cell for details. Use arrow keys within the table; Enter opens details.
+
+Policy and review status matrix
+Source ↓
+Target →
+cmd
+app
+core
+util
+No layer
+other
+
+cmd
+app
+✓
+
+◷
+
+
+core
+util
+
+
+
+No layer
+other

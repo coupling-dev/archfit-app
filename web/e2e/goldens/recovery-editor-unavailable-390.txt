@@ -64,8 +64,8 @@ Exceptions
 
 Follow the linked request to renew or replace an exception.
 
-Rule / boundary	Expiry
 duplication · 1
+Rule / boundary	Expiry
 
 pkg_tc → pkg_util
 

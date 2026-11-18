@@ -280,8 +280,8 @@ func TestAuthorAndOwnerLines(t *testing.T) {
 			"nothing to do. This check runs again when #3, #2 and #1 are answered.", "answer #3, #2 and #1.", ""},
 		"a copy keeps its own step": {result.Result{Status: "fail", Errors: errs(result.Next{Kind: "command", Text: `use pkg_util, or run: archfit request -m "<why>"`})},
 			authorAsk, ownerAsk, "- next: `use pkg_util, or run: archfit request -m \"<why>\"`"},
-		"unknown keeps every step": {result.Result{Status: "unknown", Unknown: []result.Unknown{{Cause: "tool", What: "x", Next: result.Next{Kind: "wait", Text: "the check runs again"}}}},
-			authorEach, "", "- next: the check runs again"},
+		"unknown has no author line, its step stays in the record": {result.Result{Status: "unknown", Unknown: []result.Unknown{{Cause: "tool", What: "x", Next: result.Next{Kind: "wait", Text: "the check runs again"}}}},
+			"", "", "- next: the check runs again"},
 		"a step no line names": {result.Result{Status: "fail", Errors: errs(result.Next{Kind: "restore", Text: "git checkout origin/main -- .archfit.yaml"})},
 			authorEach, "", "- next: `git checkout origin/main -- .archfit.yaml`"},
 	} {

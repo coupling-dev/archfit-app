@@ -58,8 +58,8 @@ Follow the linked request to renew or replace an exception.
 
 4 exceptions have no end date.
 
-Rule / boundary
 duplication · 4
+Rule / boundary
 
 
 cmd → pkg_chaos

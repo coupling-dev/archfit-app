@@ -1,9 +1,6 @@
-Owner action
+Revert the policy
 
 acme/app
 
-Nothing to revert
-View current setup
-View policy
-
-Open current setup or policy to see what to do next.
+Nothing to revert: the policy has not changed outside the flow.
+Open the repository

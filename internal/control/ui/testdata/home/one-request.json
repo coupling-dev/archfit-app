@@ -1,5 +1,6 @@
 {
-  "status": "1 request waits",
+  "state": "clean",
+  "status": "The default branch follows the policy. 1 request waits.",
   "needs_you": [
     {
       "kind": "request",

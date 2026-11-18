@@ -13,6 +13,8 @@
   // Exceptions are grouped by rule and shown a page at a time. A column is drawn only when some row has its fact.
   const previewRows = 20;
   let showAll = $state(false);
+  // The graph is built only when its disclosure is open: closed <details> content is still in the DOM.
+  let graphOpen = $state(false);
   const groups = $derived(groupExceptions(filtered.exceptions));
   // Every rule keeps its header and count; the row budget is spent in order, so a rule past it shows no rows.
   const view = $derived.by(() => {
@@ -29,7 +31,6 @@
   const hasRequest = $derived(shownRows.some((e) => !!e.request && !!safeHref(e.request_href)));
   const hasBars = $derived(shownRows.some((e) => e.days_left != null));
   const noEnd = $derived(filtered.exceptions.filter((e) => !e.expires).length);
-  const columns = $derived(1 + (hasEnd ? 1 : 0) + (hasRequest ? 1 : 0));
   const matches = $derived(filtered.modules.length + filtered.rules.length + filtered.exceptions.length);
   const hasNotes = $derived(policy.rules.some((rule) => rule.not_checked));
   // The gate key says what a failing rule does to archfit/gate; it does not say whether GitHub requires the check. Any other value is shown as it is.
@@ -114,44 +115,50 @@
   <div class="box-head"><div><h2 class="title-box" id="exceptions">Exceptions</h2><p>Follow the linked request to renew or replace an exception.</p></div></div>
   {#if total}
     {#if noEnd > 0}<p class="box-body small muted">{noEnd === 1 ? '1 exception has' : `${noEnd} exceptions have`} no end date.</p>{/if}
-    <table class="data cards exceptions">
-      <thead><tr>
-        <th>Rule / boundary</th>
-        {#if hasEnd}<th>Expiry</th>{/if}
-        {#if hasRequest}<th>Request</th>{/if}
-      </tr></thead>
-      <tbody>
-        {#each view as section (section.group.rule)}
-          <tr class="group"><th colspan={columns} scope="colgroup">{section.group.rule} · {section.group.items.length}</th></tr>
-          {#each section.items as exception, i (i)}
-          <tr>
-            <td><p class="boundary">{exception.from}{exception.to ? ` → ${exception.to}` : ''}</p>
-              {#if exception.why}<details><summary>Reason</summary><p>{exception.why}</p></details>{/if}
-            </td>
-            {#if hasEnd}
-              {@const expiry = exceptionExpiry(exception)}
-              <td data-label="Expiry">
-                <div class="expiry">
-                  <span class={'label ' + expiry.tone}>{expiry.label}</span>
-                  {#if exception.expires}<time datetime={exception.expires}>{exception.expires}</time>{/if}
-                  {#if expiry.remaining !== null}
-                    <progress max="30" value={expiry.remaining} class:expired={expiry.tone === 'danger'} aria-label="Days remaining, capped at 30"></progress>
-                  {/if}
-                </div>
-              </td>
-            {/if}
-            {#if hasRequest}
-              <td data-label="Request">
-                {#if exception.request && safeHref(exception.request_href)}
-                  <a href={safeHref(exception.request_href)}>Request #{exception.request}</a>
-                {:else}<span class="muted">None</span>{/if}
-              </td>
-            {/if}
-          </tr>
-          {/each}
-        {/each}
-      </tbody>
-    </table>
+    {#each view as section (section.group.rule)}
+      <details class="exception-group" open={section.items.length > 0}>
+        <summary>{section.group.rule} · {section.group.items.length}</summary>
+        {#if section.items.length}
+          <table class="data cards exceptions">
+            <thead><tr>
+              <th>Rule / boundary</th>
+              {#if hasEnd}<th>Expiry</th>{/if}
+              {#if hasRequest}<th>Request</th>{/if}
+            </tr></thead>
+            <tbody>
+              {#each section.items as exception, i (i)}
+              <tr>
+                <td><p class="boundary">{exception.from}{exception.to ? ` → ${exception.to}` : ''}</p>
+                  {#if exception.why}<details><summary>Reason</summary><p>{exception.why}</p></details>{/if}
+                </td>
+                {#if hasEnd}
+                  {@const expiry = exceptionExpiry(exception)}
+                  <td data-label="Expiry">
+                    <div class="expiry">
+                      <span class={'label ' + expiry.tone}>{expiry.label}</span>
+                      {#if exception.expires}<time datetime={exception.expires}>{exception.expires}</time>{/if}
+                      {#if expiry.remaining !== null}
+                        <progress max="30" value={expiry.remaining} class:expired={expiry.tone === 'danger'} aria-label="Days remaining, capped at 30"></progress>
+                      {/if}
+                    </div>
+                  </td>
+                {/if}
+                {#if hasRequest}
+                  <td data-label="Request">
+                    {#if exception.request && safeHref(exception.request_href)}
+                      <a href={safeHref(exception.request_href)}>Request #{exception.request}</a>
+                    {:else}<span class="muted">None</span>{/if}
+                  </td>
+                {/if}
+              </tr>
+              {/each}
+            </tbody>
+          </table>
+        {:else}
+          <p class="muted">Show all to see these exceptions.</p>
+        {/if}
+      </details>
+    {/each}
     {#if total > previewRows && !showAll}
       <div class="box-foot row-between"><span class="small muted">Showing {previewRows} of {total}</span><button class="btn sm" type="button" onclick={() => showAll = true}>Show all</button></div>
     {/if}
@@ -186,11 +193,13 @@
     </table>
   {:else}<p class="box-body muted">{query.trim() ? 'No modules match this search.' : 'No modules.'}</p>{/if}
   {#if policy.modules.length}
-    <details class="graph-disclosure">
+    <details class="graph-disclosure" ontoggle={(event) => (graphOpen = event.currentTarget.open)}>
       <summary>Show graph <span class="small muted">All {policy.modules.length} modules</span></summary>
       <div class="graph-body">
-        <p class="small muted">Allowed dependencies, not observed imports. Select a module to inspect it. Search filters the table, not the graph.</p>
-        <PolicyGraph modules={policy.modules} layers={policy.layers} inspect={inspectModule} />
+        <p class="small muted">Search filters the table, not the graph.</p>
+        {#if graphOpen}
+          <PolicyGraph modules={policy.modules} layers={policy.layers} inspect={inspectModule} />
+        {/if}
       </div>
     </details>
   {/if}
@@ -229,7 +238,8 @@
   table { table-layout: fixed; }
   table td { overflow-wrap: anywhere; padding: 12px; }
   .exceptions th:first-child { width: 50%; }
-  tr.group th { text-align: left; background: var(--bg-subtle); font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
+  .exception-group > summary { cursor: pointer; padding: 10px 16px; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; border-top: 1px solid var(--border-muted); background: var(--bg-subtle); }
+  .exception-group > p { padding: 10px 16px; font-size: 13px; margin: 0; }
   .modules .label { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
   .modules th:first-child { width: 45%; }
   .modules th:nth-child(2) { width: 20%; }

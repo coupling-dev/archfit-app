@@ -1,6 +1,6 @@
 Repositories
 
-Choose a repository or continue setup.
+Choose a repository to open its Home.
 
 No repository yet
 

@@ -2,9 +2,9 @@ Confirm the policy
 
 acme/app
 
-unknown: the policy changed outside the flow.
+unknown — the policy changed outside the flow.
 
-This makes the current policy the approved policy.
+The policy on the default branch changed without an owner's approval. Confirm makes the current policy the approved policy. Revert instead
 
 View policy
 The policy change
@@ -35,4 +35,4 @@ Why a passkey?
 
 Manage your passkeys
 
-Confirm the policy
+Confirm with passkey

@@ -1,26 +1,24 @@
-Home
-
 acme/app
+unknown
 
-repository state is not known
+The state of the default branch is not known. Nothing needs you.
+
 View policy
-Needs you
-
-Nothing needs you.
-
 The map
 Matrix
 Diagram
 
 Policy and review status · row depends on column.
 
-✓ Explicit allow
-× Explicit deny
-? Request
+✓ An allowed dependency
+× One a rule denies
+? A requested dependency
 ! Drift
-◷ Exception (expiry in details)
+◷ An exception
 
-Blank = no explicit relationship in this payload, not “no imports” or “permitted”. Deny status is only known for touched, requested or drift pairs; full deny evaluation is not available.
+Blank: the matrix shows no status for this pair. It does not mean the dependency is allowed.
+
+About this view
 
 Select a cell for details. Use arrow keys within the table; Enter opens details.
 

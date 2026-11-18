@@ -12,13 +12,23 @@ import (
 
 	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
 )
 
 const homeExpiryDays = 7
 
+// The repository states of the Archfit 4 design, as /api/home sends them. The page chooses the words and the tone.
+const (
+	homeStateClean       = "clean"
+	homeStateDrift       = "drift"
+	homeStateExpired     = "expired"
+	homeStateOutsideFlow = "outside_flow"
+	homeStateNotSetUp    = "not_set_up"
+	homeStateUnknown     = "unknown"
+)
+
 type homeJSON struct {
-	Status   string         `json:"status"`
+	State    string         `json:"state"`
+	Status   string         `json:"status"` // the sentence for the state, then one sentence per group that waits
 	NeedsYou []homeNeedJSON `json:"needs_you,omitempty"`
 	Map      *homeMapJSON   `json:"map,omitempty"`
 	Setup    *setupJSON     `json:"setup,omitempty"`
@@ -90,17 +100,18 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 			}
 			state.Review = s.ownerReview(r, sc, pull)
 		}
-		return homeJSON{Status: "Set up this repository.", Setup: &state}, nil
+		return homeJSON{State: homeStateNotSetUp, Status: "Pull requests are not checked yet. Finish the setup steps.", Setup: &state}, nil
 	}
 	if homeErr != nil {
 		return nil, homeErr
 	}
 	today := s.now().UTC().Truncate(24 * time.Hour)
-	body := homeBody(view, state, sc.repo.FullName, today)
+	var shown *setupJSON
 	if !setupRulesComplete(state.Rules) || state.Approval.Status == string(gate.ApprovalPending) ||
 		state.Approval.Status == string(gate.ApprovalStale) || state.Approval.Status == string(gate.ApprovalUnknown) {
-		body.Setup = &state
+		shown = &state
 	}
+	body := homeBody(view, state, shown, sc.repo.FullName, today)
 	var workflowNeeds []int
 	for i, need := range body.NeedsYou {
 		if need.Kind == "workflow" {
@@ -114,7 +125,7 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 	for j, i := range workflowNeeds {
 		if review := reviews[j]; review != nil {
 			need := &body.NeedsYou[i]
-			need.Text, need.Href = fmt.Sprintf("%s · PR #%d", review.Label, need.Pull), review.Href
+			need.Text, need.Href = fmt.Sprintf("%s · pull request #%d", review.Label, need.Pull), review.Href
 		}
 	}
 	return body, nil
@@ -126,8 +137,9 @@ func setupRulesComplete(rules []setupFindingJSON) bool {
 	})
 }
 
-func homeBody(view gate.HomeState, setup setupJSON, repo string, today time.Time) homeJSON {
-	out := homeJSON{NeedsYou: []homeNeedJSON{}}
+// homeBody builds the answer for an approved repository. shown is the setup block when setup work is still open.
+func homeBody(view gate.HomeState, setup setupJSON, shown *setupJSON, repo string, today time.Time) homeJSON {
+	out := homeJSON{NeedsYou: []homeNeedJSON{}, Setup: shown}
 	if view.PolicyAvailable {
 		out.Map = homeMap(view, today)
 	}
@@ -139,32 +151,37 @@ func homeBody(view gate.HomeState, setup setupJSON, repo string, today time.Time
 		}
 		return policyHref
 	}
-	var status []string
-	if view.OutsideFlow || setup.State == "outside_flow" {
-		status = append(status, "policy changed outside the flow")
+	// The state is the first that holds, in the order of how much it matters to a pull request.
+	outside := view.OutsideFlow || setup.State == "outside_flow"
+	if outside {
 		if view.PolicyAvailable {
 			out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "confirm", Text: "Confirm the policy changed outside the flow.", Href: base + "/owner/confirm"})
 		}
 		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "revert", Text: "Revert the policy changed outside the flow.", Href: base + "/owner/revert"})
 	}
+	var waits []string
 	if n := len(view.Requests); n > 0 {
 		if n == 1 {
-			status = append(status, "1 request waits")
+			waits = append(waits, "1 request waits.")
 		} else {
-			status = append(status, fmt.Sprintf("%d requests wait", n))
+			waits = append(waits, fmt.Sprintf("%d requests wait.", n))
 		}
 	}
 	for _, req := range view.Requests {
 		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "request", Text: fmt.Sprintf("Request #%d waits.", req.Number),
 			Href: base + "/requests/" + strconv.Itoa(req.Number), Request: req.Number, Rule: req.Rule, From: req.From, To: req.To, Record: req.Record})
 	}
+	// An exception past its date is a row to act on. It makes the repository expired only when the stored result
+	// for this head says the code still breaks the rule, which is what RepositoryState holds.
 	for _, x := range view.Policy.Exceptions {
 		left, ok := homeDays(x.Expires, today)
 		if !ok {
 			continue
 		}
 		text := homeExceptionStatus(left)
-		status = append(status, text)
+		if left >= 0 {
+			waits = append(waits, text+".")
+		}
 		if left > homeExpiryDays {
 			continue
 		}
@@ -172,32 +189,45 @@ func homeBody(view gate.HomeState, setup setupJSON, repo string, today time.Time
 		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "exception", Text: text, Href: issueHref(view.ExceptionIssues[key]), Rule: x.Rule,
 			From: x.From, To: x.To, Expires: x.Expires, DaysLeft: &left})
 	}
-	if len(view.Drift) > 0 || view.DriftIssue > 0 {
-		status = append(status, "drift")
+	// Errors stored for an older head are not current; only an open issue, which is real on GitHub, stands without them.
+	drift := view.DriftKnown && len(view.Drift) > 0 || view.DriftIssue > 0
+	if drift {
 		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "drift", Text: "Drift on the default branch.", Href: issueHref(view.DriftIssue)})
 	}
-	switch {
-	case !view.DriftKnown:
-		status = append(status, "repository state is not known")
-	case view.DriftUnread:
-		status = append(status, "the check could not read every place")
-	case view.RepositoryState == "expired" && !slices.ContainsFunc(view.Policy.Exceptions, func(x policy3.Exception) bool { left, ok := homeDays(x.Expires, today); return ok && left < 0 }):
-		status = append(status, "expired")
-	}
 	for _, pull := range view.WorkflowPulls {
-		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "workflow", Text: fmt.Sprintf("Workflow change in #%d awaits an architecture owner.", pull),
+		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "workflow", Text: fmt.Sprintf("Workflow change in pull request #%d waits for an owner.", pull),
 			Pull: pull})
 	}
 	if n := len(view.WorkflowPulls); n > 0 {
 		if n == 1 {
-			status = append(status, "1 workflow change waits")
+			waits = append(waits, "1 workflow change waits.")
 		} else {
-			status = append(status, fmt.Sprintf("%d workflow changes wait", n))
+			waits = append(waits, fmt.Sprintf("%d workflow changes wait.", n))
 		}
 	}
-	out.Status = strings.Join(status, "; ")
-	if out.Status == "" {
-		out.Status = "clean"
+	// Stale or unread evidence is unknown before it is expired or drift, as on the repositories page.
+	switch {
+	case outside:
+		out.State, out.Status = homeStateOutsideFlow, "The policy on the default branch changed without a recorded approval, so every pull request is unknown."
+	case !view.DriftKnown:
+		out.State, out.Status = homeStateUnknown, "The state of the default branch is not known."
+	case view.DriftUnread:
+		out.State, out.Status = homeStateUnknown, "The last check could not read every file, so the state is unknown."
+	case view.RepositoryState == "expired":
+		out.State, out.Status = homeStateExpired, "An exception passed its date and the code still breaks the rule, so every pull request fails."
+	case drift:
+		out.State, out.Status = homeStateDrift, "The default branch has dependencies the policy does not allow."
+		if view.DriftIssue > 0 {
+			out.Status += fmt.Sprintf(" Issue #%d.", view.DriftIssue)
+		}
+	default:
+		out.State, out.Status = homeStateClean, "The default branch follows the policy."
+	}
+	if len(waits) > 0 {
+		out.Status += " " + strings.Join(waits, " ")
+	}
+	if len(out.NeedsYou) == 0 && shown == nil {
+		out.Status += " Nothing needs you."
 	}
 	return out
 }
