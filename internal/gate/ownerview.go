@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/alexei-led/archfit-app/internal/gate/approvals"
@@ -65,7 +66,7 @@ func (g *Gate) OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerVie
 		v.Files = append(v.Files, OwnerFile{Role: role, Ref: ref, Path: path, Digest: policy3.Digest(raw), Text: string(raw), Missing: raw == nil})
 		return nil
 	}
-	read := func(role, ref, path string, optional bool) ([]byte, error) {
+	fetch := func(role, ref, path string, optional bool) ([]byte, error) {
 		if ref == "" {
 			return nil, ErrOwnerMoved
 		}
@@ -75,6 +76,13 @@ func (g *Gate) OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerVie
 		}
 		if err != nil {
 			return nil, fmt.Errorf("gate: read %s at %s: %w", path, ref, err)
+		}
+		return raw, nil
+	}
+	read := func(role, ref, path string, optional bool) ([]byte, error) {
+		raw, err := fetch(role, ref, path, optional)
+		if err != nil {
+			return nil, err
 		}
 		return raw, add(role, ref, path, raw)
 	}
@@ -117,55 +125,117 @@ func (g *Gate) OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerVie
 	if err := records.Load(ctx, g.store, store.Tenant(t.Repo.InstallationID), records.RepoKey(t.Repo.FullName), &repo); err != nil && !errors.Is(err, records.ErrNoRecord) {
 		return OwnerView{}, err
 	}
-	var approved []byte
-	if repo.ApprovedDigest != "" {
-		v.Approved = repo.ApprovedCommit
-		approved, err = read("approved", v.Approved, approvals.PolicyPath, false)
-		if err != nil {
-			return OwnerView{}, err
-		}
-		if policy3.Digest(approved) != repo.ApprovedDigest {
-			return OwnerView{}, ErrOwnerMoved
-		}
-	}
-	var base, head []byte
+	var approved, base, head []byte
 	if a.Pull > 0 {
-		pl, err := g.pulls.Pull(ctx, t.Repo.RepoRef, a.Pull)
-		if err != nil {
-			return OwnerView{}, err
+		// The approved policy, the pull request and the default branch head are independent. The files at the pull
+		// request's commits need the pull request, so they are read in a second round. Errors are taken in the order the
+		// reads used to run, so the same failure is reported whichever call finished first.
+		var (
+			pl                                api.Pull
+			oldWorkflow, nextWorkflow         []byte
+			approvedErr, pullErr, tipErr      error
+			baseErr, headErr, oldErr, nextErr error
+			tipSHA                            string
+		)
+		var first sync.WaitGroup
+		if repo.ApprovedDigest != "" {
+			first.Add(1)
+			go func() {
+				defer first.Done()
+				approved, approvedErr = fetch("approved", repo.ApprovedCommit, approvals.PolicyPath, false)
+			}()
+		}
+		first.Add(2)
+		go func() { defer first.Done(); pl, pullErr = g.pulls.Pull(ctx, t.Repo.RepoRef, a.Pull) }()
+		go func() {
+			defer first.Done()
+			tipSHA, tipErr = g.repos.BranchHead(ctx, t.Repo.RepoRef, t.Repo.DefaultBranch)
+		}()
+		first.Wait()
+		if repo.ApprovedDigest != "" {
+			v.Approved = repo.ApprovedCommit
+			if approvedErr != nil {
+				return OwnerView{}, approvedErr
+			}
+			if err := add("approved", repo.ApprovedCommit, approvals.PolicyPath, approved); err != nil {
+				return OwnerView{}, err
+			}
+			if policy3.Digest(approved) != repo.ApprovedDigest {
+				return OwnerView{}, ErrOwnerMoved
+			}
+		}
+		if pullErr != nil {
+			return OwnerView{}, pullErr
 		}
 		if pl.HeadSHA != c.HeadSHA || pl.BaseRef != t.Repo.DefaultBranch || pl.State != "open" || !strings.EqualFold(pl.HeadRepo, t.Repo.FullName) {
 			return OwnerView{}, ErrOwnerMoved
 		}
 		v.Head, v.Base = pl.HeadSHA, pl.BaseSHA
-		base, err = read("base", v.Base, approvals.PolicyPath, a.Kind == OwnerFirst)
-		if err != nil {
+		v.Tip = tipSHA
+
+		var second sync.WaitGroup
+		second.Add(4)
+		go func() {
+			defer second.Done()
+			base, baseErr = fetch("base", v.Base, approvals.PolicyPath, a.Kind == OwnerFirst)
+		}()
+		go func() { defer second.Done(); head, headErr = fetch("head", v.Head, approvals.PolicyPath, false) }()
+		go func() {
+			defer second.Done()
+			oldWorkflow, oldErr = fetch("workflow-base", v.Tip, approvals.WorkflowPath, true)
+		}()
+		go func() {
+			defer second.Done()
+			nextWorkflow, nextErr = fetch("workflow-head", v.Head, approvals.WorkflowPath, false)
+		}()
+		second.Wait()
+		if baseErr != nil {
+			return OwnerView{}, baseErr
+		}
+		if err := add("base", v.Base, approvals.PolicyPath, base); err != nil {
 			return OwnerView{}, err
 		}
-		head, err = read("head", v.Head, approvals.PolicyPath, false)
-		if err != nil {
+		if headErr != nil {
+			return OwnerView{}, headErr
+		}
+		if err := add("head", v.Head, approvals.PolicyPath, head); err != nil {
 			return OwnerView{}, err
 		}
-		v.Tip, err = g.repos.BranchHead(ctx, t.Repo.RepoRef, t.Repo.DefaultBranch)
-		if err != nil {
+		if tipErr != nil {
+			return OwnerView{}, tipErr
+		}
+		if oldErr != nil {
+			return OwnerView{}, oldErr
+		}
+		if err := add("workflow-base", v.Tip, approvals.WorkflowPath, oldWorkflow); err != nil {
 			return OwnerView{}, err
 		}
-		old, err := read("workflow-base", v.Tip, approvals.WorkflowPath, true)
-		if err != nil {
+		if nextErr != nil {
+			return OwnerView{}, nextErr
+		}
+		if err := add("workflow-head", v.Head, approvals.WorkflowPath, nextWorkflow); err != nil {
 			return OwnerView{}, err
 		}
-		next, err := read("workflow-head", v.Head, approvals.WorkflowPath, false)
-		if err != nil {
-			return OwnerView{}, err
-		}
-		if records.FileDigest(next) != c.Workflow {
+		if records.FileDigest(nextWorkflow) != c.Workflow {
 			return OwnerView{}, ErrOwnerMoved
 		}
 		if a.Kind == OwnerWorkflow {
-			diff("The workflow change", approvals.WorkflowPath, old, next)
+			diff("The workflow change", approvals.WorkflowPath, oldWorkflow, nextWorkflow)
 		}
 	} else {
+		if repo.ApprovedDigest != "" {
+			v.Approved = repo.ApprovedCommit
+			var err error
+			approved, err = read("approved", v.Approved, approvals.PolicyPath, false)
+			if err != nil {
+				return OwnerView{}, err
+			}
+			if policy3.Digest(approved) != repo.ApprovedDigest {
+				return OwnerView{}, ErrOwnerMoved
+			}
+		}
 		v.Tip = c.Commit
+		var err error
 		head, err = read("current", v.Tip, approvals.PolicyPath, false)
 		if err != nil {
 			return OwnerView{}, err

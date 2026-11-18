@@ -11,11 +11,7 @@ import (
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
 
-const (
-	retryAfterSeconds = "60"
-
-	stateWaiting = "waiting for approval"
-)
+const retryAfterSeconds = "60"
 
 // userError is a refusal ui decides itself: its status, its log outcome and the sentence shown.
 type userError struct {
