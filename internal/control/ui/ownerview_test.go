@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -26,27 +27,27 @@ func ownerFixture(kind string, pull int, open bool) gate.OwnerView {
 		Diffs: []gate.OwnerDiff{{Title: "The policy change", Path: ".archfit.yaml", Text: changedDiff}}, Proposals: []gate.OwnerProposal{}}
 	switch kind {
 	case gate.OwnerFirst:
-		v.Status = "unknown: the first policy needs approval."
+		v.Status = "unknown — the first policy needs approval."
 		v.MainAction = "Approve the first policy"
-		v.Note = "There is no approved policy yet. Approving makes every line below the approved policy."
+		v.Note = "No policy is approved yet. If you approve, the policy below becomes the approved policy."
 		v.Diffs[0] = gate.OwnerDiff{Title: "The first policy", Path: ".archfit.yaml", Text: firstDiff}
 	case gate.OwnerWorkflow:
-		v.Status = "unknown: the workflow changed."
+		v.Status = "unknown — no verdict until this workflow change is approved."
 		v.MainAction = "Approve the workflow change"
 		v.Note = "This approves the policy and workflow at this pull request's head."
 		v.Diffs = append([]gate.OwnerDiff{{Title: "The workflow change", Path: ".github/workflows/archfit.yaml",
 			Text: "--- a/.github/workflows/archfit.yaml\n+++ b/.github/workflows/archfit.yaml\n@@ -1,1 +1,1 @@\n-name: old\n+name: archfit\n"}}, v.Diffs...)
 	case gate.OwnerConfirm:
-		v.Status = "unknown: the policy changed outside the flow."
+		v.Status = "unknown — the policy changed outside the flow."
 		v.MainAction = "Confirm the policy"
-		v.Note = "This makes the current policy the approved policy."
+		v.Note = "The policy on the default branch changed without an owner's approval. Confirm makes the current policy the approved policy."
 	case gate.OwnerRevert:
-		v.Status = "unknown: the policy changed outside the flow."
+		v.Status = "unknown — the policy changed outside the flow."
 		v.MainAction = "Revert the policy"
-		v.Note = "This restores the approved policy."
+		v.Note = "The policy on the default branch changed without an owner's approval. Revert restores the approved policy."
 		v.Diffs[0].Title = "The policy to restore"
 		if open {
-			v.Note += " It keeps the approved answers in #12."
+			v.Note += " It keeps the approved answers in pull request #12."
 			v.Proposals = append(v.Proposals, gate.OwnerProposal{ID: "p1", Pull: 12, Head: sha(13), Digest: policy3.Digest([]byte("fixture-92")),
 				Approvals: []gate.OwnerApproval{{ID: "a1", Request: 431, Digest: policy3.Digest([]byte("fixture-93"))}}})
 			v.Diffs = append(v.Diffs, gate.OwnerDiff{Title: "Approved answers kept on the approved policy", Path: ".archfit.yaml",
@@ -174,10 +175,35 @@ func TestOwnerViewAPIExplainsUnreadableFiles(t *testing.T) {
 	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Error != "This file cannot be displayed, so it cannot be approved here. Use the existing owner flow on the GitHub issue." {
+	if body.Error != "Archfit cannot show this file as text, so it cannot be approved here. Use the GitHub issue." {
 		t.Fatalf("error = %q", body.Error)
 	}
 	if words := wording.NotUsedIn(body.Error); len(words) > 0 {
 		t.Fatalf("error uses %v", words)
+	}
+}
+
+func TestOwnerViewAPISaysWhyAnActionIsNotAvailable(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"merged", fmt.Errorf("%w: %w", gate.ErrOwnerMerged, gate.ErrOwnerNotPossible), "This pull request is merged. There is nothing to approve."},
+		{"not approvable", gate.ErrOwnerNotPossible, "This pull request cannot be approved. It must be open, from this repository, into the default branch, with a policy and a workflow file."},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.owners.err = tt.err
+			res := e.as("alice", permRead).get(ownerAPI + "workflow/view?pull=7")
+			wantStatus(t, res, http.StatusConflict)
+			var body errorJSON
+			if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Error != tt.want {
+				t.Fatalf("error = %q", body.Error)
+			}
+		})
 	}
 }

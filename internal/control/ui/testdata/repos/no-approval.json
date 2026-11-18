@@ -3,12 +3,11 @@
     {
       "full_name": "acme/app",
       "state": "not set up",
-      "setup_reason": "The policy changed outside the approval flow.",
       "enforcement": "check",
-      "enforcement_reason": "The rules do not establish whether archfit/gate is required; check with an admin.",
+      "enforcement_reason": "The App could not confirm that archfit/gate is required; ask a repository administrator.",
       "next_step": {
-        "text": "Open Home",
-        "href": "/r/acme/app"
+        "text": "",
+        "href": ""
       }
     }
   ],

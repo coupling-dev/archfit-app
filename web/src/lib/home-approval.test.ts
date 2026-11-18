@@ -32,13 +32,13 @@ const pending: ApprovalSummary = {
 
 describe('owner approval is separate from activation and gate rules', () => {
   it.each([
-    [pending, true, false, 'Approved for PR #203. Waiting for merge.'],
+    [pending, true, false, 'Approved for pull request #203. Waiting for merge.'],
     [{ ...pending, merged: true }, true, false, 'Approval recorded; checking activation'],
     [
       { ...pending, status: 'stale', current_head: 'h2' },
       false,
       true,
-      'PR #203 changed after approval. Review the new head.',
+      'Pull request #203 changed after approval. The approval covers the old head; a new approval is needed.',
     ],
     [{ ...pending, status: 'unknown' }, false, false, 'Could not confirm approval'],
     [

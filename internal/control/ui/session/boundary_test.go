@@ -8,7 +8,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/alexei-led/archfit-app/internal/github/api"
 )
@@ -35,7 +37,7 @@ func TestAuthorizeFailsClosedOnGitHubErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newFixture(t)
 			f.users.answer("admin", tt.permissionErr)
-			f.repos.answer(api.Repo{}, tt.resolveErr)
+			f.repos.answer(0, tt.resolveErr)
 
 			repo, err := f.s.Authorize(context.Background(), testUser, testRepo, "read")
 
@@ -54,7 +56,7 @@ func TestAuthorizeFailsClosedOnGitHubErrors(t *testing.T) {
 
 			// Nothing was cached: once GitHub recovers the next call asks again and succeeds.
 			f.users.answer("admin", nil)
-			f.repos.answer(resolvedRepo(42), nil)
+			f.repos.answer(42, nil)
 			repo, err = f.s.Authorize(context.Background(), testUser, testRepo, "read")
 			if err != nil || repo != resolvedRepo(42) {
 				t.Errorf("after recovery: Authorize = %+v, %v; want the repo", repo, err)
@@ -148,7 +150,7 @@ func TestSecretsNeverLeave(t *testing.T) {
 	_, err = f.s.Authorize(ctx, testUser, "o/unknown", "read")
 	recordErr(err)
 	f.users.answer("admin", nil)
-	f.repos.answer(api.Repo{}, errors.New("dial tcp: connection refused"))
+	f.repos.answer(0, errors.New("dial tcp: connection refused"))
 	_, err = f.s.Authorize(ctx, testUser, "o/unreachable", "read")
 	recordErr(err)
 
@@ -223,4 +225,66 @@ func TestNewRejectsBadConfig(t *testing.T) {
 			t.Errorf("New with a nil clock = %v, %v; want nil and an error", s, err)
 		}
 	})
+}
+
+func TestAuthorizeRefusesReadableRepositoryWithoutInstallation(t *testing.T) {
+	quietLogs(t)
+	f := newFixture(t)
+	f.users.answer("read", nil)
+	f.repos.answer(0, api.ErrNotFound)
+
+	repo, err := f.s.Authorize(context.Background(), testUser, testRepo, "read")
+
+	if !errors.Is(err, ErrForbidden) || repo != (api.Repo{}) {
+		t.Errorf("Authorize = %+v, %v; want no repo and ErrForbidden", repo, err)
+	}
+	if n := f.s.cacheLen(); n != 0 {
+		t.Errorf("cache holds %d entries, want 0: a refusal is not cached", n)
+	}
+}
+
+// pairedUsers and pairedRepos make each call wait for the other to start: a serial authorization never gets past
+// the first wait, and fails by the timeout instead of hanging.
+type pairedUsers struct {
+	*fakeUsers
+	installing <-chan struct{}
+}
+
+func (p pairedUsers) Access(ctx context.Context, token, fullName string) (string, api.Repo, error) {
+	select {
+	case <-p.installing:
+	case <-time.After(2 * time.Second):
+		return "", api.Repo{}, errors.New("InstallationID did not start alongside Access")
+	}
+	return p.fakeUsers.Access(ctx, token, fullName)
+}
+
+type pairedRepos struct {
+	*fakeRepos
+	installing chan struct{}
+	once       sync.Once
+}
+
+func (p *pairedRepos) InstallationID(ctx context.Context, fullName string) (int64, error) {
+	p.once.Do(func() { close(p.installing) })
+	return p.fakeRepos.InstallationID(ctx, fullName)
+}
+
+func TestAuthorizeAsksUserAndInstallationTogether(t *testing.T) {
+	quietLogs(t)
+	f := newFixture(t)
+	installing := make(chan struct{})
+	repos := &pairedRepos{fakeRepos: f.repos, installing: installing}
+	s, err := New(Config{CookieKey: testKey, BaseURL: testBaseURL}, f.oauth, pairedUsers{f.users, installing}, repos, f.clock.now)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	f.users.answer("write", nil)
+	f.repos.answer(42, nil)
+
+	repo, err := s.Authorize(context.Background(), testUser, testRepo, "write")
+
+	if err != nil || repo != resolvedRepo(42) {
+		t.Errorf("Authorize = %+v, %v; want the repo of installation 42", repo, err)
+	}
 }

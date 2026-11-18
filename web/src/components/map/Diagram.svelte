@@ -1,10 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { layoutMap, type MapLayout, type MapNode } from './layout';
-  import { focusLabel, legendKinds, legendWords, mapCaption, type MapModel } from './model';
+  import { focusLabel, legendKinds, legendWords, mapCaption, mapLines, type LineKind, type MapModel } from './model';
+  import { routeLines } from './routes';
   import { centerOn, fitView, panBy, viewBox, visible, zoomAt, type View } from './viewport';
 
-  let { model, detailView = 'list' }: { model: MapModel; detailView?: 'list' | 'matrix' } = $props();
+  // `kinds` is the legend: the Home map shows all five line kinds; the policy graph shows only allowed dependencies.
+  // `onfocus` reports the module in focus (or '' when none), so a page can show its details in place.
+  let { model, detailView = 'list', kinds = legendKinds, label = 'Modules by layer and their dependencies', onfocus }: {
+    model: MapModel;
+    detailView?: 'list' | 'matrix' | 'table';
+    kinds?: LineKind[];
+    label?: string;
+    onfocus?: (name: string) => void;
+  } = $props();
   const id = $props.id();
   const STEP = 80;
   const ZOOM_STEP = 1.25;
@@ -26,19 +35,15 @@
   const world = $derived({ w: placed?.width ?? 0, h: placed?.height ?? 0 });
   const box = $derived(view && width > 0 ? viewBox(view, vp) : `0 0 ${world.w} ${world.h}`);
   const touches = (line: { from: string; to: string }) => line.from === focused || line.to === focused;
+  const lines = $derived(mapLines(model.lines));
   const near = $derived(
-    focused
-      ? [focused, ...(placed?.edges ?? []).filter((e) => touches(e.line)).flatMap((e) => [e.line.from, e.line.to])]
-      : [],
+    focused ? [focused, ...lines.filter(touches).flatMap((line) => [line.from, line.to])] : [],
   );
-  // Lines of the module in focus are drawn last, on top of the dimmed rest.
-  const edges = $derived(
-    focused
-      ? [...(placed?.edges ?? []).filter((e) => !touches(e.line)), ...(placed?.edges ?? []).filter((e) => touches(e.line))]
-      : (placed?.edges ?? []),
-  );
+  // Only the lines of the module in focus are drawn; every other dependency is in the line between its two layers.
+  const routes = $derived(placed && focused ? routeLines(placed.nodes, lines, focused, placed) : []);
   const count = (pick: (line: { from: string; to: string }) => string, name: string) =>
-    (placed?.edges ?? []).filter((e) => pick(e.line) === name).length;
+    lines.filter((line) => pick(line) === name).length;
+  const layerName = (name: string) => name || 'No layer';
 
   $effect(() => {
     const controller = new AbortController();
@@ -51,11 +56,15 @@
         (p) => { if (!controller.signal.aborted) placed = p; },
         () => { if (!controller.signal.aborted) failure = detailView === 'matrix'
           ? 'The map layout worker could not place the modules. Select Matrix for relationship details.'
-          : 'The map layout worker could not place the modules. The map is available as a list above.'; },
+          : detailView === 'table'
+            ? 'The graph could not place the modules. The table below lists every dependency.'
+            : 'The map layout worker could not place the modules. The map is available as a list above.'; },
       );
     }
     return () => controller.abort();
   });
+
+  $effect(() => { onfocus?.(focused); });
 
   // Open readable: the first time the chart and the viewport both have a size.
   $effect(() => {
@@ -219,7 +228,7 @@
   <div class="map-root" bind:this={root}>
     {#if placed}
       <ul class="map-legend" aria-label="Map legend">
-        {#each legendKinds as kind (kind)}
+        {#each kinds as kind (kind)}
           <li><span class={'sample ' + kind} aria-hidden="true"></span>{legendWords[kind]}</li>
         {/each}
       </ul>
@@ -262,7 +271,7 @@
         <p role="status">Placing the modules…</p>
       {:else}
         <svg viewBox={box} role="group" aria-labelledby={id + '-title'} data-focus={focused || undefined}>
-          <title id={id + '-title'}>Modules by layer and their dependencies</title>
+          <title id={id + '-title'}>{label}</title>
           <defs>
             <marker id={id + '-arrow'} viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
@@ -270,16 +279,19 @@
           </defs>
           {#each placed.bands as band (band.name)}
             <g class="map-band">
-              <rect x="8" y={band.y} width={placed.width - 16} height={band.height} rx="6" />
-              <text x="20" y={band.y + 20}>{band.name || 'No layer'}</text>
+              <rect x={placed.left} y={band.y} width={placed.width - placed.left - 8} height={band.height} rx="6" />
+              <text x={placed.left + 12} y={band.y + 20}>{band.name || 'No layer'}</text>
             </g>
           {/each}
-          {#each edges as edge (edge.line)}
-            {@const mine = touches(edge.line)}
-            <g class={'map-edge ' + edge.line.kind} class:dim={focused && !mine}>
-              <path d={edge.path} marker-end={`url(#${id}-arrow)`} />
-              {#if mine}<text x={edge.labelX} y={edge.labelY}>{focusLabel(edge.line)}</text>{/if}
+          {#each placed.links as link (link.from + '\u0000' + link.to)}
+            <g class={'map-link ' + link.kind} class:dim={focused}>
+              <title>{layerName(link.from)} → {layerName(link.to)}: {link.count} {link.count === 1 ? 'dependency' : 'dependencies'}</title>
+              <path d={link.path} marker-end={`url(#${id}-arrow)`} />
+              <text x={link.labelX} y={link.labelY} text-anchor="middle">{link.count}</text>
             </g>
+          {/each}
+          {#each routes as route (route.line)}
+            <g class={'map-edge ' + route.line.kind}><path d={route.path} marker-end={`url(#${id}-arrow)`} /></g>
           {/each}
           {#each placed.nodes as node (node.name)}
             <g
@@ -300,6 +312,9 @@
               <text x={node.x + 12} y={node.y + 25}>{node.name}</text>
               <text class="volatility" x={node.x + 12} y={node.y + 47}>Volatility: {node.volatility}</text>
             </g>
+          {/each}
+          {#each routes as route (route.line)}
+            <text class={'map-label ' + route.line.kind} x={route.labelX} y={route.labelY} text-anchor="middle">{focusLabel(route.line)}</text>
           {/each}
         </svg>
       {/if}
@@ -338,14 +353,16 @@
   .map-node text { font-weight: 600; }
   .map-node .volatility { font-size: 12px; font-weight: 400; }
   .dim { opacity: 0.2; }
-  .map-edge { color: var(--fg-muted); }
-  .map-edge path { fill: none; stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-  .map-edge text { font-size: 14px; font-weight: 600; paint-order: stroke; stroke: var(--bg-subtle); stroke-width: 4; stroke-linejoin: round; }
-  .map-edge.requested path { stroke-width: 2; stroke-dasharray: 8 5; }
-  .map-edge.exception path { stroke-width: 2; stroke-dasharray: 2 4; }
-  .map-edge.deny path { stroke-width: 3; stroke-dasharray: 12 3 2 3; }
-  .map-edge.drift path { stroke-width: 4; }
-  .map-edge.drift, .sample.drift { color: var(--danger); }
+  .map-edge, .map-link { color: var(--fg-muted); }
+  .map-edge path, .map-link path { fill: none; stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .map-label, .map-link text { font-size: 14px; font-weight: 600; paint-order: stroke; stroke: var(--bg-subtle); stroke-width: 4; stroke-linejoin: round; }
+  .map-edge.requested path, .map-link.requested path { stroke-width: 2; stroke-dasharray: 8 5; }
+  .map-edge.exception path, .map-link.exception path { stroke-width: 2; stroke-dasharray: 2 4; }
+  .map-edge.deny path, .map-link.deny path { stroke-width: 3; stroke-dasharray: 12 3 2 3; }
+  .map-edge.drift path, .map-link.drift path { stroke-width: 4; }
+  .map-edge.drift, .map-link.drift, .sample.drift { color: var(--danger); }
+  .map-label { color: var(--fg); }
+  .map-label.drift { color: var(--danger); }
   .map-legend { display: flex; flex-wrap: wrap; gap: 12px 20px; list-style: none; padding: 0; margin-block: 8px; }
   .map-legend li { display: flex; align-items: center; gap: 8px; font-size: 12px; }
   .sample { display: inline-block; width: 32px; border-top: 1.5px solid currentColor; flex: none; }

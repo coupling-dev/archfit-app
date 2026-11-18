@@ -3,7 +3,7 @@
   import { repoPage } from '../../lib/route';
   import { lineLabel, mapLayers, mapLines, type MapModel } from './model';
 
-  let { model, repo }: { model: MapModel; repo: string } = $props();
+  let { model, repo, showNeed = true }: { model: MapModel; repo: string; showNeed?: boolean } = $props();
   let listOpen = $state(false);
   let diagramOpen = $state(false);
 
@@ -51,7 +51,7 @@
   </details>
 {/if}
 
-<p class="muted map-note">Dependencies not allowed by this policy need a request.</p>
+{#if showNeed}<p class="muted map-note">Dependencies not allowed by this policy need a request.</p>{/if}
 
 <style>
   .map-list { overflow-wrap: anywhere; }

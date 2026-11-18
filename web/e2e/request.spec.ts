@@ -144,7 +144,7 @@ test('request: the reason, the record with its balance, the two modules, the pre
   const { handlers, reads } = owner({});
   const writes = await open(page, path, handlers);
   await expect(page.getByRole('heading', { name: 'Request #431', level: 1 })).toBeVisible();
-  await expect(page.locator('.lede')).toHaveText('waiting Request #431 waits for an owner to answer.');
+  await expect(page.locator('.lede')).toHaveText('waiting Waiting for an owner to answer.');
   await expect(page.getByRole('region', { name: 'Reason' })).toContainText(request.reason);
   await expect(page.getByRole('region', { name: 'Reason' })).toContainText(
     'Rule graph · pkg_tc -> pkg_util · asked until 2026-12-01',
@@ -154,23 +154,24 @@ test('request: the reason, the record with its balance, the two modules, the pre
     'https://github.com/acme/app/issues/431',
   );
   const record = page.getByRole('region', { name: 'Record', exact: true });
-  await expect(record).toContainText('Balance: 9/10 (min 7)');
+  const balanceWhy = page.getByRole('region', { name: 'Why the balance', exact: true });
+  await expect(balanceWhy).toContainText('Balance: 9/10 (min 7)');
   await expect(record.locator('pre')).toHaveText(request.record);
   const map = page.getByRole('region', { name: 'The map' });
   await expect(map.locator('.map-node')).toHaveCount(0);
   await map.getByText('Show the map as a diagram', { exact: true }).click();
   await expect(map.locator('.map-node')).toHaveCount(2);
   await map.locator('[data-module]').first().click();
-  await expect(map.locator('.map-edge.requested text')).toContainText('requested #431');
+  await expect(map.locator('.map-label.requested')).toContainText('requested #431');
   const why = page.getByRole('region', { name: 'Why the balance' });
   await expect(why).toContainText('Layer adapters · Volatility high');
   await expect(why).toContainText('Volatility low · subdomain generic');
 
-  const shown = answerBox(page);
+  const shown = page.getByRole('region', { name: /: preview$/ });
   await expect(shown.getByLabel('Approve: the change to .archfit.yaml')).toContainText(
     '+      - pkg_util # request #431',
   );
-  await expect(shown.getByRole('button', { name: 'Approve and merge policy PR' })).toBeVisible();
+  await expect(answerBox(page).getByRole('button', { name: 'Approve and merge policy PR' })).toBeVisible();
   await expect(shown.getByLabel('Approve: open pull requests').getByRole('listitem').locator('p')).toHaveText([
     '#12 (waiting), waits on this request: clears 1 error, 0 errors left',
     '#15 (fail): clears 1 error, 2 errors left',
@@ -210,7 +211,7 @@ test('request: Approve and merge takes the digest, a passkey step-up for it, the
   expect(writes[1].postDataJSON()).toEqual({ action: 'approve', request: 431, digest });
   expect(writes[3].postDataJSON()).toEqual({ answer: 'approve', token: 'step-up-token' });
   // The page reads the request again: answered, so no answer is offered.
-  await expect(page.locator('.lede')).toHaveText('answered Request #431 is answered.');
+  await expect(page.locator('.lede')).toHaveText('answered An owner answered this request.');
   await expect(answerBox(page).getByRole('button')).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Preview' })).toHaveCount(0);
   await expectClean(page);
@@ -260,7 +261,7 @@ test('request: Reject sends what to do instead and "merge later", and needs no p
   await expect(page.getByLabel('Reject: the change to .archfit.yaml')).toContainText(
     'instead: Add a retry method to container.Client.',
   );
-  await expect(box).toContainText('Tightens the policy: no passkey needed.');
+  await expect(page.getByRole('region', { name: /: preview$/ })).toContainText('Tightens the policy: no passkey needed.');
   expect(reads).toContain('?answer=reject&instead=Add+a+retry+method+to+container.Client.');
   // Merge later holds the policy pull request open for a reject too: the server merges at once without it.
   await box.getByLabel('Keep the policy pull request open').check();
@@ -295,7 +296,7 @@ test('request: a refused step-up is the server sentence, nothing is answered, an
 test('request: numbers as reported say so; a closed request offers no answer', async ({ page }) => {
   await open(page, path, { [`GET ${req}`]: () => [200, { ...request, verified: false }] });
   await expect(page.locator('.lede')).toContainText('Its numbers are as reported: no pull request confirmed them yet.');
-  await expect(page.getByRole('region', { name: 'Record', exact: true })).toContainText(
+  await expect(page.getByRole('region', { name: 'Why the balance', exact: true })).toContainText(
     'Balance: 9/10 (min 7), as reported',
   );
 
@@ -345,8 +346,12 @@ for (const [name, data] of [
     if (!('answer' in data)) await expect(page.getByLabel('Approve: the change to .archfit.yaml')).toBeVisible();
     else {
       await expect(answerBox(page).getByRole('button')).toHaveCount(0);
+      const module = page.locator('[data-module]').first();
+      await module.click();
       await expect(page.locator('.map-edge.' + (data.answer.kind === 'reject' ? 'deny' : 'exception'))).toHaveCount(1);
       await expect(page.locator('.map-edge.allowed')).toHaveCount(0);
+      await module.click();
+      await expect(page.locator('.map-edge')).toHaveCount(0);
       await expect(answerBox(page)).toContainText(
         data.answer.kind === 'reject' ? 'Rejected. What to do instead: Use a port.' : 'Approved until 2027-01-15.',
       );
@@ -363,10 +368,43 @@ for (const [name, data] of [
 
 test('request: old answered record links to issue without inventing an answer', async ({ page }) => {
   await open(page, path, { [`GET ${req}`]: () => [200, { ...request, state: 'answered' }] });
-  await expect(answerBox(page)).toContainText('No answer is open.');
+  await expect(answerBox(page)).toContainText('names the owner who answered and the passkey used.');
   await expect(answerBox(page)).not.toContainText('Approved.');
   await expect(answerBox(page).getByRole('button')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Request #431 on GitHub' })).toBeVisible();
+});
+
+test('request: the page reads status, reason, record, map, balance, preview, earlier answers, then the answer', async ({
+  page,
+}) => {
+  await open(page, path, owner({}).handlers);
+  await expect(page.getByRole('region', { name: /: preview$/ })).toBeVisible();
+  const heads = await page.locator('main section.box h2').allTextContents();
+  expect(heads.map((h) => h.split(' ')[0])).toEqual(['Reason', 'Record', 'The', 'Why', 'Preview:', 'Earlier', 'Answer']);
+  await expect(page.locator('main p', { hasText: /^Balance:/ })).toHaveCount(1);
+});
+
+for (const width of [390, 1280]) {
+  test(`request: approved answer at ${width} @docs`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await docsClock(page);
+    await open(page, path, {
+      [`GET ${req}`]: () => [200, { ...request, state: 'answered', answer: { kind: 'approve' } }],
+    });
+    await expect(page.locator('.lede')).toContainText('approved');
+    await docsShot(page, `request-approved-${width}`);
+    await expectClean(page);
+  });
+}
+
+test('request: an approved answer shows approved, the record as checked, and no need-a-request note', async ({ page }) => {
+  await open(page, path, {
+    [`GET ${req}`]: () => [200, { ...request, state: 'answered', answer: { kind: 'approve' } }],
+  });
+  await expect(page.locator('.lede')).toContainText('approved');
+  await expect(page.getByRole('heading', { name: 'As checked when the request was made' })).toBeVisible();
+  await expect(page.getByText('Dependencies not allowed by this policy need a request.')).toHaveCount(0);
+  await expectClean(page);
 });
 
 for (const width of [390, 1280]) {
@@ -384,9 +422,9 @@ for (const width of [390, 1280]) {
       if (kind === 'approve-until') await box.getByLabel('The exception ends on').fill('2027-01-15');
       if (kind === 'reject') await box.getByLabel('What to do instead').fill('Use a port.');
       if (kind !== 'approve') await box.getByRole('button', { name: 'Preview ' + title.toLowerCase() }).click();
-      const decision = box.getByRole('region', { name: title, exact: true });
+      const decision = page.getByRole('region', { name: title + ': preview' });
       await expect(decision.getByLabel(title + ': the change to .archfit.yaml')).toBeVisible();
-      await expect(decision.getByRole('button', { name: verb + ' and merge policy PR' })).toBeVisible();
+      await expect(box.getByRole('button', { name: verb + ' and merge policy PR' })).toBeVisible();
       await expect(box.locator('button.primary')).toHaveCount(1);
       await expect(decision.getByRole('link', { name: 'PR #12 in Archfit' })).toHaveAttribute(
         'href',
@@ -400,11 +438,11 @@ for (const width of [390, 1280]) {
         'href',
         request.issue_href,
       );
-      await decision.getByLabel('Keep the policy pull request open').check();
-      await expect(decision.getByRole('button', { name: verb + ' and keep policy PR open' })).toBeVisible();
-      await expect(decision).toContainText('The change takes effect only when that pull request merges.');
+      await box.getByLabel('Keep the policy pull request open').check();
+      await expect(box.getByRole('button', { name: verb + ' and keep policy PR open' })).toBeVisible();
+      await expect(box).toContainText('The change takes effect only when that pull request merges.');
       await expect(decision).toContainText('These code pull requests are not merged by this answer.');
-      const target = await decision.getByRole('button').boundingBox();
+      const target = await box.locator('button.primary').boundingBox();
       if (width === 390) expect(target?.height).toBeGreaterThanOrEqual(44);
       await expect(page.locator('.map-node')).toHaveCount(0);
       await docsShot(page, `request-${kind}-${width}`);
@@ -439,11 +477,11 @@ test('request: editing discards the preview and a late read cannot restore it', 
   const completed = page.waitForResponse((response) => response.url().includes('instead=Old'));
   release?.();
   await (await completed).finished();
-  await expect(box.getByLabel('Reject: the change to .archfit.yaml')).toHaveCount(0);
+  await expect(page.getByLabel('Reject: the change to .archfit.yaml')).toHaveCount(0);
   await expect(box.locator('button.primary')).toHaveCount(0);
   handlers[`GET ${req}/preview`] = (_, url) => preview(url);
   await box.getByRole('button', { name: 'Preview reject' }).click();
-  await expect(box.getByLabel('Reject: the change to .archfit.yaml')).toContainText('New alternative');
+  await expect(page.getByLabel('Reject: the change to .archfit.yaml')).toContainText('New alternative');
   await box.getByLabel('What to do instead').fill('');
   await expect(box.locator('button.primary')).toHaveCount(0);
   expect(writes).toEqual([]);
@@ -489,9 +527,9 @@ test('request: failed preview cannot confirm; retry and a changed date require a
   await box.getByRole('radio', { name: 'Approve until a date', exact: true }).check();
   await box.getByLabel('The exception ends on').fill('2027-01-15');
   await box.getByRole('button', { name: 'Preview approve until a date' }).click();
-  await expect(box.getByLabel('Approve until a date: the change to .archfit.yaml')).toContainText('2027-01-15');
+  await expect(page.getByLabel('Approve until a date: the change to .archfit.yaml')).toContainText('2027-01-15');
   await box.getByLabel('The exception ends on').fill('2027-02-15');
   await expect(box.locator('button.primary')).toHaveCount(0);
-  await expect(box.getByLabel('Approve until a date: the change to .archfit.yaml')).toHaveCount(0);
+  await expect(page.getByLabel('Approve until a date: the change to .archfit.yaml')).toHaveCount(0);
   expect(writes).toEqual([]);
 });

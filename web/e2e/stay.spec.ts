@@ -83,7 +83,7 @@ for (const width of [1280, 390]) {
 
       const target = page
         .getByRole(c.keyboard.startsWith('Approve') || c.keyboard === 'Add a passkey' ? 'button' : 'link', {
-          name: width === 390 && c.keyboard === 'acme/clean' ? 'Open Home' : c.keyboard,
+          name: c.keyboard,
           exact: true,
         })
         .first();

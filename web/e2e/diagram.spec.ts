@@ -15,7 +15,7 @@ const map = bigMap();
 async function openDiagram(page: Page, width = 1280) {
   await page.setViewportSize({ width, height: 900 });
   await open(page, path, { [api]: () => [200, home] });
-  await page.getByRole('button', { name: 'Diagram', exact: true }).click();
+  await page.getByRole('radio', { name: 'Diagram', exact: true }).click();
   await expect(page.getByRole('group', { name: group })).toBeVisible();
 }
 const viewport = (page: Page) => page.locator('.map-viewport');
@@ -51,10 +51,15 @@ test('diagram: opens readable, bounded, with the legend and caption above it', a
   ).toBeVisible();
   expect((await legend.boundingBox())!.y).toBeLessThan(frame.y);
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThan(4000);
-  await expect(page.locator('.map-edge text')).toHaveCount(0);
   await expect(page.locator('.map-node')).toHaveCount(24);
-  await expect(page.locator('.map-edge')).toHaveCount(106);
-  await expect(page.locator('.map-edge path').first()).toHaveCSS('vector-effect', 'non-scaling-stroke');
+  // 106 lines are drawn as one line per pair of layers until a module is in focus.
+  await expect(page.locator('.map-edge')).toHaveCount(0);
+  await expect(page.locator('.map-link')).toHaveCount(3);
+  await expect(page.locator('.map-link path').first()).toHaveCSS('vector-effect', 'non-scaling-stroke');
+  const svg = await page.locator('.map-viewport svg').boundingBox();
+  const natural = await page.locator('.map-viewport svg').evaluate((el: SVGSVGElement) => el.viewBox.baseVal.width);
+  expect(natural).toBeLessThan(frame.width / (11 / 14) + 1);
+  expect(svg!.width).toBeLessThanOrEqual(frame.width);
   await docsClock(page);
   await docsShot(page, 'diagram-1280', ['Review workflow change']);
 });
@@ -146,21 +151,22 @@ test('diagram: a module in focus keeps its lines, dims the rest, and names both 
   expect(mine.length).toBeGreaterThan(3);
   await page.locator('[data-module="handlers"]').click();
   await expect(page.locator('.map-node.selected')).toHaveCount(1);
-  await expect(page.locator('.map-edge text')).toHaveCount(mine.length);
-  await expect(page.locator('.map-edge:not(.dim)')).toHaveCount(mine.length);
+  await expect(page.locator('.map-label')).toHaveCount(mine.length);
+  await expect(page.locator('.map-edge')).toHaveCount(mine.length);
+  await expect(page.locator('.map-link.dim')).toHaveCount(3);
   const neighbours = new Set(mine.flatMap((l) => [l.from, l.to]));
   await expect(page.locator('.map-node:not(.dim)')).toHaveCount(neighbours.size);
   const first = mine[0];
-  const labels = await page.locator('.map-edge text').allTextContents();
+  const labels = await page.locator('.map-label').allTextContents();
   expect(labels.some((t) => t.startsWith(`${first.from} → ${first.to} · `))).toBe(true);
   // Clicking again clears; so does Escape.
   await page.locator('[data-module="handlers"]').click();
-  await expect(page.locator('.map-edge text')).toHaveCount(0);
+  await expect(page.locator('.map-edge')).toHaveCount(0);
   await page.locator('[data-module="handlers"]').click();
-  await expect(page.locator('.map-edge text')).toHaveCount(mine.length);
+  await expect(page.locator('.map-edge')).toHaveCount(mine.length);
   await viewport(page).focus();
   await page.keyboard.press('Escape');
-  await expect(page.locator('.map-edge text')).toHaveCount(0);
+  await expect(page.locator('.map-edge')).toHaveCount(0);
   await expect(page.locator('.map-node.dim')).toHaveCount(0);
 });
 
@@ -216,10 +222,10 @@ for (const width of [390, 1280]) {
         expect(box.height).toBeGreaterThanOrEqual(44);
         expect(box.width).toBeGreaterThanOrEqual(44);
       }
-    await page.getByRole('button', { name: 'Dark', exact: true }).click();
+    await page.getByRole('radio', { name: 'Dark', exact: true }).click();
     await expect(viewport(page)).toBeVisible();
     await page.screenshot({ path: `../tmp/diagram/focus-dark-${width}.png` });
-    await page.getByRole('button', { name: 'Auto', exact: true }).click();
+    await page.getByRole('radio', { name: 'Auto', exact: true }).click();
     await expectClean(page, ['Review workflow change']);
   });
 }
@@ -231,7 +237,7 @@ test('diagram: a module without lines stays bright when it is the one in focus',
     map: { layers: [''], modules: [...map.modules.slice(0, 2), { name: 'alone', layer: '', volatility: 'low' }], lines: [] },
   };
   await open(page, path, { [api]: () => [200, alone] });
-  await page.getByRole('button', { name: 'Diagram', exact: true }).click();
+  await page.getByRole('radio', { name: 'Diagram', exact: true }).click();
   await page.locator('[data-module="alone"]').click();
   await expect(page.locator('.map-node.selected')).toHaveCount(1);
   await expect(page.locator('.map-node:not(.dim)')).toHaveCount(1);
