@@ -69,9 +69,11 @@ type homeLineJSON struct {
 func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 	ctx, snapshot := gate.WithHomeSnapshot(r.Context(), sc.repo)
 	ctx = gate.WithRequestMemo(withReviewPermission(ctx, sc))
+	// The owner reviews share one memo, and Home's listing seeds it. Setup does not use it.
+	reviewCtx := gate.WithReviewReads(ctx)
 	r = r.WithContext(ctx)
 	// The owner reviews share their reads with each other, not with Setup and Home, which read on their own.
-	reviewR := r.WithContext(gate.WithReviewReads(ctx))
+	reviewR := r.WithContext(reviewCtx)
 	snapshotDone := api.StartStage(ctx, "snapshot")
 	defer func() { snapshotDone(1, int(snapshot.CacheHits())) }()
 	// Home's reads do not depend on Setup, so they run beside it. Their result is used only for an approved
@@ -81,7 +83,7 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 	var homeReads sync.WaitGroup
 	homeReads.Go(func() {
 		recordsDone := api.StartStage(ctx, "home_records")
-		view, homeErr = s.home.Home(ctx, sc.repo)
+		view, homeErr = s.home.Home(reviewCtx, sc.repo)
 		recordsDone(len(view.Requests)+len(view.Touched)+len(view.WorkflowPulls), 0)
 	})
 	setup, err := s.apiSetup(r, sc)

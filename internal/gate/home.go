@@ -146,6 +146,8 @@ func (h *homeViews) Home(ctx context.Context, r api.Repo) (HomeState, error) {
 	if err != nil {
 		return out, err
 	}
+	// The owner reviews of this request take these pull requests from the listing, not from a GET each.
+	SeedOpenPulls(ctx, r.RepoRef, pulls)
 	pulls = slices.DeleteFunc(slices.Clone(pulls), func(p api.Pull) bool {
 		return p.State != "open" || p.BaseRef != r.DefaultBranch || !strings.EqualFold(p.HeadRepo, r.FullName)
 	})

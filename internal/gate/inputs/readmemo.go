@@ -103,6 +103,23 @@ func Memo[T any](ctx context.Context, key any, load func() (T, error)) (T, error
 	return v, e.err
 }
 
+// Seed gives key the answer v, unless the request already has one for it. The caller must know that v is what the
+// read would answer now: the answer is then shared like any other memoized read.
+func Seed[T any](ctx context.Context, key any, v T) {
+	m, ok := ctx.Value(readMemoKey{}).(*readMemo)
+	if !ok {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.entries[key]; ok {
+		return
+	}
+	e := &readEntry{done: make(chan struct{}), val: v}
+	close(e.done)
+	m.entries[key] = e
+}
+
 // MemoStore is s with Get answered through Memo. Every other method is s's.
 func MemoStore(s store.Store) store.Store { return memoStore{s} }
 
