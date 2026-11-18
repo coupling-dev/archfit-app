@@ -163,6 +163,13 @@ func TestReposAllStatesGolden(t *testing.T) {
 	if len(e.setups.repos) != 6 {
 		t.Fatalf("Setup calls = %d, want all six admitted rows only", len(e.setups.repos))
 	}
+	// The list without the probe is the page's first paint: the same rows, none checked yet.
+	fast := e.signIn("alice").get("/api/repos")
+	wantStatus(t, fast, http.StatusOK)
+	checkReposGolden(t, "all-states-unprobed", fast)
+	if len(e.setups.repos) != 6 {
+		t.Fatalf("the list without the probe made %d more Setup calls", len(e.setups.repos)-6)
+	}
 }
 
 func TestReposOnboardingStagesAreBoundedAndErrorsFallBack(t *testing.T) {

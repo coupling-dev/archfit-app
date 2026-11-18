@@ -8,12 +8,31 @@
 
   let { here }: { here: string } = $props();
 
+  const list = '/api/repos';
+  const probed = '/api/repos?probe=1';
+
   let body = $state<Repos | null>(null);
   let failure = $state('');
+  // The list answers from stored state. The probe reads each repository's required-check settings and answers the same
+  // rows later, so the list shows at once and its rows fill in when the probe returns.
+  let probing = $state(true);
+  let probeFailure = $state('');
 
-  firstJSON<Repos>('/api/repos').then(
-    (b) => (body = b),
+  firstJSON<Repos>(list).then(
+    (b) => {
+      if (probing) body = b; // the probe's rows are never replaced by the list's
+    },
     (e: ApiError) => (failure = explain(e, here)),
+  );
+  firstJSON<Repos>(probed).then(
+    (b) => {
+      body = b;
+      probing = false;
+    },
+    (e: ApiError) => {
+      probing = false;
+      probeFailure = explain(e, here);
+    },
   );
 </script>
 
@@ -21,7 +40,7 @@
   <p class="lede">Choose a repository to open its Home.</p>
 </PageHead>
 
-{#if failure}
+{#if failure && !body}
   <p class="flash error" role="alert">{failure}</p>
 {:else if !body}
   <Skeleton rows={4} />
@@ -31,7 +50,10 @@
     <p>No repository is available to you through an Archfit installation yet.</p>
   </div>
 {:else}
-  <div class="box repo-list">
+  {#if probeFailure}
+    <p class="flash error" role="alert">{probeFailure}</p>
+  {/if}
+  <div class="box repo-list" aria-busy={probing}>
     <table class="data">
       <thead>
         <tr><th scope="col">Repository</th><th scope="col">State</th><th scope="col">archfit/gate</th><th scope="col">Next step</th></tr>
@@ -50,7 +72,11 @@
             </td>
             <td>
               <span class="mobile-label">archfit/gate</span>
-              <StatusLabel label={enforcementLabel(row.enforcement)} />
+              {#if probing && !row.waiting}
+                <span class="muted">Checking…</span>
+              {:else}
+                <StatusLabel label={enforcementLabel(row.enforcement)} />
+              {/if}
             </td>
             <td>
               {#if next}

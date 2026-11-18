@@ -10,7 +10,7 @@ const early = new Map<string, Promise<unknown>>();
 export function firstPaths(route: Route): string[] {
   switch (route.kind) {
     case 'home':
-      return ['/api/repos'];
+      return ['/api/repos', '/api/repos?probe=1'];
     case 'repo':
       return [repoAPI(route.owner, route.name, 'home')];
     case 'policy':
