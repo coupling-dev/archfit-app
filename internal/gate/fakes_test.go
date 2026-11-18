@@ -793,3 +793,8 @@ func (s *guardStore) Tenants(context.Context) ([]store.Tenant, error) {
 }
 
 // Hand-written fakes of the children, for the pipeline and HandleEvent rule tests.
+
+// PullSummary is the fake's Pull: the fake keeps one count per read either way.
+func (f *fakeGitHub) PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
+	return f.Pull(ctx, r, number)
+}

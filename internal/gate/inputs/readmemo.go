@@ -24,7 +24,7 @@ type (
 		Repo   api.RepoRef
 		Branch string
 	}
-	// PullRead is Pull Number in Repo.
+	// PullRead is a pull request in Repo without its merge base: the owner reads and the listing seed use the same summary.
 	PullRead struct {
 		Repo   api.RepoRef
 		Number int

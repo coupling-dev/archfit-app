@@ -288,3 +288,8 @@ func (f *fakePulls) ChangedFiles(context.Context, api.RepoRef, int) ([]string, b
 	defer f.mu.Unlock()
 	return slices.Clone(f.changed), f.truncated, nil
 }
+
+// PullSummary is the fake's Pull: the fake keeps one count per read either way.
+func (f *fakePulls) PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
+	return f.Pull(ctx, r, number)
+}

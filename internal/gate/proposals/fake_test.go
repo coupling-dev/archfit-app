@@ -414,3 +414,8 @@ func (h *fakeHub) writes() []string {
 }
 
 var _ GitHub = (*fakeHub)(nil)
+
+// PullSummary is the fake's Pull: the fake keeps one count per read either way.
+func (h *fakeHub) PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
+	return h.Pull(ctx, r, number)
+}

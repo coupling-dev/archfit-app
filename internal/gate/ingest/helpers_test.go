@@ -287,3 +287,8 @@ func wantCalls(t *testing.T, s *scenario, want ...string) {
 		t.Errorf("calls = %v, want %v", s.calls, want)
 	}
 }
+
+// PullSummary is the fake's Pull: the fake keeps one count per read either way.
+func (f fakePulls) PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
+	return f.Pull(ctx, r, number)
+}
