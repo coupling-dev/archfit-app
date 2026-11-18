@@ -16,6 +16,8 @@ export const MIN_LABEL_PX = 11;
 export const FLOOR = MIN_LABEL_PX / LABEL_PX;
 export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 4;
+// Fit to width may enlarge a small chart, but not past this: a 6-module graph would otherwise fill the box with 20 px names.
+export const FIT_MAX = 1.5;
 // A quarter of the viewport, or of the chart where it is smaller, always stays on screen, so a drag or a key cannot
 // lose the chart even at the highest zoom.
 const KEEP = 0.25;
@@ -34,10 +36,10 @@ export function clampView(view: View, world: Size, vp: Size): View {
   };
 }
 
-// Fit to width, but never below the label floor and never magnified past 100%. When the floor wins, the chart starts
+// Fit to width, but never below the label floor and never magnified past FIT_MAX. When the floor wins, the chart starts
 // at the top-left and the reader pans.
 export function fitView(world: Size, vp: Size): View {
-  const k = Math.min(1, Math.max(FLOOR, vp.w / world.w));
+  const k = Math.min(FIT_MAX, Math.max(FLOOR, vp.w / world.w));
   const spare = vp.w / k - world.w;
   return { k, x: spare > 0 ? -spare / 2 : 0, y: 0 };
 }

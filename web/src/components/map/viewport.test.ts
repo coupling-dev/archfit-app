@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { centerOn, fitView, FLOOR, MAX_ZOOM, MIN_ZOOM, panBy, viewBox, visible, zoomAt } from './viewport';
+import { centerOn, FIT_MAX, fitView, FLOOR, MAX_ZOOM, MIN_ZOOM, panBy, viewBox, visible, zoomAt } from './viewport';
 
 const vp = { w: 1200, h: 600 };
 
@@ -16,10 +16,10 @@ describe('fitView', () => {
     expect(14 * view.k).toBeCloseTo(11);
   });
 
-  it('never magnifies a small chart past 100% and centers it', () => {
+  it('enlarges a small chart to the fit maximum and centers it', () => {
     const view = fitView({ w: 360, h: 176 }, vp);
-    expect(view.k).toBe(1);
-    expect(view.x).toBe(-(1200 - 360) / 2);
+    expect(view.k).toBe(FIT_MAX);
+    expect(view.x).toBe(-(1200 / FIT_MAX - 360) / 2);
   });
 });
 
