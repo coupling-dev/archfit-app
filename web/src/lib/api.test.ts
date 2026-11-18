@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { ApiError, explain, explainLoad, getJSON, postJSON, repoAPI } from './api';
 import { refused, visit, waiting } from './gate';
+import { recall, remember, signedIn } from './memory';
 
 function reply(status: number, body: string) {
   const fetch = vi.fn(async () => new Response(body, { status, headers: { 'Content-Type': 'application/json' } }));
@@ -34,6 +35,20 @@ describe('api', () => {
     const err = await getJSON('/api/x').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({ status, message });
+  });
+
+  it.each([
+    [401, true],
+    [403, true],
+    [404, false],
+    [500, false],
+  ])('on %i forgets what it remembered: %s', async (status, forgets) => {
+    signedIn('alice');
+    remember('/api/repos', { repos: [] });
+    reply(status, '{"error":"no"}');
+    await getJSON('/api/x').catch(() => {});
+    expect(recall('/api/repos') === undefined).toBe(forgets);
+    signedIn(null);
   });
 
   it('reports a network failure as status 0', async () => {
