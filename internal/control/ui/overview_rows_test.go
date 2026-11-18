@@ -64,7 +64,7 @@ func TestASlowRowDoesNotHoldTheOthers(t *testing.T) {
 	states := &rowStates{calls: map[string]int{}, slow: "acme/slow", release: make(chan struct{})}
 	setups := &rowSetups{calls: map[string]int{}, started: make(chan string, 8)}
 	s := rowServer(e, states, setups)
-	req := httptest.NewRequest(http.MethodGet, "/api/repos", nil).WithContext(context.Background())
+	req := httptest.NewRequest(http.MethodGet, "/api/repos?probe=1", nil).WithContext(context.Background())
 
 	done := make(chan error, 1)
 	go func() {
@@ -98,7 +98,7 @@ func TestEachRowIsReadOnceOnTheProbePath(t *testing.T) {
 	close(states.release)
 	setups := &rowSetups{calls: map[string]int{}, started: make(chan string, 8)}
 	s := rowServer(e, states, setups)
-	req := httptest.NewRequest(http.MethodGet, "/api/repos", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/repos?probe=1", nil)
 
 	if _, err := s.apiRepos(req, scope{user: session.User{Token: e.user("alice").AccessToken}}); err != nil {
 		t.Fatal(err)
@@ -139,7 +139,7 @@ func TestTheListReadsAdmissionAndRecordsOncePerRequest(t *testing.T) {
 	}
 	setups := &rowSetups{calls: map[string]int{}, started: make(chan string, 8)}
 	s := &server{gh: github{users: e.gh}, admissions: admissions, repoStates: gate.NewRepoStates(reads, admissions), setups: setups}
-	req := httptest.NewRequest(http.MethodGet, "/api/repos", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/repos?probe=1", nil)
 
 	if _, err := s.apiRepos(req, scope{user: session.User{Token: e.user("alice").AccessToken}}); err != nil {
 		t.Fatal(err)

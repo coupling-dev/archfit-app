@@ -49,7 +49,7 @@ func TestReposGoldens(t *testing.T) {
 			if tt.listed {
 				e.grant("alice", repoName, permRead)
 			}
-			response := e.signIn("alice").get("/api/repos")
+			response := e.signIn("alice").get("/api/repos?probe=1")
 			wantStatus(t, response, http.StatusOK)
 			checkReposGolden(t, tt.name, response)
 			for _, method := range []string{"BranchHead", "CheckRuns", "File", "OpenPulls"} {
@@ -157,7 +157,7 @@ func TestReposAllStatesGolden(t *testing.T) {
 	if err := e.store.Put(t.Context(), 3, "v4/repo/octo/tool", []byte("unreadable")); err != nil {
 		t.Fatal(err)
 	}
-	res := e.signIn("alice").get("/api/repos")
+	res := e.signIn("alice").get("/api/repos?probe=1")
 	wantStatus(t, res, http.StatusOK)
 	checkReposGolden(t, "all-states", res)
 	if len(e.setups.repos) != 6 {
@@ -179,7 +179,7 @@ func TestReposOnboardingStagesAreBoundedAndErrorsFallBack(t *testing.T) {
 		"acme/stage-03": {Policy: true, Workflow: true, Admitted: true, State: "approved"},
 	}
 	e.setups.errors = map[string]error{"acme/stage-04": errors.New("GitHub unavailable")}
-	res := e.signIn("alice").get("/api/repos")
+	res := e.signIn("alice").get("/api/repos?probe=1")
 	wantStatus(t, res, http.StatusOK)
 	body := decodeAs[overviewBody](t, res)
 	want := []string{"not_started", "not_started", "first_approval", "policy_approved", ""}
@@ -203,4 +203,61 @@ func TestReposOnboardingStagesAreBoundedAndErrorsFallBack(t *testing.T) {
 			t.Errorf("Setup probe %d = %s, want %s", i, repo.FullName, want)
 		}
 	}
+}
+
+// The list without ?probe=1 answers from the user's repositories and stored state: no Setup probe and no GitHub read of
+// a repository. Its rows say the check has not run; the probed list fills the same rows in.
+func TestTheListWithoutProbeReadsNoSetupAndFillsInWithTheProbe(t *testing.T) {
+	e := strangerEnv(t)
+	e.grant("alice", repoName, permRead)
+	e.grant("alice", strangerRepo, permRead)
+	homePut(t, e, "repo", map[string]any{"schema": "archfit-app.repo.v1", "approved_digest": "approved", "drift": map[string]any{"head": "stored-head", "state": "clean"}})
+	e.setups.out = onboarding.Setup{
+		Policy: true, Workflow: true, State: "approved",
+		Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{{Code: "gate_check", State: "ok"}, {Code: "pull_requests", State: "ok"}}},
+	}
+	alice := e.signIn("alice")
+
+	fast := decodeAs[overviewBody](t, alice.get("/api/repos"))
+	if len(e.setups.repos) != 0 {
+		t.Fatalf("the list probed %d rows before it was asked to", len(e.setups.repos))
+	}
+	for _, method := range []string{"BranchHead", "CheckRuns", "File", "OpenPulls"} {
+		if calls := e.gh.called(method); len(calls) != 0 {
+			t.Errorf("the list read %s: %v", method, calls)
+		}
+	}
+	rows := map[string]overviewRow{}
+	for _, row := range fast.Repos {
+		rows[row.FullName] = row
+	}
+	app := rows[repoName]
+	if app.State != "clean" || app.Enforcement != "check" || app.EnforcementReason != "Required-check settings were not read." || app.SetupStage != "" || app.NextStep != (overviewNextStep{}) {
+		t.Errorf("unprobed row = %+v", app)
+	}
+	if stranger := rows[strangerRepo]; !stranger.Waiting || stranger.State != stateNotAdmitted {
+		t.Errorf("waiting row = %+v", stranger)
+	}
+
+	probed := decodeAs[overviewBody](t, alice.get("/api/repos?probe=1"))
+	if len(probed.Repos) != len(fast.Repos) {
+		t.Fatalf("probed list has %d rows, fast list %d", len(probed.Repos), len(fast.Repos))
+	}
+	for i, row := range probed.Repos {
+		if row.FullName != fast.Repos[i].FullName || row.State != fast.Repos[i].State || row.Waiting != fast.Repos[i].Waiting {
+			t.Errorf("row %d = %+v; the fast list has %+v", i, row, fast.Repos[i])
+		}
+	}
+	if got := rowNamed(probed, repoName); got.Enforcement != "required" || got.SetupStage != "policy_approved" {
+		t.Errorf("probed row = %+v", got)
+	}
+}
+
+func rowNamed(b overviewBody, name string) overviewRow {
+	for _, row := range b.Repos {
+		if row.FullName == name {
+			return row
+		}
+	}
+	return overviewRow{}
 }
