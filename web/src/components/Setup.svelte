@@ -12,7 +12,7 @@
     { title: 'Owner approval', text: 'The owner approves the policy with a passkey. The approval covers these exact files; any later edit needs a new approval.' },
     { title: 'Require the archfit/gate check', text: 'GitHub does not merge a change until archfit/gate passes on the default branch.' },
   ];
-  const passkeyReason = 'The gate protects the rules themselves. A password or a GitHub review can be replayed by a compromised account, and in a one-person repository a self-review proves nothing. A passkey stays on your device, works only on this site, and approves the exact bytes of the policy and workflow. Any later edit needs a new approval.';
+  const passkeyReason = 'The check protects the rules themselves. A password or a GitHub review can be replayed by a compromised account, and in a one-person repository a self-review proves nothing. A passkey stays on your device, works only on this site, and approves the exact bytes of the policy and workflow. Any later edit needs a new approval.';
   let state = $derived(setupStepState(setup));
   let done = $derived(state.done);
   let completed = $derived(state.completed);
