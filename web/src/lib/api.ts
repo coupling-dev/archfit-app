@@ -139,7 +139,7 @@ export interface Registered {
   notice: string;
 }
 
-import { refused, shown, waiting } from './gate';
+import { refused, visit, waiting } from './gate';
 import { get } from 'svelte/store';
 import { signInHref } from './route';
 
@@ -149,8 +149,8 @@ export class ApiError extends Error {
     readonly status: number,
     message: string,
     readonly waiting = '',
-    // from is the App location a read was started for; empty for a write or a read started before the App showed one.
-    readonly from = '',
+    // from is the visit a read was started in (lib/gate); 0 for a write.
+    readonly from = 0,
   ) {
     super(message);
   }
@@ -160,7 +160,7 @@ const csrfHeader = 'X-CSRF-Token';
 const unreadable = 'The App did not answer. Try again in a minute.';
 
 export async function getJSON<T>(path: string): Promise<T> {
-  const from = get(shown);
+  const from = get(visit);
   try {
     return await answer<T>(await send(path, { headers: { Accept: 'application/json' } }));
   } catch (e) {
@@ -222,7 +222,7 @@ export function explain(e: ApiError, here: string, go: (url: string) => void = (
 // an account waiting for approval, with the Waiting page. Never for a write: a write's 404 stays a sentence on the
 // page, so a form keeps what the user typed.
 export function explainLoad(e: ApiError, here: string, go?: (url: string) => void): string {
-  const current = e.from === get(shown);
+  const current = e.from === get(visit);
   if (e.waiting) {
     if (current) waiting.set(e.waiting);
     return '';

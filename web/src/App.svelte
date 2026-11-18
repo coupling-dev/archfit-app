@@ -4,7 +4,7 @@
   import Skeleton from './components/Skeleton.svelte';
   import { ApiError, getJSON, type Repos as RepoList, type Session } from './lib/api';
   import { prefetch } from './lib/early';
-  import { refused, shown, waiting } from './lib/gate';
+  import { refused, visit, waiting } from './lib/gate';
   import { missingSentence } from './lib/notfound';
   import { inAppURL } from './lib/nav';
   import { guideURL, parseRoute, repoPage, serverError } from './lib/route';
@@ -27,9 +27,6 @@
   // repository API's 404 (lib/gate).
   const errorAtStart = serverError(document.querySelector('meta[name="app-error"]')?.getAttribute('content'));
   let serverSentence = $state(errorAtStart);
-  // Counts the App's visits: the page remounts on each, so a "Try again" to the same address reads the API again.
-  let visit = $state(0);
-  shown.set(location.pathname + location.search);
   const pageError = $derived(serverSentence || $refused);
   const notFound = $derived(!!$refused || serverSentence === 'Not found.' || route.kind === 'unknown');
   // The repositories the signed-in user can see. A missing page names its repository only when it is in this list:
@@ -70,13 +67,13 @@
   );
   // A link inside the App shows its page without a document load: the session and the App's chrome stay, the
   // repository's refusal and the waiting account of the previous page do not, and back and forward walk the history.
+  // Each visit remounts the page, so a "Try again" to the same address reads the API again.
   function show(url: URL) {
     refused.set('');
     waiting.set('');
-    shown.set(url.pathname + url.search);
     serverSentence = '';
     at = url;
-    visit++;
+    visit.update((n) => n + 1);
     prefetch(parseRoute(url.pathname, url.search));
   }
   function onClick(event: MouseEvent) {
@@ -152,7 +149,7 @@
   pull={route.kind === 'pull' ? route.number : 0}
 />
 <main class="page" id="main" tabindex="-1">
-  {#key visit}
+  {#key $visit}
   {#if notFound}
     <div class="blankslate">
       <h1>Page not available</h1>

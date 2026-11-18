@@ -10,6 +10,6 @@ export const refused = writable('');
 // instead of the route, the way it shows refused.
 export const waiting = writable('');
 
-// shown is the location the App is showing. A read still in flight from a page the user has left answers for its own
-// location, and must not replace the page now shown.
-export const shown = writable('');
+// visit counts the App's pages. A read answers only for the visit it started in: one still in flight from a page the
+// user has left must not replace the page now shown, even when the user came back to the same address.
+export const visit = writable(0);
