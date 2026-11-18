@@ -42,8 +42,8 @@ func (s *repoStates) RepoState(ctx context.Context, repo api.Repo) (string, erro
 	if !admitted {
 		return "", api.ErrNotFound
 	}
-	var rec records.Repo
-	err = records.Load(ctx, s.store, store.Tenant(repo.InstallationID), records.RepoKey(repo.FullName), &rec)
+	// Under WithRequestMemo the record is shared with the Setup state of the same request. It is only read here.
+	rec, err := loadRepoRecord(ctx, s.store, repo.RepoRef)
 	if err != nil && !errors.Is(err, records.ErrNoRecord) {
 		return "", err
 	}
