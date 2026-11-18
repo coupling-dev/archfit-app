@@ -36,7 +36,7 @@ export function clampView(view: View, world: Size, vp: Size): View {
   };
 }
 
-// Fit to width, but never below the label floor and never magnified past 100%. When the floor wins, the chart starts
+// Fit to width, but never below the label floor and never magnified past FIT_MAX. When the floor wins, the chart starts
 // at the top-left and the reader pans.
 export function fitView(world: Size, vp: Size): View {
   const k = Math.min(FIT_MAX, Math.max(FLOOR, vp.w / world.w));

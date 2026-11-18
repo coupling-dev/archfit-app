@@ -33,8 +33,9 @@
 
   const vp = $derived({ w: width, h: height });
   // Fit uses the drawn extent, not the band width: bands are laid out one row wide, so a small graph would otherwise fit as a mostly empty row.
+  // A self-dependency loop bulges about 38 px past its node (routes.ts), so the fit keeps 40 px clear of the rightmost node.
   const world = $derived(
-    placed ? { w: Math.max(placed.left, ...placed.nodes.map((n) => n.x + n.width)) + 16, h: placed.height } : { w: 0, h: 0 },
+    placed ? { w: Math.max(placed.left, ...placed.nodes.map((n) => n.x + n.width)) + 40, h: placed.height } : { w: 0, h: 0 },
   );
   // The viewport is as tall as the chart at fit-to-width scale, within 240 px and the spec's 70vh / 720 px bound. Only the width feeds the scale, so this does not loop.
   const contentH = $derived(Math.ceil(world.h * fitView(world, { w: width, h: 0 }).k));
