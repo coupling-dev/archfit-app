@@ -53,7 +53,15 @@ func NewSetup(gh *api.Client, g gate.SetupViews) Setups {
 
 func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 	out := Setup{State: "not_admitted", Missing: []string{}}
+	// The rules need only the repository and its default branch name, so they overlap the tip read. Early returns
+	// wait for them below, so the read never outlives Setup and its result is joined before it is returned.
+	var rules RulesetReport
+	var ruleReads sync.WaitGroup
+	ruleReads.Go(func() { rules = s.rules(ctx, r) })
+	defer ruleReads.Wait()
+	tip := api.StartStage(ctx, "tip")
 	snapshot, err := gate.ReadHomeSnapshot(ctx, s.gh, r)
+	tip(1, 0)
 	if err != nil {
 		return out, err
 	}
@@ -61,12 +69,14 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 	var accepted bool
 	var workflowErr error
 	var reads sync.WaitGroup
+	files := api.StartStage(ctx, "policy_workflow")
 	reads.Go(func() { policy = snapshot.Policy(ctx, s.gh) })
 	reads.Go(func() {
 		raw, err := snapshot.Workflow(ctx, s.gh)
 		accepted, workflowErr = s.acceptWorkflow(ctx, raw, err)
 	})
 	reads.Wait()
+	files(2, 0)
 	if policy.ReadErr != nil && !errors.Is(policy.ReadErr, api.ErrNotFound) {
 		return out, policy.ReadErr
 	}
@@ -126,18 +136,24 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 			if p.State != "open" || p.BaseRef != r.DefaultBranch || !strings.EqualFold(p.HeadRepo, r.FullName) {
 				continue
 			}
-			_, ok, err := s.policyAt(ctx, r, p.HeadSHA)
-			if err != nil {
-				return out, err
+			// The policy and the workflow of one head are read together. A workflow read that fails or is missing counts
+			// only when the policy is there, as in the serial order, so the answer is unchanged.
+			var policyOK, workflowOK bool
+			var policyErr, workflowErr error
+			var both sync.WaitGroup
+			both.Go(func() { _, policyOK, policyErr = s.policyAt(ctx, r, p.HeadSHA) })
+			both.Go(func() { workflowOK, workflowErr = s.workflowAt(ctx, r, p.HeadSHA) })
+			both.Wait()
+			if policyErr != nil {
+				return out, policyErr
 			}
-			if !ok {
+			if !policyOK {
 				continue
 			}
-			ok, err = s.workflowAt(ctx, r, p.HeadSHA)
-			if err != nil {
-				return out, err
+			if workflowErr != nil {
+				return out, workflowErr
 			}
-			if !ok {
+			if !workflowOK {
 				continue
 			}
 			out.State = "first_approval"
@@ -157,8 +173,9 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 		out.Approval = s.gate.SetupApproval(ctx, r, action)
 		done(1, 0)
 	})
-	reads.Go(func() { out.Rules = s.rules(ctx, r) })
 	reads.Wait()
+	ruleReads.Wait()
+	out.Rules = rules
 	if out.State == "approved" && out.Approval.Status == gate.ApprovalNeeded {
 		out.Approval.Status = gate.ApprovalActive
 	}

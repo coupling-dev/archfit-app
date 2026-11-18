@@ -8,7 +8,7 @@ afterEach(() => {
 
 describe('early reads', () => {
   it.each([
-    ['/', ['/api/repos']],
+    ['/', ['/api/repos', '/api/repos?probe=1']],
     ['/r/acme/app', ['/api/repos/acme/app/home']],
     ['/r/acme/app/policy', ['/api/repos/acme/app/policy']],
     ['/r/acme/app/pull/4', ['/api/repos/acme/app/pulls/4']],

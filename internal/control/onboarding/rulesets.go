@@ -82,16 +82,23 @@ func (s *setups) rules(ctx context.Context, r api.Repo) RulesetReport {
 	pushSupported := r.OwnerType == "Organization" && (r.Visibility == "private" || r.Visibility == "internal")
 	push, adminUnknown, unreadable := false, false, false
 	adminAll, branchSets := true, 0
-	// Keep response order and unknown findings, independent of completion order.
+	// Keep response order and unknown findings, independent of completion order. A ruleset the list already rules out
+	// is not read: its detail stays zero, which the loop below skips like any ruleset that cannot matter.
 	details := make([]api.Ruleset, len(sets))
 	readErrors := make([]error, len(sets))
-	for start := 0; start < len(sets); start += rulesetReadConcurrency {
-		for i := start; i < min(start+rulesetReadConcurrency, len(sets)); i++ {
+	var wanted []int
+	for i, rs := range sets {
+		if rulesetNeedsDetail(rs, relevant[rs.ID], pushSupported) {
+			wanted = append(wanted, i)
+		}
+	}
+	for start := 0; start < len(wanted); start += rulesetReadConcurrency {
+		for _, i := range wanted[start:min(start+rulesetReadConcurrency, len(wanted))] {
 			reads.Go(func() { details[i], readErrors[i] = s.gh.GetRuleset(ctx, r.RepoRef, sets[i].ID) })
 		}
 		reads.Wait()
 	}
-	count += len(sets)
+	count += len(wanted)
 	for i, rs := range details {
 		if readErrors[i] != nil {
 			unreadable = true
@@ -164,4 +171,15 @@ func (s *setups) rules(ctx context.Context, r api.Repo) RulesetReport {
 		add("policy_push", "warning", "Add an active push ruleset for .archfit.yaml. Keep administrator bypass for emergencies.")
 	}
 	return report
+}
+
+// rulesetNeedsDetail reports whether the detail read can change a finding. The list item may rule a ruleset out only
+// by a field it names: an empty enforcement or target is unknown, not "inactive" or "another target", so the detail is
+// read. Inactive rulesets enforce nothing, and a ruleset that is neither a default-branch ruleset nor a push ruleset
+// the repository supports adds no finding.
+func rulesetNeedsDetail(listed api.Ruleset, relevant, pushSupported bool) bool {
+	if listed.Enforcement != "" && listed.Enforcement != "active" {
+		return false
+	}
+	return relevant || listed.Target == "" || listed.Target == "push" && pushSupported
 }

@@ -70,3 +70,47 @@ test('repositories: unread setup says not confirmed and names no stage', async (
   await expect(page.getByText(/Ask a repository administrator/)).toBeVisible();
   await expectClean(page);
 });
+
+test('repositories: rows show before the checks return, then fill in', async ({ page }) => {
+  let release = () => {};
+  const holdProbe = new Promise<void>((resolve) => (release = resolve));
+  await open(page, '/', { holdProbe });
+  const row = page.getByRole('row', { name: /acme\/clean/ });
+  await expect(row.getByRole('link', { name: 'acme/clean' })).toBeVisible();
+  await expect(row.getByText('clean', { exact: true })).toBeVisible();
+  // The probe is still held: no row claims a result it does not have.
+  await expect(page.getByRole('status', { name: 'Loading' })).toHaveCount(0);
+  await expect(row.getByText('Checking…')).toBeVisible();
+  for (const word of ['required', 'not required']) await expect(page.getByText(word, { exact: true })).toHaveCount(0);
+  await expect(page.getByText('not confirmed', { exact: true })).toHaveCount(1); // the row no operator admitted
+  await expect(page.getByRole('row', { name: /octo\/tool/ }).getByText('Checking…')).toHaveCount(0);
+  await expectClean(page);
+  release();
+  await expect(row.getByText('required', { exact: true })).toBeVisible();
+  await expect(page.getByText('Checking…')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Review first policy' })).toHaveAttribute('href', '/r/acme/drift/pull/8');
+  await expectClean(page);
+});
+
+test('repositories: when the checks fail the rows stay and say so', async ({ page }) => {
+  await open(page, '/', { probeError: true });
+  await expect(page.getByRole('link', { name: 'acme/clean' })).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('The App did not answer');
+  await expect(page.getByText('Checking…')).toHaveCount(0);
+  await expect(page.getByText('not confirmed', { exact: true }).first()).toBeVisible();
+  await expectClean(page);
+});
+
+test('repositories: a failed check that answers before the list does not hide the list', async ({ page }) => {
+  let release = () => {};
+  const holdList = new Promise<void>((resolve) => (release = resolve));
+  const failed = page.waitForResponse((r) => r.url().includes('probe=1') && r.status() === 502);
+  await open(page, '/', { holdList, probeError: true });
+  await failed;
+  await expect(page.getByRole('status', { name: 'Loading' })).toBeVisible();
+  release();
+  await expect(page.getByRole('link', { name: 'acme/clean' })).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('The App did not answer');
+  await expect(page.getByText('Checking…')).toHaveCount(0);
+  await expectClean(page);
+});
