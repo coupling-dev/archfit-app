@@ -23,7 +23,7 @@ type waitingError struct{ account string }
 
 func (e *waitingError) Error() string { return "ui: installation not approved" }
 
-const waitingSentence = "This account is waiting for approval."
+const waitingSentence = "This account is waiting to be admitted."
 
 // admit answers a repository's admission. The gate refuses the same installation, so the page tells the user why
 // nothing happens instead of showing an empty repository.
@@ -154,7 +154,7 @@ func (s *server) installationRow(ctx context.Context, in api.Installation) (row 
 	return row, false
 }
 
-var errAutoApproved = conflict("This account is approved by the App's configuration. Change it by pull request.")
+var errAutoApproved = conflict("This account is admitted by the App's configuration. Change it by pull request.")
 
 // installation finds the installation of the path's ID among the App's own: an ID that is not one of them is
 // "Not found", and the account login always comes from GitHub, never from the request.
@@ -190,7 +190,7 @@ func (s *server) apiApprove(r *http.Request, sc scope) (any, error) {
 	if err := s.account.Admit(r.Context(), in.ID, adm); err != nil {
 		return nil, err
 	}
-	return noticeJSON{Notice: "Approved " + in.Account + ". Archfit runs for it from its next event."}, nil
+	return noticeJSON{Notice: "Admitted " + in.Account + ". Archfit runs for it from its next event."}, nil
 }
 
 func (s *server) apiRevoke(r *http.Request, sc scope) (any, error) {

@@ -68,7 +68,7 @@ The repository list has the canonical page URL `/`. `/repos` is an unknown page,
 | Page route                    | Page data and actions                                                                                                                                              |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `/`                           | Repository list from `GET /api/repos`; sign-in or admission state when needed.                                                                                     |
-| `/admin`                      | Operator-only installation administration.                                                                                                                         |
+| `/admin`                      | Operator-only installation administration: admit or revoke installations.                                                                                                                         |
 | Prefix                        | Home reads `/home`; setup remains until approval activation and applicable rules are confirmed. Active repositories also show requests, owner actions and the map. |
 | Prefix + `/policy`            | Reads `/policy`; `?edit=1` opens the YAML editor, which previews and submits through `/policy/edit` endpoints.                                                     |
 | Prefix + `/requests/{number}` | Reads `/requests/{number}` and its previews; owner answers use its answer endpoints.                                                                               |

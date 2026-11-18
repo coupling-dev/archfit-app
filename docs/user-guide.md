@@ -297,7 +297,7 @@ The Owner and Policy editor links preserve their return path. After successful r
 
 ## Installation administration
 
-Operators use `/admin` to admit or revoke installations, separately from policy approval. **Managed by configuration** means the row cannot be approved or revoked here; an operator must change the App settings by pull request. Revocation help appears only when at least one row can be revoked. Revocation still asks for confirmation and stops checks from the account's next event; existing GitHub checks remain.
+Operators use `/admin` (**Installations**) to admit or revoke installations, separately from policy approval. **Managed by configuration** marks an account whose admission is set in the App settings by pull request; the page says so once and cannot change it. Revocation help appears only when at least one row can be revoked. Revocation still asks for confirmation and stops checks from the account's next event; existing GitHub checks remain.
 
 Repository names become App links only when the signed-in user's repository list grants access. Installation visibility alone does not grant repository access. An empty or unreadable access list leaves names as text.
 

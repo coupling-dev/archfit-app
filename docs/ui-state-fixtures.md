@@ -40,7 +40,7 @@ approval is triggered. Existing write-flow tests remain separate.
 
 ## Landing and colour identity
 
-The landing page uses author/owner and Pass/Fail/Waiting for owner/No verdict.
+The landing page uses author/owner and the status words pass, fail, waiting and unknown, with their glosses.
 It describes CI checks and App report/policy reads rather than promising that
 code never leaves CI. Footer links have a visible, assistive-technology-hidden separator.
 

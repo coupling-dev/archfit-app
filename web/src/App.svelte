@@ -75,7 +75,7 @@
       ? 'Page not available'
       : pageError ? 'Page could not be loaded'
       : $waiting
-        ? 'Waiting for approval'
+        ? 'Waiting to be admitted'
         : route.kind === 'admin'
           ? 'Installations'
           : route.kind === 'pull'

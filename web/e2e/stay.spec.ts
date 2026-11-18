@@ -35,9 +35,9 @@ const cases: { name: string; path: string; ready: string; mock?: Mock; keyboard:
     name: 'waiting',
     path: '/r/octo/tool',
     ready: 'Check pull requests against your architecture policy',
-    keyboard: 'How approval works',
+    keyboard: 'How admission works',
   },
-  { name: 'admin', path: '/admin', ready: 'Installations', mock: { operator: true }, keyboard: 'Approve octo' },
+  { name: 'admin', path: '/admin', ready: 'Installations', mock: { operator: true }, keyboard: 'Admit octo' },
   {
     name: 'passkeys-empty',
     path: '/r/acme/app/passkeys',
@@ -82,7 +82,7 @@ for (const width of [1280, 390]) {
       await expectClean(page, c.path === '/' && c.name.startsWith('repositories') ? reposApprovedCopy : []);
 
       const target = page
-        .getByRole(c.keyboard.startsWith('Approve') || c.keyboard === 'Add a passkey' ? 'button' : 'link', {
+        .getByRole(c.keyboard.startsWith('Admit') || c.keyboard.startsWith('Approve') || c.keyboard === 'Add a passkey' ? 'button' : 'link', {
           name: c.keyboard,
           exact: true,
         })
