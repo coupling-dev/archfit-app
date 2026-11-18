@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/alexei-led/archfit-app/internal/gate/approvals"
+	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/proposals"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/gate/requests"
@@ -70,7 +71,7 @@ func (g *Gate) OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerVie
 		if ref == "" {
 			return nil, ErrOwnerMoved
 		}
-		raw, _, err := g.repos.File(ctx, t.Repo.RepoRef, ref, path)
+		raw, err := readFile(ctx, g.repos, t.Repo.RepoRef, ref, path)
 		if errors.Is(err, api.ErrNotFound) && optional {
 			raw, err = nil, nil
 		}
@@ -116,54 +117,57 @@ func (g *Gate) OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerVie
 		}
 		return finishOwnerView(t.Repo, v), nil
 	}
-	c, err := g.approvals.Bind(ctx, t.Repo, a)
-	if err != nil {
-		return OwnerView{}, g.ownerMergedReason(ctx, t, a, err)
+	// The binding runs beside the repository record, the approved policy, the pull request and the default branch head,
+	// which do not wait for it. The files at the pull request's commits need the pull request, so they are read in a
+	// second round. Errors are taken in the order the reads used to run, so the same failure is reported whichever
+	// call finished first.
+	var (
+		c                                 approvals.Change
+		bindErr                           error
+		repo                              records.Repo
+		approved, base, head              []byte
+		approvedErr, pullErr, tipErr      error
+		pl                                api.Pull
+		tipSHA                            string
+		oldWorkflow, nextWorkflow         []byte
+		baseErr, headErr, oldErr, nextErr error
+	)
+	var bound sync.WaitGroup
+	bound.Go(func() { c, bindErr = g.approvals.Bind(ctx, t.Repo, a) })
+	repoErr := records.Load(ctx, inputs.MemoStore(g.store), store.Tenant(t.Repo.InstallationID), records.RepoKey(t.Repo.FullName), &repo)
+	if errors.Is(repoErr, records.ErrNoRecord) {
+		repoErr = nil
+	}
+	var first sync.WaitGroup
+	if repoErr == nil && repo.ApprovedDigest != "" {
+		first.Go(func() { approved, approvedErr = fetch("approved", repo.ApprovedCommit, approvals.PolicyPath, false) })
+	}
+	if a.Pull > 0 {
+		first.Go(func() { pl, pullErr = g.pullRead(ctx, t.Repo.RepoRef, a.Pull) })
+		first.Go(func() { tipSHA, tipErr = g.headRead(ctx, t.Repo.RepoRef, t.Repo.DefaultBranch) })
+	}
+	first.Wait()
+	bound.Wait()
+	if bindErr != nil {
+		return OwnerView{}, g.ownerMergedReason(ctx, t, a, bindErr)
+	}
+	if repoErr != nil {
+		return OwnerView{}, repoErr
 	}
 	v.ActionDigest = c.Digest()
-	var repo records.Repo
-	if err := records.Load(ctx, g.store, store.Tenant(t.Repo.InstallationID), records.RepoKey(t.Repo.FullName), &repo); err != nil && !errors.Is(err, records.ErrNoRecord) {
-		return OwnerView{}, err
+	if repo.ApprovedDigest != "" {
+		v.Approved = repo.ApprovedCommit
+		if approvedErr != nil {
+			return OwnerView{}, approvedErr
+		}
+		if err := add("approved", repo.ApprovedCommit, approvals.PolicyPath, approved); err != nil {
+			return OwnerView{}, err
+		}
+		if policy3.Digest(approved) != repo.ApprovedDigest {
+			return OwnerView{}, ErrOwnerMoved
+		}
 	}
-	var approved, base, head []byte
 	if a.Pull > 0 {
-		// The approved policy, the pull request and the default branch head are independent. The files at the pull
-		// request's commits need the pull request, so they are read in a second round. Errors are taken in the order the
-		// reads used to run, so the same failure is reported whichever call finished first.
-		var (
-			pl                                api.Pull
-			oldWorkflow, nextWorkflow         []byte
-			approvedErr, pullErr, tipErr      error
-			baseErr, headErr, oldErr, nextErr error
-			tipSHA                            string
-		)
-		var first sync.WaitGroup
-		if repo.ApprovedDigest != "" {
-			first.Add(1)
-			go func() {
-				defer first.Done()
-				approved, approvedErr = fetch("approved", repo.ApprovedCommit, approvals.PolicyPath, false)
-			}()
-		}
-		first.Add(2)
-		go func() { defer first.Done(); pl, pullErr = g.pulls.Pull(ctx, t.Repo.RepoRef, a.Pull) }()
-		go func() {
-			defer first.Done()
-			tipSHA, tipErr = g.repos.BranchHead(ctx, t.Repo.RepoRef, t.Repo.DefaultBranch)
-		}()
-		first.Wait()
-		if repo.ApprovedDigest != "" {
-			v.Approved = repo.ApprovedCommit
-			if approvedErr != nil {
-				return OwnerView{}, approvedErr
-			}
-			if err := add("approved", repo.ApprovedCommit, approvals.PolicyPath, approved); err != nil {
-				return OwnerView{}, err
-			}
-			if policy3.Digest(approved) != repo.ApprovedDigest {
-				return OwnerView{}, ErrOwnerMoved
-			}
-		}
 		if pullErr != nil {
 			return OwnerView{}, pullErr
 		}
@@ -174,20 +178,16 @@ func (g *Gate) OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerVie
 		v.Tip = tipSHA
 
 		var second sync.WaitGroup
-		second.Add(4)
-		go func() {
-			defer second.Done()
+		second.Go(func() {
 			base, baseErr = fetch("base", v.Base, approvals.PolicyPath, a.Kind == OwnerFirst)
-		}()
-		go func() { defer second.Done(); head, headErr = fetch("head", v.Head, approvals.PolicyPath, false) }()
-		go func() {
-			defer second.Done()
+		})
+		second.Go(func() { head, headErr = fetch("head", v.Head, approvals.PolicyPath, false) })
+		second.Go(func() {
 			oldWorkflow, oldErr = fetch("workflow-base", v.Tip, approvals.WorkflowPath, true)
-		}()
-		go func() {
-			defer second.Done()
+		})
+		second.Go(func() {
 			nextWorkflow, nextErr = fetch("workflow-head", v.Head, approvals.WorkflowPath, false)
-		}()
+		})
 		second.Wait()
 		if baseErr != nil {
 			return OwnerView{}, baseErr
@@ -223,17 +223,6 @@ func (g *Gate) OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerVie
 			diff("The workflow change", approvals.WorkflowPath, oldWorkflow, nextWorkflow)
 		}
 	} else {
-		if repo.ApprovedDigest != "" {
-			v.Approved = repo.ApprovedCommit
-			var err error
-			approved, err = read("approved", v.Approved, approvals.PolicyPath, false)
-			if err != nil {
-				return OwnerView{}, err
-			}
-			if policy3.Digest(approved) != repo.ApprovedDigest {
-				return OwnerView{}, ErrOwnerMoved
-			}
-		}
 		v.Tip = c.Commit
 		var err error
 		head, err = read("current", v.Tip, approvals.PolicyPath, false)
@@ -282,6 +271,30 @@ func (g *Gate) OwnerView(ctx context.Context, t Target, a OwnerAction) (OwnerVie
 
 const statusOutsideFlow = "unknown — the policy changed outside the flow."
 
+// WithReviewReads makes each read of the owner reviews of one request happen once, shared by all their probes. Install
+// it only on a read-only request: a review after a write in the same request would see the old state.
+func WithReviewReads(ctx context.Context) context.Context { return inputs.WithReadMemo(ctx) }
+
+// The reads of a review share the memo of its request with the approval checks it makes.
+func readFile(ctx context.Context, repos api.Repos, r api.RepoRef, ref, path string) ([]byte, error) {
+	return inputs.Memo(ctx, inputs.FileRead{Repo: r, At: ref, Path: path}, func() ([]byte, error) {
+		raw, _, err := repos.File(ctx, r, ref, path)
+		return raw, err
+	})
+}
+
+func (g *Gate) pullRead(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
+	return inputs.Memo(ctx, inputs.PullRead{Repo: r, Number: number}, func() (api.Pull, error) {
+		return g.pulls.Pull(ctx, r, number)
+	})
+}
+
+func (g *Gate) headRead(ctx context.Context, r api.RepoRef, branch string) (string, error) {
+	return inputs.Memo(ctx, inputs.BranchRead{Repo: r, Branch: branch}, func() (string, error) {
+		return g.repos.BranchHead(ctx, r, branch)
+	})
+}
+
 // ownerMergedReason says why a workflow approval cannot be made on a merged pull request. Any other error, and a
 // failed read of the pull request, is returned as it was.
 func (g *Gate) ownerMergedReason(ctx context.Context, t Target, a OwnerAction, err error) error {
@@ -289,7 +302,7 @@ func (g *Gate) ownerMergedReason(ctx context.Context, t Target, a OwnerAction, e
 	if a.Kind != OwnerWorkflow || a.Pull == 0 || !errors.Is(err, ErrOwnerNotPossible) {
 		return err
 	}
-	if pl, perr := g.pulls.Pull(ctx, t.Repo.RepoRef, a.Pull); perr == nil && pl.Merged {
+	if pl, perr := g.pullRead(ctx, t.Repo.RepoRef, a.Pull); perr == nil && pl.Merged {
 		return fmt.Errorf("%w: %w", ErrOwnerMerged, err)
 	}
 	return err
