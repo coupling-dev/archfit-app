@@ -811,3 +811,8 @@ func TestALateBranchCreationFromBeforeTheFirstApprovalIsNotOutsideTheFlow(t *tes
 		t.Errorf("the late creation push = %+v, repository %+v; want unguarded", out, w.repo())
 	}
 }
+
+// PullSummary is the fake's Pull: the fake keeps one count per read either way.
+func (h *hub) PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
+	return h.Pull(ctx, r, number)
+}

@@ -16,11 +16,15 @@ import (
 )
 
 type fakePolicyViews struct {
-	state gate.PolicyState
-	err   error
+	state   gate.PolicyState
+	err     error
+	onState func() // called when PolicyState starts, to order it against other reads
 }
 
 func (f *fakePolicyViews) PolicyState(_ context.Context, _ api.Repo) (gate.PolicyState, error) {
+	if f.onState != nil {
+		f.onState()
+	}
 	return f.state, f.err
 }
 

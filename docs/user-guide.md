@@ -55,7 +55,9 @@ For a workflow change, an owner named in the approved policy can follow the revi
 Open `/` after signing in to choose a repository. Each row shows the repository's **State** (`clean`, `drift`,
 `expired`, `changed outside the flow`, `not set up` or `unknown`) and its **archfit/gate** check: **required** when
 GitHub requires pull requests and the check on the default branch, **not required** when either is confirmed off,
-and **not confirmed** when the App could not confirm it. A **Next step** appears only while setup is incomplete.
+and **not confirmed** when the App could not confirm it. The rows appear first; **Checking…** stands in the
+**archfit/gate** column until the App has read each repository's settings, and the check and **Next step** fill in
+then. A **Next step** appears only while setup is incomplete.
 A repository whose installation no operator has admitted shows **not admitted**; an operator admits, and an owner
 approves. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** and says the repositories are listed on the home page, with a link to `/`.
 

@@ -50,3 +50,8 @@ func TestOpenPullListingSeedsTheReviewOnlyWhenItIsComplete(t *testing.T) {
 		})
 	}
 }
+
+// PullSummary is the fake's Pull: the fake keeps one count per read either way.
+func (g *pullCounter) PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
+	return g.Pull(ctx, r, number)
+}
