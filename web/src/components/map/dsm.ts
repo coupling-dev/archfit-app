@@ -7,12 +7,13 @@ export const symbols: Record<LineKind, string> = {
   drift: '!',
   exception: '◷',
 };
-const statuses: Record<LineKind, string> = {
-  allowed: 'Explicit allow',
-  deny: 'Explicit deny',
-  requested: 'Request',
+// The legend's words for the five kinds, shared by the legend, the cell labels and the details.
+export const kindWords: Record<LineKind, string> = {
+  allowed: 'An allowed dependency',
+  requested: 'A requested dependency',
+  deny: 'One a rule denies',
+  exception: 'An exception',
   drift: 'Drift',
-  exception: 'Exception',
 };
 
 export const pairKey = (from: string, to: string): string => JSON.stringify([from, to]);
@@ -31,7 +32,7 @@ export function pairIndex(lines: MapLine[]): Map<string, MapLine[]> {
 
 export function statusLabel(line: MapLine): string {
   return [
-    statuses[line.kind],
+    kindWords[line.kind],
     line.rule && `rule: ${line.rule}`,
     line.request !== undefined && `request #${line.request}`,
     line.expires && `expires ${line.expires}`,
@@ -109,4 +110,43 @@ export function nextCell(key: string, ctrl: boolean, from: Cell, size: number, o
     case 'End': return edge(-1);
     default: return from;
   }
+}
+
+// From this many modules the matrix draws 32 px cells and vertical column names, so 24 columns fit a laptop page.
+export const compactFrom = 12;
+// From this many modules the search, focus, layer and attention filters appear; below it they only add noise.
+export const filtersFrom = 12;
+// The App opens an expiry issue seven days before an exception ends, so that is "near" here too.
+export const soonDays = 7;
+
+// Split a module name where a line may break: after "_" and "-", never inside a word.
+export function breakable(name: string): string[] {
+  return name.match(/[^_-]*[_-]|[^_-]+$/g) ?? [name];
+}
+
+export interface CellView {
+  kind: LineKind;
+  count: number;
+  // An exception that ends within soonDays, or already ended: the only exception drawn strongly.
+  soon: boolean;
+  // Only exceptions that are far off: drawn quiet so they do not mark every allow.
+  quiet: boolean;
+}
+
+const isSoon = (line: MapLine) => line.kind === 'exception' && line.days_left !== undefined && line.days_left <= soonDays;
+
+// One symbol per cell: the strongest status, with the number of statuses when there are several. Order: drift,
+// deny, an exception that is near its date, request, an exception with no date, allow, then a far exception. An
+// undated exception is never read as a pass, so it outranks allow. Every status stays in the label and in the
+// details, so nothing is dropped, only ranked.
+export function cellView(lines: MapLine[]): CellView | null {
+  if (!lines.length) return null;
+  const order = ['drift', 'deny', 'soon', 'requested', 'undated', 'allowed', 'far'];
+  const rank = (line: MapLine) => {
+    if (line.kind !== 'exception') return order.indexOf(line.kind);
+    return order.indexOf(isSoon(line) ? 'soon' : line.days_left === undefined ? 'undated' : 'far');
+  };
+  const top = lines.reduce((best, line) => (rank(line) < rank(best) ? line : best));
+  const far = top.kind === 'exception' && top.days_left !== undefined && !isSoon(top);
+  return { kind: top.kind, count: lines.length, soon: isSoon(top), quiet: far };
 }

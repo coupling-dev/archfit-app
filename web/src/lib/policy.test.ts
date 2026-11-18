@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { Policy } from './api';
-import { exceptionExpiry, filterPolicy, policyCounts, policyGraph, policyRules, ruleMode } from './policy';
+import { ApiError, type Policy } from './api';
+import {
+  exceptionExpiry,
+  filterPolicy,
+  groupExceptions,
+  isPolicyMissing,
+  policyCounts,
+  policyMap,
+  policyRules,
+  ruleMode,
+} from './policy';
 
 const module = (name: string, layer = 'core', deps: string[] = []): Policy['modules'][number] => ({
   name,
@@ -51,11 +60,18 @@ const policy: Policy = {
 
 describe('policy summary', () => {
   it('counts ask and deny rules, not off settings, notes, or the minimum balance', () => {
-    expect(policyCounts(policy)).toEqual({ modules: 2, blocking: 6, exceptions: 6, expiring: 3, expired: 1 });
+    expect(policyCounts(policy)).toEqual({
+      rules: 9,
+      modules: 2,
+      askDeny: 6,
+      exceptions: 6,
+      expiring: 3,
+      expired: 1,
+    });
     expect(policyCounts({ ...policy, gate: 'required' })).toEqual(policyCounts(policy));
   });
 
-  it('does not call unknown modes or unchecked declarations blocking', () => {
+  it('does not count unknown modes or unchecked declarations as ask or deny', () => {
     const body = {
       ...policy,
       builtin: { ...policy.builtin, graph: 'future-mode' },
@@ -64,9 +80,9 @@ describe('policy summary', () => {
         { id: 'unchecked-deny', deny: { from: ['app'], to: ['util'] }, not_checked: true, why: '' },
       ],
     };
-    expect(policyCounts(body).blocking).toBe(3);
+    expect(policyCounts(body).askDeny).toBe(3);
     expect(ruleMode('future-mode')).toBe('future-mode');
-    expect(ruleMode('')).toBe('Not provided');
+    expect(ruleMode('')).toBe('unknown');
   });
 
   it('retains repeated custom IDs and their distinct explanations', () => {
@@ -79,9 +95,43 @@ describe('policy summary', () => {
   });
 });
 
+describe('policy rules', () => {
+  it('names every rule by its id, built-in rules first', () => {
+    expect(policyRules(policy).map((r) => r.id)).toEqual([
+      'graph',
+      'coupling',
+      'duplication',
+      'cycle',
+      'layers',
+      'unowned',
+      'boundary',
+      'sdk',
+      'note',
+    ]);
+  });
+
+  it('states the minimum balance and what balance means', () => {
+    const coupling = policyRules({ ...policy, builtin: { ...policy.builtin, min_balance: 8 } })[1];
+    expect(coupling?.summary).toBe(
+      'New knowledge across a module boundary needs a balance of at least 8. Balance is the coupling number, out of 10.',
+    );
+  });
+});
+
+describe('missing policy', () => {
+  it.each([
+    [409, 'No policy on the default branch yet.', true],
+    [404, 'No policy on the default branch yet.', false],
+    [409, 'The policy on the default branch could not be read. Fix .archfit.yaml first.', false],
+    [502, 'GitHub or an Archfit service failed. Nothing was changed. Try again.', false],
+  ])('%i %s', (status, message, missing) => {
+    expect(isPolicyMissing(new ApiError(status, message))).toBe(missing);
+  });
+});
+
 describe('exception expiry uses server days, not the browser clock', () => {
   it.each([
-    [undefined, 'Not provided', '', null],
+    [undefined, 'No end date', '', null],
     [-3, 'Expired 3 days ago', 'danger', 0],
     [-1, 'Expired 1 day ago', 'danger', 0],
     [0, 'Expires today', 'attention', 0],
@@ -135,38 +185,38 @@ describe('policy search', () => {
   });
 });
 
-describe('secondary module graph', () => {
-  it('draws declared dependencies, counts missing targets, and preserves the input', () => {
+describe('policy map', () => {
+  it('draws each declared dependency as an allowed line, counts missing targets, and keeps the input', () => {
     const modules = [module('app', 'entry', ['util', 'absent']), module('util')];
-    const graph = policyGraph(modules, ['core', 'entry']);
-    expect(graph.links.map(({ from, to }) => [from, to])).toEqual([['app', 'util']]);
-    expect(graph.missing).toBe(1);
-    expect(graph.nodes.map(({ module }) => module.name)).toEqual(['app', 'util']);
-    expect(graph.nodes[0]?.y).toBeLessThan(graph.nodes[1]?.y ?? 0);
+    const { model, missing } = policyMap(modules, ['core', 'entry']);
+    expect(model.lines).toEqual([{ kind: 'allowed', from: 'app', to: 'util' }]);
+    expect(missing).toBe(1);
+    expect(model.modules.map((m) => m.name)).toEqual(['app', 'util']);
     expect(modules.map((m) => m.depends_on)).toEqual([['util', 'absent'], []]);
   });
 
-  it('places same-layer consumers above their dependencies', () => {
-    const graph = policyGraph([module('a', 'core', ['b']), module('b', 'core', ['c']), module('c')], ['core']);
-    const y = new Map(graph.nodes.map((node) => [node.module.name, node.y]));
-    expect(y.get('a')).toBeLessThan(y.get('b') ?? 0);
-    expect(y.get('b')).toBeLessThan(y.get('c') ?? 0);
+  it('lists layers outer-first, the reverse of the policy file', () => {
+    const { model } = policyMap([module('a', 'core'), module('b', 'entry')], ['core', 'entry']);
+    expect(model.layers).toEqual(['entry', 'core']);
   });
 
-  it('supports cycles, self-dependencies and undeclared layers without recursion', () => {
-    const graph = policyGraph([module('a', '', ['a', 'b']), module('b', 'other', ['a'])], null);
-    expect(graph.links).toHaveLength(3);
-    expect(graph.links.every((link) => !link.path.includes('NaN'))).toBe(true);
-    expect(graph.layers).toEqual(['', 'other']);
+  it('keeps a self-dependency and a cycle as lines, and an empty policy as nothing', () => {
+    const cyclic = policyMap([module('a', '', ['a', 'b']), module('b', 'other', ['a'])], null);
+    expect(cyclic.model.lines).toHaveLength(3);
+    expect(policyMap([], null)).toEqual({ model: { layers: [], modules: [], lines: [] }, missing: 0 });
   });
+});
 
-  it('wraps large layers in three-column rows and handles an empty policy', () => {
-    const graph = policyGraph(
-      Array.from({ length: 10 }, (_, i) => module(String(i))),
-      ['core'],
-    );
-    expect(new Set(graph.nodes.map((n) => `${n.x},${n.y}`)).size).toBe(10);
-    expect(graph.nodes.every((n) => n.x >= 0 && n.x + 140 <= 480)).toBe(true);
-    expect(policyGraph([], null)).toMatchObject({ nodes: [], links: [], missing: 0 });
+describe('exceptions by rule', () => {
+  it('groups by rule, largest first, and keeps the file order inside a group', () => {
+    const items = [
+      { ...exception(), rule: 'duplication', from: 'a' },
+      { ...exception(), rule: 'coupling', from: 'b' },
+      { ...exception(), rule: 'coupling', from: 'c' },
+    ];
+    expect(groupExceptions(items).map((g) => [g.rule, g.items.map((i) => i.from)])).toEqual([
+      ['coupling', ['b', 'c']],
+      ['duplication', ['a']],
+    ]);
   });
 });

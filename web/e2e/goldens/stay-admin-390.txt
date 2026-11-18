@@ -1,8 +1,8 @@
 Skip to main content
 Archfit
 Repositories
-Admin
-1 waiting
+Installations
+1 to admit
 Auto
 Light
 Dark
@@ -11,26 +11,27 @@ A
 Sign out
 Installations
 
-Approve an account to let Archfit run on its repositories. Until then nothing runs and nothing is posted.
+Accounts that may run Archfit. Admit an account below, or set admission in the App settings, by pull request.
 
 Waiting 1
 O
 octo Organization · installed 21 October 2026
 tool
 ledger · private
-Approve
+Admit
 octo
-Approved 2
+Admitted 2
 A
 acme Organization
-Approved by vladikk on 18 October 2026 · 1 repository
+Admitted by vladikk on 18 October 2026 · 1 repository
 app · private
 Revoke
 acme
 A
 alexei-led User Managed by configuration
-An operator must change the App settings by pull request; this page cannot change them. · 1 repository
+1 repository
 ccgram
+Accounts managed by configuration are set in the App settings, by pull request. This page cannot change them.
 Revoke stops Archfit from the account's next event on. Checks already on GitHub stay.
 Documentation · Third-party licences
 About this App · v0.12.0

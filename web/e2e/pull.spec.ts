@@ -8,10 +8,15 @@ for (const state of states) {
     await docsClock(page);
     const body = JSON.parse(readFileSync(new URL(`../../internal/control/ui/testdata/pull/${state}.json`, import.meta.url), 'utf8')) as object;
     await open(page, '/r/acme/app/pull/4', { 'GET /api/repos/acme/app/pulls/4': () => [200, body] });
-    await expect(page.locator('.page-head .status')).toBeVisible();
+    await expect(page.locator('.page-status')).toBeVisible();
     await expectPageText(page, `pull-${state}`);
     if (state === 'waiting') await docsShot(page, 'pull');
+    
     await expectClean(page);
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+      await docsShot(page, `pull-states/${state}-${width}`);
+    }
     if (state === 'unknown-workflow' || state === 'unknown-first-policy') {
       const first = state === 'unknown-first-policy';
       const link = page.getByRole('link', { name: first ? 'Review first policy' : 'Review workflow change', exact: true });
@@ -25,24 +30,29 @@ for (const state of states) {
       await expect(page.getByText('An architecture owner named in the approved policy can review this.', { exact: true })).toBeVisible();
     }
     if (state === 'waiting') await expect(page.getByRole('link', { name: '#431' }).first()).toHaveAttribute('href', '/r/acme/app/requests/431');
-    if (state === 'fail-advisory-request') await expect(page.locator('.page-head .status')).toHaveText('Archfit: fail, 1 error');
-    if (state === 'required-request') await expect(page.locator('.page-head .status')).toHaveText('Archfit: waiting, request #431');
+    if (state === 'fail-advisory-request') await expect(page.locator('.page-status')).toContainText('Archfit: fail, 1 error');
+    if (state === 'required-request') await expect(page.locator('.page-status')).toContainText('Archfit: waiting, request #431');
     if (state === 'next-backticks') await expect(page.getByText('next: git show `git rev-parse HEAD`')).toBeVisible();
     if (state === 'unknown-outside-flow') await expect(page.locator('main a[href*="/requests/"]')).toHaveCount(0);
   });
 }
 
-test('pull page and comment use the same lines', async ({ page }) => {
-  const body = JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/pull/waiting.json', import.meta.url), 'utf8')) as object;
-  const comment = readFileSync(new URL('../../internal/gate/feedback/testdata/golden4/waiting.comment.md', import.meta.url), 'utf8');
-  await open(page, '/r/acme/app/pull/4', { 'GET /api/repos/acme/app/pulls/4': () => [200, body] });
-  await expect(page.locator('.page-head .status')).toBeVisible();
-  const lines = await page.locator('.page-head .status, section[aria-label="Pull request"] .pull-record > div, section[aria-label="Pull request"] p').allInnerTexts();
-  const expected = comment.split('\n').filter((line) => line !== '').map((line) =>
-    line.replace(/^## /, '').replace(/^- /, '').replaceAll('**', '').replaceAll('`', '').replaceAll('&lt;', '<'),
-  );
-  expect(lines).toEqual(expected);
-});
+for (const [state, comment] of [
+  ['waiting', 'waiting.comment.md'],
+  ['unknown', 'unknown.comment.md'],
+]) {
+  test(`pull page and comment use the same lines: ${state}`, async ({ page }) => {
+    const body = JSON.parse(readFileSync(new URL(`../../internal/control/ui/testdata/pull/${state}.json`, import.meta.url), 'utf8')) as object;
+    const text = readFileSync(new URL(`../../internal/gate/feedback/testdata/golden4/${comment}`, import.meta.url), 'utf8');
+    await open(page, '/r/acme/app/pull/4', { 'GET /api/repos/acme/app/pulls/4': () => [200, body] });
+    await expect(page.locator('.page-status')).toBeVisible();
+    const lines = await page.locator('.page-status p, section[aria-label="Pull request"] .pull-record p, section[aria-label="Pull request"] > p').allInnerTexts();
+    const expected = text.split('\n').filter((line) => line !== '').map((line) =>
+      line.replace(/^## /, '').replace(/^- /, '').replaceAll('**', '').replaceAll('`', '').replaceAll('&lt;', '<'),
+    );
+    expect(lines).toEqual(expected);
+  });
+}
 
 test('pull request: API failure is not a result', async ({ page }) => {
   const body = JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/pull/infrastructure-error.json', import.meta.url), 'utf8')) as object;

@@ -1,133 +1,163 @@
 <script lang="ts">
+  import Disclosure from './ui/Disclosure.svelte';
+  import StatusLabel from './ui/StatusLabel.svelte';
   import { repoPage, type Repo } from '../lib/route';
   import { setupRuleHelp } from '../lib/setup-rules';
-  import { approvalNeedsReview, ownerReviewLabel, homeHref, setupChipClass, setupPullStep, setupRuleStatus, setupStepState, type HomeSetup } from '../lib/home';
+  import { approvalNeedsReview, ownerReviewLabel, homeHref, setupPullStep, setupRuleStatus, setupStepChip, setupStepState, type HomeSetup } from '../lib/home';
 
-  let { setup, repo, showOwnerAction = true }: { setup: HomeSetup; repo: Repo; showOwnerAction?: boolean } = $props();
+  let { setup, repo, showOwnerAction = true, primaryHref = '' }: { setup: HomeSetup; repo: Repo; showOwnerAction?: boolean; primaryHref?: string } = $props();
   const steps = [
     { title: 'Add the policy', text: 'Your architecture rules live in .archfit.yaml, in the repository.' },
-    { title: 'Policy and workflow pull request', text: 'Rules reach the default branch through review, so the approval binds to exact file contents.' },
-    { title: 'Owner approval', text: 'The owner signs the policy with a passkey. Change one byte and the approval no longer counts.' },
-    { title: 'Require the gate', text: 'In GitHub, require archfit/gate on the default branch. The App reads these settings; an administrator changes them.' },
+    { title: 'Open a pull request with both files', text: 'Rules reach the default branch through review, so the approval binds to exact file contents.' },
+    { title: 'Owner approval', text: 'The owner approves the policy with a passkey. The approval covers these exact files; any later edit needs a new approval.' },
+    { title: 'Require the archfit/gate check', text: 'GitHub does not merge a change until archfit/gate passes on the default branch.' },
   ];
-  const passkeyReason = 'The gate protects the rules themselves. A password or a GitHub review can be replayed by a compromised account, and in a one-person repository a self-review proves nothing. A passkey stays on your device, works only on this site, and signs the exact bytes of the policy and workflow. Any later edit needs a new approval.';
+  const passkeyReason = 'The gate protects the rules themselves. A password or a GitHub review can be replayed by a compromised account, and in a one-person repository a self-review proves nothing. A passkey stays on your device, works only on this site, and approves the exact bytes of the policy and workflow. Any later edit needs a new approval.';
   let state = $derived(setupStepState(setup));
   let done = $derived(state.done);
   let completed = $derived(state.completed);
+  let active = $derived(done.indexOf(false));
+  // Complete means every step is done and the approval is active: nothing left for the owner to do.
+  let complete = $derived(completed === 4 && setup.approval.status === 'active');
   let reviewHref = $derived(approvalNeedsReview(setup) && setup.owner_action?.href ? homeHref(repo, setup.owner_action.href) : undefined);
   let pullStep = $derived(setupPullStep(setup));
   let approvalHref = $derived(setup.approval.href ? homeHref(repo, setup.approval.href) : undefined);
   let githubRepo = $derived(`https://github.com/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`);
+  let rules = $derived(setup.rules.filter((rule) => !(rule.code === 'policy_push' && rule.state === 'not_applicable')));
 </script>
 
-<section class="box setup" aria-labelledby="setup-title">
-  <div class="box-head"><div><h2 id="setup-title">Set up Archfit</h2><p>{state.next}</p><p>Policy approval and required-check settings are separate. Complete the applicable steps below.</p></div></div>
-  <div class="box-body">
-    <div class="progress" aria-label="{completed} of 4 steps done"><span>{completed} of 4 done</span><span class="bar" aria-hidden="true"><span style="width: {completed * 25}%"></span></span></div>
-    <ol class="steps">
-      {#each steps as step, i (step.title)}
-        {@const status = i === 0 ? done[i] ? 'Done' : 'Action needed' : i === 1 ? pullStep.status : i === 2 ? state.approval : state.gate}
-        <li class:done={done[i]} class:now={!done[i] && (i === 0 || done[i - 1])}>
-          <span class="number" aria-hidden="true">{done[i] ? '✓' : i + 1}</span>
-          <div class="step-copy"><h3>{i + 1} · {step.title}</h3><p>{step.text}</p></div>
-          <span class="chip" class:good={setupChipClass(status) === 'good'} class:attention={setupChipClass(status) === 'attention'} class:neutral={setupChipClass(status) === 'neutral'}>{status}</span>
-          <div class="step-body">
-            {#if i === 0}
-              {#if setup.policy}<p>The policy is on the default branch. <a href={repoPage(repo.fullName, '/policy')}>View the policy</a></p>
-              {:else if setup.first_pull}<p>A version 3 policy is proposed in PR #{setup.first_pull}; it is not yet on the default branch.</p>
-              {:else}<p>The default branch has no version 3 policy.</p><pre class="command"><code>archfit init</code></pre><p>This creates the policy (or converts v2 files) and adds its agent block to AGENTS.md. It does not write the workflow.</p>{/if}
-              {#if !setup.policy && !setup.first_pull}<p>Commit the policy and workflow, then open a pull request.</p>{/if}
-            {:else if i === 1}
-              {#if pullStep.kind === 'review'}
-                <p><a href={repoPage(repo.fullName, '/pull/' + pullStep.number)}>PR #{pullStep.number}</a> adds the workflow.</p>
-                <a class="btn ghost" href={`${githubRepo}/pull/${pullStep.number}`}>View PR #{pullStep.number} on GitHub</a>
-              {:else if pullStep.kind === 'first-policy'}
-                <p>PR #{pullStep.number} proposes the first policy and workflow.</p>
-                <a class="btn ghost" href={repoPage(repo.fullName, '/pull/' + pullStep.number)}>View PR #{pullStep.number}</a>
-              {:else if pullStep.kind === 'current'}
-                <p>The policy and workflow are present on the default branch. No setup pull request is needed.</p>
-                <a class="btn ghost" href={repoPage(repo.fullName, '/policy')}>View policy</a>
-              {:else}
-                <p>Open one pull request that adds the missing policy or workflow.</p>
-                <a class="btn ghost" href={`${githubRepo}/compare`}>Create a pull request on GitHub</a>
-              {/if}
-              {#if !setup.workflow && setup.open_pull === 0 && !setup.first_pull}<p>The pull request should also add <code>.github/workflows/archfit.yaml</code>.</p>{/if}
-            {:else if i === 2}
-              <p>{state.approvalText}</p>
-              {#if approvalHref}<p><a href={approvalHref}>View PR #{setup.approval.pull_request} and approval record</a></p>{/if}
-              {#if approvalNeedsReview(setup) && setup.owner_action}
-                {#if reviewHref}{#if showOwnerAction}<a class="btn" href={reviewHref}>{ownerReviewLabel(setup)}</a>{/if}
-                {:else}<p>{setup.owner_action.label}</p>{/if}
-              {/if}
-              {#if !setup.passkey_known}
-                <p>Could not read your passkeys. Review is still available; try again before approving.</p>
-              {:else if !setup.passkey && approvalNeedsReview(setup)}
-                <a class="btn ghost" href={repoPage(repo.fullName, '/passkeys')}>Register a passkey to approve</a>
-                <p>A passkey is needed to approve, but not to read the review.</p>
-              {:else if setup.passkey}
-                <p><a href={repoPage(repo.fullName, '/passkeys')}>Manage passkeys</a></p>
-              {/if}
-              <details><summary>Why a passkey?</summary><p>{passkeyReason}</p></details>
-            {:else}
-              <p>This step turns green when GitHub requires pull requests and archfit/gate on the default branch. Bypass and policy-push advice does not block this step; Verify yourself means the App has not checked that setting.</p>
-              <div class="rules">
-                <div class="rule-actions"><a class="btn ghost" href={`${githubRepo}/settings/rules`}>Open ruleset settings</a><button class="btn ghost" onclick={() => window.location.reload()}>Check</button></div>
-                <p>After saving changes on GitHub, select Check to read the settings again. Check does not change any GitHub settings.</p>
-                {#each setup.rules as rule, ri (`${rule.code}-${ri}`)}
-                  {@const help = setupRuleHelp(rule, repo)}
-                  <div class="rule">
-                    <div class="rule-head">
-                      <h4>{help.title}</h4>
-                      <span class="chip" class:good={rule.state === 'ok'} class:attention={rule.state !== 'ok' && rule.state !== 'not_applicable'} class:neutral={rule.state === 'not_applicable'}>{setupRuleStatus(rule.state, rule.code)}</span>
-                    </div>
-                    <p>{help.explanation}</p>
-                    {#each help.instructions as instruction (instruction)}<p>{instruction}</p>{/each}
-                    <div class="rule-links">
-                      {#each help.links as link (link.href)}<a href={link.href}>{link.label}</a>{/each}
-                    </div>
-                  </div>
-                {:else}<p>No ruleset settings are available.</p>{/each}
-              </div>
-            {/if}
+{#snippet stepBody(i: number)}
+  {#if i === 0}
+    {#if setup.policy}<p>The policy is on the default branch.</p>
+    {:else if setup.first_pull !== undefined}<p>Pull request #{setup.first_pull} proposes the first policy.</p>
+    {:else}
+      <p>Run <code>archfit init</code> in your repository. It creates .archfit.yaml and adds its agent block to AGENTS.md. It does not write the workflow.</p>
+      <pre class="command"><code>archfit init</code></pre>
+      <p>Copy the workflow from <a href="https://github.com/alexei-led/archfit-action">the Archfit action repository</a> into <code>.github/workflows/archfit.yaml</code>.</p>
+    {/if}
+  {:else if i === 1}
+    {#if pullStep.kind === 'review'}
+      <p><a href={repoPage(repo.fullName, '/pull/' + pullStep.number)}>Pull request #{pullStep.number}</a> adds the workflow.</p>
+      {#if primaryHref !== `${githubRepo}/pull/${pullStep.number}`}<a class="btn" href={`${githubRepo}/pull/${pullStep.number}`}>View pull request #{pullStep.number} on GitHub</a>{/if}
+    {:else if pullStep.kind === 'first-policy'}
+      <p>Pull request #{pullStep.number} proposes the first policy and workflow.</p>
+      <a class="btn" href={repoPage(repo.fullName, '/pull/' + pullStep.number)}>View pull request #{pullStep.number}</a>
+    {:else if pullStep.kind === 'current'}
+      <p>The policy and workflow are on the default branch. No setup pull request is needed.</p>
+    {:else}
+      <p>Open one pull request that adds the missing policy or workflow.</p>
+      {#if primaryHref !== `${githubRepo}/compare`}<a class="btn" href={`${githubRepo}/compare`}>Create a pull request on GitHub</a>{/if}
+    {/if}
+  {:else if i === 2}
+    <p>{state.approvalText}</p>
+    {#if approvalHref}<p><a href={approvalHref}>View pull request #{setup.approval.pull_request} and approval record</a></p>{/if}
+    {#if approvalNeedsReview(setup) && setup.owner_action}
+      {#if reviewHref}{#if showOwnerAction}<a class="btn" href={reviewHref}>{ownerReviewLabel(setup)}</a>{/if}
+      {:else}<p>{setup.owner_action.label}</p>{/if}
+    {/if}
+    {#if !setup.passkey_known}
+      <p>Could not read your passkeys. Review is still available; try again before approving.</p>
+    {:else if !setup.passkey && approvalNeedsReview(setup)}
+      <a class="btn" href={repoPage(repo.fullName, '/passkeys')}>Register a passkey to approve</a>
+      <p>A passkey is needed to approve, but not to read the review.</p>
+    {:else if setup.passkey}
+      <p><a href={repoPage(repo.fullName, '/passkeys')}>Manage passkeys</a></p>
+    {/if}
+    <Disclosure summary="Why a passkey?"><p>{passkeyReason}</p></Disclosure>
+  {:else}
+    <p>Done when GitHub requires a pull request and the archfit/gate check on the default branch. Items marked optional are not needed for this step.</p>
+    <div class="rules">
+      <p>In GitHub, open Settings → Rules → Rulesets, then create or edit a branch ruleset for the default branch. Set Enforcement status to Active, then tick what each row names below.</p>
+      <div class="rule-actions">
+        {#if primaryHref !== `${githubRepo}/settings/rules`}<a class="btn" href={`${githubRepo}/settings/rules`}>Open ruleset settings</a>{/if}
+        <button class="btn" onclick={() => window.location.reload()}>Check again</button>
+      </div>
+      <p class="muted">After you save on GitHub, select Check again to read the settings again. It changes nothing in GitHub.</p>
+      {#each rules as rule, ri (`${rule.code}-${ri}`)}
+        {@const help = setupRuleHelp(rule, repo)}
+        <div class="rule">
+          <div class="rule-head">
+            <h4 class="title-box">{help.title}</h4>
+            <StatusLabel label={setupRuleStatus(rule.state, rule.code)} />
           </div>
-        </li>
-      {/each}
-    </ol>
+          <p>{help.explanation}</p>
+          {#each help.instructions as instruction (instruction)}<p>{instruction}</p>{/each}
+          {#if help.links.length}
+            <div class="rule-links">
+              {#each help.links as link (link.href)}<a href={link.href}>{link.label}</a>{/each}
+            </div>
+          {/if}
+        </div>
+      {:else}<p>No ruleset settings are available.</p>{/each}
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet stepList()}
+  <ol class="steps">
+    {#each steps as step, i (step.title)}
+      <li class:active={i === active} class:done-line={done[i]}>
+        <div class="step-head">
+          <span class="number" aria-hidden="true">{done[i] ? '✓' : i + 1}</span>
+          <div class="step-copy">
+            <h3 class="title-box">{i + 1} · {step.title}</h3>
+            {#if !done[i]}<p>{step.text}</p>{/if}
+          </div>
+          <StatusLabel label={setupStepChip(done, i)} />
+        </div>
+        {#if i === active}
+          <div class="step-body">{@render stepBody(i)}</div>
+        {:else}
+          <Disclosure summary={done[i] ? 'Details' : 'Show this step'}>
+            <div class="step-body">{@render stepBody(i)}</div>
+          </Disclosure>
+        {/if}
+      </li>
+    {/each}
+  </ol>
+{/snippet}
+
+<section class="box setup" aria-labelledby="setup-title">
+  <div class="box-head">
+    <h2 class="title-box" id="setup-title">Set up Archfit</h2>
+    <p>{state.next}</p>
+  </div>
+  <div class="box-body">
+    {#if complete}
+      <Disclosure summary="Setup details">{@render stepList()}</Disclosure>
+    {:else}
+      <div class="progress" aria-label="{completed} of 4 steps done"><span>{completed} of 4 done</span><span class="bar" aria-hidden="true"><span style="width: {completed * 25}%"></span></span></div>
+      {@render stepList()}
+    {/if}
   </div>
 </section>
 
 <style>
-  .setup { margin-top: 16px; }
-  .setup a { text-decoration: underline; text-underline-offset: 2px; }
   .box-head p { margin: 4px 0 0; color: var(--fg-muted); }
-  .progress { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; color: var(--fg-muted); font-size: 13px; }
+  .progress { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--fg-muted); font-size: 13px; }
   .bar { flex: 1; height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; }
   .bar span { display: block; height: 100%; background: var(--success); }
   .steps { list-style: none; padding: 0; margin: 0; }
-  .steps li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 12px; padding: 14px 0; border-top: 1px solid var(--border); }
-  .number { width: 28px; height: 28px; border: 2px solid var(--border); border-radius: 50%; display: grid; place-items: center; color: var(--fg-muted); }
-  .done .number { background: var(--success); color: white; }
-  .step-copy h3 { margin: 0 0 3px; font-size: 15px; }
-  .step-copy p, .step-body p { margin: 0; color: var(--fg-muted); }
-  .chip { align-self: start; border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 600; background: var(--bg-subtle); }
-  .chip.good { background: var(--success-subtle); color: var(--success); border-color: var(--success-border); }
-  .chip.attention { background: var(--attention-subtle); color: var(--attention); border-color: var(--attention-border); }
-  .chip.neutral { background: var(--neutral-subtle); color: var(--fg-muted); }
-  .step-body { grid-column: 2 / 4; margin-top: 4px; }
-  .step-body p + p { margin-top: 8px; }
-  .btn { display: inline-block; margin: 4px 8px 4px 0; }
-  details { margin-top: 8px; }
-  summary { cursor: pointer; }
-  details p { margin-top: 8px !important; }
-  .command { margin: 8px 0; padding: 10px 12px; border-radius: var(--radius); background: var(--bg-subtle); overflow-x: auto; }
-  .rules { border-top: 1px solid var(--border); margin-top: 8px; }
-  .rule { padding: 14px 0; border-bottom: 1px dashed var(--border); overflow-wrap: anywhere; }
-  .rule-head, .rule-actions { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; }
-  .rule-head { justify-content: space-between; }
-  .rule h4 { margin: 0; font-size: 14px; }
-  .rule-links { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 13px; }
-  .rule-head .chip { flex-shrink: 0; }
-  .rule:last-child { border-bottom: 0; }
+  .steps li { padding: 10px 0; border-top: 1px solid var(--border); }
+  .steps li.done-line { padding: 6px 0; }
+  .done-line .step-head { align-items: center; }
+  .done-line .step-copy h3 { margin: 0; font-weight: 500; color: var(--fg-muted); }
+  .step-head { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 12px; align-items: start; }
+  .number { width: 24px; height: 24px; border: 2px solid var(--border); border-radius: 50%; display: grid; place-items: center; font-size: 12px; color: var(--fg-muted); }
+  .done-line .number { background: var(--success-emphasis); border-color: var(--success-emphasis); color: var(--fg-onEmphasis); }
+  .step-copy h3 { margin: 0 0 4px; }
+  .step-copy p { margin: 0; color: var(--fg-muted); }
+  .step-body { margin: 8px 0 0 40px; display: flex; flex-direction: column; gap: 8px; }
+  .step-body > p { margin: 0; color: var(--fg-muted); }
+  .step-body > .btn { align-self: flex-start; }
+  .command { margin: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--bg-subtle); overflow-x: auto; }
+  .rules { border-top: 1px solid var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .rule-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .rule { padding: 12px 0; border-bottom: 1px dashed var(--border); overflow-wrap: anywhere; }
+  .rule-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .rule h4 { margin: 0; }
   .rule p { font-size: 13px; margin-top: 3px; }
-  @media (max-width: 520px) { .steps li { grid-template-columns: 30px minmax(0, 1fr); } .steps li > .chip { grid-column: 2; grid-row: 2; justify-self: start; } .step-body { grid-column: 2; } }
+  .rule-links { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 13px; }
+  .rule:last-child { border-bottom: 0; }
+  @media (max-width: 640px) { .step-body { margin-left: 0; } }
 </style>

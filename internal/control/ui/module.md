@@ -22,7 +22,14 @@ The gate facade supplies policy/request views, answers and owner actions; UI imp
 - Passkeys list, register, step up and remove the signed-in user's credentials.
 - Installation admin routes require configured operator user IDs. Account admission is checked before
   repository data access.
+- `/api/session` answers the operator flag only. The waiting count, which reads every installation, is `GET /api/admin/waiting`
+  for operators, read by the header after the session shows; it answers -1 when the reads fail.
 - /api/repos lists accessible repositories in name order, at most 100, with state from the gate RepoStates façade and no historical check reads.
+
+Assets under `/assets/` ship with `.br` and `.gz` siblings from the web build; the server sends the one the client
+takes (`br` first) with `Vary: Accept-Encoding`. API JSON bodies over 1 KB are gzip-compressed when the client takes
+gzip, except answers that carry a CSRF or step-up token (`tokenBearer`): those are never compressed, whatever their size.
+Nothing else is compressed.
 
 ## Security and checks
 
@@ -83,6 +90,12 @@ Error priority follows input order, not completion order; unreadable rules
 remain unknown and inventory errors return both `passkey: false` and `passkey_known: false`. HTTP client timeouts,
 request cancellation and rate-limit backoff remain in effect.
 
+Home also reads the installation's admission and the repository record once per request (`gate.WithRequestMemo`),
+where Home, the Setup state and each owner review probe asked for them again. A failed read is remembered too, so the
+request fails closed the same way at every step. The memo lives in the request context only and is installed on
+read-only routes only: nothing in it outlives the request, and a request that changes an admission or a record
+must not install it.
+
 The structured `ui request` log includes `stages`: `authorization`, `setup`, `rules`, `passkeys`,
 `home_records`, `owner_review`, `approval_summary` and `snapshot` when reached. Each records `duration_ms`, `count` and
 `cache_hits`; durations overlap and must not be summed as request latency. Counts mean authorization/
@@ -99,10 +112,12 @@ is a known limit, not a gap in the header: fixing it means sharing the stats thr
 writer, which only pays off once slow requests need the stages, so it waits for that.
 
 The map imports its Diagram component only while the diagram disclosure is open; closing it aborts
-layout work. The list view never starts the ELK worker. Desktop still starts with the diagram selected;
-phone starts with the list. Browser tests assert zero worker requests before phone diagram selection.
+layout work. The list view never starts the ELK worker. The diagram starts closed at every width; phone starts
+with the list open. Browser tests assert zero worker requests before the diagram opens.
 
-For an approved repository the response has `status`, optional `needs_you` rows, and `map`. Each row has
+For an approved repository the response has `state` (`clean`, `drift`, `expired`, `outside_flow`, `not_set_up` or
+`unknown`; the first that holds, in the order outside the flow, expired, drift, unknown, clean, wins), `status` (the sentence that says what the state means and
+what waits), optional `needs_you` rows, and `map`. A setup answer has `state: not_set_up` and a `setup` block. Each row has
 `kind`, `text`, `href`, and the applicable request, pull, rule, modules, expiry date, days left or request record.
 Requests link to `/r/{o}/{n}/requests/{number}`. Drift and expiry link to their GitHub issue, falling back to
 Policy before the sweep opens one. Owner actions link to `/r/{o}/{n}/owner/{workflow|confirm|revert}`;
@@ -167,29 +182,25 @@ Each row separates:
   `FirstPull` identifies a first policy even when the default branch has none. `OpenPull` with policy
   present and workflow absent identifies workflow review, before first-approval state. Both files and
   `State == "approved"` are needed for Policy approved. Outside-flow or inconsistent approval facts
-  omit the stage and explain Check in `setup_reason`; they never become Policy approved.
-- `enforcement`: `required` only for the Setup rules report's `gate_check: ok`;
-  `not_required` for `gate_check: warning` plus `pull_requests: ok`; otherwise `check` with
-  `enforcement_reason`. Policy mode and unrelated rules findings do not determine this field.
-- Optional `attention`: only Setup's existing `FirstPull` / `OpenPull` PR number or first-approval state.
-  Request counts are **not read**: RepoStates and Setup expose none, and Home adds GitHub reads.
-  The UI says those counts are not checked here, never invents zero, and directs readers to Home.
-- `next_step`: a server-selected text/href pair to Home or a PR in the same repository.
-  First-policy and workflow PRs link to Pull, which resolves owner-action eligibility. First approval
-  without a PR links to Home, whose setup step resolves eligibility. The list never links directly
-  to an owner action page. The SPA accepts only same-repository Home and positive-number Pull routes.
-  Enforcement reasons stay in the API, but the page explains the Check chip once below the list.
-  Row-specific setup reasons remain inline.
+  omit the stage and show **not confirmed**; they never become Policy approved.
+- `enforcement`: `required` only when Home step 4 is done: `gate_check` and `pull_requests` are `ok` and no
+  `rulesets` or `branch_rules` finding is present with a state other than `ok` (an absent finding is readable).
+  `not_required` when either rule is `warning`. Otherwise `check`, which the page shows as **not confirmed**,
+  with `enforcement_reason`.
+- `next_step`: empty when the list names no step. Otherwise a server-selected text/href pair to Home or a PR in
+  the same repository. First-policy and workflow PRs link to Pull, which resolves owner-action eligibility. The
+  list never links directly to an owner action page. The SPA keeps only same-repository Home and positive-number
+  Pull routes. An empty destination, or a row whose setup is complete, names no step.
+- `state`: the stored repository state, or `not admitted` for an installation no operator has admitted. The list
+  reads nothing from a not-admitted installation.
 
 A probe error or a row beyond the probe limit retains stored evidence, omits the setup stage, and shows
-Check with a reason; stored-state failures still fail the request. Waiting installations show their own
-approval status, not repository readiness. The desktop table has Repository, Setup, Needs attention,
-and Next step columns; mobile has labelled cards with one destination each.
+**not confirmed** with a reason; stored-state failures still fail the request. The desktop table has Repository,
+State, archfit/gate and Next step columns; mobile has labelled cards. Each row links its repository name once; a
+next step links only to its own pull request page.
 
 `overview_test.go` covers stages/destinations and the rules-state matrix; `repos_test.go` covers admission,
 bounds, errors and JSON fixtures consumed by Playwright. `web/src/lib/repos.test.ts` tests vocabulary and
 destination restrictions. `web/e2e/repos.spec.ts` checks both widths, accessibility and CSP. The existing
 `stay.spec.ts` text goldens cover both widths without OS-specific pixel comparisons. Set
 `ARCHFIT_DOCS_SHOTS=1` when running the Repos spec to regenerate the reference images in `docs/images/`.
-The audit explicitly requires “Needs attention”, “Workflow review” and “Review …” navigation labels;
-wording checks allow only those exact phrases on this page, retaining the legacy check elsewhere.

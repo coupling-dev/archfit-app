@@ -1,16 +1,17 @@
 <script lang="ts">
   import Skeleton from '../components/Skeleton.svelte';
-  import { explain, explainLoad, getJSON, postJSON, type AdminBody, type ApiError, type Installation, type Notice, type Session, type Repos } from '../lib/api';
+  import { explain, explainLoad, postJSON, type AdminBody, type ApiError, type Installation, type Notice, type Session, type Repos } from '../lib/api';
+  import { firstJSON } from '../lib/early';
 
   import { repoPage } from '../lib/route';
 
-  // Admin is the operators' page: approve an account so Archfit runs for it, or revoke it. The server answers 404 to
+  // Admin is the operators' page: admit an account so Archfit runs for it, or revoke it. The server answers 404 to
   // anyone else, so a non-operator sees "Not found" here as on any unknown page.
   let { session, here }: { session: Session; here: string } = $props();
 
   let accessible = $state<string[]>([]);
   // Installation visibility is not repository access. A failed/truncated list never grants more links.
-  getJSON<Repos>('/api/repos').then(
+  firstJSON<Repos>('/api/repos').then(
     (b) => { accessible = b.repos.filter((r) => !r.waiting).map((r) => r.full_name); },
     () => { accessible = []; },
   );
@@ -22,7 +23,7 @@
   let confirming = $state(0); // the installation whose revoke asks once, inline
 
   function load() {
-    getJSON<AdminBody>('/api/admin/installations').then(
+    firstJSON<AdminBody>('/api/admin/installations').then(
       (b) => (body = b),
       (e: ApiError) => (failure = explainLoad(e, here)),
     );
@@ -51,9 +52,7 @@
 <div class="page-head">
   <div>
     <h1>Installations</h1>
-    <p class="lede">
-      Approve an account to let Archfit run on its repositories. Until then nothing runs and nothing is posted.
-    </p>
+    <p class="lede">Accounts that may run Archfit. Admit an account below, or set admission in the App settings, by pull request.</p>
   </div>
 </div>
 
@@ -70,7 +69,7 @@
   {:else if row.repos.length}
     <ul class="chips" aria-label="Repositories of {row.account}">
       {#each row.repos as r (r.name)}
-        <li class="chip" class:priv={r.private}>
+        <li class="repo-chip" class:priv={r.private}>
           {#if accessible.includes(`${row.account}/${r.name}`)}<a href={repoPage(`${row.account}/${r.name}`)}>{r.name}</a>{:else}{r.name}{/if}{r.private ? ' · private' : ''}
         </li>
       {/each}
@@ -83,13 +82,16 @@
 {:else}
   {#if body.unreadable}
     <p class="flash warn">
-      The approval of {body.unreadable} installation{body.unreadable === 1 ? '' : 's'} could not be read. They are listed
+      The admission of {body.unreadable} installation{body.unreadable === 1 ? '' : 's'} could not be read. They are listed
       as waiting, and Archfit does not run for them. Try again in a minute.
     </p>
   {/if}
 
+  {#if !body.waiting.length}
+    <p>No installation is waiting to be admitted.</p>
+  {:else}
   <section class="box" aria-labelledby="waiting">
-    <div class="box-head"><h2 id="waiting">Waiting <span class="counter">{body.waiting.length}</span></h2></div>
+    <div class="box-head"><h2 class="title-box" id="waiting">Waiting <span class="counter">{body.waiting.length}</span></h2></div>
     {#each body.waiting as row (row.id)}
       <div class="box-row acct">
         {@render who(row)}
@@ -101,16 +103,15 @@
         </div>
         {#if row.auto}<span class="label">Managed by configuration</span>
         {:else}<button class="btn sm primary" type="button" disabled={busy !== 0} onclick={() => act(row, 'approve')}>
-          Approve<span class="sr-only"> {row.account}</span>
+          Admit<span class="sr-only"> {row.account}</span>
         </button>{/if}
       </div>
-    {:else}
-      <p class="box-row muted">No installation is waiting.</p>
     {/each}
   </section>
+  {/if}
 
   <section class="box" aria-labelledby="approved">
-    <div class="box-head"><h2 id="approved">Approved <span class="counter">{body.approved.length}</span></h2></div>
+    <div class="box-head"><h2 class="title-box" id="approved">Admitted <span class="counter">{body.approved.length}</span></h2></div>
     {#each body.approved as row (row.id)}
       <div class="box-row acct">
         {@render who(row)}
@@ -119,8 +120,7 @@
           <span class="label">{row.type}</span>
           {#if row.auto}<span class="label">Managed by configuration</span>{/if}
           <div class="muted small">
-            {#if row.auto}An operator must change the App settings by pull request; this page cannot change them.{:else}Approved by {row.approved_by} on {day(row.approved_at ?? '')}{/if}
-            · {repoCount(row)}
+            {#if !row.auto}Admitted by {row.approved_by} on {day(row.approved_at ?? '')} ·{/if} {repoCount(row)}
           </div>
           {@render repos(row)}
         </div>
@@ -141,6 +141,9 @@
     {:else}
       <p class="box-row muted">None.</p>
     {/each}
+    {#if body.approved.some((row) => row.auto)}
+      <div class="box-foot">Accounts managed by configuration are set in the App settings, by pull request. This page cannot change them.</div>
+    {/if}
     {#if body.approved.some((row) => !row.auto)}
       <div class="box-foot">Revoke stops Archfit from the account's next event on. Checks already on GitHub stay.</div>
     {/if}

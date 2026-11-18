@@ -1,11 +1,15 @@
 <script lang="ts">
   import Skeleton from '../components/Skeleton.svelte';
   import PolicyRead from '../components/PolicyRead.svelte';
+  import PageHead from '../components/ui/PageHead.svelte';
+  import Banner from '../components/ui/Banner.svelte';
+  import Diff from '../components/ui/Diff.svelte';
   import { explain, explainLoad, postJSON, repoAPI, type ApiError, type Policy, type Session, type Answered } from '../lib/api';
   import { canRetryRead, policyReadFailure } from '../lib/recovery';
   import { confirm } from '../lib/passkey';
   import { passkeyFailure } from '../lib/webauthn';
   import { firstJSON } from '../lib/early';
+  import { isPolicyMissing, policyMissing } from '../lib/policy';
   import { repoPage, type Repo } from '../lib/route';
 
   let { route, here, session }: { route: Repo; here: string; session: Session } = $props();
@@ -21,13 +25,15 @@
   let failure = $state('');
   let retry = $state(false);
   let recovery = $state(false);
+  let missing = $state(false);
   let showSource = $state(false);
 
   function load() {
-    failure = ''; retry = recovery = false;
+    failure = ''; retry = recovery = missing = false;
     firstJSON<Policy>(api(editing ? 'policy?edit=1' : 'policy')).then(
       (b) => { body = b; yaml = b.edit.file ?? ''; },
       (e: ApiError) => {
+        if (isPolicyMissing(e)) { missing = true; return; }
         retry = canRetryRead(e);
         recovery = e.status === 409;
         failure = explainLoad(e, here) ? policyReadFailure(e) : '';
@@ -75,17 +81,21 @@
   }
 </script>
 
-<div class="page-head">
-  <div><h1>Policy</h1><p class={editing ? 'muted' : 'lede'}>{route.fullName} · {editing ? 'default branch' : 'Rules, exceptions and allowed dependencies.'}</p></div>
-  <div class="row">
+<PageHead title="Policy" repo={route.fullName}>
+  {#snippet actions()}
     {#if body && !(editing && body.edit.available)}<a class="btn" href="#raw" onclick={() => showSource = true}>View source</a>{/if}
     {#if body?.edit.available && !editing}
       <a class="btn primary" href={repoPage(route.fullName, '/policy?edit=1')}>Edit</a>
     {/if}
-  </div>
-</div>
+  {/snippet}
+</PageHead>
 
-{#if failure}
+{#if missing}
+  <section class="box" aria-labelledby="no-policy"><div class="blankslate">
+    <h2 class="title-box" id="no-policy">{policyMissing}</h2>
+    <a class="btn primary" href={repoPage(route.fullName)}>Continue setup</a>
+  </div></section>
+{:else if failure}
   <section class="box" aria-label="Policy unavailable"><div class="box-body stack-sm">
     <p class="flash error" role="alert">{failure}</p>
     {#if retry}<a class="btn" href={here}>Try again</a>{/if}
@@ -95,11 +105,12 @@
   <Skeleton rows={5} />
 {:else if editing && body.edit.available}
   <section class="box" aria-labelledby="edit-policy">
-    <div class="box-head"><h2 id="edit-policy">Edit the policy</h2></div>
+    <div class="box-head"><h2 class="title-box" id="edit-policy">Edit the policy</h2></div>
     <div class="box-body stack-sm">
-      <p>Every YAML edit needs your passkey and goes through the policy pull request.</p>
+      <p>Owners can edit here. Each edit needs your passkey and goes through the policy pull request.</p>
       <label for="policy-yaml">Policy YAML</label>
-      <textarea id="policy-yaml" rows="20" bind:value={yaml} disabled={busy || answered !== null || body.edit.recovery === true}
+      <textarea class="form-control code" id="policy-yaml" rows="20" bind:value={yaml} disabled={busy || answered !== null || body.edit.recovery === true}
+        aria-invalid={preview?.errors.length ? 'true' : undefined}
         oninput={() => { preview = null; editError = ''; }} spellcheck="false"></textarea>
       <p>preview it: <code>archfit check --policy &lt;file&gt;</code></p>
       {#if editError}<p class="flash error" role="alert">{editError}</p>{/if}
@@ -108,11 +119,15 @@
         <button class="btn primary" disabled={busy} onclick={reloadEditor}>Reload the policy</button>
       {/if}
       {#if preview?.errors.length}
-        <div role="alert"><h3>Fix the policy</h3><ul>{#each preview.errors as error (error)}<li>{error}</li>{/each}</ul></div>
+        <Banner tone="danger" role="alert" title="Fix the policy">
+          <ul>{#each preview.errors as error, i (i)}<li>{error}</li>{/each}</ul>
+        </Banner>
       {/if}
-      {#if preview && preview.errors.length === 0}
+      {#if preview && preview.errors.length === 0 && !preview.diff}
+        <p>Nothing to approve. Change the YAML first.</p>
+      {:else if preview && preview.errors.length === 0}
         <h3>Diff against the current policy</h3>
-        <pre aria-label="The policy change">{preview.diff || 'No text changed.'}</pre>
+        <Diff text={preview.diff} label="The policy change" />
         <p>Confirm this edit with your passkey.</p>
         <button class="btn primary" disabled={busy} onclick={approve}>{busy ? 'Confirming…' : 'Approve and merge with passkey'}</button>
       {:else if !answered && !body.edit.recovery}
@@ -126,16 +141,16 @@
 {:else}
   {#if !body.edit.available}
     <section class="box" aria-labelledby="editor-unavailable"><div class="box-body stack-sm">
-      <h2 id="editor-unavailable">Policy editor unavailable</h2>
+      <h2 class="title-box" id="editor-unavailable">Policy editor unavailable</h2>
       <p>{body.edit.reason}</p>
       <p>The policy below is read-only.</p>
       <a class="btn" href={repoPage(route.fullName)}>View current setup</a>
     </div></section>
   {/if}
-  <PolicyRead policy={body} bind:showSource />
+  <PolicyRead policy={body} home={repoPage(route.fullName)} bind:showSource />
 {/if}
 
 <style>
-  textarea { width: 100%; max-width: 100%; font-family: var(--mono, monospace); }
-  pre, li { white-space: pre-wrap; overflow-wrap: anywhere; }
+  li { overflow-wrap: anywhere; }
+  textarea[aria-invalid='true'] { border-color: var(--danger); }
 </style>

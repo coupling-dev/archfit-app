@@ -42,21 +42,22 @@ for (const width of [390, 1280]) {
         await expect(page.locator('main a[href*="/owner/"]')).toHaveCount(0);
       }
       if (state.name === 'stale-owner-action') {
-        await expect(page.getByRole('heading', { level: 2, name: 'This approval is not needed' })).toBeVisible();
-        await expect(page.getByRole('link', { name: 'View current setup', exact: true })).toHaveAttribute('href', '/r/acme/app');
-        await expect(page.getByRole('link', { name: 'View policy', exact: true })).toHaveAttribute('href', '/r/acme/app/policy');
+        await expect(page.getByRole('status').filter({ hasText: state.text })).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Open the repository', exact: true })).toHaveAttribute('href', '/r/acme/app');
         await expect(page.getByRole('link', { name: 'Try again', exact: true })).toHaveCount(0);
         await expect(page.getByRole('alert')).toHaveCount(0);
       }
       if (state.name === 'unknown-ruleset') {
         await expect(page.getByLabel('2 of 4 steps done')).toBeVisible();
-        await expect(page.getByText('Does not apply', { exact: true })).toBeVisible();
+        await page.locator('.setup .steps > li').nth(3).locator('summary').first().click();
+        await expect(page.getByText('verify in GitHub', { exact: true }).first()).toBeVisible();
       }
       if (state.name === 'long-names') {
         await page.getByRole('region', { name: 'Modules', exact: true }).locator('td summary').click();
       }
       if (state.name === 'closed-request' && width === 1280) {
-        await expect(page.getByRole('img', { name: 'Modules by layer and their dependencies' })).toBeVisible();
+        await expect(page.getByText('Show the map as a diagram', { exact: true })).toBeVisible();
+        await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toHaveCount(0);
       }
       const text = (await page.locator('main').innerText()).replace(/[ \t]+$/gm, '');
       expect(text).toMatchSnapshot(`state-${state.name}-${width}.txt`);

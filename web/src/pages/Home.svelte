@@ -1,74 +1,92 @@
 <script lang="ts">
-  import Status from '../components/Status.svelte';
   import RepositoryMap from '../components/map/RepositoryMap.svelte';
   import Setup from '../components/Setup.svelte';
   import Skeleton from '../components/Skeleton.svelte';
+  import Icon from '../components/ui/Icon.svelte';
+  import PageHead from '../components/ui/PageHead.svelte';
+  import StatusLabel from '../components/ui/StatusLabel.svelte';
   import { explainLoad, repoAPI, type ApiError } from '../lib/api';
   import { firstJSON } from '../lib/early';
-  import { approvalNeedsReview, ownerReviewLabel, homeHref, readHome, type Home } from '../lib/home';
+  import { homeAction, homeHref, homeStateLabel, isExternalHref, needIcon, readHome, type Home } from '../lib/home';
   import { repoPage, type Repo } from '../lib/route';
 
   let { route, here }: { route: Repo; here: string } = $props();
   let body = $state<Home | null>(null);
   let failure = $state('');
   function load() {
-  firstJSON<unknown>(repoAPI(route.owner, route.name, 'home')).then(readHome).then(
-    (b) => (body = b),
-    (e: ApiError) => (failure = explainLoad(e, here)),
-  );
+    firstJSON<unknown>(repoAPI(route.owner, route.name, 'home')).then(readHome).then(
+      (b) => (body = b),
+      (e: ApiError) => (failure = explainLoad(e, here)),
+    );
   }
   load();
-  const reviewHref = $derived(body?.setup && approvalNeedsReview(body.setup) && body.setup.owner_action?.href ? homeHref(route, body.setup.owner_action.href) : undefined);
+  const action = $derived(body ? homeAction(body, route) : undefined);
+  // A repository without a policy on the default branch has nothing to view yet.
+  const hasPolicy = $derived(!!body && (!body.setup || body.setup.policy));
+  const showMap = $derived(!!body && (!body.setup || body.setup.state === 'approved' || body.setup.state === 'outside_flow'));
 </script>
 
-<div class="page-head">
-  <div class="stack-sm page-identity">
-    <h1>Home</h1>
-    <p class="lede">{route.fullName}</p>
+<PageHead title={route.fullName}>
+  {#snippet status()}
     {#if failure}<p class="flash error" role="alert">{failure}</p>
-    {:else if body}<Status>{body.status}</Status>{/if}
-    {#if body}
-      <div class="row">
-        {#if reviewHref && body.setup?.owner_action}
-          <a class="btn" href={reviewHref} aria-describedby="home-review-note">{ownerReviewLabel(body.setup)}</a>
-        {:else if body.setup}
-          <a class="btn primary" href="#setup-title">Continue setup</a>
-        {/if}
-        <a class="btn" class:primary={!body.setup && !body.needs_you.length} href={repoPage(route.fullName, '/policy')}>View policy</a>
-      </div>
-      {#if reviewHref && body.setup?.owner_action}
-        <p id="home-review-note" class="muted">Approval needs your passkey.</p>
-      {/if}
+    {:else if body}<div class="status-line"><StatusLabel label={homeStateLabel(body.state)} /><p>{body.status}</p></div>{/if}
+  {/snippet}
+  {#snippet actions()}
+    <div class="actions">
+    {#if action}
+      <a class="btn primary" href={action.href} aria-describedby={action.needsPasskey ? 'home-review-note' : undefined}>
+        {action.label}{#if action.external}<Icon name="link-external" size={14} /><span class="sr-only"> (opens GitHub)</span>{/if}
+      </a>
     {/if}
-  </div>
-</div>
+    {#if hasPolicy}<a class="btn" href={repoPage(route.fullName, '/policy')}>View policy</a>{/if}
+    </div>
+  {/snippet}
+  {#if action?.needsPasskey}<p id="home-review-note" class="muted">Approval needs your passkey.</p>{/if}
+</PageHead>
 {#if !body && !failure}<Skeleton rows={5} />{/if}
-{#if body?.setup}
-  <Setup setup={body.setup} repo={route} showOwnerAction={!reviewHref} />
-{/if}
-{#if body && (!body.setup || body.setup.state === 'approved' || body.setup.state === 'outside_flow')}
+{#if body?.needs_you.length}
   <section class="box" aria-labelledby="home-needs">
-    <div class="box-head"><h2 id="home-needs">Needs you</h2></div>
+    <div class="box-head"><h2 class="title-box" id="home-needs">Needs you</h2></div>
     {#each body.needs_you as need, i (i)}
       {@const href = homeHref(route, need.href)}
-      <div class="box-row">
-        {#if href}<a href={href}>{need.text}</a>{:else}<p>{need.text}</p>{/if}
-        {#if need.record}<details><summary>Show the record</summary><pre>{need.record}</pre></details>{/if}
+      <div class="box-row need">
+        <span class="need-icon"><Icon name={needIcon(need.kind)} /></span>
+        <div class="need-body">
+          {#if href}
+            <a {href}>{need.text}{#if isExternalHref(href)}<Icon name="link-external" size={12} /><span class="sr-only"> (opens GitHub)</span>{/if}</a>
+          {:else}<p>{need.text}</p>{/if}
+          {#if need.record}<details><summary>Show the record</summary><pre>{need.record}</pre></details>{/if}
+        </div>
       </div>
-    {:else}<p class="box-row muted">Nothing needs you.</p>{/each}
+    {/each}
   </section>
+{/if}
+{#if body?.setup}
+  <Setup setup={body.setup} repo={route} showOwnerAction={!action?.needsPasskey} primaryHref={action?.href} />
+{/if}
+{#if body && showMap}
   {#if body.map}
     <section class="box" aria-labelledby="home-map">
-      <div class="box-head"><h2 id="home-map">The map</h2></div>
+      <div class="box-head"><h2 class="title-box" id="home-map">The map</h2></div>
       <div class="box-body"><RepositoryMap model={body.map} repo={route.fullName} /></div>
     </section>
   {:else}<p>The map is not available.</p>{/if}
 {/if}
 
 <style>
-  a { text-decoration: underline; text-underline-offset: 2px; }
-  section { margin-top: 16px; min-width: 0; }
+  section { min-width: 0; }
+  .status-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
+  .status-line p { margin: 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* PageHead keeps its action row at max-content (flex: none), which is wider than a phone with two buttons.
+     Drop this rule when PageHead lets the row shrink. */
+  :global(.page-head .page-actions) { max-width: 100%; }
   .box-row { overflow-wrap: anywhere; }
+  .need { display: flex; align-items: flex-start; gap: 10px; }
+  .need-icon { display: inline-flex; padding-top: 2px; color: var(--fg-muted); }
+  .need-body { min-width: 0; }
+  .need-body :global(.icon) { margin-left: 4px; vertical-align: -2px; }
+  .need-body p { margin: 0; }
   details { margin-top: 8px; }
   pre { max-width: 100%; overflow: auto; }
 </style>

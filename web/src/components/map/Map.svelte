@@ -3,15 +3,14 @@
   import { repoPage } from '../../lib/route';
   import { lineLabel, mapLayers, mapLines, type MapModel } from './model';
 
-  let { model, repo }: { model: MapModel; repo: string } = $props();
+  let { model, repo, showNeed = true }: { model: MapModel; repo: string; showNeed?: boolean } = $props();
   let listOpen = $state(false);
   let diagramOpen = $state(false);
 
   onMount(() => {
-    // Set defaults once: resizing must not undo the reader's disclosure choices.
-    const narrow = window.matchMedia('(width < 720px)').matches;
-    listOpen = narrow;
-    diagramOpen = !narrow;
+    // Set the default once: resizing must not undo the reader's choice. The diagram stays closed so its 1.4 MB layout
+    // worker loads only when asked.
+    listOpen = window.matchMedia('(width < 720px)').matches;
   });
   const lines = $derived(mapLines(model.lines));
 </script>
@@ -52,7 +51,7 @@
   </details>
 {/if}
 
-<p class="muted map-note">Dependencies not allowed by this policy need a request.</p>
+{#if showNeed}<p class="muted map-note">Dependencies not allowed by this policy need a request.</p>{/if}
 
 <style>
   .map-list { overflow-wrap: anywhere; }

@@ -1,13 +1,12 @@
 Installations
 
-Approve an account to let Archfit run on its repositories. Until then nothing runs and nothing is posted.
+Accounts that may run Archfit. Admit an account below, or set admission in the App settings, by pull request.
 
-Waiting 0
+No installation is waiting to be admitted.
 
-No installation is waiting.
-
-Approved 1
+Admitted 1
 A
 alexei-led User Managed by configuration
-An operator must change the App settings by pull request; this page cannot change them. · 1 repository
+1 repository
 ccgram
+Accounts managed by configuration are set in the App settings, by pull request. This page cannot change them.

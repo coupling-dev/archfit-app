@@ -5,7 +5,7 @@
       "state": "not set up",
       "setup_stage": "not_started",
       "enforcement": "check",
-      "enforcement_reason": "The rules do not establish whether archfit/gate is required; check with an admin.",
+      "enforcement_reason": "The App could not confirm that archfit/gate is required; ask a repository administrator.",
       "next_step": {
         "text": "Continue setup",
         "href": "/r/acme/app"

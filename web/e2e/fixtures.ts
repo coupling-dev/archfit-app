@@ -70,6 +70,7 @@ export interface Mock {
   appBuild?: object;
   serverError?: { status: number; sentence: string }; // the server answers the page as its error page
   holdSession?: Promise<void>; // /api/session answers once this settles
+  holdRepos?: Promise<void>; // /api/repos answers once this settles
 }
 
 
@@ -86,14 +87,14 @@ export async function open(page: Page, path: string, mock: Mock = {}) {
       const admin = /^\/api\/admin\/installations\/(\d+)\/(approve|revoke)$/.exec(url.pathname);
       if (admin) {
         if (!mock.operator) return json(404, { error: 'Not found.' });
-        return json(200, { notice: `${admin[2] === 'approve' ? 'Approved' : 'Revoked'} installation ${admin[1]}.` });
+        return json(200, { notice: `${admin[2] === 'approve' ? 'Admitted' : 'Revoked'} installation ${admin[1]}.` });
       }
       return json(200, { notice: 'The change was saved.' });
     }
     if (mock.signedIn === false) return json(401, { error: 'Sign in to continue.' });
     if (mock.tokenRejected && url.pathname !== '/api/session') return json(401, { error: 'Sign in to continue.' });
     if (url.pathname.startsWith('/api/repos/octo/'))
-      return json(403, { error: 'This account is waiting for approval.', waiting: 'octo' });
+      return json(403, { error: 'This account is waiting to be admitted.', waiting: 'octo' });
     const fixture = (name: string) => JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/' + name + '.json', import.meta.url), 'utf8'));
     const owner = /^\/api\/repos\/acme\/app\/owner\/(first|workflow|confirm|revert)\/view$/.exec(url.pathname);
     if (owner) return json(200, fixture('owner/' + owner[1]));
@@ -109,12 +110,16 @@ export async function open(page: Page, path: string, mock: Mock = {}) {
         return json(200, {
           ...session,
           build: mock.appBuild ?? appBuild,
-          ...(mock.operator ? { operator: true, waiting: 1 } : {}),
+          ...(mock.operator ? { operator: true } : {}),
         });
       case '/api/admin/installations':
         if (!mock.operator) return json(404, { error: 'Not found.' });
         return json(200, installations);
+      case '/api/admin/waiting':
+        if (!mock.operator) return json(404, { error: 'Not found.' });
+        return json(200, { waiting: 1 });
       case '/api/repos':
+        await mock.holdRepos;
         return json(200, mock.repos ?? repos);
       case '/api/repos/acme/app/passkeys':
         return json(200, mock.passkeys ?? { passkeys: [] });

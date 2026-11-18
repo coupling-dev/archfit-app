@@ -2,11 +2,16 @@ Pull request #4
 
 acme/app
 
+unknown
+
 Archfit: unknown, no verdict
+
+Archfit could not check this pull request. The record below says what to do.
+
 Review first policy
 Pull request #4 on GitHub
 View policy
-.archfit.yaml policy the first policy needs approval
-next: an administrator approves the policy in the App
 
-Author: do the next step of each record.
+.archfit.yaml policy the first policy needs approval
+
+next: an administrator approves the policy in the App

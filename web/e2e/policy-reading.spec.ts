@@ -12,7 +12,7 @@ const pumba: Policy = JSON.parse(
 test('policy reading: search filters rules, exceptions and modules without changing totals', async ({ page }) => {
   await open(page, path, { [api]: () => [200, pumba] });
   const counts = page.getByLabel('Policy counts');
-  await expect(counts).toContainText('9Blocking rules');
+  await expect(counts).toContainText('9Ask and deny rules');
   const search = page.getByRole('searchbox', { name: 'Search policy' });
   await search.fill('container.Client');
   await expect(page.getByRole('status')).toHaveText('1 matching items');
@@ -20,7 +20,7 @@ test('policy reading: search filters rules, exceptions and modules without chang
   await expect(rule.locator('details')).toHaveCount(1);
   await rule.locator('summary').click();
   await expect(rule.getByText(pumba.rules[1]?.instead ?? '', { exact: true })).toBeVisible();
-  await expect(counts).toContainText('9Blocking rules');
+  await expect(counts).toContainText('9Ask and deny rules');
 
   await search.fill('no-such-module');
   await expect(page.getByRole('status')).toHaveText('No matches. Try a module name or rule ID.');
@@ -28,6 +28,51 @@ test('policy reading: search filters rules, exceptions and modules without chang
   await search.fill(' PKG/TC ');
   await expect(page.getByRole('region', { name: 'Modules', exact: true }).locator('tbody tr')).toHaveCount(1);
   await expectClean(page);
+});
+
+test('policy reading: rules carry their ids and notes are explained once', async ({ page }) => {
+  const body: Policy = {
+    ...pumba,
+    gate: 'advisory',
+    rules: [{ id: 'use-runner', note: 'Run jobs through the runner.', not_checked: true, why: '' }],
+  };
+  await open(page, path, { [api]: () => [200, body] });
+  const facts = page.getByRole('region', { name: 'Policy summary' });
+  await expect(facts.locator('dd').nth(2)).toHaveText('advisory — rules are reported and archfit/gate does not fail');
+  const rules = page.getByRole('region', { name: 'Rules', exact: true });
+  await expect(rules.locator('summary strong')).toHaveText([
+    'graph',
+    'coupling',
+    'duplication',
+    'cycle',
+    'layers',
+    'unowned',
+    'use-runner',
+  ]);
+  await expect(rules.getByText('A note is not checked. It tells the reader what to do.', { exact: true })).toHaveCount(1);
+  await rules.locator('summary').last().click();
+  await expect(rules.getByText('Run jobs through the runner.', { exact: true })).toBeVisible();
+  await expect(rules.getByText('Instead', { exact: true })).toHaveCount(0);
+  await expectClean(page);
+});
+
+test('policy reading: a repository without a policy keeps its tabs and points to setup', async ({ page }) => {
+  const writes = await open(page, path, { [api]: () => [409, { error: 'No policy on the default branch yet.' }] });
+  await expect(page.getByRole('heading', { name: 'No policy on the default branch yet.' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Continue setup', exact: true })).toHaveAttribute('href', '/r/acme/app');
+  await expect(page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Policy' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await expect(page.getByRole('link', { name: 'Edit', exact: true })).toHaveCount(0);
+  expect(writes).toEqual([]);
+  await expectClean(page);
+});
+
+test('policy reading: a repository the user cannot see stays the generic page', async ({ page }) => {
+  await open(page, path, { [api]: () => [404, { error: 'Not found.' }] });
+  await expect(page.getByRole('heading', { name: 'Page not available' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Repository' })).toHaveCount(0);
 });
 
 test('policy reading: graph is secondary, uses declared dependencies and selects module details @docs', async ({
@@ -48,11 +93,13 @@ test('policy reading: graph is secondary, uses declared dependencies and selects
     });
   }
   await page.getByText('Show graph', { exact: false }).click();
-  await expect(graph.getByRole('link')).toHaveCount(6);
-  await expect(graph.locator('path.dependency')).toHaveCount(7);
+  await expect(graph.locator('.map-node')).toHaveCount(6);
   await page.getByRole('searchbox').fill('no-such-module');
-  await graph.getByRole('link', { name: 'Inspect pkg_container', exact: true }).focus();
-  await page.keyboard.press('Enter');
+  await graph.locator('[data-module="pkg_container"]').click();
+  const panel = page.getByRole('region', { name: 'Selected module' });
+  await expect(panel).toContainText('Depends on:');
+  await expect(panel).toContainText('Used by:');
+  await panel.getByRole('button', { name: 'Show in the table', exact: true }).click();
   const detail = page.locator('#policy-module-2');
   await expect(detail).toHaveAttribute('open', '');
   await expect(detail.locator('summary')).toBeFocused();
@@ -106,7 +153,8 @@ test('policy reading: expiry counts, unknown facts and server dates remain expli
   await expect(counts).toContainText('1 already expired');
   await expect(counts).toContainText('2Expiring in 30 days');
   const facts = page.getByRole('region', { name: 'Policy summary' });
-  await expect(facts.locator('dd')).toHaveText(['Not provided', 'Not provided', 'required', 'Not provided']);
+  await expect(facts.locator('dd')).toHaveText(['None', 'None', 'required — a failing rule makes archfit/gate fail']);
+  await expect(facts.getByRole('link', { name: 'Home', exact: true })).toHaveAttribute('href', '/r/acme/app');
   const exceptions = page.getByRole('region', { name: 'Exceptions', exact: true });
   await expect(exceptions.getByText('Expires in 12 days', { exact: true })).toBeVisible();
   await expect(exceptions.getByText('Expired 1 day ago', { exact: true })).toBeVisible();
@@ -164,4 +212,69 @@ test('policy reading: long identifiers and expanded details fit a phone in both 
   await page.getByText('Show graph', { exact: false }).click();
   await page.getByRole('region', { name: 'Modules', exact: true }).locator('td summary').click();
   await expectClean(page);
+});
+
+test('policy reading: exceptions group by rule, show twenty at a time and drop empty columns', async ({ page }) => {
+  const many = Array.from({ length: 25 }, (_, i) => ({
+    rule: i < 22 ? 'coupling' : 'duplication',
+    from: `pkg_${i}`,
+    why: 'Migration.',
+  }));
+  await open(page, path, { [api]: () => [200, { ...pumba, exceptions: many }] });
+  const exceptions = page.getByRole('region', { name: 'Exceptions', exact: true });
+  await expect(exceptions.getByText('25 exceptions have no end date.', { exact: true })).toBeVisible();
+  await expect(exceptions.locator('thead th').first()).toHaveText('Rule / boundary');
+  await expect(exceptions.getByRole('columnheader', { name: 'Owner', exact: true })).toHaveCount(0);
+  await expect(exceptions.getByText('coupling · 22', { exact: true })).toBeVisible();
+  await expect(exceptions.getByText('duplication · 3', { exact: true })).toBeVisible();
+  await exceptions.getByText('duplication · 3', { exact: true }).click();
+  await expect(exceptions.getByText('Show all to see these exceptions.', { exact: true })).toBeVisible();
+  await expect(exceptions.locator('tbody tr')).toHaveCount(20);
+  await expect(exceptions.getByText('pkg_24', { exact: true })).toHaveCount(0);
+  await expect(exceptions.getByText('Showing 20 of 25', { exact: true })).toBeVisible();
+  await expect(exceptions.getByText('Bars show', { exact: false })).toHaveCount(0);
+  await exceptions.getByRole('button', { name: 'Show all', exact: true }).click();
+  await expect(exceptions.locator('tbody tr')).toHaveCount(25);
+  await expect(exceptions.getByRole('button', { name: 'Show all', exact: true })).toHaveCount(0);
+  await expectClean(page);
+});
+
+test('policy reading: exception screenshots for the docs @docs', async ({ page }) => {
+  if (!process.env.ARCHFIT_DOCS_SHOTS) test.skip();
+  const rules: [string, number][] = [
+    ['coupling', 62],
+    ['duplication', 41],
+    ['graph', 19],
+    ['cycle', 8],
+  ];
+  const undated: Policy = {
+    ...pumba,
+    exceptions: rules.flatMap(([rule, n]) =>
+      Array.from({ length: n }, (_, i) => ({ rule, from: `pkg_${rule}_${i}`, to: 'pkg_util', why: 'Migration.' })),
+    ),
+  };
+  const dated: Policy = {
+    ...pumba,
+    exceptions: [
+      { rule: 'coupling', from: 'pkg_chaos', to: 'pkg_runtime', why: 'Move to container.Client.', days_left: 12, expires: '2026-11-29', request: 431, request_href: '/r/acme/app/requests/431' },
+      { rule: 'coupling', from: 'pkg_tc', to: 'pkg_util', why: 'Remove the copy.', days_left: -1, expires: '2026-11-16' },
+      { rule: 'duplication', from: 'cmd', to: 'pkg_chaos', why: 'Shared flag.', days_left: 45, expires: '2027-01-31' },
+    ],
+  };
+  for (const [name, body, width] of [
+    ['policy-exceptions-130-1280', undated, 1280],
+    ['policy-exceptions-130-390', undated, 390],
+    ['policy-exceptions-dated-1280', dated, 1280],
+  ] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    await open(page, path, { [api]: () => [200, body] });
+    const exceptions = page.getByRole('region', { name: 'Exceptions', exact: true });
+    await exceptions.scrollIntoViewIfNeeded();
+    await expect(exceptions.locator('thead th').first()).toBeVisible();
+    await page.screenshot({
+      path: new URL(`../../docs/images/${name}.png`, import.meta.url).pathname,
+      fullPage: true,
+      animations: 'disabled',
+    });
+  }
 });

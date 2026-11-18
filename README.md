@@ -19,7 +19,7 @@ for the current pages and the [module contracts](internal/module.md) for impleme
 - **Daily use:** [Home and the map](docs/user-guide.md#home-and-the-map), [answer a request](docs/user-guide.md#answer-a-request),
   [edit the policy](docs/user-guide.md#edit-the-policy-yaml), and [read a pull request](docs/user-guide.md#pull-request-and-comment).
 
-During the beta, the App serves an account once an operator approves it. Until then the App shows a waiting page and runs
+During the beta, the App serves an account once an operator admits it. Until then the App shows a waiting page and runs
 nothing.
 
 ## Developers

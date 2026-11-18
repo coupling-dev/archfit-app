@@ -293,7 +293,7 @@ func TestUpload4GivesUnknown(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if page.View != nil || page.Message != "No result yet." {
+				if page.View != nil || page.Message != noResultYet {
 					t.Fatalf("unpublished page %+v", page)
 				}
 				if n := w.gh.writes(); n != 0 {

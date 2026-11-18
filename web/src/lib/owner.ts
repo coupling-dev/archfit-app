@@ -44,6 +44,21 @@ export interface OwnerOutcome {
   check?: 'rerun' | 'pending' | 'blocked';
 }
 
+// The title of an owner page is its action, known from the address before any data arrives.
+export function ownerTitle(kind: OwnerKind): string {
+  return {
+    first: 'Approve the first policy',
+    workflow: 'Approve the workflow change',
+    confirm: 'Confirm the policy',
+    revert: 'Revert the policy',
+  }[kind];
+}
+
+// The passkey button says how the action is made, so it never repeats the page title.
+export function ownerButton(kind: OwnerKind): string {
+  return { first: 'Approve', workflow: 'Approve', confirm: 'Confirm', revert: 'Revert' }[kind] + ' with passkey';
+}
+
 const unreadable = 'The owner action could not be read. Reload the page.';
 function object(v: unknown): Record<string, unknown> {
   if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error(unreadable);
@@ -137,26 +152,15 @@ export function ownerFileVersion(role: string): string {
   }
 }
 
-export function ownerDiffLines(text: string) {
-  let inHunk = false;
-  return (text.match(/[^\n]*\n|[^\n]+$/g) ?? []).map((line) => {
-    let kind = 'context';
-    if (line.startsWith('@')) {
-      inHunk = true;
-      kind = 'hunk';
-    } else if (!inHunk && (line.startsWith('--- ') || line.startsWith('+++ '))) {
-      kind = 'header';
-    } else if (line.startsWith('+')) {
-      kind = 'addition';
-    } else if (line.startsWith('-')) {
-      kind = 'deletion';
-    }
-    return { text: line, kind };
-  });
-}
-
 export function ownerViewPath(route: OwnerRoute): string {
   return `owner/${route.action}/view${route.pull ? '?pull=' + route.pull : ''}`;
+}
+
+// A finished action is success only when nothing is left for the owner: a revert not yet merged, or a check the App
+// could not re-run, still needs the owner to look.
+export function outcomeTone(kind: OwnerKind, out: OwnerOutcome): 'success' | 'attention' {
+  if (kind === 'revert') return out.state === 'merged' ? 'success' : 'attention';
+  return out.check === 'blocked' ? 'attention' : 'success';
 }
 
 export function outcomeText(kind: OwnerKind, out: OwnerOutcome): string {

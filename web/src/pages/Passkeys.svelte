@@ -1,5 +1,6 @@
 <script lang="ts">
   import Skeleton from '../components/Skeleton.svelte';
+  import PageHead from '../components/ui/PageHead.svelte';
   import { explain, explainLoad, getJSON, repoAPI, type ApiError, type Passkey, type Passkeys, type Session } from '../lib/api';
   import { firstJSON } from '../lib/early';
   import { addPasskey, removePasskey } from '../lib/passkey';
@@ -56,57 +57,53 @@
   <Skeleton rows={2} box={false} />
   <Skeleton rows={3} />
 {:else}
-  <div class="page-head">
-    <div class="stack-sm">
-      <h1>Passkeys</h1>
-      <p class="lede">
-        {list.length
-          ? `You have ${list.length} ${list.length === 1 ? 'passkey' : 'passkeys'} in this App installation.`
-          : 'You have no passkey in this App installation yet.'}
-      </p>
-      <p>Use these passkeys across repositories in this installation where you are a policy owner. A passkey does not grant repository access or an owner role.</p>
-      {#if returnTo}<a href={returnTo}>Back to {returnTo.includes('/requests/') ? 'request' : returnTo.includes('/policy') ? 'policy' : 'approval'}</a>{/if}
-    </div>
-  </div>
+  <PageHead title="Passkeys" repo={route.fullName}>
+    <p>Your passkeys work in every repository of this account where the policy names you as owner.</p>
+    {#if returnTo}<a href={returnTo}>Back to {returnTo.includes('/requests/') ? 'request' : returnTo.includes('/policy') ? 'policy' : 'approval'}</a>{/if}
+  </PageHead>
 
   <section class="box" aria-labelledby="your-passkeys">
     <div class="box-head">
-      <h2 id="your-passkeys">Your passkeys <span class="counter">{list.length}</span></h2>
-      <button class="btn sm primary" type="button" disabled={busy} onclick={add}>Add a passkey</button>
-    </div>
-    <div class="box-body stack-sm">
-      <p class="small">
-        An owner's answer that loosens the policy needs a passkey with user verification: a fingerprint, a face, or a PIN.
-        Only an owner named in the policy can register one, or a repository administrator before the first policy.
-        {#if list.length}A new passkey is confirmed with one you have.{/if}
-        A new passkey, and the removal of your last one, open an issue for the owners.
-      </p>
+      <h2 class="title-box" id="your-passkeys">Your passkeys <span class="counter">{list.length}</span></h2>
+      <div class="stack-sm passkey-add">
+        <button class="btn sm primary" type="button" disabled={busy} onclick={add}>Add a passkey</button>
+        <p class="small muted">{list.length ? 'A passkey after your first is confirmed with one you have.' : 'Only an owner named in the policy can add one, or a repository administrator before the first policy.'}</p>
+      </div>
     </div>
     {#if list.length}
       <ul class="plain" aria-label="Your passkeys">
-        {#each list as p, i (p.id)}
+        {#each list as p (p.id)}
           <li class="box-row row-between">
-            <span>
-              Passkey {i + 1} <code class="muted">{p.id.slice(0, 8)}</code> · added {day(p.created)} ·
-              {p.last_used ? `last used ${day(p.last_used)}` : 'not used yet'}
+            <span class="stack-sm">
+              <strong>Added {day(p.created)}</strong>
+              <span class="small muted">{p.last_used ? `Last used ${day(p.last_used)}` : 'Not used yet'} · ID <code>{p.id.slice(0, 8)}</code></span>
             </span>
-            <div class="stack-sm">
-            {#if list.length === 1}<p class="small" id="last-key">This is your last passkey in this installation. Removing it means you must register a new one before you can confirm another approval. The owners will be notified.</p>{/if}
-            {#if removing === p.id}
-              <span class="btn-group">
-                <button class="btn sm" type="button" aria-describedby={list.length === 1 ? 'last-key' : undefined} disabled={busy} onclick={() => remove(p.id)}>Confirm removal</button>
-                <button class="btn sm" type="button" disabled={busy} onclick={() => (removing = '')}>Keep it</button>
-              </span>
-            {:else}
-              <button class="btn sm" type="button" aria-describedby={list.length === 1 ? 'last-key' : undefined} disabled={busy} onclick={() => (removing = p.id)}>Remove</button>
-            {/if}
+            <div class="stack-sm passkey-remove">
+              {#if removing === p.id}
+                <span class="btn-group">
+                  <button class="btn sm danger" type="button" aria-describedby={list.length === 1 ? 'last-key' : undefined} disabled={busy} onclick={() => remove(p.id)}>Confirm removal</button>
+                  <button class="btn sm" type="button" disabled={busy} onclick={() => (removing = '')}>Keep it</button>
+                </span>
+              {:else}
+                <button class="btn sm danger" type="button" aria-label={`Remove the passkey added ${day(p.created)} (ID ${p.id.slice(0, 8)})`}
+                  aria-describedby={list.length === 1 ? 'last-key' : undefined} disabled={busy} onclick={() => (removing = p.id)}>Remove</button>
+              {/if}
+              {#if list.length === 1}<p class="small" id="last-key">Removing your last passkey opens an issue for the owners. You need a passkey to confirm an approval.</p>{/if}
             </div>
           </li>
         {/each}
       </ul>
+    {:else}
+      <p class="box-body muted">No passkeys yet. Add one to approve policy changes.</p>
     {/if}
     {#if busy}<p class="box-foot" role="status">Waiting for your passkey…</p>{/if}
     {#if notice}<p class="flash success" role="status">{notice}</p>{/if}
     {#if error}<p class="flash error" role="alert">{error}</p>{/if}
   </section>
 {/if}
+
+<style>
+  .passkey-remove { align-items: flex-end; text-align: right; flex: none; }
+  .passkey-remove .btn { width: auto; }
+  .passkey-add { align-items: flex-end; text-align: right; }
+</style>
