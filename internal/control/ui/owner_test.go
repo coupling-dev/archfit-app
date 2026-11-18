@@ -21,10 +21,14 @@ type fakeSetups struct {
 	repos  []api.Repo
 	byRepo map[string]onboarding.Setup
 	errors map[string]error
-	delay  time.Duration // virtual or real time one Setup takes, outside the lock
+	delay  time.Duration                   // virtual or real time one Setup takes, outside the lock
+	onCtx  func(context.Context, api.Repo) // sees the context and repository of each Setup call
 }
 
-func (f *fakeSetups) Setup(_ context.Context, r api.Repo) (onboarding.Setup, error) {
+func (f *fakeSetups) Setup(ctx context.Context, r api.Repo) (onboarding.Setup, error) {
+	if f.onCtx != nil {
+		f.onCtx(ctx, r)
+	}
 	time.Sleep(f.delay)
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -45,6 +49,7 @@ type fakeOwners struct {
 	actions []answers.OwnerAction
 	err     error
 	view    gate.OwnerView
+	onView  func() // called when OwnerView starts, to order it against other reads
 }
 
 func (f *fakeOwners) OwnerDigest(_ context.Context, r api.Repo, a answers.OwnerAction) (string, error) {
@@ -258,6 +263,9 @@ func TestOwnerAPIRejectsInvalidActionsBeforeCallingGate(t *testing.T) {
 }
 
 func (f *fakeOwners) OwnerView(_ context.Context, r api.Repo, a answers.OwnerAction) (gate.OwnerView, error) {
+	if f.onView != nil {
+		f.onView()
+	}
 	f.repos = append(f.repos, r)
 	f.actions = append(f.actions, a)
 	return f.view, f.err

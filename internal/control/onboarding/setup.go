@@ -48,12 +48,20 @@ type setups struct {
 
 // NewSetup returns the v4 onboarding read side.
 func NewSetup(gh *api.Client, g gate.SetupViews) Setups {
-	return &setups{gh: gh, gate: g, actionApproved: manifest.ActionApproved}
+	return &setups{gh: tracedGitHub{gh}, gate: g, actionApproved: manifest.ActionApproved}
 }
 
 func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 	out := Setup{State: "not_admitted", Missing: []string{}}
+	// The rules need only the repository and its default branch name, so they overlap the tip read. Early returns
+	// wait for them below, so the read never outlives Setup and its result is joined before it is returned.
+	var rules RulesetReport
+	var ruleReads sync.WaitGroup
+	ruleReads.Go(func() { rules = s.rules(ctx, r) })
+	defer ruleReads.Wait()
+	tip := api.StartStage(ctx, "tip")
 	snapshot, err := gate.ReadHomeSnapshot(ctx, s.gh, r)
+	tip(1, 0)
 	if err != nil {
 		return out, err
 	}
@@ -61,12 +69,14 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 	var accepted bool
 	var workflowErr error
 	var reads sync.WaitGroup
+	files := api.StartStage(ctx, "policy_workflow")
 	reads.Go(func() { policy = snapshot.Policy(ctx, s.gh) })
 	reads.Go(func() {
 		raw, err := snapshot.Workflow(ctx, s.gh)
 		accepted, workflowErr = s.acceptWorkflow(ctx, raw, err)
 	})
 	reads.Wait()
+	files(2, 0)
 	if policy.ReadErr != nil && !errors.Is(policy.ReadErr, api.ErrNotFound) {
 		return out, policy.ReadErr
 	}
@@ -92,18 +102,14 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 		if err != nil {
 			return out, err
 		}
-		for _, p := range pulls {
-			if p.State != "open" || p.BaseRef != r.DefaultBranch || !strings.EqualFold(p.HeadRepo, r.FullName) {
-				continue
-			}
-			accepted, err := s.workflowAt(ctx, r, p.HeadSHA)
-			if err != nil {
-				return out, err
-			}
-			if accepted {
-				out.OpenPull = p.Number
-				break
-			}
+		p, found, err := s.firstOpenPull(ctx, r, pulls, func(ctx context.Context, p api.Pull) (bool, error) {
+			return s.workflowAt(ctx, r, p.HeadSHA)
+		})
+		if err != nil {
+			return out, err
+		}
+		if found {
+			out.OpenPull = p.Number
 		}
 	}
 	switch {
@@ -122,27 +128,32 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 		if err != nil {
 			return out, err
 		}
-		for _, p := range pulls {
-			if p.State != "open" || p.BaseRef != r.DefaultBranch || !strings.EqualFold(p.HeadRepo, r.FullName) {
-				continue
+		p, found, err := s.firstOpenPull(ctx, r, pulls, func(ctx context.Context, p api.Pull) (bool, error) {
+			// The policy and the workflow of one head are read together. A workflow read that fails or is missing counts
+			// only when the policy is there, and a policy error ends the scan, as in the serial order.
+			var policyOK, workflowOK bool
+			var policyErr, workflowErr error
+			var both sync.WaitGroup
+			both.Go(func() { _, policyOK, policyErr = s.policyAt(ctx, r, p.HeadSHA) })
+			both.Go(func() { workflowOK, workflowErr = s.workflowAt(ctx, r, p.HeadSHA) })
+			both.Wait()
+			if policyErr != nil {
+				return false, policyErr
 			}
-			_, ok, err := s.policyAt(ctx, r, p.HeadSHA)
-			if err != nil {
-				return out, err
+			if !policyOK {
+				return false, nil
 			}
-			if !ok {
-				continue
+			if workflowErr != nil {
+				return false, workflowErr
 			}
-			ok, err = s.workflowAt(ctx, r, p.HeadSHA)
-			if err != nil {
-				return out, err
-			}
-			if !ok {
-				continue
-			}
+			return workflowOK, nil
+		})
+		if err != nil {
+			return out, err
+		}
+		if found {
 			out.State = "first_approval"
 			out.FirstPull = p.Number
-			break
 		}
 	}
 	action := gate.OwnerAction{Kind: gate.OwnerFirst, Pull: out.FirstPull}
@@ -157,12 +168,48 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 		out.Approval = s.gate.SetupApproval(ctx, r, action)
 		done(1, 0)
 	})
-	reads.Go(func() { out.Rules = s.rules(ctx, r) })
 	reads.Wait()
+	ruleReads.Wait()
+	out.Rules = rules
 	if out.State == "approved" && out.Approval.Status == gate.ApprovalNeeded {
 		out.Approval.Status = gate.ApprovalActive
 	}
 	return out, nil
+}
+
+// pullWindow is how many open pull requests are checked at once. A check reads only a pull's head, which is data used for
+// detection and never trusted as policy, so a window may read up to pullWindow-1 heads past the first match. Results are
+// consumed in list order and stop at the first match, so a read past the match never changes the answer.
+const pullWindow = 4
+
+// firstOpenPull returns the first open pull request, in list order, from the repository itself into its default branch
+// that check accepts. An error ends the scan at the first pull in list order that has one, as a serial scan would.
+func (s *setups) firstOpenPull(ctx context.Context, r api.Repo, pulls []api.Pull, check func(context.Context, api.Pull) (bool, error)) (api.Pull, bool, error) {
+	var candidates []api.Pull
+	for _, p := range pulls {
+		if p.State == "open" && p.BaseRef == r.DefaultBranch && strings.EqualFold(p.HeadRepo, r.FullName) {
+			candidates = append(candidates, p)
+		}
+	}
+	for start := 0; start < len(candidates); start += pullWindow {
+		window := candidates[start:min(start+pullWindow, len(candidates))]
+		ok := make([]bool, len(window))
+		errs := make([]error, len(window))
+		var checks sync.WaitGroup
+		for i, p := range window {
+			checks.Go(func() { ok[i], errs[i] = check(ctx, p) })
+		}
+		checks.Wait()
+		for i, p := range window {
+			if errs[i] != nil {
+				return api.Pull{}, false, errs[i]
+			}
+			if ok[i] {
+				return p, true, nil
+			}
+		}
+	}
+	return api.Pull{}, false, nil
 }
 
 func (s *setups) policyAt(ctx context.Context, r api.Repo, ref string) (digest string, ok bool, err error) {

@@ -23,6 +23,11 @@ func (s scripted) Pull(ctx context.Context, r api.RepoRef, number int) (api.Pull
 	return s.hub.Pull(ctx, r, number)
 }
 
+// PullSummary fails the same way Pull does: the owner's reads are summaries, and the script must reach them.
+func (s scripted) PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
+	return s.Pull(ctx, r, number)
+}
+
 func (s scripted) BranchHead(ctx context.Context, r api.RepoRef, branch string) (string, error) {
 	if s.tip != nil {
 		return "", s.tip

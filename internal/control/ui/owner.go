@@ -118,7 +118,9 @@ func (s *server) apiSetup(r *http.Request, sc scope) (any, error) {
 	var reads sync.WaitGroup
 	reads.Go(func() {
 		done := api.StartStage(r.Context(), "setup")
-		out, setupErr = s.setups.Setup(r.Context(), sc.repo)
+		// The row's reads of the default branch (tip, policy, workflow) are shared with the approval summary.
+		ctx, _ := gate.WithHomeSnapshot(r.Context(), sc.repo)
+		out, setupErr = s.setups.Setup(ctx, sc.repo)
 		done(1, 0)
 	})
 	reads.Go(func() {

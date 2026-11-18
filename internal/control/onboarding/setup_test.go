@@ -3,7 +3,9 @@ package onboarding
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -165,9 +167,33 @@ func TestSetupFindsAcceptedWorkflowPullOnConvertedRepository(t *testing.T) {
 	if err != nil || out.OpenPull != 203 || out.FirstPull != 0 || !out.Policy || out.Workflow || out.Admitted {
 		t.Fatalf("Setup = %+v, %v", out, err)
 	}
+	// The window reads up to pullWindow-1 heads past the match; the match is the answer, so these reads change nothing.
 	for _, read := range h.fileReads {
-		if !strings.HasPrefix(read, "tip:") && !strings.HasPrefix(read, "workflow-head:") {
+		if !strings.HasPrefix(read, "tip:") && !strings.HasPrefix(read, "workflow-head:") && !strings.HasPrefix(read, "later-head:") {
 			t.Errorf("read unexpected pull head: %s", read)
+		}
+	}
+}
+
+// The scan stops reading after the window that holds the first match: pulls beyond it are never read.
+func TestSetupScanReadsNoPullBeyondTheFirstMatchsWindow(t *testing.T) {
+	h := newSetupHub()
+	h.files["tip"] = map[string]string{".archfit.yaml": setupPolicy}
+	for i := range 8 {
+		head := fmt.Sprintf("head%d", i)
+		h.pulls = append(h.pulls, api.Pull{Number: 300 + i, State: "open", BaseRef: "main", HeadRepo: setupRepo.FullName, HeadSHA: head})
+		if i == 0 {
+			h.files[head] = map[string]string{workflowPath: setupWorkflow(setupCommit)}
+		}
+	}
+	s := &setups{gh: h, gate: setupView{}, actionApproved: func(ref string) bool { return ref == setupCommit }}
+	out, err := s.Setup(t.Context(), setupRepo)
+	if err != nil || out.OpenPull != 300 {
+		t.Fatalf("Setup = %+v, %v; want the first pull", out, err)
+	}
+	for i := pullWindow; i < 8; i++ {
+		if slices.Contains(h.fileReads, fmt.Sprintf("head%d:%s", i, workflowPath)) {
+			t.Errorf("read head%d beyond the window", i)
 		}
 	}
 }

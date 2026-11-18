@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 
 	"github.com/alexei-led/archfit-app/internal/control/answers"
 	"github.com/alexei-led/archfit-app/internal/gate"
@@ -86,13 +87,19 @@ func (s *server) apiOwnerView(r *http.Request, sc scope) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The passkey inventory does not depend on the view, so both are read at once.
+	var passkey bool
+	var inventory sync.WaitGroup
+	inventory.Go(func() {
+		keys, err := s.passkeys.List(r.Context(), sc.repo, sc.user.UserID)
+		// Keep the review available if inventory is unreadable, as on the setup page.
+		passkey = err == nil && len(keys) > 0
+	})
 	v, err := s.owners.OwnerView(r.Context(), sc.repo, a)
+	inventory.Wait()
 	if err != nil {
 		return nil, err
 	}
-	passkeys, err := s.passkeys.List(r.Context(), sc.repo, sc.user.UserID)
-	// Keep the review available if inventory is unreadable, as on the setup page.
-	passkey := err == nil && len(passkeys) > 0
 	b := ownerViewJSON{Kind: v.Kind, Pull: v.Pull, Status: v.Status, Note: v.Note, MainAction: v.MainAction, Passkey: passkey,
 		ActionDigest: v.ActionDigest, Digest: v.Digest, Head: v.Head, Base: v.Base, Tip: v.Tip, Approved: v.Approved,
 		Files: []ownerFileJSON{}, Diffs: []ownerDiffJSON{}, Proposals: []ownerProposalJSON{}}
