@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { ApiError, explain, explainLoad, getJSON, postJSON, repoAPI } from './api';
-import { refused, waiting } from './gate';
+import { refused, visit, waiting } from './gate';
 
 function reply(status: number, body: string) {
   const fetch = vi.fn(async () => new Response(body, { status, headers: { 'Content-Type': 'application/json' } }));
@@ -59,7 +59,8 @@ describe('api', () => {
     const go = vi.fn();
     expect(explain(new ApiError(404, 'Not found.'), '/r/acme/app/passkeys', go)).toBe('Not found.');
     expect(get(refused)).toBe('');
-    expect(explainLoad(new ApiError(404, 'Not found.'), '/r/acme/secret', go)).toBe('');
+    visit.set(1);
+    expect(explainLoad(new ApiError(404, 'Not found.', '', 1), '/r/acme/secret', go)).toBe('');
     expect(get(refused)).toBe('Not found.');
     expect(go).not.toHaveBeenCalled();
     refused.set('');
@@ -70,6 +71,7 @@ describe('api', () => {
   });
 
   it('shows the Waiting page for its own read of an account waiting for approval', async () => {
+    visit.set(1);
     reply(403, '{"error":"This account is waiting for approval.","waiting":"octo"}');
     const e = (await getJSON('/api/repos/octo/app/overview').catch((err: unknown) => err)) as ApiError;
     expect(e).toMatchObject({ status: 403, waiting: 'octo' });
@@ -84,5 +86,37 @@ describe('api', () => {
   it('escapes the repository in API paths', () => {
     expect(repoAPI('acme', 'app', 'overview')).toBe('/api/repos/acme/app/overview');
     expect(repoAPI('a/b', 'c?d', 'overview')).toBe('/api/repos/a%2Fb/c%3Fd/overview');
+  });
+});
+
+describe('explainLoad answers only for the visit its read started in', () => {
+  const pull = '/r/acme/app/pull/9';
+
+  it('writes the refused store for a 404 of the visit shown', () => {
+    visit.set(2);
+    refused.set('');
+    explainLoad(new ApiError(404, 'Repository not found.', '', 2), pull);
+    expect(get(refused)).toBe('Repository not found.');
+  });
+
+  it('writes nothing for a 404 of a visit the user has left', () => {
+    visit.set(3);
+    refused.set('');
+    explainLoad(new ApiError(404, 'Repository not found.', '', 2), pull);
+    expect(get(refused)).toBe('');
+  });
+
+  it('writes nothing for a late 404 of an earlier visit to the same address', () => {
+    visit.set(4);
+    refused.set('');
+    explainLoad(new ApiError(404, 'Repository not found.', '', 2), pull);
+    expect(get(refused)).toBe('');
+  });
+
+  it('writes nothing for a waiting account of a visit the user has left', () => {
+    visit.set(3);
+    waiting.set('');
+    explainLoad(new ApiError(403, 'Waiting for approval.', 'alexei-led', 2), pull);
+    expect(get(waiting)).toBe('');
   });
 });

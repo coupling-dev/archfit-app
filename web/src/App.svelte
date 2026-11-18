@@ -4,8 +4,9 @@
   import Skeleton from './components/Skeleton.svelte';
   import { ApiError, getJSON, type Repos as RepoList, type Session } from './lib/api';
   import { prefetch } from './lib/early';
-  import { refused, waiting } from './lib/gate';
+  import { refused, visit, waiting } from './lib/gate';
   import { missingSentence } from './lib/notfound';
+  import { inAppURL } from './lib/nav';
   import { guideURL, parseRoute, repoPage, serverError } from './lib/route';
   import Admin from './pages/Admin.svelte';
   import Landing from './pages/Landing.svelte';
@@ -18,24 +19,26 @@
   import Waiting from './pages/Waiting.svelte';
   import Owner from './pages/Owner.svelte';
 
-  const route = parseRoute(location.pathname, location.search);
-  const here = location.pathname + location.search;
+  // A link inside the App moves this location without a document load; the page is keyed on it below.
+  let at = $state(new URL(location.href));
+  const route = $derived(parseRoute(at.pathname, at.search));
+  const here = $derived(at.pathname + at.search);
   // The server's error page is this shell with the error's sentence; it then shows instead of the route, as does a
   // repository API's 404 (lib/gate).
-  const serverSentence = serverError(document.querySelector('meta[name="app-error"]')?.getAttribute('content'));
+  const errorAtStart = serverError(document.querySelector('meta[name="app-error"]')?.getAttribute('content'));
+  let serverSentence = $state(errorAtStart);
   const pageError = $derived(serverSentence || $refused);
   const notFound = $derived(!!$refused || serverSentence === 'Not found.' || route.kind === 'unknown');
   // The repositories the signed-in user can see. A missing page names its repository only when it is in this list:
   // a 404 for a repository the user cannot see looks the same, and must not reveal that it exists.
   let visible = $state<string[] | null>(null);
   let lookedUp = false;
-  const onRepo = 'fullName' in route;
   // GitHub names are case-insensitive, so the URL's spelling is matched against the canonical one.
   const knownRepo = $derived(
-    notFound && onRepo && visible?.some((name) => name.toLowerCase() === route.fullName.toLowerCase()) ? route.fullName : '',
+    notFound && 'fullName' in route && visible?.some((name) => name.toLowerCase() === route.fullName.toLowerCase()) ? route.fullName : '',
   );
   $effect(() => {
-    if (!notFound || !onRepo || lookedUp) return;
+    if (!notFound || !('fullName' in route) || lookedUp) return;
     lookedUp = true;
     // The overview is the one repository list the App has; a 404 is rare, so its cost is paid only here.
     getJSON<RepoList>('/api/repos').then(
@@ -43,7 +46,7 @@
       () => (visible = []),
     );
   });
-  const repoList = location.pathname === '/repos';
+  const repoList = $derived(at.pathname === '/repos');
 
   // loading, then the signed-in session, signed out (401), or a failure to show.
   let session = $state<Session | null>(null);
@@ -51,7 +54,7 @@
   let failure = $state('');
 
   // The page's first reads and its chunk start beside the session, so the page waits for the slowest, not their sum.
-  if (!serverSentence) prefetch(route);
+  if (!errorAtStart) prefetch(parseRoute(location.pathname, location.search));
   getJSON<Session>('/api/session').then(
     (s) => {
       session = s;
@@ -62,6 +65,36 @@
       else failure = e.message;
     },
   );
+  // A link inside the App shows its page without a document load: the session and the App's chrome stay, the
+  // repository's refusal and the waiting account of the previous page do not, and back and forward walk the history.
+  // Each visit remounts the page, so a "Try again" to the same address reads the API again.
+  function show(url: URL) {
+    refused.set('');
+    waiting.set('');
+    serverSentence = '';
+    at = url;
+    visit.update((n) => n + 1);
+    prefetch(parseRoute(url.pathname, url.search));
+  }
+  function onClick(event: MouseEvent) {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const link = (event.target as Element | null)?.closest?.('a[href]');
+    if (!(link instanceof HTMLAnchorElement) || (link.target && link.target !== '_self') || link.hasAttribute('download')) return;
+    const url = inAppURL(link.getAttribute('href') ?? '', new URL(location.href));
+    // A failed session read is retried by the browser's own load, so a link is left to it.
+    if (!url || failure) return;
+    event.preventDefault();
+    const same = url.href === location.href;
+    history[same ? 'replaceState' : 'pushState'](null, '', url);
+    if (!same) window.scrollTo(0, 0);
+    show(url);
+  }
+  // A fragment (#raw) also fires popstate; the page is already shown, so it stays mounted and keeps its state.
+  function onPop() {
+    const url = new URL(location.href);
+    if (url.pathname === at.pathname && url.search === at.search) return;
+    show(url);
+  }
   // The operator's count fills the header once the session shows; -1 when it cannot be read.
   function countWaiting(s: Session) {
     getJSON<{ waiting: number }>('/api/admin/waiting').then(
@@ -103,6 +136,7 @@
   });
 </script>
 
+<svelte:window onclick={onClick} onpopstate={onPop} />
 <a class="skip-link" href="#main">Skip to main content</a>
 <Header
   {session}
@@ -115,6 +149,7 @@
   pull={route.kind === 'pull' ? route.number : 0}
 />
 <main class="page" id="main" tabindex="-1">
+  {#key $visit}
   {#if notFound}
     <div class="blankslate">
       <h1>Page not available</h1>
@@ -160,6 +195,7 @@
   {:else if route.kind === 'pull'}
     <Pull {route} {here} />
   {/if}
+  {/key}
 </main>
 <footer class="app-footer">
   <a href={guideURL}>Documentation</a>
