@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from './api';
 import { firstJSON, firstPaths, hint, prefetch } from './early';
 import { visit } from './gate';
-import { recall, remember, signedIn } from './memory';
+import { forget, recall, remember, signedIn } from './memory';
 import { parseRoute } from './route';
 
 afterEach(() => {
@@ -112,6 +112,16 @@ describe('a read started by a pointer or focus on a link', () => {
     prefetch(policy, get);
     expect(get).toHaveBeenCalledTimes(1);
     await expect(firstJSON('/api/repos/acme/app/policy')).resolves.toEqual({ from: 'hint' });
+  });
+
+  it('is read again after access was refused, whatever it holds', async () => {
+    signedIn('alice');
+    const get = vi.fn(async () => ({}));
+    hint(policy, get);
+    forget();
+    prefetch(policy, get);
+    expect(get).toHaveBeenCalledTimes(2);
+    await firstJSON('/api/repos/acme/app/policy');
   });
 
   it('is read again when it is old', async () => {

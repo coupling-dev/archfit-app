@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { drop, forget, recall, remember, signedIn } from './memory';
+import { currentEpoch, drop, forget, recall, remember, signedIn } from './memory';
 
 beforeEach(() => {
   signedIn(null);
@@ -65,5 +65,14 @@ describe('memory of the last answer', () => {
     for (let i = 1; i <= 45; i++) remember(`/api/repos/acme/app/pulls/${i}`, i);
     expect(recall('/api/repos/acme/app/pulls/1')).toBeUndefined();
     expect(recall('/api/repos/acme/app/pulls/45')).toBeDefined();
+  });
+
+  it('does not remember an answer to a read that started before everything was forgotten', () => {
+    const since = currentEpoch();
+    forget();
+    remember('/api/repos', { late: true }, since);
+    expect(recall('/api/repos')).toBeUndefined();
+    remember('/api/repos', { late: false }, currentEpoch());
+    expect(recall('/api/repos')).toBeDefined();
   });
 });

@@ -10,17 +10,23 @@ const limit = 40;
 // An answer is kept as text and handed out parsed, so a page that changes what it got cannot change the memory.
 const answers = new Map<string, string>();
 let login: string | null = null;
+// epoch counts the times everything was dropped. A read started in an earlier epoch (a read in flight, or one a link's
+// pointer started) answered before the user lost access, so it is neither remembered nor shown again.
+let epoch = 0;
+
+export const currentEpoch = () => epoch;
 
 const keyOf = (path: string) => `${login}\n${path}`;
 
 // signedIn names the user the App is showing; another user (or none) starts with an empty memory.
 export function signedIn(next: string | null): void {
-  if (next !== login) answers.clear();
+  if (next !== login) forget();
   login = next;
 }
 
 // forget drops every answer: the session ended or a read was refused, so nothing seen before may be shown again.
 export function forget(): void {
+  epoch++;
   answers.clear();
 }
 
@@ -28,8 +34,8 @@ export function drop(path: string): void {
   answers.delete(keyOf(path));
 }
 
-export function remember(path: string, body: unknown): void {
-  if (!login || !remembered.test(path)) return;
+export function remember(path: string, body: unknown, since = epoch): void {
+  if (!login || since !== epoch || !remembered.test(path)) return;
   const key = keyOf(path);
   answers.delete(key); // re-insert last, so the oldest answer is the one that goes
   answers.set(key, JSON.stringify(body));

@@ -84,7 +84,8 @@
     at = url;
     visit.update((n) => n + 1);
     const mine = get(visit);
-    const current = prefetch(parseRoute(url.pathname, url.search), undefined, true);
+    // The policy editor reads the policy itself, and a refresh must never remount it under the user's typing.
+    const current = prefetch(parseRoute(url.pathname, url.search), undefined, !url.searchParams.has('edit'));
     refreshing = !!current;
     current?.then((changed) => {
       if (get(visit) !== mine) return;
@@ -112,7 +113,7 @@
     clearTimeout(resting);
     resting = setTimeout(() => {
       const url = linkURL(target, new URL(location.href));
-      if (url && !failure && url.href !== location.href) hint(parseRoute(url.pathname, url.search));
+      if (url && !failure && !url.searchParams.has('edit') && url.href !== location.href) hint(parseRoute(url.pathname, url.search));
     }, restMs);
   }
   // Signing out ends the session: nothing read under it is shown again, even before the browser leaves the page.
