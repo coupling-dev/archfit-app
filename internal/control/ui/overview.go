@@ -108,8 +108,11 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 // overviewProbe reads one row's Setup through the existing probe. Its own Home snapshot reads the default branch's tip,
 // policy and workflow once for this row, so the approval summary does not read them again.
 func (s *server) overviewProbe(ctx context.Context, repo api.Repo, row *overviewRow) {
+	// One stage per probed row: the log shows each row's own wall time, which the summed rules stage cannot.
+	done := api.StartStage(ctx, "probe_row")
 	ctx, _ = gate.WithHomeSnapshot(ctx, repo)
 	setup, err := s.setups.Setup(ctx, repo)
+	done(1, 0)
 	if err != nil {
 		row.EnforcementReason = "The App could not read the required-check settings."
 		return // retain stored evidence; one GitHub failure must not break the list.
