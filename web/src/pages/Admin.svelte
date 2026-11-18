@@ -120,7 +120,7 @@
           <span class="label">{row.type}</span>
           {#if row.auto}<span class="label">Managed by configuration</span>{/if}
           <div class="muted small">
-            {#if !row.auto}Admitted by {row.approved_by} on {day(row.approved_at ?? '')}{' · '}{/if}{repoCount(row)}
+            {#if !row.auto}Admitted by {row.approved_by} on {day(row.approved_at ?? '')} ·{/if} {repoCount(row)}
           </div>
           {@render repos(row)}
         </div>
