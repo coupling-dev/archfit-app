@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 
+	"github.com/alexei-led/archfit-app/internal/gate"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
 )
@@ -83,6 +85,17 @@ type policyEditJSON struct {
 
 func (s *server) apiPolicy(r *http.Request, sc scope) (any, error) {
 	ctx := r.Context()
+	// The change-control state is a Store read that does not depend on the file, so both are read at once. The file's
+	// errors come first, as they did when the state was read after it.
+	var (
+		state    gate.PolicyState
+		stateErr error
+		reading  sync.WaitGroup
+	)
+	if s.policy != nil {
+		reading.Go(func() { state, stateErr = s.policy.PolicyState(ctx, sc.repo) })
+	}
+	defer reading.Wait()
 	raw, _, err := s.gh.files.File(ctx, sc.repo.RepoRef, sc.repo.DefaultBranch, ".archfit.yaml")
 	if errors.Is(err, api.ErrNotFound) {
 		return nil, conflict(policyMissing)
@@ -150,9 +163,9 @@ func (s *server) apiPolicy(r *http.Request, sc scope) (any, error) {
 	}
 	body.Edit.Reason = "Change control has not started."
 	if s.policy != nil {
-		state, err := s.policy.PolicyState(ctx, sc.repo)
-		if err != nil {
-			return nil, err
+		reading.Wait()
+		if stateErr != nil {
+			return nil, stateErr
 		}
 		switch {
 		case state.OutsideFlow:

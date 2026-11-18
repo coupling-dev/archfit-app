@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/alexei-led/archfit-app/internal/control/onboarding"
 	"github.com/alexei-led/archfit-app/internal/gate"
@@ -40,10 +43,18 @@ type overviewBody struct {
 	Truncated bool          `json:"truncated"`
 }
 
-// apiRepos lists stored evidence separately from a bounded read of setup and required-check facts. Each row runs its
-// own state read and, for the first maxSetupProbes admitted rows, its own Setup probe: no row waits for another.
+// probeQuery asks the list for the Setup probe of its rows. Without it the list answers from stored state alone, so the
+// page can show its rows at once and ask for the probe beside it.
+const probeQuery = "probe"
+
+// apiRepos lists stored evidence, and with ?probe=1 also a bounded read of setup and required-check facts. Each row runs
+// its own state read and, for the first maxSetupProbes admitted rows of a probed list, its own Setup probe: no row
+// waits for another. An unprobed row says its required-check settings were not read.
 func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
-	repos, err := s.gh.users.UserRepos(r.Context(), sc.user.Token)
+	// The list writes nothing, so each installation's admission and each repository's record is read once per request,
+	// however many rows and steps ask for it. The memo dies with the request.
+	ctx := gate.WithRequestMemo(r.Context())
+	repos, err := s.gh.users.UserRepos(ctx, sc.user.Token)
 	if err != nil {
 		return nil, err
 	}
@@ -53,17 +64,19 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 		repos = repos[:maxOverviewRepos]
 	}
 	body.Repos = make([]overviewRow, len(repos))
-	admitted := s.admittedSet(r.Context(), repos)
+	admitted := s.admittedSet(ctx, repos)
 	// The probed rows are chosen before any read starts, so each row's goroutine decides alone.
+	probe := r.URL.Query().Get(probeQuery) == "1"
 	probed := make([]bool, len(repos))
 	probes := 0
 	for i, repo := range repos {
-		if admitted[repo.InstallationID] && probes < maxSetupProbes {
+		if probe && admitted[repo.InstallationID] && probes < maxSetupProbes {
 			probed[i] = true
 			probes++
 		}
 	}
 	failures := make([]error, len(repos))
+	start := time.Now()
 	slots := make(chan struct{}, parallelLookups)
 	var wg sync.WaitGroup
 	for i, repo := range repos {
@@ -77,12 +90,17 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 		go func() {
 			defer wg.Done()
 			defer func() { <-slots }()
-			state, err := s.repoStates.RepoState(r.Context(), repo)
+			slotAt := time.Since(start)
+			state, err := s.repoStates.RepoState(ctx, repo)
+			stateAt := time.Since(start)
 			failures[i] = err
 			body.Repos[i] = uncheckedOverviewRow(repo.FullName, state)
 			// Stored evidence stays when the state read fails: the list then answers the error, as before.
 			if err == nil && probed[i] {
-				s.overviewProbe(r, repo, &body.Repos[i])
+				probeAt := time.Since(start)
+				s.overviewProbe(onboarding.WithRowTrace(ctx, i, start), repo, &body.Repos[i])
+				// Offsets from the request start show whether a row waited on another row, not just how long it ran.
+				slog.Info("ui probe row", "row", i, "slot_ms", durMS(slotAt), "state_ms", durMS(stateAt), "probe_ms", durMS(probeAt), "done_ms", durMS(time.Since(start)))
 			}
 		}()
 	}
@@ -97,15 +115,20 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 
 // overviewProbe reads one row's Setup through the existing probe. Its own Home snapshot reads the default branch's tip,
 // policy and workflow once for this row, so the approval summary does not read them again.
-func (s *server) overviewProbe(r *http.Request, repo api.Repo, row *overviewRow) {
-	ctx, _ := gate.WithHomeSnapshot(r.Context(), repo)
+func (s *server) overviewProbe(ctx context.Context, repo api.Repo, row *overviewRow) {
+	// One stage per probed row: the log shows each row's own wall time, which the summed rules stage cannot.
+	done := api.StartStage(ctx, "probe_row")
+	ctx, _ = gate.WithHomeSnapshot(ctx, repo)
 	setup, err := s.setups.Setup(ctx, repo)
+	done(1, 0)
 	if err != nil {
 		row.EnforcementReason = "The App could not read the required-check settings."
 		return // retain stored evidence; one GitHub failure must not break the list.
 	}
 	applyOverviewSetup(row, setup)
 }
+
+func durMS(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
 
 func uncheckedOverviewRow(name, state string) overviewRow {
 	return overviewRow{

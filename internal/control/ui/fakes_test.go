@@ -44,6 +44,7 @@ type fakeGH struct {
 	// openPullsDelay is the time OpenPulls takes, spent outside the lock so other calls still overlap it.
 	openPullsDelay time.Duration
 	onPermission   func() // called when Permission starts, outside the lock, to order it against other reads
+	onFile         func() // called when File starts, outside the lock, to order it against other reads
 }
 
 func newFakeGH() *fakeGH {
@@ -173,6 +174,9 @@ func (g *fakeGH) ResolveRepo(_ context.Context, fullName string) (api.Repo, erro
 }
 
 func (g *fakeGH) File(_ context.Context, r api.RepoRef, ref, path string) ([]byte, string, error) {
+	if g.onFile != nil {
+		g.onFile()
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if err := g.record("File", r, ref+":"+path); err != nil {
