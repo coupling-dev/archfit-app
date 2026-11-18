@@ -94,6 +94,11 @@ test('policy reading: graph is secondary, uses declared dependencies and selects
   }
   await page.getByText('Show graph', { exact: false }).click();
   await expect(graph.locator('.map-node')).toHaveCount(6);
+  // A six-module graph is shorter than the 70vh cap, so its viewport shrinks to the chart instead of leaving a blank area.
+  const viewport = await page.locator('.map-viewport').boundingBox();
+  const frame = page.viewportSize()!;
+  expect(viewport!.height).toBeGreaterThanOrEqual(240);
+  expect(viewport!.height).toBeLessThan(frame.height * 0.7);
   await page.getByRole('searchbox').fill('no-such-module');
   await graph.locator('[data-module="pkg_container"]').click();
   const panel = page.getByRole('region', { name: 'Selected module' });

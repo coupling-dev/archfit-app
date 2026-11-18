@@ -38,5 +38,5 @@ archfit/gate is required when GitHub requires pull requests and this check on th
 
 Only the first repositories by name are listed.
 
-Documentation · Third-party licences
+Documentation · Third-party licenses
 About this App · v0.12.0

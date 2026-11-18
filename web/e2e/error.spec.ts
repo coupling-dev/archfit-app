@@ -27,7 +27,7 @@ test('error page: the server sentence, no repository tabs, under the CSP', async
   await expect(page.getByText('This page does not exist or is not available to your account.')).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Repository' })).toHaveCount(0);
   await expect(page).toHaveTitle('Page not available · Archfit');
-  await expect(page.getByRole('link', { name: 'Third-party licences' })).toHaveAttribute('href', '/licenses.txt');
+  await expect(page.getByRole('link', { name: 'Third-party licenses' })).toHaveAttribute('href', '/licenses.txt');
   await expectClean(page);
   await expectNoNotUsedWord(page);
 });

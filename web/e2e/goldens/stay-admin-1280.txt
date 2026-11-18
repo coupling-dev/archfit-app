@@ -33,5 +33,5 @@ alexei-led User Managed by configuration
 ccgram
 Accounts managed by configuration are set in the App settings, by pull request. This page cannot change them.
 Revoke stops Archfit from the account's next event on. Checks already on GitHub stay.
-Documentation · Third-party licences
+Documentation · Third-party licenses
 About this App · v0.12.0
