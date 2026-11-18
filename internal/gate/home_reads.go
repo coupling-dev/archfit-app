@@ -4,21 +4,19 @@ import "sync"
 
 const homeReadConcurrency = 4
 
-// homeReads bounds concurrent record reads, joins all work, and chooses errors
-// in input order rather than timing order. No cancellation can mask a rate limit
-// or storage error with another read's context.Canceled.
+// homeReads runs every read and joins them all, then chooses the error in input order rather than timing order.
+// The reads share the request's bound (see homeViews.bounded), so no batching happens here. No cancellation can
+// mask a rate limit or storage error with another read's context.Canceled.
 func homeReads(n int, read func(int) error) error {
-	errors := make([]error, n)
-	for start := 0; start < n; start += homeReadConcurrency {
-		var group sync.WaitGroup
-		for i := start; i < min(start+homeReadConcurrency, n); i++ {
-			group.Go(func() { errors[i] = read(i) })
-		}
-		group.Wait()
-		for i := start; i < min(start+homeReadConcurrency, n); i++ {
-			if errors[i] != nil {
-				return errors[i]
-			}
+	errs := make([]error, n)
+	var group sync.WaitGroup
+	for i := range n {
+		group.Go(func() { errs[i] = read(i) })
+	}
+	group.Wait()
+	for _, err := range errs {
+		if err != nil {
+			return err
 		}
 	}
 	return nil

@@ -83,8 +83,8 @@ func newWorkflowsTestHome(t *testing.T, gh homeGitHub) HomeViews {
 var workflowsTestRepo = api.Repo{RepoRef: api.RepoRef{InstallationID: 1, FullName: "acme/app"}, DefaultBranch: "main"}
 
 // Eight open pull requests each take two reads, one after the other. Serially that is 20 reads in all, including tip,
-// policy, open pulls and the current workflow: 2000 ms of virtual time at 100 ms a read. Four pull requests at a time
-// make it 8 reads deep: 800 ms.
+// policy, open pulls and the current workflow: 2000 ms of virtual time at 100 ms a read. Twenty reads share four
+// slots, so no schedule finishes before 500 ms. A change's policy waits for its workflow, which keeps Home at 600 ms.
 func TestHomeWorkflowChangesReadPullRequestsTogether(t *testing.T) {
 	const latency = 100 * time.Millisecond
 	synctest.Test(t, func(t *testing.T) {
@@ -103,8 +103,8 @@ func TestHomeWorkflowChangesReadPullRequestsTogether(t *testing.T) {
 		if got := gh.reads.Load(); got != 20 {
 			t.Fatalf("reads = %d, want 20", got)
 		}
-		if elapsed != 8*latency {
-			t.Fatalf("Home took %v of virtual time, want %v", elapsed, 8*latency)
+		if want := 6 * latency; elapsed != want {
+			t.Fatalf("Home took %v of virtual time, want %v", elapsed, want)
 		}
 	})
 }
