@@ -141,6 +141,7 @@ export interface Registered {
 
 import { refused, visit, waiting } from './gate';
 import { get } from 'svelte/store';
+import { forget } from './memory';
 import { signInHref } from './route';
 
 // ApiError is a failed call: the sentence to show, and for a repository of an account no operator approved that account.
@@ -192,6 +193,8 @@ async function send(path: string, init: RequestInit): Promise<Response> {
 }
 
 async function answer<T>(res: Response): Promise<T> {
+  // A refused read (the session ended, or the account may not see it) leaves nothing seen before to show again.
+  if (res.status === 401 || res.status === 403) forget();
   let body: unknown;
   try {
     body = await res.json();

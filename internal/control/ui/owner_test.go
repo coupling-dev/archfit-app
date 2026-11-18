@@ -21,10 +21,14 @@ type fakeSetups struct {
 	repos  []api.Repo
 	byRepo map[string]onboarding.Setup
 	errors map[string]error
-	delay  time.Duration // virtual or real time one Setup takes, outside the lock
+	delay  time.Duration                   // virtual or real time one Setup takes, outside the lock
+	onCtx  func(context.Context, api.Repo) // sees the context and repository of each Setup call
 }
 
-func (f *fakeSetups) Setup(_ context.Context, r api.Repo) (onboarding.Setup, error) {
+func (f *fakeSetups) Setup(ctx context.Context, r api.Repo) (onboarding.Setup, error) {
+	if f.onCtx != nil {
+		f.onCtx(ctx, r)
+	}
 	time.Sleep(f.delay)
 	f.mu.Lock()
 	defer f.mu.Unlock()

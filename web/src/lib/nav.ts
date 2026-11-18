@@ -14,3 +14,11 @@ export function inAppURL(href: string, current: URL): URL | null {
   if (url.hash && url.pathname === current.pathname && url.search === current.search) return null;
   return url;
 }
+
+// linkURL is the in-app address of the link an event's target sits in, or null when it is not a link the App moves
+// inside itself (a link that opens elsewhere or downloads, or one inAppURL leaves to the browser).
+export function linkURL(target: EventTarget | null, current: URL): URL | null {
+  const link = (target as Element | null)?.closest?.('a[href]');
+  if (!(link instanceof HTMLAnchorElement) || (link.target && link.target !== '_self') || link.hasAttribute('download')) return null;
+  return inAppURL(link.getAttribute('href') ?? '', current);
+}
