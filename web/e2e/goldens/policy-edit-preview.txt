@@ -4,16 +4,23 @@ acme/app
 
 Edit the policy
 
-Every YAML edit needs your passkey and goes through the policy pull request.
+Owners can edit here. Each edit needs your passkey and goes through the policy pull request.
 
 Policy YAML
 
 preview it: archfit check --policy <file>
 
 Diff against the current policy
+
++ Added
+- Removed
+
 --- a/.archfit.yaml
+
 +++ b/.archfit.yaml
+
 @@ -6,0 +7 @@
+
 +# owner edit <img src=x onerror=alert(1)>
 
 

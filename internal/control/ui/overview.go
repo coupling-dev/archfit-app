@@ -121,7 +121,7 @@ func applyOverviewSetup(row *overviewRow, setup onboarding.Setup) {
 	switch row.SetupStage {
 	case "workflow_review":
 		// Setup establishes an accepted workflow in a PR, not owner-action eligibility.
-		row.NextStep = overviewNextStep{Text: "Review workflow PR", Href: fmt.Sprintf("%s/pull/%d", base, setup.OpenPull)}
+		row.NextStep = overviewNextStep{Text: "Review workflow change", Href: fmt.Sprintf("%s/pull/%d", base, setup.OpenPull)}
 	case "first_approval":
 		if setup.FirstPull > 0 {
 			row.NextStep = overviewNextStep{Text: "Review first policy", Href: fmt.Sprintf("%s/pull/%d", base, setup.FirstPull)}
