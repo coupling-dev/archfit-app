@@ -2,6 +2,7 @@
   import Skeleton from '../components/Skeleton.svelte';
   import Map from '../components/map/Map.svelte';
   import StatusLabel from '../components/ui/StatusLabel.svelte';
+  import Diff from '../components/ui/Diff.svelte';
   import {
     explain,
     explainLoad,
@@ -39,7 +40,7 @@
   const api = (suffix: string) => repoAPI(route.owner, route.name, suffix);
   const github = $derived(`https://github.com/${encodeURIComponent(route.owner)}/${encodeURIComponent(route.name)}`);
   const kinds: { kind: AnswerKind; title: string }[] = [
-    { kind: 'approve', title: 'Approve' },
+    { kind: 'approve', title: 'Approve and merge' },
     { kind: 'approve-until', title: 'Approve until a date' },
     { kind: 'reject', title: 'Reject' },
   ];
@@ -48,8 +49,10 @@
   let failure = $state('');
   let until = $state('');
   let instead = $state('');
-  let mergeLater = $state(false);
+  let mergeNow = $state(true);
   let selected = $state<AnswerKind>('approve');
+  // Nothing is preselected: an answer shows its preview only after the owner chooses it.
+  let chosen = $state(false);
   let busy = $state(false);
   let answered = $state<Answered | null>(null);
   let answerError = $state('');
@@ -61,16 +64,17 @@
   let previews = $state<Record<AnswerKind, Shown>>({ approve: {}, 'approve-until': {}, reject: {} });
   // The newest preview read of each answer wins: an older answer that arrives late is dropped.
   const reads: Record<AnswerKind, number> = { approve: 0, 'approve-until': 0, reject: 0 };
-  let title = $derived(kinds.find((item) => item.kind === selected)?.title ?? '');
+  // The title says what the answer does: the merge word only when the merge checkbox is on.
+  let title = $derived(selected === 'approve' && !mergeNow ? 'Approve' : (kinds.find((item) => item.kind === selected)?.title ?? ''));
   let shown = $derived(previews[selected]);
-  let decision = $derived(decisionState(selected, shown.preview, mergeLater));
+  let decision = $derived(decisionState(selected, shown.preview, !mergeNow));
 
   function load(first = false) {
     const path = api(`requests/${route.number}`);
     (first ? firstJSON<RequestView>(path) : getJSON<RequestView>(path)).then(
       (b) => {
         body = b;
-        if (b.state === 'open' && b.policy) void preview(selected);
+        if (b.state === 'open' && b.policy && chosen) void preview(selected);
       },
       (e: ApiError) => (failure = explainLoad(e, here)),
     );
@@ -98,8 +102,14 @@
     }
   }
 
+  function choose(kind: AnswerKind) {
+    selected = kind;
+    chosen = true;
+    if (kind === 'approve') void preview(kind);
+  }
+
   async function answer(kind: AnswerKind) {
-    const decision = decisionState(kind, previews[kind].preview, mergeLater);
+    const decision = decisionState(kind, previews[kind].preview, !mergeNow);
     if (busy || !body || body.state !== 'open' || !decision.ready || answerProblem(kind, until, instead)) return;
     busy = true;
     answered = null;
@@ -199,8 +209,7 @@
         </p>
         {#if p.diff && selected === 'reject'}<p class="small">Adds the deny rule shown below, with what to do instead.</p>{/if}
         {#if p.diff}
-          <!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users must be able to scroll the unwrapped diff.) -->
-          <pre tabindex="0" role="region" aria-label={`${title}: the change to .archfit.yaml`}>{p.diff}</pre>
+          <Diff text={p.diff} label={`${title}: the change to .archfit.yaml`} />
         {:else}<p class="small">It writes no line in <code>.archfit.yaml</code>.</p>{/if}
         <h3 class="title-box">Affected pull requests</h3>
         {#if p.pulls.length}
@@ -239,18 +248,18 @@
     <div class="box-body stack">
       {#if body.state === 'open' && body.policy}
         <p class="small">Choose an answer and read its policy change before confirming. Previewing or leaving this page changes nothing.</p>
-        <fieldset class="stack-sm">
-          <legend>Choose an answer</legend>
+        <div class="btn-group" role="group" aria-label="Choose an answer">
           {#each kinds as { kind, title: kindTitle } (kind)}
-            <label class="form-choice"><input type="radio" name="answer-kind" value={kind} bind:group={selected} disabled={busy} /> {kindTitle}</label>
+            <button class="btn" type="button" aria-pressed={chosen && selected === kind} disabled={busy} onclick={() => choose(kind)}>{kindTitle}</button>
           {/each}
-        </fieldset>
+        </div>
+        {#if chosen}
         <section class="stack-sm" aria-label={title}>
           <h3>{title}</h3>
           {#if selected === 'approve-until'}
-            <label for="until">The exception ends on</label>
-            <input class="form-control" id="until" type="date" bind:value={until} disabled={busy} oninput={() => invalidate('approve-until')} />
-            <p class="small">Choose an expiry date to preview. The exception is valid through that date, in UTC.</p>
+            <label for="until">The exception ends on (yyyy-mm-dd)</label>
+            <input class="form-control" id="until" type="text" placeholder="yyyy-mm-dd" bind:value={until} disabled={busy} oninput={() => invalidate('approve-until')} />
+            <p class="small">Enter a date as yyyy-mm-dd to preview. The exception is valid through that date, in UTC.</p>
           {:else if selected === 'reject'}
             <label for="instead">What to do instead</label>
             <textarea class="form-control" id="instead" rows="3" maxlength="500" bind:value={instead} disabled={busy} oninput={() => invalidate('reject')}></textarea>
@@ -262,7 +271,7 @@
           {#if shown.note}<p class="flash error" role="alert">{shown.note}</p>{/if}
           {#if decision.ready}
             {#if decision.changesPolicy}
-              <label class="small form-choice"><input type="checkbox" bind:checked={mergeLater} disabled={busy} /> Keep the policy pull request open</label>
+              <label class="small form-choice"><input type="checkbox" bind:checked={mergeNow} disabled={busy} /> Merge the policy pull request now</label>
             {/if}
             <p class="small">{decision.effect}</p>
             {#if loosens(selected)}
@@ -271,6 +280,7 @@
             <div><button class="btn primary" type="button" disabled={busy} onclick={() => answer(selected)}>{decision.confirm}</button></div>
           {/if}
         </section>
+        {/if}
       {:else if body.state === 'open'}
         <p>Add <code>.archfit.yaml</code> of version 3 to the default branch, then answer.</p>
       {:else}
@@ -292,3 +302,4 @@
     </div>
   </section>
 {/if}
+
