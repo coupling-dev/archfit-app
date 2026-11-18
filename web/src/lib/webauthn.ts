@@ -95,5 +95,5 @@ export function passkeyFailure(e: unknown): string | null {
     case 'NotSupportedError':
       return 'This browser has no passkey that Archfit can use. Nothing was changed.';
   }
-  return 'The passkey step was cancelled or took too long. Nothing was changed.';
+  return 'The passkey step was canceled or took too long. Nothing was changed.';
 }

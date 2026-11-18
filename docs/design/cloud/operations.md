@@ -217,7 +217,7 @@ returned. About is available to signed-in users, not limited to installation ope
 
 `scripts/deploy/build.sh` supplies source SHA and build time on a fresh build. The final image carries the matching
 OCI revision/created labels. Reusing an existing commit image preserves that image's metadata; a reuse does not
-manufacture a new build timestamp. Direct Docker builds without these args show missing metadata explicitly.
+manufacture a new build timestamp. Direct Docker builds without these args leave the missing About rows out; the summary still shows the build that is known.
 
 PR analysis metadata has a different source: the selected App-authored `archfit/state` check. Its bounded recovery
 prelude and Inputs and identity section supply diagnostics and the producer claim. The check's `external_id`

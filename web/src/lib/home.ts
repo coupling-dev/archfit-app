@@ -62,28 +62,25 @@ export function setupStepState(setup: HomeSetup) {
             ? 'Next: turn on the required check'
             : setup.approval.status === 'approved_pending_merge'
               ? 'Waiting for activation on the default branch.'
-              : 'Setup is complete.',
-    approval:
-      setup.approval.status === 'active'
-        ? 'Done'
-        : setup.approval.status === 'approved_pending_merge'
-          ? 'Signed'
-          : setup.approval.status === 'unknown'
-            ? 'Could not confirm approval'
-            : setup.owner_action?.href
-              ? 'Review needed'
-              : 'Action needed',
+              : 'Setup complete · archfit/gate required',
     approvalText: approvalText(setup.approval),
-    gate: unreadableRules ? 'Check with an admin' : done[3] ? 'On' : 'Action needed',
   };
+}
+
+// The step chip has three words: done, to do, or after step N when the step waits for an earlier one.
+// Step 3 cannot be approved before its pull request exists; step 4 is independent of approval.
+export function setupStepChip(done: boolean[], index: number): string {
+  if (done[index]) return 'done';
+  if (index === 2 && !done[1]) return 'after step 2';
+  return 'to do';
 }
 
 export function approvalText(approval: ApprovalSummary): string {
   if (approval.status === 'approved_pending_merge')
     return approval.merged
       ? 'Approval recorded; checking activation'
-      : `Approved for PR #${approval.pull_request}. Waiting for merge.`;
-  if (approval.status === 'stale') return `PR #${approval.pull_request} changed after approval. Review the new head.`;
+      : `Approved for pull request #${approval.pull_request}. Waiting for merge.`;
+  if (approval.status === 'stale') return `Pull request #${approval.pull_request} changed after approval. The approval covers the old head; a new approval is needed.`;
   if (approval.status === 'unknown') return 'Could not confirm approval';
   if (approval.status === 'active') return 'The approved policy and workflow are active on the default branch.';
   return 'Review the proposed files before approving.';
@@ -98,32 +95,26 @@ export function approvalNeedsReview(setup: HomeSetup): boolean {
 }
 
 export function setupPullStep(setup: HomeSetup) {
-  if (setup.open_pull > 0) return { kind: 'review' as const, status: 'Ready for review', number: setup.open_pull };
-  if (setup.first_pull !== undefined)
-    return { kind: 'first-policy' as const, status: 'Ready for review', number: setup.first_pull };
-  if (setup.policy && setup.workflow) return { kind: 'current' as const, status: 'Done' };
-  return { kind: 'create' as const, status: 'Action needed' };
-}
-
-export function setupChipClass(status: string): 'good' | 'attention' | 'neutral' {
-  if (status === 'Done' || status === 'On' || status === 'Signed' || status === 'Ready for review') return 'good';
-  if (status === 'Waiting' || status === 'Does not apply') return 'neutral';
-  return 'attention';
+  if (setup.open_pull > 0) return { kind: 'review' as const, number: setup.open_pull };
+  if (setup.first_pull !== undefined) return { kind: 'first-policy' as const, number: setup.first_pull };
+  if (setup.policy && setup.workflow) return { kind: 'current' as const };
+  return { kind: 'create' as const };
 }
 
 export function setupRuleIsAdvisory(code: string): boolean {
   return ['administrator_bypass', 'app_bypass', 'policy_push', 'policy_push_bypass', 'approvals'].includes(code);
 }
 
+// Rule words: on, off, optional, verify in GitHub, does not apply. Optional rows never read as action needed.
 export function setupRuleStatus(state: string, code = ''): string {
   if (setupRuleIsAdvisory(code)) {
-    if (state === 'unknown') return 'Verify yourself';
-    if (state === 'warning') return 'Advisory';
+    if (state === 'unknown') return 'verify in GitHub';
+    if (state === 'warning') return 'optional';
   }
-  if (state === 'ok') return 'On';
-  if (state === 'unknown') return 'Check';
-  if (state === 'not_applicable') return 'Does not apply';
-  return 'Action needed';
+  if (state === 'ok') return 'on';
+  if (state === 'unknown') return 'verify in GitHub';
+  if (state === 'not_applicable') return 'does not apply';
+  return 'off';
 }
 
 // The repository state words of the Archfit 4 design, as the App sends them. An unknown word is refused.

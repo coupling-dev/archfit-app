@@ -71,7 +71,7 @@ func newFixtureWithKey(t *testing.T, key []byte) *fixture {
 	f := &fixture{
 		oauth: &fakeOAuth{tok: auth.UserToken{AccessToken: testToken, Login: testUser.Login, UserID: testUser.UserID}},
 		users: &fakeUsers{t: t, perm: "write"},
-		repos: &fakeRepos{t: t, repo: resolvedRepo(42)},
+		repos: &fakeRepos{t: t, installationID: 42},
 		clock: &clock{t: time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)},
 	}
 	s, err := New(Config{CookieKey: key, BaseURL: testBaseURL}, f.oauth, f.users, f.repos, f.clock.now)

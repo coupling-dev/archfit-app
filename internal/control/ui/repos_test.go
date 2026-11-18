@@ -93,7 +93,7 @@ func TestReposUnreadableRecordIsAnError(t *testing.T) {
 func checkReposGolden(t *testing.T, name string, response *httptest.ResponseRecorder) {
 	t.Helper()
 	// P0.2 explicitly names these navigation actions; retain the wording check for all other copy.
-	copy := strings.NewReplacer("Review first policy", "", "Review workflow PR", "").Replace(response.Body.String())
+	copy := strings.NewReplacer("Review first policy", "", "Review workflow change", "").Replace(response.Body.String())
 	if words := wording.NotUsedIn(copy); len(words) != 0 {
 		t.Fatalf("repositories use %v: %s", words, response.Body.String())
 	}
@@ -145,7 +145,7 @@ func TestReposAllStatesGolden(t *testing.T) {
 		}
 	}
 	e.setups.byRepo = map[string]onboarding.Setup{
-		"acme/clean":        {Policy: true, Workflow: true, State: "approved", Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{{Code: "gate_check", State: "ok"}}}},
+		"acme/clean":        {Policy: true, Workflow: true, State: "approved", Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{{Code: "gate_check", State: "ok"}, {Code: "pull_requests", State: "ok"}}}},
 		"acme/drift":        {State: "first_approval", FirstPull: 8, Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{{Code: "gate_check", State: "warning"}, {Code: "pull_requests", State: "ok"}}}},
 		"acme/expired":      {Policy: true, Workflow: true, State: "approved"},
 		"acme/outside-flow": {Policy: true, Workflow: true, State: "outside_flow"},
@@ -190,7 +190,7 @@ func TestReposOnboardingStagesAreBoundedAndErrorsFallBack(t *testing.T) {
 	}
 	for _, i := range []int{4, 25, 29} {
 		row := body.Repos[i]
-		if row.SetupStage != "" || row.SetupReason == "" || row.Enforcement != "check" || row.EnforcementReason == "" || row.State != "not set up" {
+		if row.SetupStage != "" || row.Enforcement != "check" || row.EnforcementReason == "" || row.State != "not set up" {
 			t.Errorf("unread setup %d = %+v", i, row)
 		}
 	}

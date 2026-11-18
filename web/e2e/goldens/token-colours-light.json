@@ -35,28 +35,22 @@
     "border": "rgb(9, 105, 218)",
     "shadow": "none"
   },
-  ".status.success": {
+  ".status-label.success": {
     "color": "rgb(26, 127, 55)",
-    "background": "rgba(0, 0, 0, 0)",
-    "border": "rgb(26, 127, 55)",
+    "background": "rgb(218, 251, 225)",
+    "border": "rgba(74, 194, 107, 0.4)",
     "shadow": "none"
   },
-  ".status.danger": {
+  ".status-label.danger": {
     "color": "rgb(209, 36, 47)",
-    "background": "rgba(0, 0, 0, 0)",
-    "border": "rgb(209, 36, 47)",
+    "background": "rgb(255, 235, 233)",
+    "border": "rgba(255, 129, 130, 0.4)",
     "shadow": "none"
   },
-  ".status.attention": {
+  ".status-label.attention": {
     "color": "rgb(154, 103, 0)",
-    "background": "rgba(0, 0, 0, 0)",
-    "border": "rgb(154, 103, 0)",
-    "shadow": "none"
-  },
-  ".status.neutral": {
-    "color": "rgb(89, 99, 110)",
-    "background": "rgba(0, 0, 0, 0)",
-    "border": "rgb(89, 99, 110)",
+    "background": "rgb(255, 248, 197)",
+    "border": "rgba(212, 167, 44, 0.4)",
     "shadow": "none"
   },
   ".app-footer": {

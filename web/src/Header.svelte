@@ -57,7 +57,7 @@
   <span class="header-spacer"></span>
   {#if session?.operator}
     <a class="admin-link" href="/admin">
-      Admin{#if session.waiting && session.waiting > 0}<span class="label attention">{session.waiting} waiting</span>{/if}
+      Installations{#if session.waiting && session.waiting > 0}<span class="label attention">{session.waiting} to admit</span>{/if}
     </a>
   {/if}
   <SegmentedControl

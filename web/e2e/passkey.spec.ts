@@ -62,13 +62,13 @@ test('passkeys: the first passkey registers with no step-up, and the list shows 
   const list: Listed[] = [];
   const writes = await open(p, page, registry(list).handlers);
   await expect(p.getByRole('heading', { name: 'Passkeys', level: 1 })).toBeVisible();
-  await expect(p.locator('.lede')).toHaveText('You have no passkey in this App installation yet.');
+  await expect(p.getByText('No passkeys yet. Add one to approve policy changes.', { exact: true })).toBeVisible();
   await expectClean(p);
 
   await p.getByRole('button', { name: 'Add a passkey' }).click();
   await expect(p.getByRole('status')).toHaveText('Passkey registered. An issue tells you and the owners.');
-  await expect(p.locator('.lede')).toHaveText('You have 1 passkey in this App installation.');
-  await expect(p.getByRole('listitem')).toContainText([/^Passkey 1 \S+ · added 2026-11-10 ·\s+not used yet/]);
+  await expect(p.locator('.counter')).toHaveText('1');
+  await expect(p.getByRole('listitem')).toContainText([/^Added 2026-11-10\s+Not used yet/]);
   expect(writes.map((w) => new URL(w.url()).pathname)).toEqual([`${api}/register`, `${api}/register/finish`]);
   expect(writes[0].postDataJSON()).toEqual({});
   await expectClean(p);
@@ -95,19 +95,19 @@ test('passkeys: a second passkey and a removal are each confirmed with a passkey
     return [200, { notice: 'Passkey removed.' }];
   };
   const writes = await open(p, page, handlers);
-  await expect(p.getByRole('listitem')).toContainText([/^Passkey 1 \S+ · added 2026-11-10 ·\s+last used 2026-11-11/]);
+  await expect(p.getByRole('listitem')).toContainText([/^Added 2026-11-10\s+Last used 2026-11-11/]);
 
   await p.getByRole('button', { name: 'Add a passkey' }).click();
   await expect(p.getByRole('status')).toHaveText('Passkey registered. An issue tells you and the owners.');
-  await expect(p.locator('.lede')).toHaveText('You have 2 passkeys in this App installation.');
+  await expect(p.locator('.counter')).toHaveText('2');
   await expectNoNotUsedWord(p);
   expect(issued.get('token-1')).toEqual({ action: 'register' });
   expect(writes[2].postDataJSON()).toEqual({ token: 'token-1' });
 
-  await p.getByRole('button', { name: 'Remove' }).first().click();
+  await p.getByRole('button', { name: /^Remove the passkey added/ }).first().click();
   await p.getByRole('button', { name: 'Confirm removal' }).click();
   await expect(p.getByRole('status')).toHaveText('Passkey removed.');
-  await expect(p.locator('.lede')).toHaveText('You have 1 passkey in this App installation.');
+  await expect(p.locator('.counter')).toHaveText('1');
   expect(writes.map((w) => new URL(w.url()).pathname)).toEqual([
     `${api}/step-up`,
     `${api}/step-up/finish`,
@@ -130,7 +130,7 @@ test('passkeys: a refused registration is the server sentence, and nothing is ad
   });
   await p.getByRole('button', { name: 'Add a passkey' }).click();
   await expect(p.getByRole('alert')).toHaveText(sentence);
-  await expect(p.locator('.lede')).toHaveText('You have no passkey in this App installation yet.');
+  await expect(p.getByText('No passkeys yet. Add one to approve policy changes.', { exact: true })).toBeVisible();
   expect(writes).toHaveLength(1);
   await expectClean(p);
 });
@@ -154,11 +154,11 @@ for (const width of [390, 1280]) {
     await docsClock(p);
     await p.setViewportSize({ width, height: 900 });
     await open(p, page, registry([{ id: 'passkey-one', created }]).handlers);
-    await expect(p.getByText('Use these passkeys across repositories', { exact: false })).toBeVisible();
+    await expect(p.getByText('Your passkeys work in every repository of this account', { exact: false })).toBeVisible();
     const row = p.getByRole('listitem');
-    await expect(row.getByText('This is your last passkey', { exact: false })).toBeVisible();
-    const remove = row.getByRole('button', { name: 'Remove', exact: true });
-    await expect(remove).toHaveAccessibleDescription(/must register a new one/);
+    await expect(row.getByText('Removing your last passkey opens an issue', { exact: false })).toBeVisible();
+    const remove = row.getByRole('button', { name: /^Remove the passkey added/ });
+    await expect(remove).toHaveAccessibleDescription(/You need a passkey to confirm an approval/);
     for (let i = 0; i < 30; i++) {
       await p.keyboard.press('Tab');
       if (await remove.evaluate((el) => el === document.activeElement)) break;

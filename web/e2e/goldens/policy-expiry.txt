@@ -58,8 +58,8 @@ Follow the linked request to renew or replace an exception.
 
 1 exception has no end date.
 
-Rule / boundary	Expiry	Request
 graph · 2
+Rule / boundary	Expiry	Request
 
 
 pkg_chaos → pkg_runtime
@@ -78,6 +78,7 @@ Reason
 No end date
 	None
 duplication · 1
+Rule / boundary	Expiry	Request
 
 
 pkg_tc → pkg_util
@@ -88,6 +89,7 @@ Expired 1 day ago
 2026-11-12
 	None
 cycle · 1
+Rule / boundary	Expiry	Request
 
 
 pkg_util → pkg_chaos

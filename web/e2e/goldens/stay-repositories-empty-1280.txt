@@ -9,11 +9,11 @@ A
 Sign out
 Repositories
 
-Choose a repository or continue setup.
+Choose a repository to open its Home.
 
 No repository yet
 
 No repository is available to you through an Archfit installation yet.
 
-Documentation · Third-party licences
+Documentation · Third-party licenses
 About this App · v0.12.0

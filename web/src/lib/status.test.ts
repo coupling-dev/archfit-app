@@ -8,8 +8,8 @@ describe('status words', () => {
     ['expired', 'danger', 'x-circle'],
     ['waiting', 'attention', 'clock'],
     ['unknown', 'attention', 'question'],
-    ['Action needed', 'attention', 'alert'],
-    ['Ready for review', 'accent', 'info'],
+    ['to do', 'attention', 'alert'],
+    ['not confirmed', 'neutral', 'question'],
   ])('shows %s as %s with %s', (word, tone, icon) => {
     expect(statusStyle(word)).toEqual({ tone, icon });
   });

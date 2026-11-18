@@ -35,18 +35,18 @@ test('an operator page waits for the session, and the waiting count follows it',
   await expect(page.getByRole('status', { name: 'Loading' })).toBeVisible();
   release();
   await expect(page.getByRole('heading', { name: 'Installations', exact: true })).toBeVisible();
-  await expect(page.getByText('1 waiting')).toBeVisible();
+  await expect(page.getByText('1 to admit')).toBeVisible();
   await expectClean(page);
 });
 
 
-test('every page: content at most 1280px and centred, the licences in the footer', async ({ page }) => {
+test('every page: content at most 1280px and centred, the licenses in the footer', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   for (const path of everyPage) {
     await page.unrouteAll();
     await open(page, path, { operator: path === '/admin' });
     await rendered(page, path);
-    await expect(page.getByRole('link', { name: 'Third-party licences' })).toHaveAttribute('href', '/licenses.txt');
+    await expect(page.getByRole('link', { name: 'Third-party licenses' })).toHaveAttribute('href', '/licenses.txt');
     await expect(page.getByRole('link', { name: 'Documentation' })).toHaveAttribute('href', /docs\/user-guide\.md$/);
     for (const box of [await page.locator('main').boundingBox(), await page.locator('footer').boundingBox()]) {
       expect(box!.width, path).toBeLessThanOrEqual(1280);
