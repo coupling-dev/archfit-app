@@ -345,6 +345,7 @@ type Pull struct {
 
 type Pulls interface {
     Pull(ctx context.Context, r RepoRef, number int) (Pull, error)
+    PullSummary(ctx context.Context, r RepoRef, number int) (Pull, error)
     OpenPulls(ctx context.Context, r RepoRef) ([]Pull, error)
     // PullByHead returns the newest PR, in any state, whose head is branch in this repository. ErrNotFound if none.
     PullByHead(ctx context.Context, r RepoRef, branch string) (Pull, error)

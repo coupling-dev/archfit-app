@@ -370,3 +370,8 @@ func TestAfterAnswerFailureIsRetried(t *testing.T) {
 		t.Errorf("recorded %+v, updates %v; want the retry to update", got, w.gh.updates)
 	}
 }
+
+// PullSummary is the fake's Pull: the fake keeps one count per read either way.
+func (f *fakeAnswerGitHub) PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
+	return f.Pull(ctx, r, number)
+}
