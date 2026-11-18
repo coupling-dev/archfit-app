@@ -63,7 +63,7 @@ pairs, evidence completeness, drift and expiry issue numbers, touched deny-rule 
 It does not publish storage keys. Requests come from the v4 request index, not labels. Pull errors count only
 for a currently open, same-repository pull into the default branch whose head matches its stored result.
 Workflow changes are read from those same open pulls; a workflow already approved at that head is omitted.
-Read failures are returned, not turned into a clean answer. The setup state still belongs to `SetupViews`
+Read failures are returned, not turned into a clean answer. Independent reads overlap under one bound of four reads per request, and the first failure in serial order is the one returned. The setup state still belongs to `SetupViews`
 and `control/onboarding`; Home does not implement onboarding again.
 
 A missing or invalid target policy with recorded outside-flow state is returned without a map, so the owner can revert it. Proposed policy files are read at pull head only for workflow-action eligibility.
