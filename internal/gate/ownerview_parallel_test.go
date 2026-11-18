@@ -62,3 +62,8 @@ func TestOwnerViewReadsItsPullRequestFilesTogether(t *testing.T) {
 		t.Errorf("at most %d GitHub reads in flight at once; the pull request's reads should overlap", probe.maxSeen)
 	}
 }
+
+// PullSummary is the fake's Pull: the fake keeps one count per read either way.
+func (g *inFlightGitHub) PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
+	return g.Pull(ctx, r, number)
+}

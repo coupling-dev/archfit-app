@@ -296,7 +296,7 @@ func readFile(ctx context.Context, repos api.Repos, r api.RepoRef, ref, path str
 
 func (g *Gate) pullRead(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
 	return inputs.Memo(ctx, inputs.PullRead{Repo: r, Number: number}, func() (api.Pull, error) {
-		return g.pulls.Pull(ctx, r, number)
+		return g.pulls.PullSummary(ctx, r, number)
 	})
 }
 

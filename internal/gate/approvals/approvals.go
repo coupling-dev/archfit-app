@@ -56,6 +56,7 @@ type GitHub interface {
 	File(ctx context.Context, r api.RepoRef, ref, path string) (content []byte, blobSHA string, err error)
 	BranchHead(ctx context.Context, r api.RepoRef, branch string) (string, error)
 	Pull(ctx context.Context, r api.RepoRef, number int) (api.Pull, error)
+	PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error)
 	Compare(ctx context.Context, r api.RepoRef, base, head string) (api.Comparison, error)
 	CreateIssue(ctx context.Context, r api.RepoRef, i api.NewIssue) (api.Issue, error)
 	CreateComment(ctx context.Context, r api.RepoRef, number int, body string) (api.Comment, error)

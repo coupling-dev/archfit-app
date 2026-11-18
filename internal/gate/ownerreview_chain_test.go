@@ -89,12 +89,24 @@ func (g chainGitHub) BranchHead(ctx context.Context, r api.RepoRef, branch strin
 	return sha, err
 }
 
+// Pull is the GET and then the compare that gives MergeBaseSHA: two round trips in a row.
 func (g chainGitHub) Pull(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
 	var pl api.Pull
 	var err error
 	g.log.run(fmt.Sprintf("GitHub Pull #%d", number), func() {
-		time.Sleep(chainGitHubRTT)
+		time.Sleep(2 * chainGitHubRTT)
 		pl, err = g.fakeGitHub.Pull(ctx, r, number)
+	})
+	return pl, err
+}
+
+// PullSummary is the GET alone.
+func (g chainGitHub) PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
+	var pl api.Pull
+	var err error
+	g.log.run(fmt.Sprintf("GitHub PullSummary #%d", number), func() {
+		time.Sleep(chainGitHubRTT)
+		pl, err = g.fakeGitHub.PullSummary(ctx, r, number)
 	})
 	return pl, err
 }

@@ -18,6 +18,19 @@ export const session = { login: 'alice', csrf: 'csrf-token-1', build: appBuild }
 
 export const repos = JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/repos/all-states.json', import.meta.url), 'utf8'));
 
+// The list before its checks ran, as the server answers it. A test's own rows get the same treatment.
+const unprobedRepos = JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/repos/all-states-unprobed.json', import.meta.url), 'utf8'));
+const unprobed = (body: { repos: object[] }) => ({
+  ...body,
+  repos: body.repos.map((row) => ({
+    ...row,
+    setup_stage: undefined,
+    enforcement: 'check',
+    enforcement_reason: 'Required-check settings were not read.',
+    next_step: { text: '', href: '' },
+  })),
+});
+
 
 // installations is the operators' page: one account waiting, one approved by hand, one by the App's configuration.
 export const installations = {
@@ -70,7 +83,10 @@ export interface Mock {
   appBuild?: object;
   serverError?: { status: number; sentence: string }; // the server answers the page as its error page
   holdSession?: Promise<void>; // /api/session answers once this settles
-  holdRepos?: Promise<void>; // /api/repos answers once this settles
+  holdRepos?: Promise<void>; // /api/repos answers once this settles, with or without its checks
+  holdList?: Promise<void>; // the list without its checks answers once this settles
+  probeError?: boolean; // /api/repos?probe=1 fails; the list without it answers
+  holdProbe?: Promise<void>; // /api/repos?probe=1 answers once this settles; the list without it does not wait
 }
 
 
@@ -118,9 +134,15 @@ export async function open(page: Page, path: string, mock: Mock = {}) {
       case '/api/admin/waiting':
         if (!mock.operator) return json(404, { error: 'Not found.' });
         return json(200, { waiting: 1 });
-      case '/api/repos':
+      case '/api/repos': {
+        const probe = url.searchParams.get('probe') === '1';
         await mock.holdRepos;
-        return json(200, mock.repos ?? repos);
+        if (probe) await mock.holdProbe;
+        else await mock.holdList;
+        if (probe && mock.probeError) return json(502, { error: 'The App did not answer. Try again in a minute.' });
+        if (probe) return json(200, mock.repos ?? repos);
+        return json(200, mock.repos ? unprobed(mock.repos as { repos: object[] }) : unprobedRepos);
+      }
       case '/api/repos/acme/app/passkeys':
         return json(200, mock.passkeys ?? { passkeys: [] });
       case '/api/repos/acme/app/home':

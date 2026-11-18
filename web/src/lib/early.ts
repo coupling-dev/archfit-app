@@ -21,7 +21,7 @@ const recalled = new Set<string>();
 export function firstPaths(route: Route): string[] {
   switch (route.kind) {
     case 'home':
-      return ['/api/repos'];
+      return ['/api/repos', '/api/repos?probe=1'];
     case 'repo':
       return [repoAPI(route.owner, route.name, 'home')];
     case 'policy':

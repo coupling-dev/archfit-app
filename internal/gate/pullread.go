@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"sync"
 
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	asks "github.com/alexei-led/archfit-app/internal/gate/requests"
@@ -82,16 +83,29 @@ const (
 	resultGone  = "The check result is no longer available. Run the check again."
 )
 
+// PullPage reads the pull request, its check and its stored result. The reads that need only the repository and the
+// number (the requests waiting on this pull request) run beside the pull request's own read. The check run needs only
+// the head, so it runs beside the stored result, which is the longer chain: record, publication, then the artifact.
+// The errors keep the order the reads used to run in: pull request, check run, record, requests, artifact.
 func (v *pullViews) PullPage(ctx context.Context, r api.Repo, number int) (PullPage, error) {
 	out := PullPage{Waiting: []int{}}
+	reqs := v.startRequests(ctx, r, number)
+	defer reqs.done.Wait()
 	pl, err := v.gh.PullSummary(ctx, r.RepoRef, number)
 	if err != nil {
 		return out, err
 	}
 	out.HeadSHA = pl.HeadSHA
-	checks, err := v.gh.CheckRuns(ctx, r.RepoRef, pl.HeadSHA, "archfit/gate")
-	if err != nil {
-		return out, err
+	var (
+		checks   []api.CheckRun
+		checkErr error
+		checking sync.WaitGroup
+	)
+	checking.Go(func() { checks, checkErr = v.gh.CheckRuns(ctx, r.RepoRef, pl.HeadSHA, "archfit/gate") })
+	err = v.stored(ctx, r, number, pl, reqs, &out)
+	checking.Wait()
+	if checkErr != nil {
+		return out, checkErr
 	}
 	var check api.CheckRun
 	for _, c := range checks {
@@ -100,10 +114,14 @@ func (v *pullViews) PullPage(ctx context.Context, r api.Repo, number int) (PullP
 		}
 	}
 	out.CheckStatus, out.CheckConclusion = check.Status, check.Conclusion
-	tenant := store.Tenant(r.InstallationID)
+	return out, err
+}
+
+// stored fills out from the pull request's record, the requests waiting on it and its published or uploaded result.
+func (v *pullViews) stored(ctx context.Context, r api.Repo, number int, pl api.Pull, reqs *pullRequests, out *PullPage) error {
 	rec, pub, published, err := v.snapshot(ctx, r, number, pl.HeadSHA)
 	if err != nil {
-		return out, err
+		return err
 	}
 	if rec.HeadSHA != pl.HeadSHA {
 		rec = records.Pull{}
@@ -117,98 +135,144 @@ func (v *pullViews) PullPage(ctx context.Context, r api.Repo, number int) (PullP
 		out.Record = state
 	}
 	out.RunID, out.RunAttempt, out.Status = rec.RunID, rec.RunAttempt, rec.Status
-	index, err := asks.OpenIndex(ctx, v.store, r)
-	if err != nil {
-		return out, err
+	reqs.done.Wait()
+	if reqs.err != nil {
+		return reqs.err
 	}
-	for _, e := range index.Entries {
-		n, err := strconv.Atoi(e.ID)
-		if err != nil || n <= 0 {
-			return out, errors.New("pull: invalid request index")
-		}
-		if slices.Contains(out.Waiting, n) {
-			continue
-		}
-		var req records.Request
-		if err := records.Load(ctx, v.store, tenant, records.RequestKey(r.FullName, n), &req); err != nil {
-			return out, err
-		}
-		if slices.Contains(req.Waiting, number) {
-			out.Waiting = append(out.Waiting, n)
-		}
-	}
-	slices.Sort(out.Waiting)
+	out.Waiting = reqs.waiting
 	newer := pub.RunID > rec.RunID || pub.RunID == rec.RunID && pub.RunAttempt >= rec.RunAttempt
 	if published && pub.HeadSHA == pl.HeadSHA && newer {
-		if pub.Superseded {
+		switch {
+		case pub.Superseded:
 			out.Message = "A newer check is shown for this commit."
-			return out, nil
-		}
-		if pub.Unpublished {
+		case pub.Unpublished:
 			out.Message = noResultYet
-			return out, nil
-		}
-		if pub.Pending {
+		case pub.Pending:
 			out.Message = "The App has not published this result yet."
-			return out, nil
-		}
-		if pub.Omitted || len(pub.Result) == 0 {
+		case pub.Omitted || len(pub.Result) == 0:
 			out.Message = "The App published a result it cannot show yet."
-			return out, nil
-		}
-		if envelope.PayloadDigest(pub.Result) != pub.Digest {
+		case envelope.PayloadDigest(pub.Result) != pub.Digest:
 			out.Message = "The stored result cannot be trusted."
-			return out, nil
+		default:
+			var res result.Result
+			if err := json.Unmarshal(pub.Result, &res); err != nil {
+				out.Message = "The App published a result it cannot show yet."
+				return nil
+			}
+			view := BuildPullView(res)
+			out.View = &view
 		}
-		var res result.Result
-		if err := json.Unmarshal(pub.Result, &res); err != nil {
-			out.Message = "The App published a result it cannot show yet."
-			return out, nil
-		}
-		view := BuildPullView(res)
-		out.View = &view
-		return out, nil
+		return nil
 	}
 	if rec.RunID == 0 {
 		out.Message = noCheckYet
-		return out, nil
+		return nil
 	}
 	if rec.PolicyDigest == "" {
 		out.Message = "The App published a result it cannot show yet."
-		return out, nil
+		return nil
 	}
 	raw, err := v.gh.Artifact(ctx, r.RepoRef, rec.RunID, asks.ArtifactName, 5<<20)
 	if errors.Is(err, api.ErrNotFound) || errors.Is(err, api.ErrArtifactInvalid) {
 		out.Message = resultGone
-		return out, nil
+		return nil
 	}
 	if err != nil {
-		return out, fmt.Errorf("pull: read artifact: %w", err)
+		return fmt.Errorf("pull: read artifact: %w", err)
 	}
 	if envelope.PayloadDigest(raw) != rec.PayloadDigest {
 		out.Message = "The stored result cannot be trusted."
-		return out, nil
+		return nil
 	}
 	res, err := result.Decode(raw)
 	if err != nil {
 		out.Message = "The stored result cannot be trusted."
-		return out, nil
+		return nil
 	}
 	if rec.Status == string(result.StatusWaiting) {
 		if res.Status != result.StatusFail {
 			out.Message = "The stored result cannot be trusted."
-			return out, nil
+			return nil
 		}
 	} else if string(res.Status) != rec.Status {
 		out.Message = "The stored result cannot be trusted."
-		return out, nil
+		return nil
 	}
 	if rec.Coverable || rec.Status == string(result.StatusWaiting) {
-		res, _ = asks.Cover(res, index)
+		res, _ = asks.Cover(res, reqs.index)
 	}
 	view := BuildPullView(res)
 	out.View = &view
-	return out, nil
+	return nil
+}
+
+// requestLoads bounds how many request records one pull page reads at once.
+const requestLoads = 8
+
+// pullRequests are the open requests and the numbers of those that wait on one pull request.
+type pullRequests struct {
+	done    sync.WaitGroup
+	index   *records.Index
+	waiting []int // sorted, each number once
+	err     error
+}
+
+// startRequests reads the open request index and every request in it. Read it only after done.Wait.
+func (v *pullViews) startRequests(ctx context.Context, r api.Repo, pull int) *pullRequests {
+	p := &pullRequests{waiting: []int{}}
+	p.done.Go(func() { p.index, p.waiting, p.err = v.waitingOn(ctx, r, pull) })
+	return p
+}
+
+// waitingOn reads the request index and the requests in it, and returns the requests that list pull. A request that
+// cannot be read, or an entry that names no request, fails the page; the first such entry in index order wins.
+func (v *pullViews) waitingOn(ctx context.Context, r api.Repo, pull int) (*records.Index, []int, error) {
+	index, err := asks.OpenIndex(ctx, v.store, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	numbers := make([]int, len(index.Entries))
+	stop := len(numbers) // the first entry that names no request: entries after it are never read
+	for i, e := range index.Entries {
+		if n, err := strconv.Atoi(e.ID); err != nil || n <= 0 {
+			stop = i
+			break
+		} else {
+			numbers[i] = n
+		}
+	}
+	reqs := make([]records.Request, stop)
+	errs := make([]error, stop)
+	read := make(map[int]bool, stop)
+	slots := make(chan struct{}, requestLoads)
+	var loads sync.WaitGroup
+	tenant := store.Tenant(r.InstallationID)
+	for i, n := range numbers[:stop] {
+		if read[n] {
+			continue
+		}
+		read[n] = true
+		loads.Go(func() {
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			errs[i] = records.Load(ctx, v.store, tenant, records.RequestKey(r.FullName, n), &reqs[i])
+		})
+	}
+	loads.Wait()
+	waiting := []int{}
+	for i, n := range numbers[:stop] {
+		if errs[i] != nil {
+			return nil, nil, errs[i]
+		}
+		if slices.Contains(reqs[i].Waiting, pull) && !slices.Contains(waiting, n) {
+			waiting = append(waiting, n)
+		}
+	}
+	if stop < len(numbers) {
+		return nil, nil, errors.New("pull: invalid request index")
+	}
+	slices.Sort(waiting)
+	return index, waiting, nil
 }
 
 // snapshot validates both captured values in one no-change swap; separate reads
