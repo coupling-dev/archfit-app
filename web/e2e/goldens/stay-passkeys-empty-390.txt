@@ -27,5 +27,5 @@ Only an owner named in the policy can add one, or a repository administrator bef
 
 No passkeys yet. Add one to approve policy changes.
 
-Documentation · Third-party licences
+Documentation · Third-party licenses
 About this App · v0.12.0

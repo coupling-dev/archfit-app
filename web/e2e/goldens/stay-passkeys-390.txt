@@ -31,5 +31,5 @@ Remove
 
 Removing your last passkey opens an issue for the owners. You need a passkey to confirm an approval.
 
-Documentation · Third-party licences
+Documentation · Third-party licenses
 About this App · v0.12.0

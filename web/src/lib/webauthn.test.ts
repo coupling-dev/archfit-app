@@ -115,7 +115,7 @@ describe('credentialJSON', () => {
 
 describe('passkeyFailure', () => {
   it.each([
-    ['NotAllowedError', 'The passkey step was cancelled or took too long. Nothing was changed.'],
+    ['NotAllowedError', 'The passkey step was canceled or took too long. Nothing was changed.'],
     ['InvalidStateError', 'This device already holds one of your passkeys. Use another device or another passkey.'],
     ['SecurityError', 'This browser cannot use a passkey for this address. Nothing was changed.'],
     ['NotSupportedError', 'This browser has no passkey that Archfit can use. Nothing was changed.'],
