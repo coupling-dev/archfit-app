@@ -83,6 +83,17 @@ describe('the last answer, then the current one', () => {
     expect(recall(home)).toBeUndefined();
   });
 
+  it('does not remember a changed answer to a read that started before access was refused', async () => {
+    let answer!: (body: object) => void;
+    const current = prefetch(route, () => new Promise((resolve) => (answer = resolve)), true);
+    await firstJSON(home);
+    forget();
+    answer({ state: 'new' });
+    await expect(current).resolves.toBe(true);
+    await expect(firstJSON(home)).resolves.toEqual({ state: 'new' });
+    expect(recall(home)).toBeUndefined();
+  });
+
   it.each([
     ['a first visit', route, false],
     ['an owner action', parseRoute('/r/acme/app/owner/first'), true],

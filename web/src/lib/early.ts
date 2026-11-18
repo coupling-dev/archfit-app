@@ -8,6 +8,12 @@ import type { Route } from './route';
 // A page's first reads start beside /api/session instead of after it: the server authorizes each one on its own, and
 // the page takes the answer once it mounts. A read no page takes (signed out, another failure) is dropped quietly.
 const early = new Map<string, Promise<unknown>>();
+// The epoch (lib/memory) each early read started in: the page that takes it remembers its answer only if that is still current.
+const startedIn = new Map<string, number>();
+function put(path: string, answer: Promise<unknown>, since: number) {
+  early.set(path, answer);
+  startedIn.set(path, since);
+}
 // The paths whose early read is the last answer from memory, which is not a new answer to remember.
 const recalled = new Set<string>();
 
@@ -68,24 +74,24 @@ export function prefetch(
     const last = again && listed.has(route.kind) ? recall(path) : undefined;
     recalled.delete(path);
     if (last === undefined) {
-      early.set(path, answer);
+      put(path, answer, since);
       continue;
     }
-    early.set(path, Promise.resolve(JSON.parse(last)));
+    put(path, Promise.resolve(JSON.parse(last)), since);
     recalled.add(path);
     current.push(
       answer.then(
         (body) => {
           remember(path, body, since);
           if (JSON.stringify(body) === last) return false;
-          early.set(path, answer);
+          put(path, answer, since);
           recalled.delete(path);
           return true;
         },
         () => {
           // Fail closed: a view that could not be refreshed is not shown again; the page shows why.
           drop(path);
-          early.set(path, answer);
+          put(path, answer, since);
           recalled.delete(path);
           return true;
         },
@@ -98,7 +104,8 @@ export function prefetch(
 // firstJSON is the early read of path, once; any later read of it goes to the server again.
 export function firstJSON<T>(path: string): Promise<T> {
   const from = read(visit);
-  const since = currentEpoch();
+  const since = startedIn.get(path) ?? currentEpoch();
+  startedIn.delete(path);
   const answer = early.get(path) ?? getJSON<T>(path);
   const fromMemory = recalled.delete(path);
   early.delete(path);
