@@ -2,9 +2,9 @@ Approve the first policy
 
 acme/app
 
-unknown: the first policy needs approval.
+unknown — the first policy needs approval.
 
-There is no approved policy yet. Approving makes every line below the approved policy.
+No policy is approved yet. If you approve, the policy below becomes the approved policy.
 
 View policy
 The first policy
@@ -37,4 +37,4 @@ Why a passkey?
 
 Manage your passkeys
 
-Approve the first policy
+Approve with passkey

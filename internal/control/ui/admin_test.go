@@ -44,8 +44,8 @@ func TestRepositoryOfWaitingAccountAnswersWaiting(t *testing.T) {
 		if want := r.FullName == strangerRepo; r.Waiting != want {
 			t.Errorf("%s: waiting = %v; want %v", r.FullName, r.Waiting, want)
 		}
-		if r.Waiting && r.State != stateWaiting {
-			t.Errorf("%s: state = %q; want %q", r.FullName, r.State, stateWaiting)
+		if r.Waiting && r.State != stateNotAdmitted {
+			t.Errorf("%s: state = %q; want %q", r.FullName, r.State, stateNotAdmitted)
 		}
 	}
 }
@@ -58,9 +58,10 @@ func TestAdminIsNotFoundForNonOperators(t *testing.T) {
 	wantStatus(t, c.get("/api/admin/installations"), http.StatusNotFound)
 	wantStatus(t, c.postJSON(approvePath(installC, "approve"), struct{}{}), http.StatusNotFound)
 	wantStatus(t, c.postJSON(approvePath(installC, "revoke"), struct{}{}), http.StatusNotFound)
-	if got := decodeAs[sessionJSON](t, c.get("/api/session")); got.Operator || got.Waiting != 0 {
-		t.Errorf("session = %+v; want no operator fields", got)
+	if got := decodeAs[sessionJSON](t, c.get("/api/session")); got.Operator {
+		t.Errorf("session = %+v; want no operator field", got)
 	}
+	wantStatus(t, c.get("/api/admin/waiting"), http.StatusNotFound)
 	if ok, _ := e.admit.Admitted(t.Context(), installC, "stranger"); ok {
 		t.Fatal("a non-operator approved an installation")
 	}
@@ -73,8 +74,11 @@ func TestOperatorApprovesThenRevokes(t *testing.T) {
 	ops := e.signIn(operatorLogin)
 
 	wantStatus(t, ops.get("/admin"), http.StatusOK)
-	if got := decodeAs[sessionJSON](t, ops.get("/api/session")); !got.Operator || got.Waiting != 1 {
-		t.Fatalf("session = %+v; want operator with 1 waiting", got)
+	if got := decodeAs[sessionJSON](t, ops.get("/api/session")); !got.Operator {
+		t.Fatalf("session = %+v; want operator", got)
+	}
+	if got := decodeAs[waitingJSON](t, ops.get("/api/admin/waiting")); got.Waiting != 1 {
+		t.Fatalf("waiting = %+v; want 1", got)
 	}
 	var before adminBody
 	ops.getJSON("/api/admin/installations", &before)
@@ -166,12 +170,24 @@ func TestUnreadableApprovalIsNeitherWaitingNorApproved(t *testing.T) {
 			t.Errorf("%s: waiting = %v; want %v", r.FullName, r.Waiting, want)
 		}
 	}
-	if got := decodeAs[sessionJSON](t, ops.get("/api/session")); got.Waiting != -1 {
-		t.Errorf("session waiting = %d; want -1, not a wrong count", got.Waiting)
+	if got := decodeAs[waitingJSON](t, ops.get("/api/admin/waiting")); got.Waiting != -1 {
+		t.Errorf("waiting = %d; want -1, not a wrong count", got.Waiting)
 	}
 	var admin adminBody
 	ops.getJSON("/api/admin/installations", &admin)
 	if admin.Unreadable != 1 || len(admin.Waiting) != 1 || admin.Waiting[0].Account != "stranger" {
 		t.Errorf("admin = %+v; want the stranger waiting and 1 unreadable", admin)
+	}
+}
+
+// The header count is its own request: the session answers an operator without listing or reading any installation.
+func TestSessionAsksGitHubNothingForAnOperator(t *testing.T) {
+	e := strangerEnv(t)
+	ops := e.signIn(operatorLogin)
+	before := len(e.gh.called("ListInstallations"))
+
+	wantStatus(t, ops.get("/api/session"), http.StatusOK)
+	if n := len(e.gh.called("ListInstallations")) - before; n != 0 {
+		t.Errorf("the session listed installations %d times, want none", n)
 	}
 }

@@ -26,7 +26,7 @@ It never imports control, app or an LLM. Provenance authenticates the sender; re
 
 `pullview.go` republishes `PullView`, `PullRecord`, `PullNext` and `PullBalance`.
 `BuildPullView(result.Result) PullView` renders the feedback model as the status line,
-ordered records, author and owner lines. Each waiting error names its request number;
+the note under an unknown heading, ordered records, author and owner lines. Each waiting error names its request number;
 `ShowNext` controls the next step already covered by the author line.
 Callers establish the result's authority before rendering; the builder performs no
 artifact retrieval or evidence verification. Control imports this facade, not feedback.
@@ -83,6 +83,9 @@ issues are plain text, not request links; only the shared model's explicit reque
 ## Owner action views
 
 `OwnerActions.OwnerView` reads the M2 action binding and the policy/workflow blobs at immutable refs.
+  For a pull request the reads run in two concurrent rounds: the approved policy, the pull request and the default branch
+  head first; then the base, head and workflow files at the pull request's commits. Errors and binding checks keep their
+  original order, so the same failure is reported whichever read finished first.
 Its view digest covers repository identity, refs, exact file bytes and SHA-256s, and rendered text.
 First approval uses an empty approved baseline; the entire policy is shown as additions.
 A revert includes the exact result with open answers re-applied, and binds the App proposal and

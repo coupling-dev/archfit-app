@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SegmentedControl from './components/ui/SegmentedControl.svelte';
   import type { Session } from './lib/api';
   import { repoPage } from './lib/route';
   import { applyTheme, saveTheme, storedTheme, themes, type Theme } from './lib/theme';
@@ -10,7 +11,7 @@
     repo = '',
     tab = '',
     pull = 0,
-  }: { session: Session | null; repo?: string; tab?: 'home' | 'policy' | ''; pull?: number } = $props();
+  }: { session: Session | null; repo?: string; tab?: 'home' | 'policy' | 'passkeys' | ''; pull?: number } = $props();
 
   let theme = $state<Theme>(storedTheme());
   const themeNames: Record<Theme, string> = { auto: 'Auto', light: 'Light', dark: 'Dark' };
@@ -26,6 +27,7 @@
       ? [
           { label: 'Home', href: repoPage(repo), current: tab === 'home' },
           { label: 'Policy', href: repoPage(repo, '/policy'), current: tab === 'policy' },
+          { label: 'Passkeys', href: repoPage(repo, '/passkeys'), current: tab === 'passkeys' },
         ]
       : [],
   );
@@ -55,14 +57,15 @@
   <span class="header-spacer"></span>
   {#if session?.operator}
     <a class="admin-link" href="/admin">
-      Admin{#if session.waiting && session.waiting > 0}<span class="label attention">{session.waiting} waiting</span>{/if}
+      Installations{#if session.waiting && session.waiting > 0}<span class="label attention">{session.waiting} to admit</span>{/if}
     </a>
   {/if}
-  <div class="theme-toggle" role="group" aria-label="Theme">
-    {#each themes as t (t)}
-      <button type="button" aria-pressed={theme === t} onclick={() => pick(t)}>{themeNames[t]}</button>
-    {/each}
-  </div>
+  <SegmentedControl
+    label="Theme"
+    options={themes.map((t) => ({ value: t, label: themeNames[t] }))}
+    value={theme}
+    onselect={(t) => pick(t as Theme)}
+  />
   {#if session}
     <form class="user-chip" method="post" action="/auth/logout">
       <span class="avatar" aria-hidden="true">{session.login.slice(0, 1).toUpperCase()}</span>

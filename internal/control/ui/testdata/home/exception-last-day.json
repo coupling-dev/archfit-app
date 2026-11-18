@@ -1,5 +1,6 @@
 {
-  "status": "1 exception expires today",
+  "state": "clean",
+  "status": "The default branch follows the policy. 1 exception expires today.",
   "needs_you": [
     {
       "kind": "exception",

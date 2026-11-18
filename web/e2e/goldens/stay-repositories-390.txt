@@ -9,83 +9,62 @@ A
 Sign out
 Repositories
 
-Choose a repository or continue setup.
-
-Required check is separate from policy approval. Open Home for requests and other owner decisions; those counts are not checked here.
+Choose a repository to open its Home.
 
 Repository
 acme/clean
-Setup
-Policy approved
-Required check:
-Required
-Needs attention
-Not checked here
-Next step
-Open Home
+State
+clean
+archfit/gate
+required
 Repository
 acme/drift
-Setup
-First approval
-Required check:
-Not required
-Needs attention
-PR #8
+State
+drift
+archfit/gate
+not required
 Next step
 Review first policy
 Repository
 acme/expired
-Setup
-Policy approved
-Required check:
-Check
-Needs attention
-Not checked here
+State
+expired
+archfit/gate
+not confirmed
 Next step
-Open Home
+Turn on the required check
 Repository
 acme/not-set-up
-Setup
-Not started
-Required check:
-Check
-Needs attention
-Not checked here
+State
+not set up
+archfit/gate
+not confirmed
 Next step
 Continue setup
 Repository
 acme/outside-flow
-Setup
-Check
-
-The policy changed outside the approval flow.
-
-Required check:
-Check
-Needs attention
-Not checked here
-Next step
-Open Home
+State
+changed outside the flow
+archfit/gate
+not confirmed
 Repository
 acme/unknown
-Setup
-Workflow review
-Required check:
-Check
-Needs attention
-PR #203
+State
+unknown
+archfit/gate
+not confirmed
 Next step
-Review workflow PR
+Review workflow change
 Repository
 octo/tool
-Setup
-Waiting for installation approval
-Needs attention
-Installation approval
+State
+not admitted
+archfit/gate
+not confirmed
 Next step
-Open Home
+Ask an operator to admit this installation.
 
-Check means the App could not confirm that archfit/gate is required; ask an admin.
+archfit/gate is required when GitHub requires pull requests and this check on the default branch. Not confirmed: the App could not confirm this check. Ask a repository administrator.
 
 Documentation · Third-party licenses
 About this App · v0.12.0

@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
 
+  import StatusLabel from './ui/StatusLabel.svelte';
+
   let { top, status }: { top: Snippet; status?: Snippet } = $props();
 </script>
 
@@ -38,10 +40,10 @@
   <section class="stack-sm" aria-labelledby="pitch-status">
     <h2 id="pitch-status">What the check says</h2>
     <div class="box">
-      <div class="box-row pitch-check"><span class="status success">Pass</span><span>The checked change meets the policy.</span></div>
-      <div class="box-row pitch-check"><span class="status danger">Fail</span><span>Fix the code, or ask, as the error says.</span></div>
-      <div class="box-row pitch-check"><span class="status attention">Waiting for owner</span><span>An open request covers the errors. Wait for the owner.</span></div>
-      <div class="box-row pitch-check"><span class="status neutral">No verdict</span><span>Evidence is missing or the policy differs from the protected one. This is not a pass.</span></div>
+      <div class="box-row pitch-check"><StatusLabel label="pass" /><span>The checked change meets the policy.</span></div>
+      <div class="box-row pitch-check"><StatusLabel label="fail" /><span>Fix the code, or ask, as the error says.</span></div>
+      <div class="box-row pitch-check"><StatusLabel label="waiting" /><span>An open request covers the errors. Wait for the owner.</span></div>
+      <div class="box-row pitch-check"><StatusLabel label="unknown" /><span>Evidence is missing or the policy differs from the protected one. This is not a pass.</span></div>
     </div>
   </section>
 

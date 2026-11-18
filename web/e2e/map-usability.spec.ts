@@ -42,7 +42,7 @@ for (const width of [390, 1280]) {
       'GET /api/repos/acme/app/requests/415': () => [200, mapRequest],
       'GET /api/repos/acme/app/requests/415/preview': () => [422, { error: 'Choose an answer.' }],
     });
-    const diagram = page.getByRole('img', { name: graphName });
+    const diagram = page.getByRole('group', { name: graphName });
     const listToggle = page.getByText('Show the map as a list', { exact: true });
     const diagramToggle = page.getByText('Show the map as a diagram', { exact: true });
     await expect(page.locator('.map-node')).toHaveCount(0);
@@ -69,38 +69,26 @@ for (const width of [390, 1280]) {
     await expect(legend).not.toContainText('#');
     await expect(legend).toContainText('A requested dependency');
     expect(await diagram.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThanOrEqual(width - 32);
-    expect(
-      await diagram.evaluate((el: SVGSVGElement) => {
-        const content = el.getBBox();
-        const box = el.viewBox.baseVal;
-        return (
-          content.x >= 0 &&
-          content.y >= 0 &&
-          content.x + content.width <= box.width &&
-          content.y + content.height <= box.height
-        );
-      }),
-    ).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-    await page.getByRole('button', { name: 'Dark', exact: true }).click();
+    await page.getByRole('radio', { name: 'Dark', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await expect(diagram).toBeVisible();
     await page.screenshot({ path: '../tmp/map-touch/after-dark-' + width + '.png', fullPage: true });
-    await page.getByRole('button', { name: 'Auto', exact: true }).click();
+    await page.getByRole('radio', { name: 'Auto', exact: true }).click();
     await expectClean(page);
   });
 
   test('shell: skip link and touch controls at ' + width, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await open(page, '/r/acme/app', { 'GET /api/repos/acme/app/home': () => [200, home] });
-    await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'acme/app', exact: true })).toBeVisible();
     await page.keyboard.press('Tab');
     const skip = page.getByRole('link', { name: 'Skip to main content' });
     await expect(skip).toBeFocused();
     await expect(skip).toBeInViewport();
     await page.keyboard.press('Enter');
     await expect(page.locator('main')).toBeFocused();
-    const dark = page.getByRole('button', { name: 'Dark', exact: true });
+    const dark = page.getByRole('radio', { name: 'Dark', exact: true });
     await dark.focus();
     await expect(dark).toHaveCSS('outline-style', 'solid');
     if (width < 720) {
@@ -108,7 +96,7 @@ for (const width of [390, 1280]) {
         dark,
         page.getByRole('button', { name: 'Sign out' }),
         page.getByRole('link', { name: 'Policy', exact: true }),
-        page.getByRole('button', { name: 'Diagram', exact: true }),
+        page.getByRole('radio', { name: 'Diagram', exact: true }),
       ]) {
         const box = await control.boundingBox();
         expect(box?.height).toBeGreaterThanOrEqual(44);
@@ -125,14 +113,14 @@ for (const width of [390, 1280]) {
     });
     const date = page.getByLabel('The exception ends on');
     const text = page.getByLabel('What to do instead');
-    await page.getByRole('radio', { name: 'Approve until a date', exact: true }).check();
+    await page.getByRole('button', { name: 'Approve until a date', exact: true }).click();
     await expect(date).toHaveClass(/form-control/);
-    await page.getByRole('button', { name: 'Dark', exact: true }).click();
+    await page.getByRole('radio', { name: 'Dark', exact: true }).click();
     await expect(date).toHaveCSS('background-color', 'rgb(13, 17, 23)');
     await date.fill('2027-01-15');
     await expect(date).toHaveValue('2027-01-15');
     if (width < 720) expect((await date.boundingBox())?.height).toBeGreaterThanOrEqual(44);
-    await page.getByRole('radio', { name: 'Reject', exact: true }).check();
+    await page.getByRole('button', { name: 'Reject', exact: true }).click();
     await expect(text).toHaveClass(/form-control/);
     await text.fill('Use the existing port.');
     await expect(text).toHaveValue('Use the existing port.');

@@ -2,10 +2,11 @@
   import Header from './Header.svelte';
   import About from './components/About.svelte';
   import Skeleton from './components/Skeleton.svelte';
-  import { ApiError, getJSON, type Session } from './lib/api';
+  import { ApiError, getJSON, type Repos as RepoList, type Session } from './lib/api';
   import { prefetch } from './lib/early';
   import { refused, waiting } from './lib/gate';
-  import { guideURL, parseRoute, serverError } from './lib/route';
+  import { missingSentence } from './lib/notfound';
+  import { guideURL, parseRoute, repoPage, serverError } from './lib/route';
   import Admin from './pages/Admin.svelte';
   import Landing from './pages/Landing.svelte';
   import Home from './pages/Home.svelte';
@@ -24,6 +25,25 @@
   const serverSentence = serverError(document.querySelector('meta[name="app-error"]')?.getAttribute('content'));
   const pageError = $derived(serverSentence || $refused);
   const notFound = $derived(!!$refused || serverSentence === 'Not found.' || route.kind === 'unknown');
+  // The repositories the signed-in user can see. A missing page names its repository only when it is in this list:
+  // a 404 for a repository the user cannot see looks the same, and must not reveal that it exists.
+  let visible = $state<string[] | null>(null);
+  let lookedUp = false;
+  const onRepo = 'fullName' in route;
+  // GitHub names are case-insensitive, so the URL's spelling is matched against the canonical one.
+  const knownRepo = $derived(
+    notFound && onRepo && visible?.some((name) => name.toLowerCase() === route.fullName.toLowerCase()) ? route.fullName : '',
+  );
+  $effect(() => {
+    if (!notFound || !onRepo || lookedUp) return;
+    lookedUp = true;
+    // The overview is the one repository list the App has; a 404 is rare, so its cost is paid only here.
+    getJSON<RepoList>('/api/repos').then(
+      (b) => (visible = b.repos.map((r) => r.full_name)),
+      () => (visible = []),
+    );
+  });
+  const repoList = location.pathname === '/repos';
 
   // loading, then the signed-in session, signed out (401), or a failure to show.
   let session = $state<Session | null>(null);
@@ -33,19 +53,29 @@
   // The page's first reads and its chunk start beside the session, so the page waits for the slowest, not their sum.
   if (!serverSentence) prefetch(route);
   getJSON<Session>('/api/session').then(
-    (s) => (session = s),
+    (s) => {
+      session = s;
+      if (s.operator) countWaiting(s);
+    },
     (e: ApiError) => {
       if (e.status === 401) signedOut = true;
       else failure = e.message;
     },
   );
+  // The operator's count fills the header once the session shows; -1 when it cannot be read.
+  function countWaiting(s: Session) {
+    getJSON<{ waiting: number }>('/api/admin/waiting').then(
+      (b) => (session = { ...s, waiting: b.waiting }),
+      () => (session = { ...s, waiting: -1 }),
+    );
+  }
 
   const title = $derived(
     notFound
       ? 'Page not available'
       : pageError ? 'Page could not be loaded'
       : $waiting
-        ? 'Waiting for approval'
+        ? 'Waiting to be admitted'
         : route.kind === 'admin'
           ? 'Installations'
           : route.kind === 'pull'
@@ -63,9 +93,10 @@
               : 'Repositories',
   );
   const repo = $derived(
-    !pageError && !$waiting && route.kind !== 'home' && route.kind !== 'admin' && route.kind !== 'unknown' && session
-      ? route.fullName
-      : '',
+    knownRepo ||
+      (!pageError && !$waiting && route.kind !== 'home' && route.kind !== 'admin' && route.kind !== 'unknown' && session
+        ? route.fullName
+        : ''),
   );
   $effect(() => {
     document.title = `${title} · Archfit`;
@@ -78,7 +109,7 @@
   {repo}
   tab={route.kind === 'repo'
     ? 'home'
-    : route.kind === 'policy'
+    : route.kind === 'policy' || route.kind === 'passkeys'
       ? route.kind
       : ''}
   pull={route.kind === 'pull' ? route.number : 0}
@@ -87,8 +118,16 @@
   {#if notFound}
     <div class="blankslate">
       <h1>Page not available</h1>
-      <p>This page does not exist or is not available to your account.</p>
-      <a class="btn" href="/">Repositories</a>
+      {#if knownRepo}
+        <p>{missingSentence(route)}</p>
+        <a class="btn" href={repoPage(knownRepo)}>Back to {knownRepo}</a>
+      {:else if repoList}
+        <p>Repositories are listed on the home page.</p>
+        <a class="btn" href="/">Repositories</a>
+      {:else}
+        <p>This page does not exist or is not available to your account.</p>
+        <a class="btn" href="/">Repositories</a>
+      {/if}
     </div>
   {:else if pageError}
     <div class="blankslate">

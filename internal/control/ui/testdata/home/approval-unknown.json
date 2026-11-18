@@ -1,5 +1,6 @@
 {
-  "status": "clean",
+  "state": "clean",
+  "status": "The default branch follows the policy.",
   "map": {
     "layers": [
       "cmd",

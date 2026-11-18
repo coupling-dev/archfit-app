@@ -2,7 +2,7 @@
   import { tick } from 'svelte';
   import { repoPage } from '../../lib/route';
   import { mapLayers, type MapModel } from './model';
-  import { isNavKey, nextCell, pairIndex, pairKey, statusLabel, symbols, visibleModules, type Cell } from './dsm';
+  import { breakable, cellView, compactFrom, filtersFrom, isNavKey, kindWords, nextCell, pairIndex, pairKey, statusLabel, symbols, visibleModules, type Cell } from './dsm';
 
   let { model, repo }: { model: MapModel; repo: string } = $props();
   const id = $props.id();
@@ -12,6 +12,7 @@
   let direction = $state<'inbound' | 'outbound'>('outbound');
   let attention = $state(false);
   let collapsed = $state<string[]>([]);
+  const compact = $derived(model.modules.length >= compactFrom);
   const modules = $derived(visibleModules(model, { search, focus, direction, attention, collapsed }));
   let selected = $state<{ from: string; to: string } | null>(null);
   let dialog: HTMLDialogElement;
@@ -25,6 +26,8 @@
     next?.setAttribute('tabindex', '0');
   }
 
+  // A column starts a layer band when the module before it is in another layer.
+  const bandStart = (list: { layer: string }[], col: number) => col > 0 && list[col - 1].layer !== list[col].layer;
   const hasLines = (from: string, to: string) => index.has(pairKey(from, to));
   const open = (cell: Cell) =>
     cell.row !== cell.col || hasLines(modules[cell.row].name, modules[cell.row].name);
@@ -100,12 +103,15 @@
   {:else}
   <p class="orientation"><strong>Policy and review status</strong> · row depends on column.</p>
   <ul class="legend" aria-label="Matrix legend">
-    <li>✓ Explicit allow</li><li>× Explicit deny</li><li>? Request</li><li>! Drift</li><li>◷ Exception (expiry in details)</li>
+    <li>{symbols.allowed} {kindWords.allowed}</li><li>{symbols.deny} {kindWords.deny}</li><li>{symbols.requested} {kindWords.requested}</li><li>{symbols.drift} {kindWords.drift}</li><li>{symbols.exception} {kindWords.exception}</li>
   </ul>
-  <p class="muted small" id={id + '-scope'}>Blank = no explicit relationship in this payload, not “no imports” or “permitted”.
-    Deny status is only known for touched, requested or drift pairs; full deny evaluation is not available.</p>
+  <p class="muted small" id={id + '-scope'}>Blank: the matrix shows no status for this pair. It does not mean the dependency is allowed.</p>
+  <details class="about small">
+    <summary>About this view</summary>
+    <p>Deny status is only shown for touched, requested or drift pairs. A blank pair may still be denied by a rule.</p>
+  </details>
 
-  {#if model.modules.length >= 50}
+  {#if model.modules.length >= filtersFrom}
     <div class="filters">
       <label>Search modules or layers<input class="form-control" type="search" bind:value={search} /></label>
       <label>Focus module<select class="form-control" bind:value={focus}>
@@ -117,10 +123,10 @@
       <label>Direction<select class="form-control" bind:value={direction}>
         <option value="outbound">Outbound (source → targets)</option><option value="inbound">Inbound (sources → target)</option>
       </select></label>
-      <label class="attention"><input type="checkbox" bind:checked={attention} /> Needs attention</label>
+      <label class="attention"><input type="checkbox" bind:checked={attention} /> With denies, requests, drift or exceptions</label>
       <button class="btn" onclick={reset}>Reset filters</button>
     </div>
-    <p class="muted small">Focus follows explicit payload relationships only. Needs attention shows modules with denies, requests, drift or exceptions.</p>
+    <p class="muted small">Focus follows explicit policy relationships only.</p>
     <div class="layers" role="group" aria-label="Visible layers">
       {#each mapLayers(model) as layer (layer)}
         <button class="btn" aria-expanded={!collapsed.includes(layer)} onclick={() => toggleLayer(layer)}>
@@ -138,28 +144,29 @@
     <div class="viewport" role="region" aria-label="Scrollable relationship matrix">
       <!-- The buttons are the interactive elements; the table only delegates their focus, key and click events. -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-      <table bind:this={table} aria-describedby={id + '-scope'} {onfocusin} {onkeydown} {onclick}>
+      <table bind:this={table} class:compact aria-describedby={id + '-scope'} {onfocusin} {onkeydown} {onclick}>
         <caption class="sr-only">Policy and review status matrix</caption>
         <thead><tr>
           <th class="corner" scope="col">Source ↓<br />Target →</th>
-          {#each modules as target (target.name)}
-            <th scope="col">
-              <span class="layer">{target.layer || 'No layer'}</span>{target.name}
+          {#each modules as target, col (target.name)}
+            <th scope="col" class="col" class:col-start={bandStart(modules, col)} title={target.name}>
+              <span class="layer">{target.layer || 'No layer'}</span><span class="name">{#each breakable(target.name) as part, i (i)}{part}<wbr />{/each}</span>
             </th>
           {/each}
         </tr></thead>
         <tbody>
           {#each modules as source, row (source.name)}
             <tr class:layer-start={row > 0 && modules[row - 1].layer !== source.layer}>
-              <th scope="row">
-                <span class="layer">{source.layer || 'No layer'}</span>{source.name}
+              <th scope="row" title={source.name}>
+                <span class="layer" class:repeat={row > 0 && modules[row - 1].layer === source.layer}>{source.layer || 'No layer'}</span><span class="name">{#each breakable(source.name) as part, i (i)}{part}<wbr />{/each}</span>
               </th>
               {#each modules as target, col (target.name)}
                 {@const lines = index.get(pairKey(source.name, target.name)) ?? []}
+                {@const view = cellView(lines)}
                 {#if row === col && !lines.length}
-                  <td class="self"></td>
+                  <td class="self" class:col-start={bandStart(modules, col)}></td>
                 {:else}
-                  <td>
+                  <td class:col-start={bandStart(modules, col)}>
                     <button
                       tabindex="-1"
                       data-row={row}
@@ -167,9 +174,10 @@
                       aria-label={source.name + ' to ' + target.name + ': ' + (lines.length ? lines.map(statusLabel).join('; ') : 'no rule')}
                       aria-haspopup="dialog"
                     >
-                      {#each lines as line, i (i)}
-                        <span class={'mark ' + line.kind} aria-hidden="true">{symbols[line.kind]}</span>
-                      {/each}
+                      {#if view}
+                        <span class={'mark ' + view.kind} class:soon={view.soon} class:quiet={view.quiet} aria-hidden="true">{symbols[view.kind]}</span>
+                        {#if view.count > 1}<span class="count" aria-hidden="true">{view.count}</span>{/if}
+                      {/if}
                     </button>
                   </td>
                 {/if}
@@ -190,7 +198,7 @@
       <button class="btn" onclick={() => dialog.close()}>Close details</button>
     </div>
     <dl><dt>Source</dt><dd>{selected.from}</dd><dt>Target</dt><dd>{selected.to}</dd></dl>
-    <h4>All payload statuses</h4>
+    <h4>Statuses</h4>
     <ul class="statuses">
       {#each index.get(pairKey(selected.from, selected.to)) ?? [] as line, i (i)}
         <li>
@@ -199,13 +207,11 @@
             <a href={repoPage(repo, `/requests/${line.request}`)}>Open request #{line.request}</a>
           {/if}
         </li>
-      {:else}<li>No explicit relationship in this payload.</li>{/each}
+      {:else}<li>The matrix shows no status for this pair. A deny rule may still apply; see About this view.</li>{/each}
     </ul>
-    <h4>Evidence scope</h4>
-    <p>Policy and review status from this payload only. Allowed entries are policy declarations, not observed imports.
-      Deny status is only known for touched, requested or drift pairs; full deny evaluation is not available.
-      A blank cell does not mean “no imports” or “permitted”.</p>
-    <p>No observed dependency counts, scan coverage or snapshot identity are provided. Exception dates and days left are as reported by the server, not a fresh expiry check.</p>
+    <h4>About this pair</h4>
+    <p>Allowed entries are policy declarations, not observed imports. Exception dates are the policy's own; an exception
+      without a date shows no date.</p>
   {/if}
 </dialog>
 
@@ -214,10 +220,12 @@
   .orientation { margin-bottom: 8px; }
   .legend { display: flex; flex-wrap: wrap; list-style: none; gap: 6px 16px; padding: 0; margin: 8px 0; font-size: 13px; }
   .small { margin-block: 8px; }
+  .about summary { cursor: pointer; }
   .viewport { max-height: 65vh; max-width: 100%; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
   table { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; font-size: 13px; }
   th, td { padding: 0; border-right: 1px solid var(--border-muted); border-bottom: 1px solid var(--border-muted); text-align: center; }
-  th { background: var(--bg-subtle); padding: 8px; min-width: 80px; max-width: 150px; overflow-wrap: anywhere; }
+  /* Names break only where the script put a <wbr> (after _ and -), never inside a word. */
+  th { background: var(--bg-subtle); padding: 8px; min-width: 80px; overflow-wrap: normal; }
   thead th { position: sticky; top: 0; z-index: 2; }
   tbody th, .corner { position: sticky; left: 0; text-align: left; min-width: 105px; }
   tbody th { z-index: 1; }
@@ -231,7 +239,24 @@
   /* Set by script on the active row and column, so Svelte cannot see the class. */
   table :global(.highlight) { background: var(--accent-subtle); }
   table :global(th.highlight) { background: var(--bg-subtle); box-shadow: inset 0 -3px var(--accent); }
-  .mark { font-size: 18px; font-weight: 700; }
+  .col-start { border-left: 2px solid var(--border); }
+  .mark { font-size: 18px; font-weight: 700; line-height: 1; }
+  .mark.quiet { color: var(--fg-muted); font-weight: 400; }
+  .mark.soon { display: grid; place-items: center; width: 24px; height: 24px; border: 2px solid var(--attention); border-radius: 50%; font-size: 14px; }
+  .count { font-size: 11px; font-weight: 600; color: var(--fg-muted); }
+  /* Compact: 32 px symbol cells, a 220 px row header, and vertical column names. */
+  table.compact { font-size: 12px; min-width: 0; }
+  table.compact td, table.compact th.col { width: 32px; min-width: 32px; max-width: 32px; }
+  table.compact td button { width: 32px; height: 32px; min-width: 0; min-height: 0; padding: 0; gap: 2px; flex-wrap: nowrap; }
+  table.compact .mark { font-size: 16px; }
+  table.compact .mark.soon { width: 20px; height: 20px; font-size: 12px; }
+  table.compact th.col { padding: 6px 0; vertical-align: bottom; }
+  table.compact th.col .name { display: block; margin-inline: auto; writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; max-height: 12em; overflow: hidden; text-overflow: ellipsis; }
+  table.compact tbody th, table.compact .corner { width: 220px; min-width: 220px; max-width: 220px; padding: 2px 8px; }
+  table.compact th.col .layer, table.compact .layer.repeat { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  @media (width < 720px) {
+    table.compact tbody th, table.compact .corner { width: 140px; min-width: 140px; max-width: 140px; }
+  }
   .allowed { color: var(--success); }
   .deny, .drift { color: var(--danger); }
   .requested, .exception { color: var(--attention); }

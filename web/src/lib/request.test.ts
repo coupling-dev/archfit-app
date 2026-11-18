@@ -75,18 +75,18 @@ describe('dependency', () => {
 
 describe('statusOf', () => {
   it.each([
-    [open, 'waiting', 'attention', 'Request #431 waits for an owner to answer.'],
+    [open, 'waiting', 'attention', 'Waiting for an owner to answer.'],
     [
       { ...open, verified: false },
       'waiting',
       'attention',
-      'Request #431 waits for an owner to answer. Its numbers are as reported: no pull request confirmed them yet.',
+      'Waiting for an owner to answer. Its numbers are as reported: no pull request confirmed them yet.',
     ],
     [
       { ...open, allowed: true },
       'waiting',
       'attention',
-      'Request #431 waits for an owner to answer. The policy already allows this dependency.',
+      'Waiting for an owner to answer. The policy already allows this dependency.',
     ],
     [
       { ...open, policy: false },
@@ -94,7 +94,19 @@ describe('statusOf', () => {
       'attention',
       'Request #431 cannot be answered here: the default branch has no policy of version 3.',
     ],
-    [{ ...open, state: 'answered' }, 'answered', 'neutral', 'Request #431 is answered.'],
+    [{ ...open, state: 'answered' }, 'answered', 'neutral', 'An owner answered this request.'],
+    [
+      { ...open, state: 'answered', answer: { kind: 'approve' } },
+      'answered',
+      'neutral',
+      'An owner approved this request.',
+    ],
+    [
+      { ...open, state: 'answered', answer: { kind: 'reject', instead: 'Use a port.' } },
+      'answered',
+      'neutral',
+      'An owner rejected this request.',
+    ],
     [{ ...open, state: 'closed' }, 'closed', 'neutral', 'Request #431 is closed.'],
   ] as const)('%o', (r, word, tone, line) => {
     expect(statusOf(r)).toEqual({ word, tone, line });
@@ -199,7 +211,7 @@ describe('decisionState', () => {
       ready: true,
       changesPolicy: true,
       mergeLater: true,
-      confirm: verb + ' and keep policy PR open',
+      confirm: verb + ' and keep the policy pull request open',
     });
     expect(decisionState(kind, preview(kind, ''), true)).toMatchObject({
       ready: true,

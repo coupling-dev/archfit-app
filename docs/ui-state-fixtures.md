@@ -23,11 +23,11 @@ API fixtures and existing test variants. They add no production facts or API fie
 | Closed request       | `request/open.json` with `state: closed`, as in `request.spec.ts`                                             | Read-only request, no answer buttons                                                  |
 | Denied role          | `pull/unknown-workflow-viewer.json`                                                                           | Named owner role without an owner-action link; not an invented access verdict         |
 | Unknown ruleset      | `home/not-set-up.json` with the existing `home.spec.ts` unknown/not-applicable rule matrix                    | Unknown still requires an admin check; unavailable is separate; progress stays 2 of 4 |
-| Stale owner action   | 409 `owner_not_due` sentence from `internal/control/ui/wording.go`                                            | No approval needed, current setup/policy recovery links, no approval control                                                 |
+| Stale owner action   | 409 `owner_not_due` sentence from `internal/control/ui/wording.go`                                            | Titled with its action, one reason sentence, one **Open the repository** button, no approval control                          |
 | Long names           | `policy/pumba.json` with the deterministic long module/layer strings already used in `policy-reading.spec.ts` | Expanded module details wrap at both widths; no added approval or enforcement facts   |
 
-The stale-action case checks the current recovery UI: “This approval is not needed”
-with View current setup and View policy links, no retry loop or approval control.
+The stale-action case checks the current recovery UI: the action's title, a one-sentence reason
+and an Open the repository button, no retry loop or approval control.
 The closed-request case records the existing answer wording without claiming that
 its audit findings are fixed.
 
@@ -40,7 +40,7 @@ approval is triggered. Existing write-flow tests remain separate.
 
 ## Landing and colour identity
 
-The landing page uses author/owner and Pass/Fail/Waiting for owner/No verdict.
+The landing page uses author/owner and the status words pass, fail, waiting and unknown, with their glosses.
 It describes CI checks and App report/policy reads rather than promising that
 code never leaves CI. Footer links have a visible, assistive-technology-hidden separator.
 

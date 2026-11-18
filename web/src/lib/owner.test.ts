@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { readOwnerView, ownerViewPath, outcomeText, ownerFileVersion, ownerDiffLines, type OwnerKind } from './owner';
+import { readOwnerView, ownerViewPath, outcomeText, ownerButton, ownerFileVersion, ownerTitle, outcomeTone, type OwnerKind } from './owner';
+import { diffLines } from './diff';
 
 const route = { action: 'first' as const, pull: 0, owner: 'acme', name: 'app', fullName: 'acme/app' };
 const fixture = (name: string): unknown =>
@@ -26,32 +27,32 @@ describe('owner file presentation', () => {
   it('preserves unified diff bytes and distinguishes headers from changed content', () => {
     const text =
       '--- a/file\n+++ b/file\n@@ -1,3 +1,3 @@\n same\n--- content\n+++ content\n@@ -9 +9 @@\n-old\r\n+new\n\\ No newline at end of file';
-    const lines = ownerDiffLines(text);
+    const lines = diffLines(text);
     expect(lines.map((line) => line.kind)).toEqual([
       'header',
       'header',
       'hunk',
-      'context',
-      'deletion',
-      'addition',
+      'ctx',
+      'del',
+      'add',
       'hunk',
-      'deletion',
-      'addition',
-      'context',
+      'del',
+      'add',
+      'ctx',
     ]);
     expect(lines.map((line) => line.text).join('')).toBe(text);
   });
 
   it('does not discard unrecognized lines or invent changes for an empty diff', () => {
-    expect(ownerDiffLines('')).toEqual([]);
-    expect(ownerDiffLines('Line endings: LF → CRLF\n')).toEqual([
-      { text: 'Line endings: LF → CRLF\n', kind: 'context' },
+    expect(diffLines('')).toEqual([]);
+    expect(diffLines('Line endings: LF → CRLF\n')).toEqual([
+      { text: 'Line endings: LF → CRLF\n', kind: 'ctx' },
     ]);
-    expect(ownerDiffLines('@ hunk\n+added\n-removed\n context\n')).toEqual([
+    expect(diffLines('@ hunk\n+added\n-removed\n context\n')).toEqual([
       { text: '@ hunk\n', kind: 'hunk' },
-      { text: '+added\n', kind: 'addition' },
-      { text: '-removed\n', kind: 'deletion' },
-      { text: ' context\n', kind: 'context' },
+      { text: '+added\n', kind: 'add' },
+      { text: '-removed\n', kind: 'del' },
+      { text: ' context\n', kind: 'ctx' },
     ]);
   });
 });
@@ -90,5 +91,30 @@ describe('owner views', () => {
     expect(outcomeText('workflow', { approval: 'a1', check: 'blocked' })).toContain('could not run again');
     expect(outcomeText('first', { approval: 'a1', check: 'pending' })).toContain('waits for its run');
     expect(outcomeText('revert', { approval: 'a1', pull_request: 12, state: 'refused' })).toContain('has not merged');
+  });
+});
+
+describe('owner page words', () => {
+  it.each([
+    ['first', 'Approve the first policy', 'Approve with passkey'],
+    ['workflow', 'Approve the workflow change', 'Approve with passkey'],
+    ['confirm', 'Confirm the policy', 'Confirm with passkey'],
+    ['revert', 'Revert the policy', 'Revert with passkey'],
+  ] as const)('%s: the title is the action and the button never repeats it', (kind, title, button) => {
+    expect(ownerTitle(kind)).toBe(title);
+    expect(ownerButton(kind)).toBe(button);
+    expect(ownerButton(kind)).not.toBe(ownerTitle(kind));
+  });
+});
+
+describe('owner outcome tone', () => {
+  it.each([
+    ['revert', { approval: 'a1', state: 'merged' }, 'success'],
+    ['revert', { approval: 'a1', state: 'later', pull_request: 12 }, 'attention'],
+    ['workflow', { approval: 'a1', check: 'blocked' }, 'attention'],
+    ['workflow', { approval: 'a1', check: 'rerun' }, 'success'],
+    ['confirm', { approval: 'a1' }, 'success'],
+  ] as const)('%s with %j is %s', (kind, out, tone) => {
+    expect(outcomeTone(kind, { ...out })).toBe(tone);
   });
 });
