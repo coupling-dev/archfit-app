@@ -1,10 +1,12 @@
 Approve the first policy
 
-acme/app · PR #7
+acme/app
 
-unknown: the first policy needs approval.
+unknown — the first policy needs approval.
 
-There is no approved policy yet. Approving makes every line below the approved policy.
+Pull request #7
+
+No policy is approved yet. If you approve, the policy below becomes the approved policy.
 
 Pull request #7 on GitHub
 View policy
@@ -38,4 +40,4 @@ Why a passkey?
 
 Manage your passkeys
 
-Approve the first policy
+Approve with passkey

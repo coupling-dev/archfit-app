@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { readOwnerView, ownerViewPath, outcomeText, ownerFileVersion, type OwnerKind } from './owner';
+import { readOwnerView, ownerViewPath, outcomeText, ownerButton, ownerFileVersion, ownerTitle, outcomeTone, type OwnerKind } from './owner';
 import { diffLines } from './diff';
 
 const route = { action: 'first' as const, pull: 0, owner: 'acme', name: 'app', fullName: 'acme/app' };
@@ -91,5 +91,30 @@ describe('owner views', () => {
     expect(outcomeText('workflow', { approval: 'a1', check: 'blocked' })).toContain('could not run again');
     expect(outcomeText('first', { approval: 'a1', check: 'pending' })).toContain('waits for its run');
     expect(outcomeText('revert', { approval: 'a1', pull_request: 12, state: 'refused' })).toContain('has not merged');
+  });
+});
+
+describe('owner page words', () => {
+  it.each([
+    ['first', 'Approve the first policy', 'Approve with passkey'],
+    ['workflow', 'Approve the workflow change', 'Approve with passkey'],
+    ['confirm', 'Confirm the policy', 'Confirm with passkey'],
+    ['revert', 'Revert the policy', 'Revert with passkey'],
+  ] as const)('%s: the title is the action and the button never repeats it', (kind, title, button) => {
+    expect(ownerTitle(kind)).toBe(title);
+    expect(ownerButton(kind)).toBe(button);
+    expect(ownerButton(kind)).not.toBe(ownerTitle(kind));
+  });
+});
+
+describe('owner outcome tone', () => {
+  it.each([
+    ['revert', { approval: 'a1', state: 'merged' }, 'success'],
+    ['revert', { approval: 'a1', state: 'later', pull_request: 12 }, 'attention'],
+    ['workflow', { approval: 'a1', check: 'blocked' }, 'attention'],
+    ['workflow', { approval: 'a1', check: 'rerun' }, 'success'],
+    ['confirm', { approval: 'a1' }, 'success'],
+  ] as const)('%s with %j is %s', (kind, out, tone) => {
+    expect(outcomeTone(kind, { ...out })).toBe(tone);
   });
 });

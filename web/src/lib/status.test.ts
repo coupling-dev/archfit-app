@@ -5,12 +5,18 @@ describe('status words', () => {
   it.each([
     ['pass', 'success', 'check-circle'],
     ['fail', 'danger', 'x-circle'],
+    ['expired', 'danger', 'x-circle'],
     ['waiting', 'attention', 'clock'],
-    ['unknown', 'neutral', 'question'],
-    ['Action needed', 'attention', 'alert'],
-    ['Ready for review', 'accent', 'info'],
+    ['unknown', 'attention', 'question'],
+    ['to do', 'attention', 'alert'],
+    ['not confirmed', 'neutral', 'question'],
   ])('shows %s as %s with %s', (word, tone, icon) => {
     expect(statusStyle(word)).toEqual({ tone, icon });
+  });
+
+  it('gives the other repository states no colour', () => {
+    for (const word of ['clean', 'drift', 'changed outside the flow', 'not set up'])
+      expect(statusStyle(word)).toEqual({ tone: 'neutral', icon: 'dot' });
   });
 
   it('never shows an unknown word as a pass', () => {

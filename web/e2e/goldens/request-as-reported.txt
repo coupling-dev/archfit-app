@@ -1,6 +1,6 @@
 Request #431
 
-waiting Request #431 waits for an owner to answer. Its numbers are as reported: no pull request confirmed them yet.
+waiting Waiting for an owner to answer. Its numbers are as reported: no pull request confirmed them yet.
 
 Reason
 
@@ -10,16 +10,47 @@ Rule graph · pkg_tc -> pkg_util · asked until 2026-12-01
 
 Request #431 on GitHub
 
-Answer
+Record
+pkg/tc/netem.go:12 graph pkg_tc -> pkg_util is not an allowed dependency
+  balance: 9/10 (min 7)
+The map
+Show the map as a list
+Show the map as a diagram
+An allowed dependency
+A requested dependency
+One a rule denies
+An exception (with its date)
+Drift
 
-Choose an answer and read its policy change before confirming. Previewing or leaving this page changes nothing.
+An arrow points at the module it depends on. Outer layer on top. Allowed dependencies, not observed imports.
 
-Choose an answer
-Approve
-Approve until a date
-Reject
-Approve
-Policy change
+Find a module
++
+−
+Fit
+100%
+Full screen
+adapters
+No layer
+1
+pkg_tc
+Volatility: high
+pkg_util
+Volatility: low
+
+Dependencies not allowed by this policy need a request.
+
+Why the balance
+
+Balance: 9/10 (min 7), as reported. The balance is the value the policy checks against its minimum.
+
+The policy declares the volatility of each module:
+
+pkg_tc: Layer adapters · Volatility high
+
+pkg_util: Volatility low · subdomain generic
+
+Preview: Approve
 
 Loosens the policy: it needs your passkey.
 
@@ -43,6 +74,17 @@ PR #15 in Archfit · PR #15 on GitHub
 
 These code pull requests are not merged by this answer. They still need a fresh check result.
 
+Earlier answers 1
+Exception to graph for pkg_tc -> pkg_util until 2026-10-01. Why: Until the port lands.
+Answer
+
+Choose an answer and read its policy change before confirming. Previewing or leaving this page changes nothing.
+
+Choose an answer
+Approve
+Approve until a date
+Reject
+Approve
 Keep the policy pull request open
 
 This answer records the policy change in a pull request and attempts to merge it. If GitHub refuses, the policy pull request stays open.
@@ -50,47 +92,3 @@ This answer records the policy change in a pull request and attempts to merge it
 Confirm with your passkey. Your passkeys
 
 Approve and merge policy PR
-Record
-
-Balance: 9/10 (min 7), as reported
-
-pkg/tc/netem.go:12 graph pkg_tc -> pkg_util is not an allowed dependency
-  balance: 9/10 (min 7)
-The map
-Show the map as a list
-Show the map as a diagram
-An allowed dependency
-A requested dependency
-One a rule denies
-An exception (with its date)
-Drift
-
-An arrow points at the module it depends on. Outer layer on top. Allowed dependencies, not observed imports.
-
-Find a module
-+
-−
-Fit
-100%
-Full screen
-adapters
-No layer
-pkg_tc
-Volatility: high
-pkg_util
-Volatility: low
-
-Dependencies not allowed by this policy need a request.
-
-Why the balance
-
-Balance: 9/10 (min 7), as reported
-
-The policy declares the volatility of each module:
-
-pkg_tc: Layer adapters · Volatility high
-
-pkg_util: Volatility low · subdomain generic
-
-Earlier answers 1
-Exception to graph for pkg_tc -> pkg_util until 2026-10-01. Why: Until the port lands.

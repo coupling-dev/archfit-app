@@ -11,7 +11,7 @@ import {
   open,
   origin,
 } from './support';
-import { readOwnerView, type OwnerFile, type OwnerKind } from '../src/lib/owner';
+import { ownerButton, readOwnerView, type OwnerFile, type OwnerKind } from '../src/lib/owner';
 
 const root = '/r/acme/app/owner/';
 const api = '/api/repos/acme/app/';
@@ -68,9 +68,8 @@ for (const name of ['first', 'first-pull', 'workflow', 'confirm', 'revert', 'rev
       },
     });
     await expect(page.getByRole('heading', { level: 1, name: body.main_action })).toBeVisible();
-    await expect(page.locator('.page-head .status')).toHaveText(
-      body.kind === 'workflow' ? 'unknown — no verdict until this workflow change is approved.' : body.status,
-    );
+    await expect(page.locator('.page-head .page-status')).toHaveText(body.status);
+    await expect(page.getByRole('button', { name: ownerButton(body.kind), exact: true })).toHaveClass(/primary approval/);
     await expect(page.locator('main button')).toHaveCount(1);
     expect(writes).toEqual([]);
     await expectPageText(page, 'owner-' + name);
@@ -81,7 +80,7 @@ for (const name of ['first', 'first-pull', 'workflow', 'confirm', 'revert', 'rev
     await fingerprint.locator('..').locator('..').getByText('Technical details', { exact: true }).click();
     await expect(fingerprint).toBeVisible();
     await expectNoNotUsedWord(page);
-    await page.getByRole('button', { name: body.main_action, exact: true }).focus();
+    await page.getByRole('button', { name: ownerButton(body.kind), exact: true }).focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('status')).toContainText(
       body.kind === 'revert' ? 'Policy reverted.' : body.kind === 'confirm' ? 'Policy confirmed.' : 'approved',
@@ -132,9 +131,9 @@ for (const changed of [false, true]) {
       const writes = await open(page, root + 'workflow?pull=7', {
         [`GET ${api}owner/workflow/view`]: () => [200, body],
       });
-      await expect(
-        page.getByText('unknown — no verdict until this workflow change is approved.', { exact: true }),
-      ).toBeVisible();
+      await expect(page.locator('.page-head .page-status')).toHaveText(
+        'unknown — no verdict until this workflow change is approved.',
+      );
       await expect(
         page.getByText(
           'This pull request changes the workflow that runs Archfit. The App cannot use its result without your approval.',
@@ -142,11 +141,12 @@ for (const changed of [false, true]) {
         ),
       ).toBeVisible();
       await expect(page.getByRole('link', { name: 'Read the change' })).toHaveCount(0);
-      await expect(page.locator('main a.btn, main .primary')).toHaveCount(0);
-      const confirm = page.getByRole('button', { name: body.main_action, exact: true });
+      await expect(page.locator('main a.btn')).toHaveCount(0);
+      await expect(page.locator('main .primary')).toHaveCount(1);
+      const confirm = page.getByRole('button', { name: 'Approve with passkey', exact: true });
       await expect(page.locator('main button')).toHaveCount(1);
       await expect(confirm).toBeEnabled();
-      expect(await confirm.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgb(31, 136, 61)');
+      expect(await confirm.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(31, 136, 61)');
       await expect(page.getByRole('link', { name: 'Pull request #7 on GitHub' })).toHaveAttribute(
         'href',
         'https://github.com/acme/app/pull/7',
@@ -163,7 +163,7 @@ for (const changed of [false, true]) {
       );
       await expect(policyBlock.getByRole('region')).toHaveCount(changed ? 1 : 0);
       await expect(page.getByText('already approved', { exact: false })).toHaveCount(0);
-      await expect(page.getByText('Approve the workflow and policy shown for PR #7 at commit 3333333.')).toBeVisible();
+      await expect(page.getByText('Approve the workflow and policy shown for pull request #7 at commit 3333333.')).toBeVisible();
       const workflowDiff = page.getByRole('region', { name: `Diff: The workflow change (${workflow})` });
       await expect(workflowDiff.locator('.hunk')).toHaveText('@@ -1,1 +1,1 @@\n');
       await expect(workflowDiff.locator('.add')).toHaveText('+name: archfit\n');
@@ -226,13 +226,13 @@ for (const passkey of [true, false]) {
       await expect(manage).toHaveCount(0);
       await expect(page.getByText('No passkey yet?', { exact: false })).toBeVisible();
     }
-    await expect(page.getByRole('button', { name: body.main_action, exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: ownerButton(body.kind), exact: true })).toBeEnabled();
     await expectClean(page);
   });
 }
 
 for (const [name, status, sentence] of [
-  ['passkey-refused', 403, 'The passkey step-up could not be started. Try again.'],
+  ['passkey-refused', 403, 'Passkey confirmation could not start. Try again.'],
   ['moved', 409, 'The change moved since you looked. Reload it and confirm again with your passkey.'],
 ] as const) {
   test(`owner: ${name} is explicit, with no unseen approval`, async ({ page }) => {
@@ -241,12 +241,12 @@ for (const [name, status, sentence] of [
       [`GET ${api}owner/workflow/view`]: () => [200, body],
       [`POST ${api}passkeys/step-up`]: () => [status, { error: sentence }],
     });
-    await page.getByRole('button', { name: body.main_action, exact: true }).click();
+    await page.getByRole('button', { name: ownerButton(body.kind), exact: true }).click();
     await expect(page.getByRole('alert')).toHaveText(sentence);
     await expectPageText(page, 'owner-' + name);
     expect(writes).toHaveLength(1);
     if (status === 409) {
-      await expect(page.getByRole('button', { name: body.main_action, exact: true })).toBeDisabled();
+      await expect(page.getByRole('button', { name: ownerButton(body.kind), exact: true })).toBeDisabled();
       await expect(page.getByRole('link', { name: 'Reload the change' })).toHaveAttribute(
         'href',
         root + 'workflow?pull=7',
@@ -278,7 +278,7 @@ test('owner: unsafe policy text stays text, and phone width stays inside the pag
 
 test('owner: unreadable file gives the GitHub fallback and no action', async ({ page }) => {
   const sentence =
-    'This file cannot be displayed, so it cannot be approved here. Use the existing owner flow on the GitHub issue.';
+    'Archfit cannot show this file as text, so it cannot be approved here. Use the GitHub issue.';
   await open(page, root + 'revert', { [`GET ${api}owner/revert/view`]: () => [409, { error: sentence }] });
   await expect(page.getByRole('alert')).toHaveText(sentence);
   await expect(page.locator('main button')).toHaveCount(0);

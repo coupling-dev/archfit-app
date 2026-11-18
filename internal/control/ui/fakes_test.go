@@ -144,6 +144,21 @@ func (g *fakeGH) ListRepos(_ context.Context, installationID int64) ([]api.Repo,
 	return out, nil
 }
 
+func (g *fakeGH) InstallationID(ctx context.Context, fullName string) (int64, error) {
+	r, err := g.ResolveRepo(ctx, fullName)
+	return r.InstallationID, err
+}
+
+func (g *fakeGH) Access(ctx context.Context, userToken, fullName string) (string, api.Repo, error) {
+	perm, err := g.Permission(ctx, userToken, fullName)
+	if err != nil {
+		return "", api.Repo{}, err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return perm, g.repos[fullName], nil
+}
+
 func (g *fakeGH) ResolveRepo(_ context.Context, fullName string) (api.Repo, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
