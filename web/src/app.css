@@ -446,9 +446,6 @@ legend { font-weight: 600; padding: 0; margin-bottom: 4px; }
 .pitch-cards .k { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); }
 @media (max-width: 640px) { .pitch-cards { grid-template-columns: 1fr; } }
 .pitch-check { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 13px; }
-.statusbox { border: 1px solid var(--attention-border); background: var(--attention-subtle); border-radius: var(--radius); padding: 16px; display: flex; gap: 12px; align-items: flex-start; }
-.statusbox .big-ic { font-size: 24px; line-height: 1; }
-.statusbox p { margin: 4px 0 0; color: var(--fg-muted); font-size: 13px; }
 
 /* ---------- operators: the header link and the installations page ---------- */
 .admin-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
