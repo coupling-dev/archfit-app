@@ -32,7 +32,12 @@
   const canFullscreen = typeof document !== 'undefined' && document.fullscreenEnabled === true;
 
   const vp = $derived({ w: width, h: height });
-  const world = $derived({ w: placed?.width ?? 0, h: placed?.height ?? 0 });
+  // Fit uses the drawn extent, not the band width: bands are laid out one row wide, so a small graph would otherwise fit as a mostly empty row.
+  const world = $derived(
+    placed ? { w: Math.max(placed.left, ...placed.nodes.map((n) => n.x + n.width)) + 16, h: placed.height } : { w: 0, h: 0 },
+  );
+  // The viewport is as tall as the chart at fit-to-width scale, within 240 px and the spec's 70vh / 720 px bound. Only the width feeds the scale, so this does not loop.
+  const contentH = $derived(Math.ceil(world.h * fitView(world, { w: width, h: 0 }).k));
   const box = $derived(view && width > 0 ? viewBox(view, vp) : `0 0 ${world.w} ${world.h}`);
   const touches = (line: { from: string; to: string }) => line.from === focused || line.to === focused;
   const lines = $derived(mapLines(model.lines));
@@ -49,6 +54,7 @@
     const controller = new AbortController();
     placed = null;
     view = null;
+    auto = true;
     focused = '';
     failure = '';
     if (model.modules.length) {
@@ -66,10 +72,15 @@
 
   $effect(() => { onfocus?.(focused); });
 
-  // Open readable: the first time the chart and the viewport both have a size.
+  // Fit to width until the reader moves or zooms the chart, so a resized viewport refits instead of keeping its old scale.
+  let auto = $state(true);
   $effect(() => {
-    if (placed && width > 0 && height > 0 && !view) view = fitView(world, vp);
+    if (placed && width > 0 && auto) view = fitView(world, vp);
   });
+  function userView(next: View) {
+    auto = false;
+    view = next;
+  }
 
   // A wheel handler must be non-passive to stop the page zooming with the chart; Svelte's onwheel is passive.
   $effect(() => {
@@ -80,7 +91,7 @@
       e.preventDefault();
       const p = local(e);
       const delta = e.deltaMode === 1 ? e.deltaY * 20 : e.deltaY;
-      view = zoomAt(view, world, vp, view.k * Math.exp(-delta * 0.01), p.x, p.y);
+      userView(zoomAt(view, world, vp, view.k * Math.exp(-delta * 0.01), p.x, p.y));
     };
     el.addEventListener('wheel', wheel, { passive: false });
     return () => el.removeEventListener('wheel', wheel);
@@ -97,10 +108,12 @@
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
   function zoomBy(factor: number) {
-    if (view) view = zoomAt(view, world, vp, view.k * factor, width / 2, height / 2);
+    if (view) userView(zoomAt(view, world, vp, view.k * factor, width / 2, height / 2));
   }
-  const fit = () => { view = fitView(world, vp); };
-  const actual = () => { if (view) view = zoomAt(view, world, vp, 1, width / 2, height / 2); };
+  // Set through CSSOM, not a style attribute: the page's CSP forbids inline style= markup.
+  $effect(() => { viewport?.style.setProperty('--content-h', `${contentH}px`); });
+  const fit = () => { auto = true; view = fitView(world, vp); };
+  const actual = () => { if (view) userView(zoomAt(view, world, vp, 1, width / 2, height / 2)); };
   async function toggleFullscreen() {
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
@@ -135,11 +148,11 @@
       if (!moved && Math.hypot(next.x - start.x, next.y - start.y) < DRAG_PX) return;
       if (!moved) viewport?.setPointerCapture(e.pointerId);
       moved = true;
-      view = panBy(view, world, vp, next.x - prev.x, next.y - prev.y);
+      userView(panBy(view, world, vp, next.x - prev.x, next.y - prev.y));
     } else if (pointers.length === 2) {
       const d = spread();
       const [a, b] = pointers;
-      if (pinch > 0) view = zoomAt(view, world, vp, (view.k * d) / pinch, (a.x + b.x) / 2, (a.y + b.y) / 2);
+      if (pinch > 0) userView(zoomAt(view, world, vp, (view.k * d) / pinch, (a.x + b.x) / 2, (a.y + b.y) / 2));
       pinch = d;
     }
   }
@@ -156,7 +169,7 @@
     const pan: Record<string, [number, number]> = {
       ArrowLeft: [STEP, 0], ArrowRight: [-STEP, 0], ArrowUp: [0, STEP], ArrowDown: [0, -STEP],
     };
-    if (pan[e.key]) view = panBy(view, world, vp, ...pan[e.key]);
+    if (pan[e.key]) userView(panBy(view, world, vp, ...pan[e.key]));
     else if (e.key === '+' || e.key === '=') zoomBy(ZOOM_STEP);
     else if (e.key === '-' || e.key === '_') zoomBy(1 / ZOOM_STEP);
     else if (e.key === '0') fit();
@@ -166,7 +179,7 @@
   }
 
   function reveal(node: MapNode, always = false) {
-    if (view && (always || !visible(view, vp, node))) view = centerOn(view, world, vp, node);
+    if (view && (always || !visible(view, vp, node))) userView(centerOn(view, world, vp, node));
   }
   // A pointer press focuses the module before the click; only the click decides, so a drag that starts on a module
   // pans without selecting it.
@@ -199,7 +212,7 @@
   function zoomIn(e: MouseEvent) {
     if (!view) return;
     const p = local(e);
-    view = zoomAt(view, world, vp, view.k * 2, p.x, p.y);
+    userView(zoomAt(view, world, vp, view.k * 2, p.x, p.y));
   }
 
   function find() {
@@ -331,7 +344,7 @@
   .find { display: grid; gap: 4px; font-size: 12px; font-weight: 600; }
   .find input { width: min(260px, 100%); font-weight: 400; }
   .map-viewport {
-    height: min(70vh, 720px);
+    height: min(max(240px, var(--content-h, 720px)), min(70vh, 720px));
     overflow: hidden;
     touch-action: none;
     user-select: none;
