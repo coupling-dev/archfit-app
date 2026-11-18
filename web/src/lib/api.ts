@@ -14,10 +14,8 @@ export interface RepoRow {
   waiting?: boolean; // no operator approved its account yet
   state: string; // stored evidence, not a readiness verdict
   setup_stage?: string;
-  setup_reason?: string;
   enforcement: string;
   enforcement_reason?: string;
-  attention?: string;
   next_step: { text: string; href: string };
 }
 

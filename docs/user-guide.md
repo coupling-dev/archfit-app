@@ -16,25 +16,48 @@ After an owner approves the onboarding pull request, the App sets `archfit/gate`
 
 The App's setup API reads the policy and workflow at one default-branch commit and reports admission, first approval and ruleset advice. It does not change GitHub rulesets. Home keeps setup visible until the applicable required-check settings are confirmed, even after owner approval. A proposed policy or workflow is labelled as present in its PR, not yet on the default branch. Unavailable ruleset features do not block setup progress; unknown settings still need an administrator to check them. Setup progress is not an enforcement verdict.
 
-**Owner approval** distinguishes a signed PR from active default-branch files. **Approved for PR #N.
-Waiting for merge.** means the current head and both file digests match the recorded signature; no
-second approval is offered. After a known merge, **Approval recorded; checking activation** remains
-until push processing confirms activation. A changed head needs a new review. **Could not confirm
-approval** is not success. A first approval of an existing default-branch policy can take effect without
-a PR merge. **Require the gate** remains actionable independently of these approval stages.
+**Owner approval** distinguishes a pull request the owner approved from active default-branch files.
+**Approved for pull request #N. Waiting for merge.** means the current head and both file digests match the
+recorded approval; no second approval is offered. After a known merge, **Approval recorded; checking
+activation** remains until push processing confirms activation. A changed head needs a new approval, and
+**Could not confirm approval** is not success. A first approval of an existing default-branch policy can take
+effect without a pull request merge.
 
-**Require the gate** is **On** when the App confirms both required pull requests and the `archfit/gate` check on the default branch. Missing enforcement facts keep the step incomplete; unreadable rulesets show **Check with an admin**. Bypass settings, policy-push restrictions, and GitHub approval-count advice do not hold this step back. **Verify yourself** marks advice the App could not verify, not a successful check. The App deliberately lacks Administration permission: inspect each default-branch ruleset's **Bypass list** yourself and keep it empty or administrators-only for emergencies. Each row links to the relevant GitHub settings and names the values to set. **Does not apply** means no action is needed for that feature. After saving GitHub changes, select **Check** to reload setup; it does not change GitHub settings.
+Setup has four steps. Each shows one chip: **done**, **to do**, or **after step N** when it waits for an earlier
+step. A done step collapses to one line; select **Details** to open it. Step 4, **Require the archfit/gate
+check**, is done when the App confirms both required pull requests and the `archfit/gate` check on the default
+branch. Missing settings keep it **to do**. It does not wait for approval.
+
+Each ruleset row ends with one word: **on**, **off**, **optional**, **verify in GitHub** or **does not apply**.
+**Optional** rows, such as bypass lists and approval counts, do not hold step 4 back. **Verify in GitHub** means
+the App could not read the setting, so it is not a successful check. The App deliberately lacks Administration
+permission: inspect each default-branch ruleset's **Bypass list** yourself and keep it empty or
+administrators-only for emergencies. The shared GitHub steps appear once under step 4; each row names only what to
+tick. After saving changes on GitHub, select **Check again** to read the settings again; it changes nothing in
+GitHub. A policy-push row appears only when it applies to the repository.
+
+When setup is complete, Home shows one line, **Setup complete · archfit/gate required**, with the details behind a
+disclosure.
 
 With no passkey, **Register a passkey to approve** does not prevent reading the review. An unreadable
 passkey inventory is shown separately from an empty inventory. **Manage passkeys** is a secondary link.
 
-The setup heading shows one **Next** action. Amber chips need action, neutral chips indicate waiting or an unavailable feature, and green chips mark completed steps. **Policy and workflow pull request** is complete when an existing setup PR is **Ready for review**. It is also complete when both files are already present on the default branch. This step does not mean that the PR is approved or merged. **View PR #N on GitHub** opens an existing workflow PR. The separate PR link opens its App page. When no setup PR exists and files are missing, **Create a pull request on GitHub** opens the compare page. An administrator must enable the required check in the repository settings: the App cannot change rulesets without Administration permission.
+Step 2, **Open a pull request with both files**, is done when an existing setup pull request is open or when both
+files are already on the default branch. That does not mean the pull request is approved or merged. **View pull
+request #N on GitHub** opens an existing workflow pull request. When no setup pull request exists and files are
+missing, **Create a pull request on GitHub** opens the compare page. An administrator must enable the required
+check in the repository settings: the App cannot change rulesets without Administration permission.
 
 For a workflow change, an owner named in the approved policy can follow the review action from Home or **Review workflow change** from the pull page. Being a repository administrator alone does not qualify. You can read either review before registering a passkey; the final approval still requires one.
 
 ## Repositories
 
-Open `/` after signing in to choose a repository or continue setup. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** with a link back to `/`.
+Open `/` after signing in to choose a repository. Each row shows the repository's **State** (`clean`, `drift`,
+`expired`, `changed outside the flow`, `not set up` or `unknown`) and its **archfit/gate** check: **required** when
+GitHub requires pull requests and the check on the default branch, **not required** when either is confirmed off,
+and **not confirmed** when the App could not confirm it. A **Next step** appears only while setup is incomplete.
+A repository whose installation no operator has admitted shows **not admitted**; an operator admits, and an owner
+approves. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** with a link back to `/`.
 
 ## Home and the map
 
@@ -61,28 +84,28 @@ your explicit choice when local storage is available. Matrix needs no diagram la
 The matrix shows **Policy and review status**, not observed imports. Rows are sources and columns are targets:
 **row depends on column**. Both axes use the same order: policy layer order (outer first), then module name.
 
-| Symbol | Meaning                                                                     |
-| ------ | --------------------------------------------------------------------------- |
-| ✓      | Explicit allow in the policy.                                               |
-| ×      | Explicit deny reported for a touched, requested or drift pair.              |
-| ?      | A request.                                                                  |
-| !      | Drift.                                                                      |
-| ◷      | An exception; select the cell for its expiry and server-reported days left. |
+| Symbol | Meaning                                                              |
+| ------ | -------------------------------------------------------------------- |
+| ✓      | An allowed dependency in the policy.                                 |
+| ×      | One a rule denies.                                                   |
+| ?      | A requested dependency.                                              |
+| !      | Drift.                                                               |
+| ◷      | An exception. Within seven days of its date, or past it, the cell is ringed. |
 
 From 12 modules the matrix is compact: 32 px cells, vertical column names and a 220 px row header, so 24 modules fit
 a laptop page without horizontal scrolling. Names break only after `_` and `-`; hover a name for the full text.
-A cell shows its strongest status (drift, deny, request, allow) and, when it has several statuses, how many. An
-exception that ends within seven days (or has ended) is ringed and ranks just below deny; a later exception is grey
-and does not change the symbol. An exception with no date is never read as a pass: it shows ◷ in the usual colour. Every status remains in the cell's accessible name and in its details, including
-multiple rules, requests and exceptions. A blank means
-**no explicit relationship in this payload**, not “no imports” or “permitted”. Deny status is not fully evaluated
-for all pairs. Select a cell for all rules, request links, exception dates and evidence scope. Tab enters the
-table; arrow keys move between cells (the shaded diagonal is skipped), Enter opens details, and Escape closes details
-and returns focus. A repository with one module shows "One module is declared, so there is nothing to draw."
+A cell shows its strongest status (drift, deny, request, allow) and, when it has several statuses, how many. A later
+exception is grey and does not change the symbol. An exception with no date is never read as a pass.
 
-Headers stay visible while the table scrolls in either direction. At 50 or more modules, search names or layers,
-focus on explicit inbound/outbound neighbors, collapse layers, or use **Needs attention** to show modules
-with denies, requests, drift or exceptions. Filters use the same modules on both axes; **Reset filters** restores all.
+A blank means **the matrix shows no status for this pair**. It does not mean the dependency is allowed, and a deny rule may still apply. Deny status is
+only known for touched, requested or drift pairs; **About this view** explains this. Every status remains in the cell's
+accessible name and in its details, including multiple rules, requests and exception dates. Select a cell for details.
+Tab enters the table; arrow keys move between cells (the shaded diagonal is skipped), Enter opens details, and Escape
+closes details and returns focus. A repository with one module shows "One module is declared, so there is nothing to draw."
+
+Headers stay visible while the table scrolls in either direction. From 12 modules, search names or layers, focus on
+explicit inbound/outbound neighbors, collapse layers, or use **With denies, requests, drift or exceptions** to show only
+modules with those statuses. Filters use the same modules on both axes; **Reset filters** restores all.
 
 **Diagram** loads the SVG and its layout worker only when selected, including on phones. It shows declared
 volatility. Its line precedence is drift, deny, request, exception, allow: unlike Matrix, it draws only one
@@ -130,17 +153,19 @@ Search filters rules, exceptions, and modules without changing the totals. Each 
 pull request and request pages. Expand a rule for its scope, **Why**, and **Instead**. A note is **Not checked**: it
 tells the reader what to do.
 
-Exceptions are grouped by rule, largest group first, with a count for each (for example **coupling · 62**). The first
-20 rows show, then **Show all**. A column appears only when a shown row has its fact: **Expiry** when an end date
+Exceptions are grouped by rule, largest group first, with a count for each (for example **coupling · 62**). Expand a
+group to see its exceptions. The first 20 rows show, then **Show all**. A column appears only when a shown row has its fact: **Expiry** when an end date
 exists, **Request** when a request link exists. Exceptions without an end date say so once above the table. Exceptions
 show server-supplied days remaining, including today in the next 30 days. Bars appear only when a shown row has an end
 date and show the remaining days capped at 30, not exception age.
 Request links appear only when the response supplies a safe destination.
 
 The module table follows the rules and exceptions. Expand a module for public paths, volatility, and subdomain.
-**Show graph** is closed by default at every width. It draws allowed dependencies, not measured imports, and keeps the
-whole policy visible during search. Select a node to clear search and open that module's details. Large maps scroll
-vertically; dependency targets missing from the module list are reported, not invented.
+**Show graph** is closed by default at every width, and its layout worker loads only when it opens. It uses the same
+map as Home: module names are shown in full, layers are bands, and it draws allowed dependencies, not measured
+imports. Select a module to see what it depends on and what depends on it, below the graph; **Show in the table**
+opens its details in the table. Search filters the table, not the graph. Dependency targets missing from the module
+list are reported, not invented.
 
 **View source** opens **Show raw YAML**. **Copy digest** copies the complete digest; clipboard refusal leaves the value
 selectable. **Edit** appears only when change control is available. The existing edit and passkey flow is unchanged.
@@ -280,13 +305,13 @@ Repository names become App links only when the signed-in user's repository list
 
 A worker can comment `/archfit request <reason>` on a pull request, or file a request through the CLI. The App creates or joins request issues. CLI-filed measurements are marked **as reported**, not verified.
 
-1. Open `/r/<owner>/<repo>/requests/<number>`. Read the reason and follow the request issue link for its discussion. The record, map, declared volatility and earlier answers remain below the decision panel. Numbers without a confirming pull request remain **as reported**.
+1. Open `/r/<owner>/<repo>/requests/<number>`. The page reads in this order: status, reason, record, map, the balance with a one-line gloss, the preview of the selected answer, earlier answers, and then the answer controls. The balance appears once, under **Why the balance**. Follow the request issue link for its discussion. Numbers without a confirming pull request remain **as reported**.
 2. Choose **Approve**, **Approve until a date**, or **Reject**. Approval previews load on opening the page. For a dated approval or rejection, enter the expiry date or what to do instead, then select **Preview**. An expiry date must be in the future and at most 365 days away.
-3. Review the selected answer's diff, exception date and affected pull requests beside its confirmation button. Each affected PR links to Archfit and GitHub. Editing an input removes its old preview and confirmation until you preview again. Previewing, changing your selection and leaving the page do not submit an answer.
+3. Review the selected answer's diff, exception date and affected pull requests in the preview above the answer controls, then use its confirmation button. Each affected PR links to Archfit and GitHub. Editing an input removes its old preview and confirmation until you preview again. Previewing, changing your selection and leaving the page do not submit an answer.
 4. If the answer changes policy, choose whether to **Keep the policy pull request open**. This applies to rejection rules too. The confirmation label states whether the App will attempt to merge or keep the policy PR open. Answers with no policy change have no merge control.
 5. Confirm the selected answer. Approvals require your passkey; rejection does not. Check the result: if GitHub refuses a merge, the policy PR stays open. A change kept open takes effect only when that PR merges. The affected code PRs are not merged by answering, and a cleared error is not a passing check.
 
-An answered request shows its recorded answer and links to the GitHub issue that names the owner and passkey. Older records without an approval pointer show the issue link only, with no answer buttons.
+An approved request shows an **approved** label. Its record is headed **As checked when the request was made**. For an approved request the map does not repeat the note that dependencies not allowed by the policy need a request. An answered request shows its recorded answer and links to the GitHub issue that names the owner and passkey. Older records without an approval pointer show the issue link only, with no answer buttons.
 
 Only an owner named in the current policy can answer. The requester may answer if also an owner. Several answers can join one policy pull request. After consumption, the App attempts to re-check affected pull requests; a fresh result is needed before they can pass.
 

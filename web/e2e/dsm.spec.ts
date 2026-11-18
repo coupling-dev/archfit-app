@@ -80,8 +80,10 @@ test('DSM preserves all statuses, keyboard navigation and modal focus return', a
     );
   }
   await expect(detail).toContainText('expires 2027-01-01 · 0 days left');
+  await detail.screenshot({ path: '../docs/images/matrix-details-dialog.png' });
   await expect(detail).toContainText('not observed imports');
-  await expectClean(page, ['Policy and review status', 'scan coverage']);
+  await expect(detail).toContainText('expires 2027-01-01 · 0 days left');
+  await expectClean(page, ['Policy and review status']);
   await page.keyboard.press('Escape');
   await expect(detail).toBeHidden();
   await expect(cell).toBeFocused();
@@ -89,7 +91,7 @@ test('DSM preserves all statuses, keyboard navigation and modal focus return', a
   const blank = page.getByRole('button', { name: 'api to web: no rule' });
   await expect(blank).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('dialog')).toContainText('No explicit relationship in this payload.');
+  await expect(page.getByRole('dialog')).toContainText('The matrix shows no status for this pair.');
   await page.getByRole('button', { name: 'Close details' }).click();
   await expect(blank).toBeFocused();
 });
@@ -110,6 +112,12 @@ test('DSM compact density: 24 modules fit 1280px; 11 stay comfortable', async ({
   await expect(head).toHaveAttribute('title', 'module-10');
   expect(await head.evaluate((el) => getComputedStyle(el).overflowWrap)).toBe('normal');
   await page.screenshot({ path: '../docs/images/matrix-24-1280.png', fullPage: true });
+});
+
+test('DSM legend screenshot', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 844 });
+  await open(page, '/r/acme/app', { [api]: () => [200, fixture(5)] });
+  await page.getByRole('list', { name: 'Matrix legend' }).locator('xpath=..').screenshot({ path: '../docs/images/matrix-legend.png' });
 });
 
 test('DSM 24 modules at a phone width: screenshot for review', async ({ page }) => {
@@ -205,6 +213,14 @@ test('DSM says so when only one module is declared', async ({ page }) => {
   await expect(page.getByRole('list', { name: 'Matrix legend' })).toHaveCount(0);
 });
 
+test('DSM shows the filters from 12 modules and hides them below', async ({ page }) => {
+  await open(page, '/r/acme/app', { [api]: () => [200, fixture(12)] });
+  await expect(page.getByLabel('Search modules or layers')).toBeVisible();
+  await expect(page.getByLabel('With denies, requests, drift or exceptions')).toBeVisible();
+  await open(page, '/r/acme/app', { [api]: () => [200, fixture(11)] });
+  await expect(page.getByLabel('Search modules or layers')).toHaveCount(0);
+});
+
 test('DSM large map filters retain square axes and bounded two-axis scrolling', async ({ page }) => {
   // Axe scans all 2,500 cells twice; allow its measured cost under full-suite concurrency.
   test.slow();
@@ -225,7 +241,7 @@ test('DSM large map filters retain square axes and bounded two-axis scrolling', 
   await page.getByLabel('Direction').selectOption('outbound');
   await expect(page.getByRole('rowheader')).toHaveCount(1);
   await page.getByRole('button', { name: 'Reset filters' }).click();
-  await page.getByLabel('Needs attention').check();
+  await page.getByLabel('With denies, requests, drift or exceptions').check();
   await expect(page.getByRole('rowheader')).toHaveCount(3);
   await page.getByRole('button', { name: /Support \(46 modules\)/ }).click();
   await expect(page.getByRole('rowheader')).toHaveCount(2);
@@ -236,7 +252,7 @@ test('DSM large map filters retain square axes and bounded two-axis scrolling', 
   await page.getByRole('button', { name: 'Reset filters' }).click();
   await expect(page.getByRole('rowheader')).toHaveCount(50);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await expectClean(page, ['Policy and review status', 'Needs attention']);
+  await expectClean(page, ['Policy and review status']);
 });
 
 test('Matrix is the default without a worker; explicit Diagram choice survives reload and resize', async ({ page }) => {

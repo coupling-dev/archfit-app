@@ -82,8 +82,8 @@ for (const width of [1280, 390]) {
       await expectClean(page, c.path === '/' && c.name.startsWith('repositories') ? reposApprovedCopy : []);
 
       const target = page
-        .getByRole(c.keyboard.startsWith('Admit') || c.keyboard === 'Add a passkey' ? 'button' : 'link', {
-          name: width === 390 && c.keyboard === 'acme/clean' ? 'Open Home' : c.keyboard,
+        .getByRole(c.keyboard.startsWith('Admit') || c.keyboard.startsWith('Approve') || c.keyboard === 'Add a passkey' ? 'button' : 'link', {
+          name: c.keyboard,
           exact: true,
         })
         .first();

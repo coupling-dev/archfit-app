@@ -18,7 +18,7 @@ export const session = { login: 'alice', csrf: 'csrf-token-1', build: appBuild }
 
 
 // The audit explicitly requires these phrases; other copy still uses the legacy wording check.
-export const reposApprovedCopy = ['Needs attention', 'Workflow review', 'Review first policy', 'Review workflow PR'];
+export const reposApprovedCopy = ['Review first policy', 'Review workflow PR'];
 
 export const repos = JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/repos/all-states.json', import.meta.url), 'utf8'));
 
