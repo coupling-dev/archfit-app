@@ -37,7 +37,7 @@ export function decisionState(kind: AnswerKind, preview: Preview | undefined, la
     mergeLater,
     confirm: !changesPolicy
       ? `${verb} with${kind === 'reject' ? 'out a passkey' : ' passkey'}`
-      : `${verb} and ${mergeLater ? 'keep policy PR open' : 'merge policy PR'}`,
+      : mergeLater ? `${verb} and keep the policy pull request open` : `${verb} and merge policy PR`,
     effect: !changesPolicy
       ? 'This records your answer without changing .archfit.yaml.'
       : mergeLater

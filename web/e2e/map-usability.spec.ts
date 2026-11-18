@@ -113,14 +113,14 @@ for (const width of [390, 1280]) {
     });
     const date = page.getByLabel('The exception ends on');
     const text = page.getByLabel('What to do instead');
-    await page.getByRole('radio', { name: 'Approve until a date', exact: true }).check();
+    await page.getByRole('button', { name: 'Approve until a date', exact: true }).click();
     await expect(date).toHaveClass(/form-control/);
     await page.getByRole('radio', { name: 'Dark', exact: true }).click();
     await expect(date).toHaveCSS('background-color', 'rgb(13, 17, 23)');
     await date.fill('2027-01-15');
     await expect(date).toHaveValue('2027-01-15');
     if (width < 720) expect((await date.boundingBox())?.height).toBeGreaterThanOrEqual(44);
-    await page.getByRole('radio', { name: 'Reject', exact: true }).check();
+    await page.getByRole('button', { name: 'Reject', exact: true }).click();
     await expect(text).toHaveClass(/form-control/);
     await text.fill('Use the existing port.');
     await expect(text).toHaveValue('Use the existing port.');

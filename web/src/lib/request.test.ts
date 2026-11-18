@@ -211,7 +211,7 @@ describe('decisionState', () => {
       ready: true,
       changesPolicy: true,
       mergeLater: true,
-      confirm: verb + ' and keep policy PR open',
+      confirm: verb + ' and keep the policy pull request open',
     });
     expect(decisionState(kind, preview(kind, ''), true)).toMatchObject({
       ready: true,
