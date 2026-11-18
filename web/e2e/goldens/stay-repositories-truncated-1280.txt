@@ -29,7 +29,7 @@ changed outside the flow
 not confirmed	
 acme/unknown	
 unknown	
-not confirmed	Review workflow PR
+not confirmed	Review workflow change
 octo/tool	
 not admitted	
 not confirmed	Ask an operator to admit this installation.
