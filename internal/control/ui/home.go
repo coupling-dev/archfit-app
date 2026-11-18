@@ -70,6 +70,11 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 	ctx, snapshot := gate.WithHomeSnapshot(r.Context(), sc.repo)
 	ctx = gate.WithRequestMemo(withReviewPermission(ctx, sc))
 	r = r.WithContext(ctx)
+	// The owner reviews need the signed-in user's admin status once per request. It is read beside Home's reads, not
+	// after them, so a review does not wait for it; the memo makes the reviews wait for this read if they need it first.
+	var permission sync.WaitGroup
+	defer permission.Wait()
+	permission.Go(func() { s.reviewAdmin(ctx, sc) })
 	// The owner reviews share their reads with each other, not with Setup and Home, which read on their own.
 	reviewR := r.WithContext(gate.WithReviewReads(ctx))
 	snapshotDone := api.StartStage(ctx, "snapshot")
