@@ -136,18 +136,24 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 			if p.State != "open" || p.BaseRef != r.DefaultBranch || !strings.EqualFold(p.HeadRepo, r.FullName) {
 				continue
 			}
-			_, ok, err := s.policyAt(ctx, r, p.HeadSHA)
-			if err != nil {
-				return out, err
+			// The policy and the workflow of one head are read together. A workflow read that fails or is missing counts
+			// only when the policy is there, as in the serial order, so the answer is unchanged.
+			var policyOK, workflowOK bool
+			var policyErr, workflowErr error
+			var both sync.WaitGroup
+			both.Go(func() { _, policyOK, policyErr = s.policyAt(ctx, r, p.HeadSHA) })
+			both.Go(func() { workflowOK, workflowErr = s.workflowAt(ctx, r, p.HeadSHA) })
+			both.Wait()
+			if policyErr != nil {
+				return out, policyErr
 			}
-			if !ok {
+			if !policyOK {
 				continue
 			}
-			ok, err = s.workflowAt(ctx, r, p.HeadSHA)
-			if err != nil {
-				return out, err
+			if workflowErr != nil {
+				return out, workflowErr
 			}
-			if !ok {
+			if !workflowOK {
 				continue
 			}
 			out.State = "first_approval"

@@ -235,3 +235,53 @@ func TestSetupTakesTwoGitHubRoundTrips(t *testing.T) {
 		})
 	}
 }
+
+// headFailHub fails reads of one pull's head only, so the default branch reads are unaffected.
+type headFailHub struct {
+	*setupHub
+	policyErr, workflowErr error
+}
+
+func (h *headFailHub) File(ctx context.Context, r api.RepoRef, ref, path string) ([]byte, string, error) {
+	if ref == "head" && path == ".archfit.yaml" && h.policyErr != nil {
+		return nil, "", h.policyErr
+	}
+	if ref == "head" && path == workflowPath && h.workflowErr != nil {
+		return nil, "", h.workflowErr
+	}
+	return h.setupHub.File(ctx, r, ref, path)
+}
+
+// A pull's workflow read counts only when its policy is there, and a policy read error ends the scan, as the serial order
+// did before the two reads of one head overlapped.
+func TestOpenPullPolicyAndWorkflowKeepTheSerialAnswer(t *testing.T) {
+	failure := errors.New("storage unavailable")
+	for _, tc := range []struct {
+		name                   string
+		policy                 bool
+		policyErr, workflowErr error
+		wantErr                error
+		wantFirst              int
+	}{
+		{"policy and workflow", true, nil, nil, nil, 9},
+		{"workflow error without a policy is ignored", false, nil, failure, nil, 0},
+		{"policy error wins over workflow error", false, failure, failure, failure, 0},
+		{"workflow error with a policy", true, nil, failure, failure, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := newSetupHub()
+			base.files["tip"] = map[string]string{}
+			base.pulls = []api.Pull{{Number: 9, State: "open", BaseRef: setupRepo.DefaultBranch, HeadRepo: setupRepo.FullName, HeadSHA: "head"}}
+			base.files["head"] = map[string]string{workflowPath: setupWorkflow(setupCommit)}
+			if tc.policy {
+				base.files["head"][".archfit.yaml"] = setupPolicy
+			}
+			h := &headFailHub{setupHub: base, policyErr: tc.policyErr, workflowErr: tc.workflowErr}
+			s := &setups{gh: h, gate: setupView{}, actionApproved: func(ref string) bool { return ref == setupCommit }}
+			out, err := s.Setup(t.Context(), setupRepo)
+			if !errors.Is(err, tc.wantErr) || (err == nil && out.FirstPull != tc.wantFirst) {
+				t.Fatalf("Setup = %+v, %v; want error %v and first pull %d", out, err, tc.wantErr, tc.wantFirst)
+			}
+		})
+	}
+}
