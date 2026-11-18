@@ -76,13 +76,23 @@ func (s *server) ownerReview(r *http.Request, sc scope, pull int) *reviewJSON {
 		actions = append(actions, answers.OwnerAction{Kind: gate.OwnerWorkflow, Pull: pull})
 	}
 	defer func() { done(len(actions), 0) }()
-	u := gate.OwnerUser{ID: sc.user.UserID, Login: sc.user.Login, Admin: s.reviewAdmin(ctx, sc)}
+	// The user's admin status matters only to the last step of a review, so it is read while the views are. A view is
+	// read again by OwnerReview below, from the memo, so the first read costs nothing twice. Where the request has read
+	// the status already (Home), it is not waited for.
+	var u gate.OwnerUser
+	var permission sync.WaitGroup
+	permission.Go(func() { u = gate.OwnerUser{ID: sc.user.UserID, Login: sc.user.Login, Admin: s.reviewAdmin(ctx, sc)} })
 	// The probes are independent reads. The answer is the first decisive one in action order, as the sequential
 	// probes gave it, so it never depends on which probe finishes first.
 	errs := make([]error, len(actions))
 	var probes sync.WaitGroup
 	for i, a := range actions {
-		probes.Go(func() { errs[i] = s.owners.OwnerReview(ctx, sc.repo, a, u) })
+		probes.Go(func() {
+			// Its refusal, if any, is the one OwnerReview returns from the same memo.
+			_, _ = s.owners.OwnerView(ctx, sc.repo, a)
+			permission.Wait()
+			errs[i] = s.owners.OwnerReview(ctx, sc.repo, a, u)
+		})
 	}
 	probes.Wait()
 	for i, a := range actions {

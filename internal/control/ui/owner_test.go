@@ -43,13 +43,14 @@ func (f *fakeSetups) Setup(ctx context.Context, r api.Repo) (onboarding.Setup, e
 }
 
 type fakeOwners struct {
+	mu      sync.Mutex // guards the recorded views: a review reads its view from several goroutines
+	onView  func()     // called when OwnerView starts, to order it against other reads
 	review  func(answers.OwnerAction, gate.OwnerUser) error
 	repos   []api.Repo
 	users   []gate.OwnerUser
 	actions []answers.OwnerAction
 	err     error
 	view    gate.OwnerView
-	onView  func() // called when OwnerView starts, to order it against other reads
 }
 
 func (f *fakeOwners) OwnerDigest(_ context.Context, r api.Repo, a answers.OwnerAction) (string, error) {
@@ -266,6 +267,8 @@ func (f *fakeOwners) OwnerView(_ context.Context, r api.Repo, a answers.OwnerAct
 	if f.onView != nil {
 		f.onView()
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.repos = append(f.repos, r)
 	f.actions = append(f.actions, a)
 	return f.view, f.err
