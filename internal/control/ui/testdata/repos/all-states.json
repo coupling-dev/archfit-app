@@ -59,7 +59,7 @@
       "enforcement": "check",
       "enforcement_reason": "The App could not confirm that archfit/gate is required; ask a repository administrator.",
       "next_step": {
-        "text": "Review workflow PR",
+        "text": "Review workflow change",
         "href": "/r/acme/unknown/pull/203"
       }
     },
