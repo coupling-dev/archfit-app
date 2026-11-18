@@ -10,17 +10,10 @@
   import { refused, visit, waiting } from './lib/gate';
   import { missingSentence } from './lib/notfound';
   import { linkURL } from './lib/nav';
+  import { isPage, loadPage } from './lib/pages';
   import { guideURL, parseRoute, repoPage, serverError } from './lib/route';
-  import Admin from './pages/Admin.svelte';
   import Landing from './pages/Landing.svelte';
-  import Home from './pages/Home.svelte';
-  import Passkeys from './pages/Passkeys.svelte';
-  import Pull from './pages/Pull.svelte';
-  import Policy from './pages/Policy.svelte';
-  import Repos from './pages/Repos.svelte';
-  import Request from './pages/Request.svelte';
   import Waiting from './pages/Waiting.svelte';
-  import Owner from './pages/Owner.svelte';
 
   // A link inside the App moves this location without a document load; the page is keyed on it below.
   let at = $state(new URL(location.href));
@@ -113,7 +106,10 @@
     clearTimeout(resting);
     resting = setTimeout(() => {
       const url = linkURL(target, new URL(location.href));
-      if (url && !failure && !url.searchParams.has('edit') && url.href !== location.href) hint(parseRoute(url.pathname, url.search));
+      if (!url || failure || url.href === location.href) return;
+      const next = parseRoute(url.pathname, url.search);
+      if (isPage(next.kind)) loadPage(next.kind).catch(() => {});
+      if (!url.searchParams.has('edit')) hint(next);
     }, restMs);
   }
   // Signing out ends the session: nothing read under it is shown again, even before the browser leaves the page.
@@ -189,6 +185,13 @@
       : ''}
   pull={route.kind === 'pull' ? route.number : 0}
 />
+{#snippet unloaded()}
+  <div class="blankslate">
+    <h1>Page could not be loaded</h1>
+    <p>The App changed since this tab opened. Reload the page.</p>
+    <button class="btn" type="button" onclick={() => location.reload()}>Reload</button>
+  </div>
+{/snippet}
 <main class="page" id="main" tabindex="-1">
   {#key $visit}
   {#if notFound}
@@ -220,21 +223,21 @@
   {:else if !session}
     <Skeleton rows={4} />
   {:else if route.kind === 'home'}
-    <Repos {here} />
+    {#await loadPage('home')}<Skeleton rows={4} />{:then { default: Page }}<Page {here} />{:catch}{@render unloaded()}{/await}
   {:else if route.kind === 'admin'}
-    <Admin {session} {here} />
+    {#await loadPage('admin')}<Skeleton rows={4} />{:then { default: Page }}<Page {session} {here} />{:catch}{@render unloaded()}{/await}
   {:else if route.kind === 'repo'}
-    <Home {route} {here} />
+    {#await loadPage('repo')}<Skeleton rows={4} />{:then { default: Page }}<Page {route} {here} />{:catch}{@render unloaded()}{/await}
   {:else if route.kind === 'policy'}
-    <Policy {route} {here} {session} />
+    {#await loadPage('policy')}<Skeleton rows={4} />{:then { default: Page }}<Page {route} {here} {session} />{:catch}{@render unloaded()}{/await}
   {:else if route.kind === 'owner'}
-    <Owner {route} {session} {here} />
+    {#await loadPage('owner')}<Skeleton rows={4} />{:then { default: Page }}<Page {route} {session} {here} />{:catch}{@render unloaded()}{/await}
   {:else if route.kind === 'request'}
-    <Request {route} {session} {here} />
+    {#await loadPage('request')}<Skeleton rows={4} />{:then { default: Page }}<Page {route} {session} {here} />{:catch}{@render unloaded()}{/await}
   {:else if route.kind === 'passkeys'}
-    <Passkeys {route} {session} {here} />
+    {#await loadPage('passkeys')}<Skeleton rows={4} />{:then { default: Page }}<Page {route} {session} {here} />{:catch}{@render unloaded()}{/await}
   {:else if route.kind === 'pull'}
-    <Pull {route} {here} />
+    {#await loadPage('pull')}<Skeleton rows={4} />{:then { default: Page }}<Page {route} {here} />{:catch}{@render unloaded()}{/await}
   {/if}
   {/key}
 </main>

@@ -219,3 +219,39 @@ test('a browser asking for less data starts no read for a link', async ({ page }
   await expect(page.getByRole('heading', { name: 'Policy', exact: true })).toBeVisible();
   expect(reads).toEqual(['policy']);
 });
+
+// The signed-in pages are chunks of their own: the sign-in page asks for none, a link asks for its page's chunk when
+// pointed at, and a chunk that cannot be loaded says so.
+const chunk = (name: string) => new RegExp(`/assets/${name}-[^/]+\\.js$`);
+
+test('the sign-in page loads no page chunk', async ({ page }) => {
+  const loaded: string[] = [];
+  page.on('request', (request) => loaded.push(new URL(request.url()).pathname));
+  await open(page, '/', { 'GET /api/session': () => [401, { error: 'Sign in to continue.' }] });
+  await expect(page.getByRole('link', { name: /sign in/i }).first()).toBeVisible();
+  expect(loaded.filter((path) => /\/assets\/(Repos|Home|Policy|Pull|Admin|Owner|Request|Passkeys)-/.test(path))).toEqual([]);
+});
+
+test('a link asks for its page chunk when it is pointed at', async ({ page }) => {
+  await open(page, '/r/acme/app', {
+    'GET /api/repos/acme/app/home': () => [200, home],
+    'GET /api/repos/acme/app/policy': () => [200, pumba],
+  });
+  await expect(homeStatus(page, home)).toBeVisible();
+  const asked = page.waitForRequest(chunk('Policy'));
+  await page.getByRole('link', { name: 'Policy', exact: true }).hover();
+  await asked;
+});
+
+test('a page chunk that cannot be loaded says so and offers a reload', async ({ page }) => {
+  await open(page, '/r/acme/app', {
+    'GET /api/repos/acme/app/home': () => [200, home],
+    'GET /api/repos/acme/app/policy': () => [200, pumba],
+  });
+  await expect(homeStatus(page, home)).toBeVisible();
+  await page.route(chunk('Policy'), (route) => route.abort());
+  await page.getByRole('link', { name: 'Policy', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Page could not be loaded' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reload' })).toBeVisible();
+  await expectClean(page);
+});
