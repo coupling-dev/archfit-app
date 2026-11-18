@@ -57,7 +57,7 @@ Open `/` after signing in to choose a repository. Each row shows the repository'
 GitHub requires pull requests and the check on the default branch, **not required** when either is confirmed off,
 and **not confirmed** when the App could not confirm it. A **Next step** appears only while setup is incomplete.
 A repository whose installation no operator has admitted shows **not admitted**; an operator admits, and an owner
-approves. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** with a link back to `/`.
+approves. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** and says the repositories are listed on the home page, with a link to `/`.
 
 ## Home and the map
 
@@ -179,9 +179,10 @@ Additional examples: [phone](images/policy-mobile.png), [dark phone](images/poli
 
 ![Policy YAML edit and preview](images/policy-edit.png)
 
-Open **Edit** to start from the open policy proposal's file, or from the default branch when no proposal is open.
-The editor accepts a whole file up to 32 KiB. **Preview the edit** lists every decoder error by line and shows
-the App's text diff against the current default-branch policy. Check path globs locally before approval:
+Owners can edit here. Open **Edit** to start from the open policy proposal's file, or from the default branch when no
+proposal is open. The editor accepts a whole file up to 32 KiB. **Preview the edit** lists every decoder error by line,
+such as **Line 4: `foo` is not a policy key.**, and shows the App's text diff against the current default-branch policy.
+An unchanged file has nothing to approve. Check path globs locally before approval:
 `archfit check --policy <file>`.
 
 Text diffs show separate hunks with old/new line ranges and three unchanged lines of context.
@@ -281,7 +282,7 @@ the change** fetches the new contents before you confirm anything. Policy and Ow
 again**; not-found and stale-action states do not.
 
 **Page not available** uses the same message for a missing resource and one your account cannot access.
-Its **Repositories** link returns to `/`; no repository-specific recovery link is shown.
+Its **Repositories** link returns to `/`. For a repository you can see, a missing pull request or request says so, and any other missing page of it (for example a policy or an owner action) says it was not found in that repository. Each names the repository and offers **Back to <repository>**, with the repository tabs. A repository you cannot see gets the generic message and no tabs, so the page never shows that it exists.
 
 ## Register a passkey
 

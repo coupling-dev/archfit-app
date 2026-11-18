@@ -174,16 +174,18 @@ test('policy edit: line errors appear before any passkey step', async ({ page })
     {
       diff: '',
       errors: [
-        '.archfit.yaml:2: policy: owners: required: list at least one GitHub login',
-        '.archfit.yaml:3: policy: modules: required: declare at least one module',
+        'Line 2: owners: required: list at least one GitHub login.',
+        'Line 3: modules: required: declare at least one module.',
       ],
     },
   ];
   const writes = await open(page, path + '?edit=1', handlers);
   await page.getByLabel('Policy YAML').fill('version: 3\nowners: []\nmodules: {}\n');
   await page.getByRole('button', { name: 'Preview the edit' }).click();
-  await expect(page.getByRole('alert')).toContainText('.archfit.yaml:2: policy:');
-  await expect(page.getByRole('alert')).toContainText('.archfit.yaml:3: policy:');
+  await expect(page.getByRole('alert')).toContainText('Fix the policy');
+  await expect(page.getByRole('alert')).toContainText('Line 2: owners: required');
+  await expect(page.getByRole('alert')).toContainText('Line 3: modules: required');
+  await expect(page.getByLabel('Policy YAML')).toHaveAttribute('aria-invalid', 'true');
   await expect(page.getByRole('button', { name: 'Approve and merge with passkey' })).toHaveCount(0);
   expect(writes.map((r) => new URL(r.url()).pathname)).toEqual([root + '/policy/edit/preview']);
   await expectPageText(page, 'policy-edit-errors');
@@ -263,4 +265,15 @@ test('policy edit: an unreadable preview cannot prompt for a passkey', async ({ 
   await expect(page.getByRole('alert')).toHaveText('The edit preview could not be read.');
   await expect(page.getByRole('button', { name: 'Approve and merge with passkey' })).toHaveCount(0);
   expect(writes).toHaveLength(1);
+});
+
+test('policy edit: an unchanged preview offers nothing to approve', async ({ page }) => {
+  const handlers = editor();
+  handlers['POST ' + root + '/policy/edit/preview'] = () => [200, { diff: '', errors: [], digest: newDigest, target }];
+  const writes = await open(page, path + '?edit=1', handlers);
+  await page.getByRole('button', { name: 'Preview the edit' }).click();
+  await expect(page.getByText('Nothing to approve. Change the YAML first.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Approve and merge with passkey' })).toHaveCount(0);
+  expect(writes.map((r) => new URL(r.url()).pathname)).toEqual([root + '/policy/edit/preview']);
+  await expectClean(page);
 });
