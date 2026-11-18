@@ -3,9 +3,11 @@ package onboarding
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/alexei-led/archfit-app/internal/gate"
@@ -151,5 +153,85 @@ func TestSetupStartsRulesBesideTheTipRead(t *testing.T) {
 	}
 	if !slices.ContainsFunc(out.Rules.Findings, func(f RulesetFinding) bool { return f.Code == "pull_requests" && f.State == "ok" }) {
 		t.Fatalf("rules findings = %+v", out.Rules.Findings)
+	}
+}
+
+// slowHub is a GitHub that takes latency of virtual time per call and counts the calls by name.
+type slowHub struct {
+	*setupHub
+	latency time.Duration
+	mu      sync.Mutex
+	calls   map[string]int
+}
+
+func (h *slowHub) call(name string) {
+	h.mu.Lock()
+	h.calls[name]++
+	h.mu.Unlock()
+	time.Sleep(h.latency)
+}
+
+func (h *slowHub) BranchHead(ctx context.Context, r api.RepoRef, b string) (string, error) {
+	h.call("BranchHead")
+	return h.setupHub.BranchHead(ctx, r, b)
+}
+
+func (h *slowHub) File(ctx context.Context, r api.RepoRef, ref, path string) ([]byte, string, error) {
+	h.call("File")
+	return h.setupHub.File(ctx, r, ref, path)
+}
+
+func (h *slowHub) BranchPolicy(ctx context.Context, r api.RepoRef, b string) ([]api.RepositoryRule, error) {
+	h.call("BranchPolicy")
+	return h.setupHub.BranchPolicy(ctx, r, b)
+}
+
+func (h *slowHub) ListRulesets(ctx context.Context, r api.RepoRef) ([]api.Ruleset, error) {
+	h.call("ListRulesets")
+	return h.setupHub.ListRulesets(ctx, r)
+}
+
+func (h *slowHub) GetRuleset(ctx context.Context, r api.RepoRef, id int64) (api.Ruleset, error) {
+	h.call("GetRuleset")
+	return h.setupHub.GetRuleset(ctx, r, id)
+}
+
+// Setup's longest chain is two GitHub round trips: the tip, then the policy and workflow; the rules (the branch rules
+// and the list, then the one ruleset that matters) run beside them. Before the rules started first it was three
+// for a repository with no rulesets, and four with one.
+func TestSetupTakesTwoGitHubRoundTrips(t *testing.T) {
+	const latency = 300 * time.Millisecond
+	branchRuleset := api.Ruleset{ID: 1, Target: "branch", Enforcement: "active", CanBypass: "never", BypassActors: &[]api.BypassActor{}}
+	for _, tc := range []struct {
+		name string
+		sets []api.Ruleset
+		want map[string]int
+	}{
+		{"no rulesets", nil, map[string]int{"BranchHead": 1, "File": 2, "BranchPolicy": 1, "ListRulesets": 1}},
+		{"one that matters, two that do not", []api.Ruleset{branchRuleset, {ID: 2, Target: "branch", Enforcement: "disabled"}, {ID: 3, Target: "tag", Enforcement: "active"}},
+			map[string]int{"BranchHead": 1, "File": 2, "BranchPolicy": 1, "ListRulesets": 1, "GetRuleset": 1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				base := newSetupHub()
+				base.files["tip"] = map[string]string{".archfit.yaml": setupPolicy, workflowPath: setupWorkflow(setupCommit)}
+				base.branch = []api.RepositoryRule{{RulesetID: 1, Type: "pull_request"}}
+				base.sets = tc.sets
+				h := &slowHub{setupHub: base, latency: latency, calls: map[string]int{}}
+				s := &setups{gh: h, gate: setupView{}, actionApproved: func(ref string) bool { return ref == setupCommit }}
+				start := time.Now()
+				if _, err := s.Setup(t.Context(), setupRepo); err != nil {
+					t.Fatal(err)
+				}
+				elapsed := time.Since(start)
+				t.Logf("Setup took %v and made %v", elapsed, h.calls)
+				if elapsed != 2*latency {
+					t.Errorf("Setup took %v; want two round trips (%v)", elapsed, 2*latency)
+				}
+				if !maps.Equal(h.calls, tc.want) {
+					t.Errorf("GitHub calls = %v; want %v", h.calls, tc.want)
+				}
+			})
+		})
 	}
 }
