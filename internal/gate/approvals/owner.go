@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 
+	"github.com/alexei-led/archfit-app/internal/gate/inputs"
 	"github.com/alexei-led/archfit-app/internal/gate/records"
 	"github.com/alexei-led/archfit-app/internal/github/api"
 	"github.com/alexei-led/archfit-app/internal/wire/policy3"
@@ -110,51 +112,68 @@ func (s *Service) Bind(ctx context.Context, r api.Repo, a Action) (Change, error
 }
 
 // bindPull binds a first or a workflow approval to the open pull request's head: its policy, which must be of version
-// 3, and its workflow file, which it must have.
+// 3, and its workflow file, which it must have. The pull request and the default branch head are read together, then
+// the files of the head and of the default branch. The refusals are taken in the order the reads used to run.
 func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action) (Change, error) {
 	ref := r.RepoRef
-	pull, err := s.gh.Pull(ctx, ref, a.Pull)
+	var (
+		pull    api.Pull
+		pullErr error
+		tip     string
+		tipErr  error
+		first   sync.WaitGroup
+	)
+	first.Go(func() { pull, pullErr = s.pullAt(ctx, ref, a.Pull) })
+	first.Go(func() { tip, tipErr = s.headAt(ctx, ref, r.DefaultBranch) })
+	first.Wait()
 	switch {
-	case api.Permanent(err):
+	case api.Permanent(pullErr):
 		return Change{}, fmt.Errorf("%w: no pull request #%d", ErrNotApprovable, a.Pull)
-	case err != nil:
-		return Change{}, fmt.Errorf("approvals: read pull request %d: %w", a.Pull, err)
+	case pullErr != nil:
+		return Change{}, fmt.Errorf("approvals: read pull request %d: %w", a.Pull, pullErr)
 	case pull.State != "open" || pull.BaseRef != r.DefaultBranch || !strings.EqualFold(pull.HeadRepo, r.FullName) || pull.HeadSHA == "":
 		return Change{}, fmt.Errorf("%w: #%d is not an open pull request of this repository into %s", ErrNotApprovable,
 			a.Pull, r.DefaultBranch)
+	case tipErr != nil:
+		return Change{}, fmt.Errorf("approvals: read the default branch head: %w", tipErr)
 	}
-	tip, err := s.gh.BranchHead(ctx, ref, r.DefaultBranch)
-	if err != nil {
-		return Change{}, fmt.Errorf("approvals: read the default branch head: %w", err)
+	var (
+		head, run, target, current             []byte
+		headErr, runErr, targetErr, currentErr error
+		second                                 sync.WaitGroup
+	)
+	second.Go(func() { head, headErr = s.fileAt(ctx, ref, pull.HeadSHA, PolicyPath) })
+	second.Go(func() { run, runErr = s.fileAt(ctx, ref, pull.HeadSHA, WorkflowPath) })
+	if a.Kind == records.KindWorkflow {
+		second.Go(func() { target, targetErr = s.fileAt(ctx, ref, tip, WorkflowPath) })
+	} else {
+		// An onboarding pull request brings the first policy of version 3: a default branch that has one already is
+		// approved as it is (bindTip).
+		second.Go(func() { current, currentErr = s.fileAt(ctx, ref, tip, PolicyPath) })
 	}
-	head, err := s.fileAt(ctx, ref, pull.HeadSHA, PolicyPath)
-	if err != nil {
-		return Change{}, err
+	second.Wait()
+	if headErr != nil {
+		return Change{}, headErr
 	}
 	if _, derr := policy3.Decode(head); head == nil || derr != nil {
 		return Change{}, fmt.Errorf("%w: the head has no policy of version 3", ErrNotApprovable)
 	}
-	run, err := s.fileAt(ctx, ref, pull.HeadSHA, WorkflowPath)
-	if err != nil {
-		return Change{}, err
+	if runErr != nil {
+		return Change{}, runErr
 	}
 	if run == nil {
 		return Change{}, fmt.Errorf("%w: the head has no %s", ErrNotApprovable, WorkflowPath)
 	}
 	if a.Kind == records.KindWorkflow {
-		target, err := s.fileAt(ctx, ref, tip, WorkflowPath)
-		if err != nil {
-			return Change{}, err
+		if targetErr != nil {
+			return Change{}, targetErr
 		}
 		if target != nil && records.FileDigest(target) == records.FileDigest(run) {
 			return Change{}, fmt.Errorf("%w: the pull request does not change %s", ErrNotApprovable, WorkflowPath)
 		}
 	} else {
-		// An onboarding pull request brings the first policy of version 3: a default branch that has one already is
-		// approved as it is (bindTip).
-		current, err := s.fileAt(ctx, ref, tip, PolicyPath)
-		if err != nil {
-			return Change{}, err
+		if currentErr != nil {
+			return Change{}, currentErr
 		}
 		if _, derr := policy3.Decode(current); current != nil && derr == nil {
 			return Change{}, fmt.Errorf("%w: %s has a policy of version 3; approve it as it is", ErrNotApprovable, r.DefaultBranch)
@@ -167,7 +186,7 @@ func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action) (Change, e
 // bindTip binds a first approval of the policy on the default branch, or a confirm, to the default branch's tip. A
 // confirm binds only the digest the state recorded: a later change waits for its own judgement.
 func (s *Service) bindTip(ctx context.Context, r api.Repo, a Action, repo records.Repo) (Change, error) {
-	tip, err := s.gh.BranchHead(ctx, r.RepoRef, r.DefaultBranch)
+	tip, err := s.headAt(ctx, r.RepoRef, r.DefaultBranch)
 	if err != nil {
 		return Change{}, fmt.Errorf("approvals: read the default branch head: %w", err)
 	}
@@ -386,9 +405,25 @@ func (s *Service) noteDone(ctx context.Context, r api.Repo, d *Done, login strin
 	}
 }
 
-// fileAt reads path at a commit; a missing file is nil.
+// pullAt, headAt and fileAt are the reads of an owner's action. Under inputs.WithReadMemo each is read once per request.
+func (s *Service) pullAt(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
+	return inputs.Memo(ctx, inputs.PullRead{Repo: r, Number: number}, func() (api.Pull, error) {
+		return s.gh.Pull(ctx, r, number)
+	})
+}
+
+func (s *Service) headAt(ctx context.Context, r api.RepoRef, branch string) (string, error) {
+	return inputs.Memo(ctx, inputs.BranchRead{Repo: r, Branch: branch}, func() (string, error) {
+		return s.gh.BranchHead(ctx, r, branch)
+	})
+}
+
+// fileAt reads path at a commit; a missing file is nil. The bytes are shared under a memo: callers must not change them.
 func (s *Service) fileAt(ctx context.Context, ref api.RepoRef, at, path string) ([]byte, error) {
-	raw, _, err := s.gh.File(ctx, ref, at, path)
+	raw, err := inputs.Memo(ctx, inputs.FileRead{Repo: ref, At: at, Path: path}, func() ([]byte, error) {
+		raw, _, err := s.gh.File(ctx, ref, at, path)
+		return raw, err
+	})
 	switch {
 	case errors.Is(err, api.ErrNotFound):
 		return nil, nil

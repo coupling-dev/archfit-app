@@ -70,6 +70,8 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 	ctx, snapshot := gate.WithHomeSnapshot(r.Context(), sc.repo)
 	ctx = gate.WithRequestMemo(withReviewPermission(ctx, sc))
 	r = r.WithContext(ctx)
+	// The owner reviews share their reads with each other, not with Setup and Home, which read on their own.
+	reviewR := r.WithContext(gate.WithReviewReads(ctx))
 	snapshotDone := api.StartStage(ctx, "snapshot")
 	defer func() { snapshotDone(1, int(snapshot.CacheHits())) }()
 	// Home's reads do not depend on Setup, so they run beside it. Their result is used only for an approved
@@ -98,7 +100,7 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 			if pull == 0 {
 				pull = state.OpenPull
 			}
-			state.Review = s.ownerReview(r, sc, pull)
+			state.Review = s.ownerReview(reviewR, sc, pull)
 		}
 		return homeJSON{State: homeStateNotSetUp, Status: "Pull requests are not checked yet. Finish the setup steps.", Setup: &state}, nil
 	}
@@ -120,7 +122,7 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 	}
 	reviews := make([]*reviewJSON, len(workflowNeeds))
 	forEachBounded(len(workflowNeeds), reviewConcurrency, func(j int) {
-		reviews[j] = s.ownerReview(r, sc, body.NeedsYou[workflowNeeds[j]].Pull)
+		reviews[j] = s.ownerReview(reviewR, sc, body.NeedsYou[workflowNeeds[j]].Pull)
 	})
 	for j, i := range workflowNeeds {
 		if review := reviews[j]; review != nil {

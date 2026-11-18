@@ -64,7 +64,8 @@ func forEachBounded(n, limit int, fn func(int)) {
 }
 
 func (s *server) ownerReview(r *http.Request, sc scope, pull int) *reviewJSON {
-	ctx := r.Context()
+	// The probes of one review share their reads. Home installs the memo first, to share them across its reviews too.
+	ctx := gate.WithReviewReads(r.Context())
 	done := api.StartStage(ctx, "owner_review")
 	actions := []answers.OwnerAction{}
 	if pull > 0 {

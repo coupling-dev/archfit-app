@@ -79,13 +79,16 @@ other than `approved` or `outside_flow` their result and their error are dropped
 
 Home reads the protected tip once per authorized request and shares its immutable policy (including its
 byte digest and decode result) and workflow between Setup and Home. The read-only approval summary also
-reuses the protected file bytes and tip, without changing the fresh inputs of Review or Act. It never caches repository approval
+reuses the protected file bytes and tip, without changing the fresh inputs of Review or Act. Between requests it never caches repository approval
 records, candidate PR heads or owner eligibility. Passkey inventory and the Home reads run alongside Setup; policy and
 workflow reads run concurrently at that same tip. The approval summary runs alongside rules, using the
 same exact-head/digest predicate as Review. Ruleset details and each Home record batch have at
 most four concurrent reads, and so do the workflow file reads of the open pull requests and the owner reviews of workflow
 changes. The probes of one owner review run together and the answer is the first decisive probe in action order; the
 signed-in user's permission is read once per request for those reviews (an approval always reads it fresh).
+The reviews of one request also share each repository record, pull request, branch head and file read (`gate.WithReviewReads`):
+a need's probes and the other needs read them once, so the response waits for about two rounds of GitHub reads, not one per probe.
+The pull page's review installs it too, so its probes share their reads. Setup and Home do not use that memo.
 Error priority follows input order, not completion order; unreadable rules
 remain unknown and inventory errors return both `passkey: false` and `passkey_known: false`. HTTP client timeouts,
 request cancellation and rate-limit backoff remain in effect.
