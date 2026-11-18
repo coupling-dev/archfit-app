@@ -179,9 +179,10 @@ Additional examples: [phone](images/policy-mobile.png), [dark phone](images/poli
 
 ![Policy YAML edit and preview](images/policy-edit.png)
 
-Open **Edit** to start from the open policy proposal's file, or from the default branch when no proposal is open.
-The editor accepts a whole file up to 32 KiB. **Preview the edit** lists every decoder error by line and shows
-the App's text diff against the current default-branch policy. Check path globs locally before approval:
+Owners can edit here. Open **Edit** to start from the open policy proposal's file, or from the default branch when no
+proposal is open. The editor accepts a whole file up to 32 KiB. **Preview the edit** lists every decoder error by line,
+such as **Line 4: `foo` is not a policy key.**, and shows the App's text diff against the current default-branch policy.
+An unchanged file has nothing to approve. Check path globs locally before approval:
 `archfit check --policy <file>`.
 
 Text diffs show separate hunks with old/new line ranges and three unchanged lines of context.
