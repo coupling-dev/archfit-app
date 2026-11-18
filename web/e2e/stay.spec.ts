@@ -106,7 +106,7 @@ test('passkeys: removal confirmation works with the keyboard', async ({ page }) 
   await open(page, '/r/acme/app/passkeys', {
     passkeys: { passkeys: [{ id: 'passkey-one', created: '2026-11-10T09:00:00Z' }] },
   });
-  const remove = page.getByRole('button', { name: 'Remove', exact: true });
+  const remove = page.getByRole('button', { name: /^Remove the passkey added/ });
   await expect(remove).toBeVisible();
   for (let i = 0; i < 20; i++) {
     await page.keyboard.press('Tab');
