@@ -40,8 +40,8 @@ describe('repository next step', () => {
   });
 
   it('keeps a server-selected pull request destination as a link', () => {
-    const incomplete = { ...row, setup_stage: 'workflow_review', next_step: { text: 'Review workflow PR', href: '/r/acme/app/pull/203' } };
-    expect(nextStep(incomplete)).toEqual({ text: 'Review workflow PR', href: '/r/acme/app/pull/203' });
+    const incomplete = { ...row, setup_stage: 'workflow_review', next_step: { text: 'Review workflow change', href: '/r/acme/app/pull/203' } };
+    expect(nextStep(incomplete)).toEqual({ text: 'Review workflow change', href: '/r/acme/app/pull/203' });
   });
 
   it('shows the repository page as plain text, since the name already links there', () => {

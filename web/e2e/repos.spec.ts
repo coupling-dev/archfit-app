@@ -15,7 +15,7 @@ for (const width of [1280, 390]) {
       await expect(page.getByText(word, { exact: true })).toHaveCount(0);
     }
     await expect(page.getByRole('link', { name: 'Review first policy' })).toHaveAttribute('href', '/r/acme/drift/pull/8');
-    await expect(page.getByRole('link', { name: 'Review workflow PR' })).toHaveAttribute('href', '/r/acme/unknown/pull/203');
+    await expect(page.getByRole('link', { name: 'Review workflow change' })).toHaveAttribute('href', '/r/acme/unknown/pull/203');
     await expect(page.getByText('0 requests', { exact: true })).toHaveCount(0);
     await expect(page.locator('main a[href*="/owner/"]')).toHaveCount(0);
     // No row links the same page twice: the name goes to Home, a next step only to its own page.

@@ -57,7 +57,7 @@ Open `/` after signing in to choose a repository. Each row shows the repository'
 GitHub requires pull requests and the check on the default branch, **not required** when either is confirmed off,
 and **not confirmed** when the App could not confirm it. A **Next step** appears only while setup is incomplete.
 A repository whose installation no operator has admitted shows **not admitted**; an operator admits, and an owner
-approves. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** with a link back to `/`.
+approves. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** and says the repositories are listed on the home page, with a link to `/`.
 
 ## Home and the map
 
@@ -179,9 +179,10 @@ Additional examples: [phone](images/policy-mobile.png), [dark phone](images/poli
 
 ![Policy YAML edit and preview](images/policy-edit.png)
 
-Open **Edit** to start from the open policy proposal's file, or from the default branch when no proposal is open.
-The editor accepts a whole file up to 32 KiB. **Preview the edit** lists every decoder error by line and shows
-the App's text diff against the current default-branch policy. Check path globs locally before approval:
+Owners can edit here. Open **Edit** to start from the open policy proposal's file, or from the default branch when no
+proposal is open. The editor accepts a whole file up to 32 KiB. **Preview the edit** lists every decoder error by line,
+such as **Line 4: `foo` is not a policy key.**, and shows the App's text diff against the current default-branch policy.
+An unchanged file has nothing to approve. Check path globs locally before approval:
 `archfit check --policy <file>`.
 
 Text diffs show separate hunks with old/new line ranges and three unchanged lines of context.
@@ -281,15 +282,16 @@ the change** fetches the new contents before you confirm anything. Policy and Ow
 again**; not-found and stale-action states do not.
 
 **Page not available** uses the same message for a missing resource and one your account cannot access.
-Its **Repositories** link returns to `/`; no repository-specific recovery link is shown.
+Its **Repositories** link returns to `/`. For a repository you can see, a missing pull request or request says so, and any other missing page of it (for example a policy or an owner action) says it was not found in that repository. Each names the repository and offers **Back to <repository>**, with the repository tabs. A repository you cannot see gets the generic message and no tabs, so the page never shows that it exists.
 
 ## Register a passkey
 
 ![Passkeys page](images/passkeys.png)
 
-Open `/r/<owner>/<repo>/passkeys` after signing in. Passkeys belong to your account in this App installation, not just the repository used to register them. They do not grant access or an owner role in other repositories. A policy owner can register a passkey; before the first policy, a repository administrator can register one. Follow the browser's registration prompt. Registration opens a GitHub issue notifying the user and owners. A second passkey and each removal require an existing passkey. The App uses user verification for the assertion; it does not prove that the owner read the request.
+Open `/r/<owner>/<repo>/passkeys` after signing in. Your passkeys work in every repository of this account where the policy names you as owner. They do not grant access or an owner role. A policy owner can register a passkey; before the first policy, a repository administrator can register one. Follow the browser's registration prompt. Registration opens a GitHub issue notifying the user and owners. A second passkey and each removal require an existing passkey. The App uses user verification for the assertion; it does not prove that the owner read the request.
 
-Removing your last passkey requires a confirmation with an existing passkey and notifies the owners. The warning beside **Remove** explains that you must register a new key before confirming another approval.
+Each passkey is listed by the date it was added, its last use, and a short ID. **Remove** names its passkey for screen readers.
+Removing your last passkey needs a confirmation with an existing passkey and opens an issue for the owners. The sentence beside **Remove** says you need a passkey to confirm an approval.
 
 The Owner and Policy editor links preserve their return path. After successful registration, the App returns to that page, where you must still read and confirm the action. The passkey page also accepts `?return=` with an encoded same-repository request, owner action, or policy-editor path. Other destinations are ignored; failed registration never redirects.
 
