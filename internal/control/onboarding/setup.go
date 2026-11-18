@@ -53,6 +53,12 @@ func NewSetup(gh *api.Client, g gate.SetupViews) Setups {
 
 func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 	out := Setup{State: "not_admitted", Missing: []string{}}
+	// The rules need only the repository and its default branch name, so they overlap the tip read. Early returns
+	// wait for them below, so the read never outlives Setup and its result is joined before it is returned.
+	var rules RulesetReport
+	var ruleReads sync.WaitGroup
+	ruleReads.Go(func() { rules = s.rules(ctx, r) })
+	defer ruleReads.Wait()
 	snapshot, err := gate.ReadHomeSnapshot(ctx, s.gh, r)
 	if err != nil {
 		return out, err
@@ -157,8 +163,9 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 		out.Approval = s.gate.SetupApproval(ctx, r, action)
 		done(1, 0)
 	})
-	reads.Go(func() { out.Rules = s.rules(ctx, r) })
 	reads.Wait()
+	ruleReads.Wait()
+	out.Rules = rules
 	if out.State == "approved" && out.Approval.Status == gate.ApprovalNeeded {
 		out.Approval.Status = gate.ApprovalActive
 	}
