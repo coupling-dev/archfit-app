@@ -18,7 +18,7 @@ export const session = { login: 'alice', csrf: 'csrf-token-1', build: appBuild }
 
 
 // The audit explicitly requires these phrases; other copy still uses the legacy wording check.
-export const reposApprovedCopy = ['Needs attention', 'Workflow review', 'Review first policy', 'Review workflow PR'];
+export const reposApprovedCopy = ['Review first policy', 'Review workflow change'];
 
 export const repos = JSON.parse(readFileSync(new URL('../../internal/control/ui/testdata/repos/all-states.json', import.meta.url), 'utf8'));
 
@@ -74,6 +74,7 @@ export interface Mock {
   appBuild?: object;
   serverError?: { status: number; sentence: string }; // the server answers the page as its error page
   holdSession?: Promise<void>; // /api/session answers once this settles
+  holdRepos?: Promise<void>; // /api/repos answers once this settles
 }
 
 
@@ -122,6 +123,7 @@ export async function open(page: Page, path: string, mock: Mock = {}) {
         if (!mock.operator) return json(404, { error: 'Not found.' });
         return json(200, { waiting: 1 });
       case '/api/repos':
+        await mock.holdRepos;
         return json(200, mock.repos ?? repos);
       case '/api/repos/acme/app/passkeys':
         return json(200, mock.passkeys ?? { passkeys: [] });

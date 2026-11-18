@@ -9,7 +9,7 @@ describe('status words', () => {
     ['waiting', 'attention', 'clock'],
     ['unknown', 'attention', 'question'],
     ['to do', 'attention', 'alert'],
-    ['Workflow review', 'accent', 'info'],
+    ['not confirmed', 'neutral', 'question'],
   ])('shows %s as %s with %s', (word, tone, icon) => {
     expect(statusStyle(word)).toEqual({ tone, icon });
   });

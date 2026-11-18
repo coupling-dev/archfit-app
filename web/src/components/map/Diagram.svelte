@@ -1,11 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { layoutMap, type MapLayout, type MapNode } from './layout';
-  import { focusLabel, legendKinds, legendWords, mapCaption, mapLines, type MapModel } from './model';
+  import { focusLabel, legendKinds, legendWords, mapCaption, mapLines, type LineKind, type MapModel } from './model';
   import { routeLines } from './routes';
   import { centerOn, fitView, panBy, viewBox, visible, zoomAt, type View } from './viewport';
 
-  let { model, detailView = 'list' }: { model: MapModel; detailView?: 'list' | 'matrix' } = $props();
+  // `kinds` is the legend: the Home map shows all five line kinds; the policy graph shows only allowed dependencies.
+  // `onfocus` reports the module in focus (or '' when none), so a page can show its details in place.
+  let { model, detailView = 'list', kinds = legendKinds, label = 'Modules by layer and their dependencies', onfocus }: {
+    model: MapModel;
+    detailView?: 'list' | 'matrix' | 'table';
+    kinds?: LineKind[];
+    label?: string;
+    onfocus?: (name: string) => void;
+  } = $props();
   const id = $props.id();
   const STEP = 80;
   const ZOOM_STEP = 1.25;
@@ -48,11 +56,15 @@
         (p) => { if (!controller.signal.aborted) placed = p; },
         () => { if (!controller.signal.aborted) failure = detailView === 'matrix'
           ? 'The map layout worker could not place the modules. Select Matrix for relationship details.'
-          : 'The map layout worker could not place the modules. The map is available as a list above.'; },
+          : detailView === 'table'
+            ? 'The graph could not place the modules. The table below lists every dependency.'
+            : 'The map layout worker could not place the modules. The map is available as a list above.'; },
       );
     }
     return () => controller.abort();
   });
+
+  $effect(() => { onfocus?.(focused); });
 
   // Open readable: the first time the chart and the viewport both have a size.
   $effect(() => {
@@ -216,7 +228,7 @@
   <div class="map-root" bind:this={root}>
     {#if placed}
       <ul class="map-legend" aria-label="Map legend">
-        {#each legendKinds as kind (kind)}
+        {#each kinds as kind (kind)}
           <li><span class={'sample ' + kind} aria-hidden="true"></span>{legendWords[kind]}</li>
         {/each}
       </ul>
@@ -259,7 +271,7 @@
         <p role="status">Placing the modules…</p>
       {:else}
         <svg viewBox={box} role="group" aria-labelledby={id + '-title'} data-focus={focused || undefined}>
-          <title id={id + '-title'}>Modules by layer and their dependencies</title>
+          <title id={id + '-title'}>{label}</title>
           <defs>
             <marker id={id + '-arrow'} viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />

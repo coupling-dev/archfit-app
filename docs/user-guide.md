@@ -52,7 +52,12 @@ For a workflow change, an owner named in the approved policy can follow the revi
 
 ## Repositories
 
-Open `/` after signing in to choose a repository or continue setup. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** with a link back to `/`.
+Open `/` after signing in to choose a repository. Each row shows the repository's **State** (`clean`, `drift`,
+`expired`, `changed outside the flow`, `not set up` or `unknown`) and its **archfit/gate** check: **required** when
+GitHub requires pull requests and the check on the default branch, **not required** when either is confirmed off,
+and **not confirmed** when the App could not confirm it. A **Next step** appears only while setup is incomplete.
+A repository whose installation no operator has admitted shows **not admitted**; an operator admits, and an owner
+approves. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** and says the repositories are listed on the home page, with a link to `/`.
 
 ## Home and the map
 
@@ -79,28 +84,28 @@ your explicit choice when local storage is available. Matrix needs no diagram la
 The matrix shows **Policy and review status**, not observed imports. Rows are sources and columns are targets:
 **row depends on column**. Both axes use the same order: policy layer order (outer first), then module name.
 
-| Symbol | Meaning                                                                     |
-| ------ | --------------------------------------------------------------------------- |
-| ✓      | Explicit allow in the policy.                                               |
-| ×      | Explicit deny reported for a touched, requested or drift pair.              |
-| ?      | A request.                                                                  |
-| !      | Drift.                                                                      |
-| ◷      | An exception; select the cell for its expiry and server-reported days left. |
+| Symbol | Meaning                                                              |
+| ------ | -------------------------------------------------------------------- |
+| ✓      | An allowed dependency in the policy.                                 |
+| ×      | One a rule denies.                                                   |
+| ?      | A requested dependency.                                              |
+| !      | Drift.                                                               |
+| ◷      | An exception. Within seven days of its date, or past it, the cell is ringed. |
 
 From 12 modules the matrix is compact: 32 px cells, vertical column names and a 220 px row header, so 24 modules fit
 a laptop page without horizontal scrolling. Names break only after `_` and `-`; hover a name for the full text.
-A cell shows its strongest status (drift, deny, request, allow) and, when it has several statuses, how many. An
-exception that ends within seven days (or has ended) is ringed and ranks just below deny; a later exception is grey
-and does not change the symbol. An exception with no date is never read as a pass: it shows ◷ in the usual colour. Every status remains in the cell's accessible name and in its details, including
-multiple rules, requests and exceptions. A blank means
-**no explicit relationship in this payload**, not “no imports” or “permitted”. Deny status is not fully evaluated
-for all pairs. Select a cell for all rules, request links, exception dates and evidence scope. Tab enters the
-table; arrow keys move between cells (the shaded diagonal is skipped), Enter opens details, and Escape closes details
-and returns focus. A repository with one module shows "One module is declared, so there is nothing to draw."
+A cell shows its strongest status (drift, deny, request, allow) and, when it has several statuses, how many. A later
+exception is grey and does not change the symbol. An exception with no date is never read as a pass.
 
-Headers stay visible while the table scrolls in either direction. At 50 or more modules, search names or layers,
-focus on explicit inbound/outbound neighbors, collapse layers, or use **Needs attention** to show modules
-with denies, requests, drift or exceptions. Filters use the same modules on both axes; **Reset filters** restores all.
+A blank means **the matrix shows no status for this pair**. It does not mean the dependency is allowed, and a deny rule may still apply. Deny status is
+only known for touched, requested or drift pairs; **About this view** explains this. Every status remains in the cell's
+accessible name and in its details, including multiple rules, requests and exception dates. Select a cell for details.
+Tab enters the table; arrow keys move between cells (the shaded diagonal is skipped), Enter opens details, and Escape
+closes details and returns focus. A repository with one module shows "One module is declared, so there is nothing to draw."
+
+Headers stay visible while the table scrolls in either direction. From 12 modules, search names or layers, focus on
+explicit inbound/outbound neighbors, collapse layers, or use **With denies, requests, drift or exceptions** to show only
+modules with those statuses. Filters use the same modules on both axes; **Reset filters** restores all.
 
 **Diagram** loads the SVG and its layout worker only when selected, including on phones. It shows declared
 volatility. Its line precedence is drift, deny, request, exception, allow: unlike Matrix, it draws only one
@@ -148,17 +153,19 @@ Search filters rules, exceptions, and modules without changing the totals. Each 
 pull request and request pages. Expand a rule for its scope, **Why**, and **Instead**. A note is **Not checked**: it
 tells the reader what to do.
 
-Exceptions are grouped by rule, largest group first, with a count for each (for example **coupling · 62**). The first
-20 rows show, then **Show all**. A column appears only when a shown row has its fact: **Expiry** when an end date
+Exceptions are grouped by rule, largest group first, with a count for each (for example **coupling · 62**). Expand a
+group to see its exceptions. The first 20 rows show, then **Show all**. A column appears only when a shown row has its fact: **Expiry** when an end date
 exists, **Request** when a request link exists. Exceptions without an end date say so once above the table. Exceptions
 show server-supplied days remaining, including today in the next 30 days. Bars appear only when a shown row has an end
 date and show the remaining days capped at 30, not exception age.
 Request links appear only when the response supplies a safe destination.
 
 The module table follows the rules and exceptions. Expand a module for public paths, volatility, and subdomain.
-**Show graph** is closed by default at every width. It draws allowed dependencies, not measured imports, and keeps the
-whole policy visible during search. Select a node to clear search and open that module's details. Large maps scroll
-vertically; dependency targets missing from the module list are reported, not invented.
+**Show graph** is closed by default at every width, and its layout worker loads only when it opens. It uses the same
+map as Home: module names are shown in full, layers are bands, and it draws allowed dependencies, not measured
+imports. Select a module to see what it depends on and what depends on it, below the graph; **Show in the table**
+opens its details in the table. Search filters the table, not the graph. Dependency targets missing from the module
+list are reported, not invented.
 
 **View source** opens **Show raw YAML**. **Copy digest** copies the complete digest; clipboard refusal leaves the value
 selectable. **Edit** appears only when change control is available. The existing edit and passkey flow is unchanged.
@@ -172,9 +179,10 @@ Additional examples: [phone](images/policy-mobile.png), [dark phone](images/poli
 
 ![Policy YAML edit and preview](images/policy-edit.png)
 
-Open **Edit** to start from the open policy proposal's file, or from the default branch when no proposal is open.
-The editor accepts a whole file up to 32 KiB. **Preview the edit** lists every decoder error by line and shows
-the App's text diff against the current default-branch policy. Check path globs locally before approval:
+Owners can edit here. Open **Edit** to start from the open policy proposal's file, or from the default branch when no
+proposal is open. The editor accepts a whole file up to 32 KiB. **Preview the edit** lists every decoder error by line,
+such as **Line 4: `foo` is not a policy key.**, and shows the App's text diff against the current default-branch policy.
+An unchanged file has nothing to approve. Check path globs locally before approval:
 `archfit check --policy <file>`.
 
 Text diffs show separate hunks with old/new line ranges and three unchanged lines of context.
@@ -274,7 +282,7 @@ the change** fetches the new contents before you confirm anything. Policy and Ow
 again**; not-found and stale-action states do not.
 
 **Page not available** uses the same message for a missing resource and one your account cannot access.
-Its **Repositories** link returns to `/`; no repository-specific recovery link is shown.
+Its **Repositories** link returns to `/`. For a repository you can see, a missing pull request or request says so, and any other missing page of it (for example a policy or an owner action) says it was not found in that repository. Each names the repository and offers **Back to <repository>**, with the repository tabs. A repository you cannot see gets the generic message and no tabs, so the page never shows that it exists.
 
 ## Register a passkey
 
