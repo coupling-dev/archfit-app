@@ -288,9 +288,10 @@ Its **Repositories** link returns to `/`. For a repository you can see, a missin
 
 ![Passkeys page](images/passkeys.png)
 
-Open `/r/<owner>/<repo>/passkeys` after signing in. Passkeys belong to your account in this App installation, not just the repository used to register them. They do not grant access or an owner role in other repositories. A policy owner can register a passkey; before the first policy, a repository administrator can register one. Follow the browser's registration prompt. Registration opens a GitHub issue notifying the user and owners. A second passkey and each removal require an existing passkey. The App uses user verification for the assertion; it does not prove that the owner read the request.
+Open `/r/<owner>/<repo>/passkeys` after signing in. Your passkeys work in every repository of this account where the policy names you as owner. They do not grant access or an owner role. A policy owner can register a passkey; before the first policy, a repository administrator can register one. Follow the browser's registration prompt. Registration opens a GitHub issue notifying the user and owners. A second passkey and each removal require an existing passkey. The App uses user verification for the assertion; it does not prove that the owner read the request.
 
-Removing your last passkey requires a confirmation with an existing passkey and notifies the owners. The warning beside **Remove** explains that you must register a new key before confirming another approval.
+Each passkey is listed by the date it was added, its last use, and a short ID. **Remove** names its passkey for screen readers.
+Removing your last passkey needs a confirmation with an existing passkey and opens an issue for the owners. The sentence beside **Remove** says you need a passkey to confirm an approval.
 
 The Owner and Policy editor links preserve their return path. After successful registration, the App returns to that page, where you must still read and confirm the action. The passkey page also accepts `?return=` with an encoded same-repository request, owner action, or policy-editor path. Other destinations are ignored; failed registration never redirects.
 
