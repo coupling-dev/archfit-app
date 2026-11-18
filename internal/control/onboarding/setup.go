@@ -59,7 +59,9 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 	var ruleReads sync.WaitGroup
 	ruleReads.Go(func() { rules = s.rules(ctx, r) })
 	defer ruleReads.Wait()
+	tip := api.StartStage(ctx, "tip")
 	snapshot, err := gate.ReadHomeSnapshot(ctx, s.gh, r)
+	tip(1, 0)
 	if err != nil {
 		return out, err
 	}
@@ -67,12 +69,14 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 	var accepted bool
 	var workflowErr error
 	var reads sync.WaitGroup
+	files := api.StartStage(ctx, "policy_workflow")
 	reads.Go(func() { policy = snapshot.Policy(ctx, s.gh) })
 	reads.Go(func() {
 		raw, err := snapshot.Workflow(ctx, s.gh)
 		accepted, workflowErr = s.acceptWorkflow(ctx, raw, err)
 	})
 	reads.Wait()
+	files(2, 0)
 	if policy.ReadErr != nil && !errors.Is(policy.ReadErr, api.ErrNotFound) {
 		return out, policy.ReadErr
 	}
