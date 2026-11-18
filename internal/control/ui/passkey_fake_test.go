@@ -37,6 +37,7 @@ type fakePasskeys struct {
 	err    error
 	listed []passkey.Passkey
 	calls  []passkeyCall
+	onList func() // called when List starts, to order it against other reads
 }
 
 func (f *fakePasskeys) record(c passkeyCall) error {
@@ -85,6 +86,9 @@ func (f *fakePasskeys) Redeem(context.Context, api.Repo, int64, string, passkey.
 }
 
 func (f *fakePasskeys) List(_ context.Context, r api.Repo, userID int64) ([]passkey.Passkey, error) {
+	if f.onList != nil {
+		f.onList()
+	}
 	if err := f.record(passkeyCall{method: "List", repo: r, user: passkey.User{ID: userID}}); err != nil {
 		return nil, err
 	}
