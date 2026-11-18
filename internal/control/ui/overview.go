@@ -98,7 +98,7 @@ func (s *server) apiRepos(r *http.Request, sc scope) (any, error) {
 			// Stored evidence stays when the state read fails: the list then answers the error, as before.
 			if err == nil && probed[i] {
 				probeAt := time.Since(start)
-				s.overviewProbe(ctx, repo, &body.Repos[i])
+				s.overviewProbe(onboarding.WithRowTrace(ctx, i, start), repo, &body.Repos[i])
 				// Offsets from the request start show whether a row waited on another row, not just how long it ran.
 				slog.Info("ui probe row", "row", i, "slot_ms", durMS(slotAt), "state_ms", durMS(stateAt), "probe_ms", durMS(probeAt), "done_ms", durMS(time.Since(start)))
 			}

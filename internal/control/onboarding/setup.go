@@ -48,7 +48,7 @@ type setups struct {
 
 // NewSetup returns the v4 onboarding read side.
 func NewSetup(gh *api.Client, g gate.SetupViews) Setups {
-	return &setups{gh: gh, gate: g, actionApproved: manifest.ActionApproved}
+	return &setups{gh: tracedGitHub{gh}, gate: g, actionApproved: manifest.ActionApproved}
 }
 
 func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
