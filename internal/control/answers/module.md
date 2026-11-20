@@ -52,7 +52,7 @@ Supporting glue between two core modules. Volatility high during milestones 2 an
 
 ```go
 type Answer struct {
-    Kind    string // approve, approve-until or reject
+    Kind    string // approve, approve-until, reject, declare-public or declare-model
     Until   string // approve-until: YYYY-MM-DD
     Instead string // reject: what to do instead
     Later   bool   // merge later

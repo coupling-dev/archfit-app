@@ -17,7 +17,7 @@ import (
 type Setup struct {
 	Approval  gate.ApprovalSummary
 	Admitted  bool
-	Policy    bool   // valid schema 3 policy on the default branch
+	Policy    bool   // valid policy (version 1, or 3) on the default branch
 	Workflow  bool   // accepted Archfit workflow on the default branch
 	OpenPull  int    // open pull request adding an accepted workflow; 0 when none
 	State     string // not_admitted, first_approval, approved, outside_flow

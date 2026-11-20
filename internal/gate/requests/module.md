@@ -63,8 +63,15 @@ who asked still sees `fail`.
   `graph` adds the dependency to `depends_on`; approve on any other rule adds an exception without a date;
   approve-until adds an exception with `expires` (`unowned`: from the path; an `only` rule: no `to`); reject adds a
   `deny` rule `request-<N>` with the owner's `instead`; a reject of a copy, of unowned code or of an `only` rule writes
-  no line. A comment, `RequestComment(431)` = `request #431`, ends the first line of the entry the edit writes: `Edit`
-  passes it to the policy writer as its note (M2 task 19), which also turns a `depends_on` flow list into a block list.
+  no line; declare-public and declare-model add the request's package to the `public` or `model` list of `to`
+  (`policy3.AddSurface`). A comment, `RequestComment(431)` = `request #431`, ends the first line of the entry the edit
+  writes: `Edit` passes it to the policy writer as its note (M2 task 19), which also turns a flow list into a block list.
+- A surface request (engine 0.9.0; the surfaces design 6.9) is a coupling error past the declared surface of `to`. The
+  request keeps that surface (`records.Surface`) from the first of its errors that has one, and from any verified
+  result that joins it later; it never loses it. Such a request is never approved as such: `ChangeOf` refuses approve
+  and takes declare-public, declare-model (a model part needs a version 1 policy), approve-until and reject. A
+  declaration needs the package past the surface, which the engine names in a field of task 3.3 (`pastSurface`); until
+  it is vendored no request has one, and declarations are refused (fail closed). The stored lists are bounded.
 
 Not provided: the answers (task 19), the pages (task 24).
 
@@ -111,9 +118,9 @@ func OpenIndex(ctx context.Context, s store.Store, r api.Repo) (*records.Index, 
 func Wait(ctx context.Context, s store.Store, r api.Repo, pull int, ids []int) error
 func PullClosed(ctx context.Context, s store.Store, r api.Repo, pull int) error
 
-type Answer struct { Kind policy3.Answer; Until, Instead string }
-type Change struct { Request int; Kind policy3.Answer; Rule, Path, From, To, Until, Instead string } // JSON, kept by an approval
-type View struct { /* Number, State, Reason, Rule, Path, From, To, Expires, Record, Numbers, Policy, Layers (outer-first), Modules, Allowed, Earlier, Dependencies */ }
+type Answer struct { Kind policy3.Answer; Until, Instead string } // approve, approve-until, reject, declare-public, declare-model
+type Change struct { Request int; Kind policy3.Answer; Rule, Path, From, To, Until, Instead, Glob string } // JSON, kept by an approval
+type View struct { /* Number, State, Reason, Rule, Path, From, To, Expires, Record, Numbers, Policy, Layers (outer-first), Modules, Allowed, Earlier, Dependencies, Surface, PolicyVersion */ }
 type Dependency struct { Kind, Rule, From, To, Expires string } // structured map lines
 type Module struct { Name, Layer, Volatility, Subdomain string; DependsOn []string }
 type Earlier struct { Kind /* EarlierDeny, EarlierException */, Rule, From, To, Why, Instead, Expires string }

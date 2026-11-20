@@ -10,7 +10,7 @@ The policy `.archfit.yaml` belongs to the engine. The App reads version 1 (engin
 v4.0.0) side by side until task 6.5; the two differ only by the key `modules.<name>.model`, which version 1 has. The App reads it to check an owner's edit and to know
 which policy a result was judged by, and it writes an owner's answer into it. This module owns exactly that: a strict
 decoder that accepts and rejects the same files as the engine, the digest that ties an answer to the bytes it was
-written against, and three writers that add an answer to a policy without changing any other byte (design 6.1, 6.3,
+written against, and four writers that add an answer to a policy without changing any other byte (design 6.1, 6.3,
 6.4, 9.1, 9.2, 10.4; M2 plan task 3, D10, D11). Without it the App would re-derive the digest and would rewrite owners'
 files, losing their comments and order.
 
@@ -24,7 +24,8 @@ A version 2 file (Archfit 3) is refused with `ErrVersion2`.
   checks list every problem, one per line, with its key path.
 - `Digest`: `sha256:` and the lowercase hex SHA-256 of the exact file bytes. The engine's `policy.digest` is the same.
 - `AddDependsOn`, `AddException`, `AddDenyRule`, `AddSurface`: the edits of an answer. They work on both versions. Each inserts text and nothing else,
-  except that a `depends_on` flow list becomes a block list the first time an answer adds to it. Each takes a note,
+  except that a module list (`depends_on`, `public`, `model`) written as a flow list becomes a block list the first
+  time an answer adds to it. Each takes a note,
   the line comment (`# request #431`) that ends the first line of the entry it adds (milestone 3 D8).
 - `AddSurface`: the answer to a surface request (the surfaces design 6.9): declare a glob as part of the target's
   `public` or `model` list. It refuses a module that declares neither key (its whole paths are public, so a first glob
@@ -45,10 +46,11 @@ the pin to a tag; moderate after.
 
 ## Encapsulated Knowledge
 
-- The decode rules of the engine's `internal/config/policyfile`: the version message, the closed values, the one form
+- The decode rules of the engine's `internal/config/policyfile`: the closed values, the one form
   of a rule, `to` required except for `unowned` and a custom `only` rule (which names its library itself, so a `to`
   there is an error), `expires` as `YYYY-MM-DD`. The unknown-key and duplicate-key messages
-  are those of `go.yaml.in/yaml/v3`; every other message is the engine's. A date written without quotes is a string.
+  are those of `go.yaml.in/yaml/v3`; the version messages are the App's, because it reads two versions; every other
+  message is the engine's. A date written without quotes is a string.
   The kind checks follow `yaml.v3`'s scalars with two rules of the engine's library added: a mapping key is its text
   whatever its kind (a module may be named `123`), and a bare number with an exponent and no decimal point (`1e3`) is
   a string, so a login of that form is a name. An alias, a merge key and a key that is an alias are resolved by `yaml.v3`,
@@ -61,8 +63,8 @@ the pin to a tag; moderate after.
   of milestone 3 reads to link the line to its request (M3 D8). The rewrite keeps each entry's text as written and
   the comment after the list on the key's line; only the added entry carries the note. A new `depends_on` is a block
   list from the start.
-- The layouts the writer edits: a module that is a block mapping; `depends_on` absent, a flow list on its key's line,
-  or a block list; `exceptions` and `rules` absent (appended at the end of the file) or a block list, with its dashes
+- The layouts the writer edits: a module that is a block mapping; a module list (`depends_on`, `public`, `model`)
+  absent (a block list added at the module's end), a flow list on its key's line, or a block list; `exceptions` and `rules` absent (appended at the end of the file) or a block list, with its dashes
   indented or at the key's indent. Line ends (LF or CRLF) and a missing final newline stay as they are. Any other layout
   is `ErrLayout`: the owner edits the file by hand. That includes a line break other than LF or CRLF, a document end
   marker (`...`, with or without a comment) or a second document (a `---` on the first line is fine), and an anchor, an alias or a merge key. `Decode`
@@ -89,7 +91,7 @@ var ErrLayout error
   a date or empty. The rule `unowned` and a custom `only` rule have no `To`; a `To` there is an error.
 - `AddDenyRule` writes `deny` with one `from` and one `to`, a `why` and an `instead`.
 - `note` is the text of the line comment, two spaces and `# ` before it, at the end of the first line of the added
-  entry: the `depends_on` entry, the exception's dash line, the rule's dash line. `""` writes no comment; a note with a
+  entry: the `depends_on`, `public` or `model` entry, the exception's dash line, the rule's dash line. `""` writes no comment; a note with a
   line break is an error. `gate/requests.Edit` passes `request #<n>`.
 - Each edit decodes its own output and compares it with the old policy plus the answer. A value that would not read
   back as written, or an answer the policy does not allow, is an error, never a different policy.
@@ -117,8 +119,8 @@ Unknown/type errors and semantic problems are collected together; `Decode` refus
 ## Constraints and Invariants
 
 - `Decode` accepts every valid engine fixture and rejects every invalid one. A file the two disagree on is a bug here.
-- The output of an edit decodes, differs from the input by one inserted piece of text (or, for a `depends_on` flow
-  list, by that one line rewritten as a block list), and has the digest of its own bytes. The digest of a file changes exactly when one of its bytes changes.
+- The output of an edit decodes, differs from the input by one inserted piece of text (or, for a module list
+  written as a flow list, by that one line rewritten as a block list), and has the digest of its own bytes. The digest of a file changes exactly when one of its bytes changes.
 - No I/O, no clock, no logging, no globals besides the closed value lists.
 - Reasons, names and dates are written on one line; a value with a line break is an error.
 

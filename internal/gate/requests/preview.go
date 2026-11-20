@@ -25,7 +25,8 @@ var (
 	ErrNoRequest = errors.New("requests: no such request")
 	// ErrClosedRequest is a preview of a request that is not open: it was answered or closed.
 	ErrClosedRequest = errors.New("requests: the request is not open")
-	// ErrAnswer is an answer that cannot be written: an unknown kind, a missing or bad date, no instead.
+	// ErrAnswer is an answer that cannot be written: an unknown kind, a missing or bad date, no instead, an approve of a
+	// use past the surface, or a declaration on a request that names no package past it.
 	ErrAnswer = errors.New("requests: the answer is not complete")
 	// ErrNoPolicy means the default branch has no valid policy to write an answer into.
 	ErrNoPolicy = errors.New("requests: the default branch has no valid policy")

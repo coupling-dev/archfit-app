@@ -24,8 +24,8 @@ func NewOwners(files fileReader) Owners { return policyOwners{files: files} }
 
 type policyOwners struct{ files fileReader }
 
-// Owners reads .archfit.yaml at the default branch. A schema 3 file gives its owners. No file, or an Archfit 3
-// (version 2) file, is "before the first policy": the onboarding pull request brings the first schema 3 policy, and
+// Owners reads .archfit.yaml at the default branch. A valid file (version 1, or 3) gives its owners. No file, or an Archfit 3
+// (version 2) file, is "before the first policy": the onboarding pull request brings the first valid policy, and
 // a repository administrator approves it (design 9.2). Any other file is ErrPolicy.
 func (o policyOwners) Owners(ctx context.Context, r api.Repo) ([]string, bool, error) {
 	if r.DefaultBranch == "" {

@@ -24,7 +24,7 @@ Control/account writes these records; this package calls no billing or control-p
 
 The Archfit 3 protected-settings resolver, baseline/labels digest lists, waiver expiry reader,
 merge-group protected-file comparison and legacy protected-path helpers are removed.
-The v4 upload resolves its schema 3 policy and immutable workflow inputs in gate/upload_result.go.
+The v4 upload resolves its policy (version 1, or 3) and immutable workflow inputs in gate/upload_result.go.
 
 ## Checks
 

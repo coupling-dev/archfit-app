@@ -273,7 +273,7 @@ Owner actions and workflow pushes (`owner_test.go`, the fake also holds the work
 `TestTheFirstApprovalOfAnOnboardingPullRequestIsConsumedByItsMerge` (a non-administrator refused; the record on the pull
 request), `TestOneFirstApprovalNeverAdmitsAnotherWorkflow`, `TestAFirstApprovalIsBoundToWhatTheAdministratorSaw` (a push
 after `Bind`: `ErrMoved` before the step-up), `TestAFirstApprovalRefuses` (approved repository, fork, head without a
-policy of version 3 or without the workflow, a branch with a policy, no pull request),
+valid policy or without the workflow, a branch with a policy, no pull request),
 `TestTheFirstApprovalOfAnAlreadyConvertedRepository` (an administrator the policy does not name refused; the issue
 assigned to the owners; a later direct push is outside the flow), `TestAWorkflowApprovalIsConsumedByItsMergeOnce`,
 `TestAWorkflowMergedWithAnotherFileVoidsItsApproval`, `TestAWorkflowApprovalRefuses`,

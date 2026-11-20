@@ -15,7 +15,7 @@ make gate decisions, persist data or import one another.
 | --- | --- |
 | [envelope](envelope/module.md) | Upload envelope 2 and its payload digest |
 | [manifest](manifest/module.md) | Approved Archfit 4 engine identities and Action commits |
-| [policy3](policy3/module.md) | Schema 3 policy, digest and targeted answer edits |
+| [policy3](policy3/module.md) | Policy versions 1 and 3, digest and targeted answer edits |
 | [request](request/module.md) | Request line, issue and answer keys |
 | [result](result/module.md) | Engine result JSON v1 and text records |
 | [wording](wording/module.md) | Prohibited output vocabulary, for tests |

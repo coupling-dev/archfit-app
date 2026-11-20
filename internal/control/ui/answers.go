@@ -11,16 +11,16 @@ import (
 )
 
 // The answer routes of the request page (design 10.4; M2 task 19). An answer that loosens the policy (approve,
-// approve-until) needs the owner's passkey: the page asks for the digest of the answer, makes the step-up for the
+// approve-until, declare-public, declare-model; policy3.Loosens) needs the owner's passkey: the page asks for the digest of the answer, makes the step-up for the
 // answer kind, the request and that digest (the passkey routes), and sends the token with the answer. A reject needs
 // none. The repository of the path names the installation; a body never names a user or a repository.
 
 type answerJSON struct {
-	Answer     string `json:"answer"`            // approve, approve-until or reject
+	Answer     string `json:"answer"`            // approve, approve-until, reject, declare-public or declare-model
 	Until      string `json:"until,omitempty"`   // approve-until: YYYY-MM-DD
 	Instead    string `json:"instead,omitempty"` // reject: what to do instead
 	MergeLater bool   `json:"merge_later,omitempty"`
-	Token      string `json:"token,omitempty"` // the passkey step-up token, for approve and approve-until
+	Token      string `json:"token,omitempty"` // the passkey step-up token, for every answer but reject
 }
 
 type answerDigestJSON struct {
