@@ -1,0 +1,16 @@
+# A version 1 policy of engine 0.9.0: a module with a public and a model part, and one with only a model part.
+version: 1
+owners: [alice]
+gate: required
+modules:
+  billing:
+    paths: [internal/billing/**]
+    public: [internal/billing/api]
+    model: [internal/billing/types]
+    volatility: high
+  events:
+    paths: [internal/events/**]
+    model: [internal/events/schema]
+  app:
+    paths: [cmd/**]
+    depends_on: [billing, events]

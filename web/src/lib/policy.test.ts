@@ -8,6 +8,7 @@ import {
   policyCounts,
   policyMap,
   policyRules,
+  publicPart,
   ruleMode,
 } from './policy';
 
@@ -17,6 +18,7 @@ const module = (name: string, layer = 'core', deps: string[] = []): Policy['modu
   depends_on: deps,
   paths: [`src/${name}/**`],
   public: null,
+  model: null,
   volatility: 'low',
   subdomain: '',
 });
@@ -218,5 +220,21 @@ describe('exceptions by rule', () => {
       ['coupling', ['b', 'c']],
       ['duplication', ['a']],
     ]);
+  });
+});
+
+describe('publicPart', () => {
+  it('is the whole module without public or model, none with only model, else the public globs', () => {
+    expect(publicPart({ public: null, model: null })).toBe('Whole module');
+    expect(publicPart({ public: null, model: ['src/app/model'] })).toBe('None');
+    expect(publicPart({ public: ['src/app/api'], model: ['src/app/model'] })).toBe('src/app/api');
+    expect(publicPart({ public: [], model: null })).toBe('None');
+  });
+});
+
+describe('filterPolicy and the model part', () => {
+  it('finds a module by a glob of its model part', () => {
+    const withModel = { ...policy, modules: [{ ...module('app'), model: ['src/app/model'] }, module('util')] };
+    expect(filterPolicy(withModel, 'src/app/model').modules.map((m) => m.name)).toEqual(['app']);
   });
 });

@@ -49,6 +49,13 @@ export function policyRules(policy: Policy): PolicyRule[] {
   ];
 }
 
+// publicPart is the public part of a module as the engine reads it: the whole module when it declares neither public nor
+// model, none when it declares only model (version 1), else its globs.
+export function publicPart(m: Pick<Policy['modules'][number], 'public' | 'model'>): string {
+  if (m.public === null) return m.model === null ? 'Whole module' : 'None';
+  return m.public.join(', ') || 'None';
+}
+
 export function ruleMode(mode: string): string {
   switch (mode) {
     case 'ask':
@@ -107,7 +114,7 @@ export function filterPolicy(policy: Policy, query: string) {
   const matches = (values: (string | number | undefined | null)[]) => values.join(' ').toLowerCase().includes(needle);
   return {
     modules: policy.modules.filter((m) =>
-      matches([m.name, m.layer, m.volatility, m.subdomain, ...(m.paths ?? []), ...(m.public ?? []), ...m.depends_on]),
+      matches([m.name, m.layer, m.volatility, m.subdomain, ...(m.paths ?? []), ...(m.public ?? []), ...(m.model ?? []), ...m.depends_on]),
     ),
     rules: policyRules(policy).filter((r) =>
       matches([r.id, r.mode, ruleMode(r.mode), r.summary, r.why, r.instead]),

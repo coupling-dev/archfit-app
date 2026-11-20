@@ -1,0 +1,71 @@
+{
+  "owners": [
+    "alice"
+  ],
+  "gate": "required",
+  "layers": null,
+  "modules": [
+    {
+      "name": "app",
+      "paths": [
+        "cmd/**"
+      ],
+      "public": null,
+      "model": null,
+      "volatility": "high",
+      "subdomain": "",
+      "layer": "",
+      "depends_on": [
+        "billing",
+        "events"
+      ]
+    },
+    {
+      "name": "billing",
+      "paths": [
+        "internal/billing/**"
+      ],
+      "public": [
+        "internal/billing/api"
+      ],
+      "model": [
+        "internal/billing/types"
+      ],
+      "volatility": "high",
+      "subdomain": "",
+      "layer": "",
+      "depends_on": []
+    },
+    {
+      "name": "events",
+      "paths": [
+        "internal/events/**"
+      ],
+      "public": null,
+      "model": [
+        "internal/events/schema"
+      ],
+      "volatility": "high",
+      "subdomain": "",
+      "layer": "",
+      "depends_on": []
+    }
+  ],
+  "builtin": {
+    "graph": "ask",
+    "coupling": "deny",
+    "duplication": "ask",
+    "cycle": "deny",
+    "layers": "deny",
+    "unowned": "deny",
+    "min_balance": 7
+  },
+  "rules": [],
+  "exceptions": [],
+  "yaml": "# A version 1 policy of engine 0.9.0: a module with a public and a model part, and one with only a model part.\nversion: 1\nowners: [alice]\ngate: required\nmodules:\n  billing:\n    paths: [internal/billing/**]\n    public: [internal/billing/api]\n    model: [internal/billing/types]\n    volatility: high\n  events:\n    paths: [internal/events/**]\n    model: [internal/events/schema]\n  app:\n    paths: [cmd/**]\n    depends_on: [billing, events]\n",
+  "digest": "sha256:568c4643c3d9f37c8263657a654d251366e290937a8977e0cc1568f5f8b2137b",
+  "edit": {
+    "available": true,
+    "reason": ""
+  }
+}

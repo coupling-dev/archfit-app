@@ -249,6 +249,7 @@ export interface Policy {
     name: string;
     paths: string[] | null;
     public: string[] | null;
+    model: string[] | null; // version 1 only
     volatility: string;
     subdomain: string;
     layer: string;

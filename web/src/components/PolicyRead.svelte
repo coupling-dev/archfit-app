@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { Policy } from '../lib/api';
-  import { exceptionExpiry, filterPolicy, groupExceptions, policyCounts, ruleMode } from '../lib/policy';
+  import { exceptionExpiry, filterPolicy, groupExceptions, policyCounts, publicPart, ruleMode } from '../lib/policy';
   import { safeHref } from '../lib/route';
   import PolicyGraph from './PolicyGraph.svelte';
 
@@ -178,7 +178,8 @@
               <details id={'policy-module-' + policy.modules.indexOf(module)}>
                 <summary><strong>{module.name}</strong></summary>
                 <dl class="kv module-facts">
-                  <dt>Public</dt><dd>{module.public === null ? 'Whole module' : module.public.join(', ') || 'None'}</dd>
+                  <dt>Public</dt><dd>{publicPart(module)}</dd>
+                  {#if module.model}<dt>Model</dt><dd>{module.model.join(', ')}</dd>{/if}
                   <dt>Volatility</dt><dd>{module.volatility || 'Not provided'}</dd>
                   <dt>Subdomain</dt><dd>{module.subdomain || 'Not provided'}</dd>
                 </dl>
