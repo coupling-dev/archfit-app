@@ -51,6 +51,19 @@ func TestRecordLines(t *testing.T) {
 				"archfit: fail, 2 errors\n",
 		},
 		{
+			name: "a surface with no declared part",
+			r: result.Result{
+				Summary: "archfit: fail, 1 error",
+				Errors: []result.Error{{
+					Path: "c.go", Line: 2, Rule: "coupling", What: "a -> b/x is past the surface", To: "b",
+					Balance: &result.Balance{Value: 2, Min: 7, Strength: result.StrengthIntrusive, Volatility: result.VolatilityHigh},
+					Surface: &result.Surface{Public: []string{}, Model: []string{}}, Next: fix,
+				}},
+			},
+			want: "c.go:2: coupling: a -> b/x is past the surface\n  balance: 2/10 (min 7): intrusive, b is high\n" +
+				"  surface: none declared\n  next: fix the code\narchfit: fail, 1 error\n",
+		},
+		{
 			name: "an unknown reason without a path",
 			r: result.Result{
 				Summary: "archfit: unknown, no verdict",

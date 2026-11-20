@@ -71,6 +71,7 @@ func TestParseIssue(t *testing.T) {
 	const line = "/archfit request why\n\n"
 	can := "pkg_tc -> pkg_util: graph: not an allowed dependency\n  balance: 9/10 (min 7)\n  next: archfit request -m \"<why you need it>\"\n"
 	graph := &request.Answer{Rule: "graph", From: "pkg_tc", To: "pkg_util", Balance: &request.Balance{Value: 9, Min: 7}}
+	noneDeclared := "a -> b: coupling: b/x is past the surface\n  balance: 2/10 (min 7): intrusive, b is high\n  surface: none declared\n"
 	can09 := "analysis-application -> assessment-repair: coupling: internal/assessment/score is past the surface\n" +
 		"  balance: 2/10 (min 7): intrusive, assessment-repair is high\n" +
 		"  surface: internal/assessment/finding (public), internal/assessment/result (model)\n" +
@@ -111,6 +112,7 @@ func TestParseIssue(t *testing.T) {
 		{"an unknown strength", line + "```text\na -> b: coupling: x\n  balance: 2/10 (min 7): functional, b is high\n```\n", "a -> b: coupling: x\n  balance: 2/10 (min 7): functional, b is high\n", nil},
 		{"a surface after a v4.0.0 balance", line + "```text\na -> b: coupling: x\n  balance: 2/10 (min 7)\n  surface: b/api (public)\n```\n", "a -> b: coupling: x\n  balance: 2/10 (min 7)\n  surface: b/api (public)\n", nil},
 		{"a surface without a balance", line + "```text\na -> b: coupling: x\n  surface: b/api (public)\n```\n", "a -> b: coupling: x\n  surface: b/api (public)\n", nil},
+		{"a surface with no declared part", line + "```text\n" + noneDeclared + "```\n", noneDeclared, &request.Answer{Rule: "coupling", From: "a", To: "b", Balance: &request.Balance{Value: 2, Min: 7, Strength: "intrusive", Volatility: "high"}, Surface: &request.Surface{Public: []string{}, Model: []string{}}}},
 		{"a surface with an unknown role", line + "```text\na -> b: coupling: x\n  balance: 2/10 (min 7): intrusive, b is high\n  surface: b/api (private)\n```\n", "a -> b: coupling: x\n  balance: 2/10 (min 7): intrusive, b is high\n  surface: b/api (private)\n", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

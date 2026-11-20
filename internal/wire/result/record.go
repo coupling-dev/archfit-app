@@ -15,7 +15,7 @@ const noteGap = "     "
 //	unknown     = [ path [ ":" line ] ": " ] cause ": " what NL fields next-line
 //	fields      = [ "  why: " text NL ] [ "  instead: " text NL ]
 //	              [ "  balance: " n "/10 (min " m ")" [ ": " strength ", " to " is " volatility ] NL ]
-//	              [ "  surface: " glob " (" role ")" { ", " glob " (" role ")" } NL ]
+//	              [ "  surface: " ( glob " (" role ")" { ", " glob " (" role ")" } | "none declared" ) NL ]
 //	next-line   = "  next: " text [ "     (" note ")" ] NL
 //	status-line = summary NL
 //
@@ -84,8 +84,14 @@ func BalanceText(b Balance, to string) string {
 	return text
 }
 
-// surfaceText lists the public globs, then the model globs, each with its role.
+// noSurface is the surface line of a module that declares no part another module may use.
+const noSurface = "none declared"
+
+// surfaceText lists the public globs, then the model globs, each with its role; "none declared" when both are empty.
 func surfaceText(s Surface) string {
+	if len(s.Public)+len(s.Model) == 0 {
+		return noSurface
+	}
 	parts := make([]string, 0, len(s.Public)+len(s.Model))
 	for _, g := range s.Public {
 		parts = append(parts, g+" (public)")

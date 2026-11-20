@@ -203,9 +203,13 @@ func parseAnswer(record string) *Answer {
 	return a
 }
 
-// parseSurface reads "glob (public), glob (model)"; anything else gives nil.
+// parseSurface reads "glob (public), glob (model)", or "none declared" for a module that declares no part; anything
+// else gives nil.
 func parseSurface(text string) *Surface {
 	s := &Surface{Public: []string{}, Model: []string{}}
+	if text == "none declared" {
+		return s
+	}
 	for item := range strings.SplitSeq(text, ", ") {
 		m := surfaceItem.FindStringSubmatch(item)
 		if m == nil {
