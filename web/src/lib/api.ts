@@ -89,8 +89,8 @@ export interface RequestView {
   expires?: string;
   record: string;
   verified: boolean; // false: the numbers are as reported by the CLI
-  balance?: { value: number; max: number; min: number };
-  policy: boolean; // false: the default branch has no policy of version 3
+  balance?: { value: number; max: number; min: number; strength?: string; volatility?: string };
+  policy: boolean; // false: the default branch has no valid policy
   layers: string[];
   modules: RequestModule[];
   answer?: { kind: AnswerKind; until?: string; instead?: string };

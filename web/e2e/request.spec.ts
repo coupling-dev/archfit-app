@@ -320,6 +320,8 @@ test('request: a request that does not exist is the API sentence, with no reposi
 for (const [name, data] of [
   ['open', request],
   ['as-reported', { ...request, verified: false }],
+  // Engine 0.9.0 names the inputs of a balance; engine v4.0.0 (the other states) does not.
+  ['balance-inputs', { ...request, balance: { value: 9, max: 10, min: 7, strength: 'contract', volatility: 'low' } }],
   [
     'joined',
     {

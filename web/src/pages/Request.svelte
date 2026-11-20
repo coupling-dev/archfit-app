@@ -282,7 +282,7 @@
         </section>
         {/if}
       {:else if body.state === 'open'}
-        <p>Add <code>.archfit.yaml</code> of version 3 to the default branch, then answer.</p>
+        <p>Add a valid <code>.archfit.yaml</code> (version 1) to the default branch, then answer.</p>
       {:else}
         {#if body.answer?.kind === 'approve'}<p>Approved. The request on GitHub names the owner and the passkey.</p>
         {:else if body.answer?.kind === 'approve-until'}<p>Approved until {body.answer.until}. The request on GitHub names the owner and the passkey.</p>

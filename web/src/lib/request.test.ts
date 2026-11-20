@@ -4,6 +4,7 @@ import type { AnswerKind, Preview, RequestView } from './api';
 import {
   answerProblem,
   decisionState,
+  balanceLine,
   balanceText,
   dependency,
   earlierLine,
@@ -63,6 +64,21 @@ describe('balanceText', () => {
     expect(balanceText({ ...open, verified: false })).toBe('9/10 (min 7), as reported');
     expect(balanceText({ ...open, balance: undefined })).toBe('');
   });
+  it('names the inputs of a 0.9.0 balance, with the target as subject', () => {
+    const inputs = { ...open, balance: { value: 9, max: 10, min: 7, strength: 'contract', volatility: 'low' } };
+    expect(balanceText(inputs)).toBe('9/10 (min 7): contract, pkg_util is low');
+    expect(balanceText({ ...inputs, verified: false })).toBe('9/10 (min 7): contract, pkg_util is low, as reported');
+  });
+});
+
+describe('balanceLine', () => {
+  it('prints a v4.0.0 balance without inputs, and a 0.9.0 balance with them', () => {
+    expect(balanceLine({ value: 9, min: 7 })).toBe('9/10 (min 7)');
+    expect(balanceLine({ value: 2, min: 7, strength: 'intrusive', volatility: 'high' }, 'assessment-repair')).toBe(
+      '2/10 (min 7): intrusive, assessment-repair is high',
+    );
+    expect(balanceLine({ value: 2, min: 7, strength: 'intrusive', volatility: 'high' })).toBe('2/10 (min 7)');
+  });
 });
 
 describe('dependency', () => {
@@ -92,7 +108,7 @@ describe('statusOf', () => {
       { ...open, policy: false },
       'waiting',
       'attention',
-      'Request #431 cannot be answered here: the default branch has no policy of version 3.',
+      'Request #431 cannot be answered here: the default branch has no valid policy.',
     ],
     [{ ...open, state: 'answered' }, 'answered', 'neutral', 'An owner answered this request.'],
     [

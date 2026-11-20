@@ -46,10 +46,27 @@ export function decisionState(kind: AnswerKind, preview: Preview | undefined, la
   };
 }
 
-// balanceText is the balance as design 5 writes it, "9/10 (min 7)", and says when the CLI reported it.
-export function balanceText(r: Pick<RequestView, 'balance' | 'verified'>): string {
+// Balance is a coupling number as the record prints it. Engine 0.9.0 names the inputs it was computed with; a
+// balance of engine v4.0.0 has none (until task 6.5).
+export interface Balance {
+  value: number;
+  max?: number;
+  min: number;
+  strength?: string;
+  volatility?: string;
+}
+
+// balanceLine is the balance as the record prints it: "9/10 (min 7)", or with the 0.9.0 inputs
+// "2/10 (min 7): intrusive, assessment-repair is high", whose subject is the target module.
+export function balanceLine(b: Balance, subject?: string): string {
+  const text = `${b.value}/${b.max ?? 10} (min ${b.min})`;
+  return b.strength && b.volatility && subject ? `${text}: ${b.strength}, ${subject} is ${b.volatility}` : text;
+}
+
+// balanceText is the balance of a request, whose subject is the module it reaches, and says when the CLI reported it.
+export function balanceText(r: Pick<RequestView, 'balance' | 'verified' | 'to'>): string {
   if (!r.balance) return '';
-  const b = `${r.balance.value}/${r.balance.max} (min ${r.balance.min})`;
+  const b = balanceLine(r.balance, r.to);
   return r.verified ? b : `${b}, as reported`;
 }
 
@@ -74,7 +91,7 @@ export function statusOf(r: RequestView): Status {
   }
   if (r.state === 'closed') return { word: 'closed', tone: 'neutral', line: `${name} is closed.` };
   let line = 'Waiting for an owner to answer.';
-  if (!r.policy) line = `${name} cannot be answered here: the default branch has no policy of version 3.`;
+  if (!r.policy) line = `${name} cannot be answered here: the default branch has no valid policy.`;
   else if (r.allowed) line += ' The policy already allows this dependency.';
   else if (!r.verified) line += ' Its numbers are as reported: no pull request confirmed them yet.';
   return { word: 'waiting', tone: 'attention', line };
