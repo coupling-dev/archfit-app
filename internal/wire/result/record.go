@@ -14,7 +14,8 @@ const noteGap = "     "
 //	error       = path [ ":" line ] ": " rule-id ": " what NL fields next-line
 //	unknown     = [ path [ ":" line ] ": " ] cause ": " what NL fields next-line
 //	fields      = [ "  why: " text NL ] [ "  instead: " text NL ]
-//	              [ "  balance: " n "/10 (min " m ")" NL ]
+//	              [ "  balance: " n "/10 (min " m ")" [ ": " strength ", " to " is " volatility ] NL ]
+//	              [ "  surface: " glob " (" role ")" { ", " glob " (" role ")" } NL ]
 //	next-line   = "  next: " text [ "     (" note ")" ] NL
 //	status-line = summary NL
 //
@@ -24,11 +25,11 @@ func Record(r Result) string {
 	var b strings.Builder
 	for _, e := range r.Errors {
 		writeHead(&b, location(e.Path, e.Line), e.Rule, e.What)
-		writeDetails(&b, e.Why, e.Instead, e.Balance, e.Next)
+		writeDetails(&b, e.Why, e.Instead, e.Balance, e.To, e.Surface, e.Next)
 	}
 	for _, u := range r.Unknown {
 		writeHead(&b, location(u.Path, u.Line), u.Cause, u.What)
-		writeDetails(&b, u.Why, "", nil, u.Next)
+		writeDetails(&b, u.Why, "", nil, "", nil, u.Next)
 	}
 	b.WriteString(r.Summary + "\n")
 	return b.String()
@@ -53,7 +54,7 @@ func writeHead(b *strings.Builder, where, label, what string) {
 	b.WriteString("\n")
 }
 
-func writeDetails(b *strings.Builder, why, instead string, balance *Balance, next Next) {
+func writeDetails(b *strings.Builder, why, instead string, balance *Balance, to string, surface *Surface, next Next) {
 	if why != "" {
 		b.WriteString("  why: " + why + "\n")
 	}
@@ -61,11 +62,30 @@ func writeDetails(b *strings.Builder, why, instead string, balance *Balance, nex
 		b.WriteString("  instead: " + instead + "\n")
 	}
 	if balance != nil {
-		b.WriteString("  balance: " + strconv.Itoa(balance.Value) + "/10 (min " + strconv.Itoa(balance.Min) + ")\n")
+		b.WriteString("  balance: " + strconv.Itoa(balance.Value) + "/10 (min " + strconv.Itoa(balance.Min) + ")")
+		if balance.HasInputs() {
+			b.WriteString(": " + string(balance.Strength) + ", " + to + " is " + string(balance.Volatility))
+		}
+		b.WriteString("\n")
+	}
+	if surface != nil {
+		b.WriteString("  surface: " + surfaceText(*surface) + "\n")
 	}
 	b.WriteString("  next: " + next.Text)
 	if next.Note != "" {
 		b.WriteString(noteGap + "(" + next.Note + ")")
 	}
 	b.WriteString("\n")
+}
+
+// surfaceText lists the public globs, then the model globs, each with its role.
+func surfaceText(s Surface) string {
+	parts := make([]string, 0, len(s.Public)+len(s.Model))
+	for _, g := range s.Public {
+		parts = append(parts, g+" (public)")
+	}
+	for _, g := range s.Model {
+		parts = append(parts, g+" (model)")
+	}
+	return strings.Join(parts, ", ")
 }
