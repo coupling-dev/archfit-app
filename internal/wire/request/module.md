@@ -52,7 +52,11 @@ with an engine release that vendors its goldens.
   starts with **Reason**) is never read as one. The record is the first closed `text` block after the line,
   verbatim. Before a pull request exists the CLI opens an issue only from a `can` answer (design 10.3; the manager's
   review of task 2 narrowed M2 plan D2 to this), so the answer is read from that record by the engine's grammar: the head `from -> to: rule: what`, then
-  indented `why`, `instead`, `balance`, `next` lines, optionally followed by the exact line `policy: not protected`. Anything else gives no answer. The numbers stay "as reported"
+  indented `why`, `instead`, `balance`, `surface`, `next` lines, optionally followed by the exact line `policy: not protected`. Anything else gives no answer.
+  The `balance` line is the v4.0.0 form `balance: 9/10 (min 7)` or the 0.9.0 form with its inputs,
+  `balance: 2/10 (min 7): intrusive, assessment-repair is high`, whose subject must be the answer's target. A `surface`
+  line (`glob (public), glob (model)`) comes only after a balance with inputs. Both forms are read until task 6.5
+  removes the v4.0.0 one (`wire/result/module.md`). The numbers stay "as reported"
   until a pull request confirms them.
 - The key, its parts joined by one space (M2 plan D3, as reviewed):
 

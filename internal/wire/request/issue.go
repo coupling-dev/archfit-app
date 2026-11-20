@@ -150,8 +150,10 @@ func closes(line string, n int) bool {
 }
 
 var (
-	answerFields = regexp.MustCompile(`^  (why|instead|balance|next): `)
-	balanceLine  = regexp.MustCompile(`^  balance: (10|[1-9])/10 \(min (10|[1-9])\)$`)
+	answerFields = regexp.MustCompile(`^  (why|instead|balance|surface|next): `)
+	// balanceLine is the v4.0.0 line, or the 0.9.0 line with its inputs, whose subject is the answer's target.
+	balanceLine = regexp.MustCompile(`^  balance: (10|[1-9])/10 \(min (10|[1-9])\)(?:: (contract|model|intrusive), (.+) is (low|medium|high))?$`)
+	surfaceItem = regexp.MustCompile(`^(\S+) \((public|model)\)$`)
 )
 
 // parseAnswer reads one `can` answer of the engine's grammar: "from -> to: rule: what", then indented fields.
@@ -178,15 +180,44 @@ func parseAnswer(record string) *Answer {
 		if !answerFields.MatchString(line) {
 			return nil
 		}
-		if m := balanceLine.FindStringSubmatch(line); m != nil {
+		switch m := balanceLine.FindStringSubmatch(line); {
+		case m != nil:
+			if m[3] != "" && m[4] != to {
+				return nil
+			}
 			value, _ := strconv.Atoi(m[1])
 			least, _ := strconv.Atoi(m[2])
-			a.Balance = &Balance{Value: value, Min: least}
-		} else if strings.HasPrefix(line, "  balance: ") {
+			a.Balance = &Balance{Value: value, Min: least, Strength: m[3], Volatility: m[5]}
+		case strings.HasPrefix(line, "  balance: "):
 			return nil
+		case strings.HasPrefix(line, "  surface: "):
+			// A surface is printed only after a balance with its inputs.
+			if a.Balance == nil || a.Balance.Strength == "" || a.Surface != nil {
+				return nil
+			}
+			if a.Surface = parseSurface(strings.TrimPrefix(line, "  surface: ")); a.Surface == nil {
+				return nil
+			}
 		}
 	}
 	return a
+}
+
+// parseSurface reads "glob (public), glob (model)"; anything else gives nil.
+func parseSurface(text string) *Surface {
+	s := &Surface{Public: []string{}, Model: []string{}}
+	for item := range strings.SplitSeq(text, ", ") {
+		m := surfaceItem.FindStringSubmatch(item)
+		if m == nil {
+			return nil
+		}
+		if m[2] == "public" {
+			s.Public = append(s.Public, m[1])
+		} else {
+			s.Model = append(s.Model, m[1])
+		}
+	}
+	return s
 }
 
 // word reports whether s is a non-empty name without blanks at its ends.

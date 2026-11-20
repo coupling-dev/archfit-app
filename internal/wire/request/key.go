@@ -46,18 +46,29 @@ func (e Error) RequestKey() (string, error) {
 	return dependencyKey(e.Rule, e.From, e.To)
 }
 
-// Answer is the `can` answer an issue reports: the dependency, the rule that decides it, and its balance.
+// Answer is the `can` answer an issue reports: the dependency, the rule that decides it, its balance and, for a use
+// past the target's surface (engine 0.9.0), that surface.
 type Answer struct {
 	Rule    string   `json:"rule"`
 	From    string   `json:"from"`
 	To      string   `json:"to"`
 	Balance *Balance `json:"balance,omitempty"`
+	Surface *Surface `json:"surface,omitempty"`
 }
 
-// Balance is the coupling number of a dependency, "Value/10 (min Min)".
+// Balance is the coupling number of a dependency, "Value/10 (min Min)". Engine 0.9.0 adds the inputs it was computed
+// with, "Value/10 (min Min): strength, to is volatility"; engine v4.0.0 does not (until task 6.5).
 type Balance struct {
-	Value int `json:"value"`
-	Min   int `json:"min"`
+	Value      int    `json:"value"`
+	Min        int    `json:"min"`
+	Strength   string `json:"strength,omitempty"`
+	Volatility string `json:"volatility,omitempty"`
+}
+
+// Surface is the declared surface of the target a `can` answer prints on its surface line.
+type Surface struct {
+	Public []string `json:"public"`
+	Model  []string `json:"model"`
 }
 
 // Key returns the key of the request the answer asks for. A `can` answer judges one dependency, so it never names a
