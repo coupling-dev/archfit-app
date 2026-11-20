@@ -598,3 +598,37 @@ func TestRequestRetriesItsOwnFailedWaitingPublication(t *testing.T) {
 		t.Fatalf("page %+v", got)
 	}
 }
+
+// uploadCoupling sends a 0.9.0 coupling error between pkg_tc and pkg_util for p's head under policyAsk, past the
+// target's surface when surface is set; status is the status it gets.
+func (w *world4) uploadCoupling(p *pull, surface bool, status string) {
+	w.t.Helper()
+	s := w.spec4(p, "graph")
+	s.env.PolicyDigest = policy3.Digest([]byte(policyAsk))
+	s.result["policy"].(map[string]any)["digest"] = s.env.PolicyDigest
+	e := s.result["errors"].([]any)[0].(map[string]any)
+	e["rule"], e["what"], e["key"] = "coupling", "pkg_tc -> pkg_util reaches past the public part of pkg_util", "coupling pkg_tc pkg_util example.com/pkg_util/retry"
+	e["balance"] = map[string]any{"value": 2, "min": 7, "strength": "intrusive", "volatility": "high"}
+	if surface {
+		e["surface"] = map[string]any{"public": []any{"pkg/util"}, "model": []any{}}
+	}
+	w.wantStatus(w.send4(s), status, "")
+}
+
+// A request keeps the 0.9.0 balance inputs, and becomes a surface request when a pull request that joins it later
+// reports the use past the surface: from then on it is never approved as such.
+func TestARequestKeepsTheInputsAndTheSurfaceOfALaterPullRequest(t *testing.T) {
+	w := newAskWorld(t)
+	first, second := w.pullBy(7), w.pullBy(8)
+	w.uploadCoupling(first, false, "fail")
+	w.ask(first, workerLogin, "/archfit request tc needs the retry helper")
+	r := w.storedRequest(firstRequest)
+	if b := r.Numbers.Balance; b == nil || b.Score != 2 || b.Strength != "intrusive" || b.Volatility != "high" || r.Surface != nil {
+		t.Fatalf("stored request = %+v, balance %+v", r, b)
+	}
+	w.uploadCoupling(second, true, "waiting") // covered by #1000 before it asks
+	w.ask(second, workerLogin, "/archfit request the same need")
+	if r := w.storedRequest(firstRequest); r.Surface == nil || !slices.Equal(r.Surface.Public, []string{"pkg/util"}) || r.Surface.Package != "" {
+		t.Errorf("after the join, surface = %+v", r.Surface)
+	}
+}

@@ -140,7 +140,7 @@
 {:else}
   {@const status = statusOf(body)}
   {@const balance = balanceText(body)}
-  {@const approved = body.state === 'answered' && !!body.answer && body.answer.kind !== 'reject'}
+  {@const approved = body.state === 'answered' && (body.answer?.kind === 'approve' || body.answer?.kind === 'approve-until')}
   <div class="page-head">
     <div class="stack-sm">
       <h1>Request #{body.number}</h1>

@@ -43,11 +43,12 @@ func Wait(ctx context.Context, s store.Store, r api.Repo, pull int, ids []int) e
 	return nil
 }
 
-// confirmation is what a pull request's verified result says of a request: its record and balance. It replaces
-// numbers "as reported" by the CLI.
+// confirmation is what a pull request's verified result says of a request: its record and balance, which replace
+// numbers "as reported" by the CLI, and the surface of a use past it, which the request keeps (mergeSurface).
 type confirmation struct {
 	record  string
 	balance *records.Balance
+	surface *records.Surface
 }
 
 // join adds pull to the waiting pull requests of request id, and confirms its numbers when they are as reported and
@@ -72,6 +73,12 @@ func join(ctx context.Context, s store.Store, r api.Repo, id, pull int, c *confi
 			}
 			if c != nil && !req.Numbers.Verified {
 				req.Numbers, req.Record, changed = records.Numbers{Verified: true, Balance: c.balance}, c.record, true
+			}
+			if c != nil {
+				var surfaced bool
+				if req.Surface, surfaced = mergeSurface(req.Surface, c.surface); surfaced {
+					changed = true
+				}
 			}
 			if !changed {
 				return cur, nil

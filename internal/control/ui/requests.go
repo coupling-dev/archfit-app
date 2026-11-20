@@ -123,8 +123,8 @@ func (s *server) apiRequest(r *http.Request, sc scope) (any, error) {
 		body.Answer = &requestAnswerJSON{Kind: string(v.Answer.Kind), Until: v.Answer.Until, Instead: v.Answer.Instead}
 	}
 	body.PolicyVersion = v.PolicyVersion
-	if s := v.Surface; s != nil {
-		body.Surface = &requestSurfaceJSON{Public: append([]string{}, s.Public...), Model: append([]string{}, s.Model...), Package: s.Package}
+	if surface := v.Surface; surface != nil {
+		body.Surface = &requestSurfaceJSON{Public: append([]string{}, surface.Public...), Model: append([]string{}, surface.Model...), Package: surface.Package}
 	}
 	if b := v.Numbers.Balance; b != nil {
 		body.Balance = &balanceJSON{Value: b.Score, Max: b.Max, Min: b.Min, Strength: b.Strength, Volatility: b.Volatility}

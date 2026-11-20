@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/coupling-dev/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
 	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 	"github.com/coupling-dev/archfit-app/internal/wire/wording"
 )
@@ -195,5 +197,29 @@ func TestRequestAPIGoldens(t *testing.T) {
 				t.Fatalf("got %s, want %s", pretty.Bytes(), want)
 			}
 		})
+	}
+}
+
+// The request page gets the 0.9.0 balance inputs, the surface of a surface request and the policy version that says
+// whether a model part can be declared. (The JSON golden test above checks the words of the page; "surface" is on the
+// "Not used" list until engine task 3.3 is vendored, so this test reads the fields instead.)
+func TestRequestAPICarriesTheInputsAndTheSurface(t *testing.T) {
+	e := newEnv(t)
+	e.requests.view = gate.RequestView{Number: 431, State: "open", Rule: "coupling", From: "app", To: "util",
+		Numbers:       gate.RequestNumbers{Verified: true, Balance: &gate.RequestBalance{Score: 2, Max: 10, Min: 7, Strength: "intrusive", Volatility: "high"}},
+		Surface:       &records.Surface{Public: []string{"util/api"}, Model: []string{}, Package: "util/retry"},
+		PolicyVersion: 1, Policy: true}
+	res := e.as("alice", permRead).get(requestAPI)
+	wantStatus(t, res, http.StatusOK)
+	var body requestJSON
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	want := balanceJSON{Value: 2, Max: 10, Min: 7, Strength: "intrusive", Volatility: "high"}
+	if body.Balance == nil || *body.Balance != want {
+		t.Errorf("balance = %+v, want %+v", body.Balance, want)
+	}
+	if s := body.Surface; s == nil || !slices.Equal(s.Public, []string{"util/api"}) || s.Model == nil || s.Package != "util/retry" || body.PolicyVersion != 1 {
+		t.Errorf("surface = %+v, policy version %d", body.Surface, body.PolicyVersion)
 	}
 }

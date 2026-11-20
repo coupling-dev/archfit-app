@@ -675,13 +675,63 @@ func TestEditDeclaresThePackageInTheSurface(t *testing.T) {
 // Until the engine names the package past the surface, a request keeps the surface and gets no declaration.
 func TestSurfaceOfACouplingError(t *testing.T) {
 	s := &result.Surface{Public: []string{"pkg/util"}, Model: []string{}}
-	if got := surfaceOf(s, result.Error{Rule: "coupling"}); got == nil || got.Package != "" || !slices.Equal(got.Public, s.Public) {
+	if got := surfaceOf(result.Error{Rule: "coupling", Surface: s}); got == nil || got.Package != "" || !slices.Equal(got.Public, s.Public) {
 		t.Errorf("surfaceOf(coupling) = %+v", got)
 	}
-	if got := surfaceOf(s, result.Error{Rule: "graph"}); got != nil {
+	if got := surfaceOf(result.Error{Rule: "graph", Surface: s}); got != nil {
 		t.Errorf("surfaceOf(graph) = %+v, want nil", got)
 	}
-	if got := surfaceOf(nil, result.Error{Rule: "coupling"}); got != nil {
+	if got := surfaceOf(result.Error{Rule: "coupling"}); got != nil {
 		t.Errorf("surfaceOf(no surface) = %+v, want nil", got)
+	}
+}
+
+// A request is a surface request when any of its errors is a use past the surface, not only the first.
+func TestGroupSurfaceTakesTheFirstErrorWithASurface(t *testing.T) {
+	past := result.Error{Rule: "coupling", Surface: &result.Surface{Public: []string{"pkg/util"}, Model: []string{}}}
+	if got := groupSurface([]result.Error{{Rule: "coupling"}, past}); got == nil || !slices.Equal(got.Public, []string{"pkg/util"}) {
+		t.Errorf("groupSurface = %+v", got)
+	}
+	if got := groupSurface([]result.Error{{Rule: "coupling"}}); got != nil {
+		t.Errorf("groupSurface without a surface = %+v, want nil", got)
+	}
+}
+
+// A verified result can make a request a surface request, or give it the package; it never makes it stop being one.
+func TestMergeSurface(t *testing.T) {
+	bare := &records.Surface{Public: []string{"a"}, Model: []string{}}
+	named := &records.Surface{Public: []string{"a"}, Model: []string{}, Package: "a/b"}
+	for _, tc := range []struct {
+		name        string
+		kept, s     *records.Surface
+		want        *records.Surface
+		wantChanged bool
+	}{
+		{"no surface either side", nil, nil, nil, false},
+		{"a verified result past the surface", nil, bare, bare, true},
+		{"a verified result names the package", bare, named, named, true},
+		{"a verified result without a surface keeps it", named, nil, named, false},
+		{"a package is never dropped", named, bare, named, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, changed := mergeSurface(tc.kept, tc.s)
+			if got != tc.want || changed != tc.wantChanged {
+				t.Errorf("mergeSurface = %+v, %v; want %+v, %v", got, changed, tc.want, tc.wantChanged)
+			}
+		})
+	}
+}
+
+func TestBoundedSurface(t *testing.T) {
+	many := make([]string, maxSurfaceGlobs+5)
+	for i := range many {
+		many[i] = strings.Repeat("x", maxSurfaceGlob+10)
+	}
+	got := boundedSurface(many, nil, strings.Repeat("p", maxSurfaceGlob+1))
+	if len(got.Public) != maxSurfaceGlobs || len(got.Public[0]) != maxSurfaceGlob || got.Model == nil || len(got.Model) != 0 {
+		t.Errorf("public %d globs of %d bytes, model %v", len(got.Public), len(got.Public[0]), got.Model)
+	}
+	if got.Package != "" {
+		t.Error("a package past the bound is cut, not dropped: a declaration would write another glob")
 	}
 }

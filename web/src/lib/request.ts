@@ -113,7 +113,15 @@ export interface Status {
 export function statusOf(r: RequestView): Status {
   const name = `Request #${r.number}`;
   if (r.state === 'answered') {
-    const line = r.answer?.kind === 'reject' ? 'An owner rejected this request.' : r.answer ? 'An owner approved this request.' : 'An owner answered this request.';
+    const lines: Record<AnswerKind, string> = {
+      approve: 'An owner approved this request.',
+      'approve-until': 'An owner approved this request.',
+      reject: 'An owner rejected this request.',
+      // A use past the declared parts is never approved: the owner declared the package instead.
+      'declare-public': 'An owner declared the package public.',
+      'declare-model': 'An owner declared the package a model part.',
+    };
+    const line = r.answer ? lines[r.answer.kind] : 'An owner answered this request.';
     return { word: 'answered', tone: 'neutral', line };
   }
   if (r.state === 'closed') return { word: 'closed', tone: 'neutral', line: `${name} is closed.` };

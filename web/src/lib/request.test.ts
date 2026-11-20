@@ -124,6 +124,18 @@ describe('statusOf', () => {
       'neutral',
       'An owner rejected this request.',
     ],
+    [
+      { ...open, state: 'answered', answer: { kind: 'declare-public' } },
+      'answered',
+      'neutral',
+      'An owner declared the package public.',
+    ],
+    [
+      { ...open, state: 'answered', answer: { kind: 'declare-model' } },
+      'answered',
+      'neutral',
+      'An owner declared the package a model part.',
+    ],
     [{ ...open, state: 'closed' }, 'closed', 'neutral', 'Request #431 is closed.'],
   ] as const)('%o', (r, word, tone, line) => {
     expect(statusOf(r)).toEqual({ word, tone, line });
