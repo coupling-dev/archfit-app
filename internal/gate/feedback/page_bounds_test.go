@@ -96,3 +96,22 @@ func TestFixStepIsHiddenOnlyWhenTheAuthorLineNamesIt(t *testing.T) {
 		})
 	}
 }
+
+// A 0.9.0 error prints its balance subject and its surface; both are producer text, bounded like the rest, so one
+// oversized field cannot push the check summary past GitHub's limit (the fence alone would).
+func TestSummaryBoundsTheSurfaceAndTheBalanceSubject(t *testing.T) {
+	r := engineResult(t, "graph")
+	ticks := strings.Repeat("`", 40000)
+	r.Errors[0].To = ticks
+	r.Errors[0].Surface = &result.Surface{Public: []string{ticks}, Model: []string{ticks}}
+	v := newView(r)
+	if got := len(v.summary()); got > maxBody {
+		t.Errorf("summary is %d bytes, more than %d", got, maxBody)
+	}
+	if got := len(v.comment(maxBody)); got > maxBody {
+		t.Errorf("comment is %d bytes, more than %d", got, maxBody)
+	}
+	if r.Errors[0].To != ticks || r.Errors[0].Surface.Public[0] != ticks {
+		t.Error("bounding changed the source")
+	}
+}

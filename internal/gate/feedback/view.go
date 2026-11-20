@@ -149,6 +149,11 @@ func bounded(r result.Result) result.Result {
 		e := &r.Errors[i]
 		e.Path, e.Rule, e.What, e.Why, e.Instead = cut(e.Path), cut(e.Rule), cut(e.What), cut(e.Why), cut(e.Instead)
 		e.Next.Text, e.Next.Note = cut(e.Next.Text), cut(e.Next.Note)
+		// To is the subject of a 0.9.0 balance and the surface is printed in full: both are producer text too.
+		e.To = cut(e.To)
+		if e.Surface != nil {
+			e.Surface = &result.Surface{Public: cutAll(e.Surface.Public), Model: cutAll(e.Surface.Model)}
+		}
 	}
 	r.Unknown = slices.Clone(r.Unknown)
 	for i := range r.Unknown {
@@ -157,6 +162,15 @@ func bounded(r result.Result) result.Result {
 		u.Next.Text, u.Next.Note = cut(u.Next.Text), cut(u.Next.Note)
 	}
 	return r
+}
+
+// cutAll cuts each of a list of producer strings, such as the globs of a surface.
+func cutAll(list []string) []string {
+	out := make([]string, len(list))
+	for i, s := range list {
+		out[i] = cut(s)
+	}
+	return out
 }
 
 func cut(s string) string {
