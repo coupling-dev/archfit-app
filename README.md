@@ -1,15 +1,11 @@
 # Archfit App
 
-Archfit checks each pull request against the architecture rules in your repository and posts the result on GitHub.
-This repository is the hosted GitHub App. Your CI runs the engine and sends the App a report with no source code.
-The App checks the report against your approved policy, then publishes a check and a comment on the pull request.
+**Tests can pass while a change adds a forbidden dependency, a new cycle, or a copy of code another module owns.**
 
-## Archfit 4 input contract
+When a rule is in your way, you ask an owner: ask once, and the answer is remembered for the next change.
 
-Only upload envelope 2, result v1, schema 3 policy and manifest 4 are supported.
-The discovery/baseline/reanchor upload URLs and /schema/policy.json return 404.
-The App no longer reads `.archfit-app.yaml` or Archfit 3 reports. See the [user guide](docs/user-guide.md)
-for the current pages and the [module contracts](internal/module.md) for implementation limits.
+The [Archfit App](https://app.coupling.dev) receives the engine result from the Archfit Action and posts a check
+and a comment on the pull request. Policy owners answer requests in the App.
 
 ## Repository owners
 
@@ -25,7 +21,7 @@ nothing.
 ## Developers
 
 - [Architecture](docs/architecture.md) and [tech stack](docs/tech-stack.md).
-- [Design documents](docs/README.md).
+- [Design documents](docs/README.md) and [accepted inputs](internal/module.md#accepted-inputs).
 - Operators: [Cloud operations](docs/design/cloud/operations.md).
 
 Enable the Git hooks once in each clone:
