@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 
-	"github.com/alexei-led/archfit-app/internal/control/ui/session"
+	"github.com/coupling-dev/archfit-app/internal/control/ui/session"
 )
 
 const csrfMessage = "archfit-csrf"

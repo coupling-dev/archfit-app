@@ -29,7 +29,7 @@ The architecture and user guide describe the current Archfit 4 implementation an
 ## Design records
 
 The current design for the engine, the Action, and this App is the Archfit 4 design:
-[Archfit 4 design](https://github.com/alexei-led/archfit/blob/main/docs/plans/20261110-archfit-4-architecture-change-control.md) in the archfit repository.
+[Archfit 4 design](https://github.com/coupling-dev/archfit/blob/main/docs/plans/20261110-archfit-4-architecture-change-control.md) in the archfit repository.
 New work follows it.
 
 The files below explain intended scope and decisions. They are not a second source of

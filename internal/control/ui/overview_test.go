@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/control/onboarding"
+	"github.com/coupling-dev/archfit-app/internal/control/onboarding"
 )
 
 func TestRepoSetupStage(t *testing.T) {

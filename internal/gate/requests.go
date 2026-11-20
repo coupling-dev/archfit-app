@@ -3,8 +3,8 @@ package gate
 import (
 	"context"
 
-	asks "github.com/alexei-led/archfit-app/internal/gate/requests"
-	"github.com/alexei-led/archfit-app/internal/github/webhook"
+	asks "github.com/coupling-dev/archfit-app/internal/gate/requests"
+	"github.com/coupling-dev/archfit-app/internal/github/webhook"
 )
 
 // requestCommented takes in the request line of a pull-request comment (M2 task 16): it opens or joins request issues

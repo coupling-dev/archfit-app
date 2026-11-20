@@ -6,11 +6,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/alexei-led/archfit-app/internal/gate"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/manifest"
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
-	"github.com/alexei-led/archfit-app/internal/wire/workflow"
+	"github.com/coupling-dev/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/wire/manifest"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
+	"github.com/coupling-dev/archfit-app/internal/wire/workflow"
 )
 
 // Setup is derived from default-branch files, GitHub's rules and recorded approvals.

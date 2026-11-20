@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/gate/feedback"
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/github/webhook"
-	"github.com/alexei-led/archfit-app/internal/store"
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
-	"github.com/alexei-led/archfit-app/internal/wire/request"
-	"github.com/alexei-led/archfit-app/internal/wire/wording"
+	"github.com/coupling-dev/archfit-app/internal/gate/feedback"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/webhook"
+	"github.com/coupling-dev/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
+	"github.com/coupling-dev/archfit-app/internal/wire/request"
+	"github.com/coupling-dev/archfit-app/internal/wire/wording"
 )
 
 const (

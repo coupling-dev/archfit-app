@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/wire/workflow"
+	"github.com/coupling-dev/archfit-app/internal/wire/workflow"
 )
 
 func TestUsesRefs(t *testing.T) {
@@ -18,21 +18,21 @@ func TestUsesRefs(t *testing.T) {
 			raw: `jobs:
   check:
     steps:
-      - uses: alexei-led/archfit-action@abc123
+      - uses: coupling-dev/archfit-action@abc123
       - run: echo hello
   call:
     uses: owner/repo/.github/workflows/x.yaml@main
 `,
-			want: []string{"alexei-led/archfit-action@abc123", "owner/repo/.github/workflows/x.yaml@main"},
+			want: []string{"coupling-dev/archfit-action@abc123", "owner/repo/.github/workflows/x.yaml@main"},
 		},
 		{
 			name: "a run string and an env value are not calls",
 			raw: `jobs:
   check:
     env:
-      USES: alexei-led/archfit-action@abc123
+      USES: coupling-dev/archfit-action@abc123
     steps:
-      - run: echo "uses: alexei-led/archfit-action@abc123"
+      - run: echo "uses: coupling-dev/archfit-action@abc123"
 `,
 			want: nil,
 		},
@@ -52,11 +52,11 @@ func TestActionRef(t *testing.T) {
 		uses, repository, ref string
 		ok                    bool
 	}{
-		{"alexei-led/archfit-action@abc123", "alexei-led/archfit-action", "abc123", true},
-		{"Alexei-Led/Archfit-Action@v1", "alexei-led/archfit-action", "v1", true},
-		{"alexei-led/archfit-action@", "alexei-led/archfit-action", "", true},
-		{"actions/checkout@v4", "alexei-led/archfit-action", "", false},
-		{"alexei-led/archfit-action-fork@abc", "alexei-led/archfit-action", "", false},
+		{"coupling-dev/archfit-action@abc123", "coupling-dev/archfit-action", "abc123", true},
+		{"Coupling-Dev/Archfit-Action@v1", "coupling-dev/archfit-action", "v1", true},
+		{"coupling-dev/archfit-action@", "coupling-dev/archfit-action", "", true},
+		{"actions/checkout@v4", "coupling-dev/archfit-action", "", false},
+		{"coupling-dev/archfit-action-fork@abc", "coupling-dev/archfit-action", "", false},
 	}
 	for _, tt := range tests {
 		ref, ok := workflow.ActionRef(tt.uses, tt.repository)

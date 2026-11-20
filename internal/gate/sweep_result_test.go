@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/gate/sweep"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/store"
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
-	"github.com/alexei-led/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/gate/sweep"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
 )
 
 func (w *world4) wantSweepGate(p *pull, status, conclusion string) api.CheckRun {

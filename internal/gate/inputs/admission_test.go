@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 func TestAdmitted(t *testing.T) {

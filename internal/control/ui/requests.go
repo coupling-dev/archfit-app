@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/alexei-led/archfit-app/internal/gate"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
+	"github.com/coupling-dev/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
 // The request page's read API (design 10.4, 12.3; M2 task 17). It shows the owner what a request asks and what each

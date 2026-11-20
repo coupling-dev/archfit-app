@@ -3,7 +3,7 @@ package inputs
 import (
 	"context"
 
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 // stubStore answers Get only; any other Store method panics, which proves the paths that use it only read.

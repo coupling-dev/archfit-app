@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 // AdmissionKey is the Store key, under the installation tenant, of the JSON-encoded Admission. control/account writes

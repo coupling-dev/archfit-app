@@ -9,12 +9,12 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	asks "github.com/alexei-led/archfit-app/internal/gate/requests"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/store"
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
-	"github.com/alexei-led/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	asks "github.com/coupling-dev/archfit-app/internal/gate/requests"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/wire/envelope"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
 )
 
 // PullViews supplies the pull page without exposing storage types.

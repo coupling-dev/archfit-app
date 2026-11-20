@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
 )
 
 // leak is seeded into rejected input; no error may quote it.

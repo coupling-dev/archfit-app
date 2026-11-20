@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/store"
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/wire/envelope"
 )
 
 func publication(t *testing.T, h *harness) records.Publication {

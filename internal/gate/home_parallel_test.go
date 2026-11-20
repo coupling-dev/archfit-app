@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 type homeReadStore struct {

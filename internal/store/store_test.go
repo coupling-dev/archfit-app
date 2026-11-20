@@ -11,12 +11,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/store"
-	"github.com/alexei-led/archfit-app/internal/store/storetest"
+	"github.com/coupling-dev/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store/storetest"
 )
 
 const (
-	storePkg  = "github.com/alexei-led/archfit-app/internal/store"
+	storePkg  = "github.com/coupling-dev/archfit-app/internal/store"
 	budgetKey = "llm-budget/2026-09"
 )
 

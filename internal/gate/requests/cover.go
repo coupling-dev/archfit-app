@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/wire/request"
-	"github.com/alexei-led/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/wire/request"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
 )
 
 // The kinds of a record's next step (wire/result) and the engine's step that asks an owner.

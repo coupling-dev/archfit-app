@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/gate/proposals"
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
+	"github.com/coupling-dev/archfit-app/internal/gate/proposals"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
 const passkeyID = "pk-olivia-0001"

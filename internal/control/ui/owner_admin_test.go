@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/gate"
 )
 
 func TestFirstApprovalRequiresAuthenticatedRepositoryAdministrator(t *testing.T) {

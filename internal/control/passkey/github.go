@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
 // fileReader is the part of api.Repos the owners port reads.

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 func TestFirstApprovalReadsAdminAuthorityAgainForEachAction(t *testing.T) {

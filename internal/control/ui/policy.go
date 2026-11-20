@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/gate"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
+	"github.com/coupling-dev/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
 // policyMissing is the conflict of a readable repository with no .archfit.yaml on its default branch. The policy page

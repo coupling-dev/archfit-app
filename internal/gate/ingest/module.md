@@ -28,5 +28,5 @@ Shared authentication, pull resolution, queue binding and strict-envelope helper
 
 ## Checks
 
-`receive4_test.go` covers valid events, workflow/OIDC binding, stale runs and attempts, payload/result
+`receive_result_test.go` covers valid events, workflow/OIDC binding, stale runs and attempts, payload/result
 mismatches and refusal of envelope 1 before token verification.

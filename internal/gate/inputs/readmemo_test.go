@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 func TestMemoReadsOnceForAllItsCallers(t *testing.T) {

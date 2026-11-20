@@ -11,7 +11,7 @@ It never imports control, app or an LLM. Provenance authenticates the sender; re
 ## Entry points
 
 - `UploadHandler` serves POST /v1/reports through envelope 2 only. Authentication/binding is in ingest;
-  upload4.go compares the schema 3 policy digest, immutable protected target, workflow, engine identity and
+  upload_result.go compares the schema 3 policy digest, immutable protected target, workflow, engine identity and
   recorded approval authority before publishing a result. Invalid/unverifiable evidence becomes unknown.
 - `HandleEvent` handles request comments/issues, closed pull requests and policy/workflow pushes.
   An opened/synchronized pull into the default branch retires spent proposal-head authority.
@@ -20,7 +20,7 @@ It never imports control, app or an LLM. Provenance authenticates the sender; re
   separate from GitHub reviews; a push alone approves nothing.
 - Owner actions provide first policy/workflow approval and confirm/revert outside-flow changes.
   The facade's owner/setup ports serve the control plane without exposing gate children.
-- `Sweep` runs only sweep4.go, over admitted installations and schema 3/recorded repositories.
+- `Sweep` runs only sweep_result.go, over admitted installations and schema 3/recorded repositories.
 
 ## Pull-request page form
 

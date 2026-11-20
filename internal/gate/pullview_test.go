@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/gate"
-	"github.com/alexei-led/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
 )
 
 // A caller outside gate needs only the facade and the wire result, never feedback.
@@ -31,7 +31,7 @@ func TestPullViewFacade(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want, err := os.ReadFile(filepath.Join("feedback", "testdata", "golden4", name+".page.json"))
+			want, err := os.ReadFile(filepath.Join("feedback", "testdata", "golden_result", name+".page.json"))
 			if err != nil {
 				t.Fatal(err)
 			}

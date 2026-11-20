@@ -3,7 +3,7 @@ package gate
 import (
 	"context"
 
-	"github.com/alexei-led/archfit-app/internal/gate/proposals"
+	"github.com/coupling-dev/archfit-app/internal/gate/proposals"
 )
 
 // Edits carries a whole-file owner answer through the same policy proposal.

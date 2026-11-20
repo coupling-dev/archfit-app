@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/alexei-led/archfit-app/internal/app"
+	"github.com/coupling-dev/archfit-app/internal/app"
 )
 
 func main() {

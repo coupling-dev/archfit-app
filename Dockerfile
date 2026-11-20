@@ -18,7 +18,7 @@ COPY . .
 COPY --from=web /src/internal/control/ui/spa ./internal/control/ui/spa
 ARG APP_SOURCE_REVISION
 ARG APP_BUILT_AT
-RUN CGO_ENABLED=0 go build -ldflags "-s -w -X github.com/alexei-led/archfit-app/internal/control/ui.sourceRevision=${APP_SOURCE_REVISION} -X github.com/alexei-led/archfit-app/internal/control/ui.builtAt=${APP_BUILT_AT}" -o /out/reporter ./cmd/reporter
+RUN CGO_ENABLED=0 go build -ldflags "-s -w -X github.com/coupling-dev/archfit-app/internal/control/ui.sourceRevision=${APP_SOURCE_REVISION} -X github.com/coupling-dev/archfit-app/internal/control/ui.builtAt=${APP_BUILT_AT}" -o /out/reporter ./cmd/reporter
 
 FROM gcr.io/distroless/static-debian12:nonroot
 ARG APP_SOURCE_REVISION

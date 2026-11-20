@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/control/answers"
-	"github.com/alexei-led/archfit-app/internal/control/passkey"
-	"github.com/alexei-led/archfit-app/internal/control/ui/session"
-	"github.com/alexei-led/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/control/answers"
+	"github.com/coupling-dev/archfit-app/internal/control/passkey"
+	"github.com/coupling-dev/archfit-app/internal/control/ui/session"
+	"github.com/coupling-dev/archfit-app/internal/gate"
 )
 
 // The passkey routes (M2 task 18): the signed-in user registers, lists and removes their own passkeys, and makes the

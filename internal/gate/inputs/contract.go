@@ -4,7 +4,7 @@ package inputs
 import (
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 // EntitlementKey is the Store key, under the installation tenant, of the JSON-encoded Entitlement.

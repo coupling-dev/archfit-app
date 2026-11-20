@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 const none = -1 // a zero time in the plan table

@@ -10,12 +10,12 @@ Rows marked **[default]** need an owner decision before launch.
 
 | Item            | Choice                                                                                                                           |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Language        | Go 1.27. Module path `github.com/alexei-led/archfit-app`                                                                         |
+| Language        | Go 1.27. Module path `github.com/coupling-dev/archfit-app`                                                                         |
 | Packages        | One Go package per module folder under `internal/`                                                                               |
 | Entry point     | `cmd/reporter` calls the logger, `app.Load`, and `app.Run`                                                                       |
 | Build           | `CGO_ENABLED=0` static binary. The existing `Dockerfile` builds a distroless image as a non-root user                            |
 | Commands        | `make fmt`, `make lint`, `make test`, `make build`, and `make all`                                                               |
-| Format and lint | `gofmt -s`, `goimports -local github.com/alexei-led/archfit-app`, and `golangci-lint` v2.14 defaults (CI)                        |
+| Format and lint | `gofmt -s`, `goimports -local github.com/coupling-dev/archfit-app`, and `golangci-lint` v2.14 defaults (CI)                        |
 | Infrastructure  | OpenTofu 1.8+ (Terraform-compatible), `google` provider pinned, stacks `data` and `runtime` under [`infra/`](../infra/README.md) |
 | Logging         | `log/slog` writes JSON to stdout. Logs contain IDs, digests, outcomes, and timings                                               |
 | HTTP            | `net/http` with Go 1.22+ `ServeMux` patterns                                                                                     |
@@ -100,3 +100,5 @@ The [hosting research](archive/research/20260918-hosting.md) is dated research, 
 - Keep wire types, domain types, and storage types separate.
 - Read secrets from `*_FILE` variables. Never log secret values.
 - Keep generated and vendored files in `testdata/`; the web app's build goes to `internal/control/ui/spa/`, not committed.
+
+Run `sh scripts/check-names.sh` to check for old project homes; historical documents and pinned vendored contracts are excluded.

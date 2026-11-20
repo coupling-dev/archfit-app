@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/queue"
+	"github.com/coupling-dev/archfit-app/internal/queue"
 )
 
 // deliveryWait bounds how long a case waits for an asynchronous driver to deliver.

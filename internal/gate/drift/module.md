@@ -68,7 +68,7 @@ func (s *Service) Pushed(ctx context.Context, run Run) (string, error)
 
 ## Integrations
 
-- **gate** (parent): `drift.go` calls `Pushed` from the envelope 2 upload (`upload4.go`) after the check is published,
+- **gate** (parent): `drift.go` calls `Pushed` from the envelope 2 upload (`upload_result.go`) after the check is published,
   only for a `push` run (the event GitHub states) of the default branch, with no App record, at the tip the decision
   read, with a second tip read just before the issue write.
 - **gate/records**: the repository record (`DriftIssue`, `DriftDigest`) and its helpers.

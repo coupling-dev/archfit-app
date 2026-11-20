@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/control/answers"
-	"github.com/alexei-led/archfit-app/internal/gate"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/store"
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
-	"github.com/alexei-led/archfit-app/internal/wire/result"
-	"github.com/alexei-led/archfit-app/internal/wire/wording"
+	"github.com/coupling-dev/archfit-app/internal/control/answers"
+	"github.com/coupling-dev/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/wire/envelope"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/wire/wording"
 )
 
 func TestPullAPIGoldens(t *testing.T) {

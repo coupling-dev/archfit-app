@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 // Each call under a row trace logs one line with its operation and result class; without one nothing is logged.

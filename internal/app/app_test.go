@@ -16,7 +16,7 @@ import (
 	"testing"
 )
 
-const modulePath = "github.com/alexei-led/archfit-app/"
+const modulePath = "github.com/coupling-dev/archfit-app/"
 
 func startRun(t *testing.T, c Config, log *slog.Logger) (base string, network *noNetwork, stop func() error) {
 	t.Helper()

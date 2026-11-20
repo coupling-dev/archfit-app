@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/gate/ingest"
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
-	"github.com/alexei-led/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/gate/ingest"
+	"github.com/coupling-dev/archfit-app/internal/wire/envelope"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
 )
 
 func TestAPushOvertakenWhilePublishingDoesNotTouchDrift(t *testing.T) {

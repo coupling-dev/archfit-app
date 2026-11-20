@@ -9,7 +9,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 // Actions of a step-up that this package consumes itself. control/answers redeems the answer kinds.

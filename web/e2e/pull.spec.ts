@@ -43,7 +43,7 @@ for (const [state, comment] of [
 ]) {
   test(`pull page and comment use the same lines: ${state}`, async ({ page }) => {
     const body = JSON.parse(readFileSync(new URL(`../../internal/control/ui/testdata/pull/${state}.json`, import.meta.url), 'utf8')) as object;
-    const text = readFileSync(new URL(`../../internal/gate/feedback/testdata/golden4/${comment}`, import.meta.url), 'utf8');
+    const text = readFileSync(new URL(`../../internal/gate/feedback/testdata/golden_result/${comment}`, import.meta.url), 'utf8');
     await open(page, '/r/acme/app/pull/4', { 'GET /api/repos/acme/app/pulls/4': () => [200, body] });
     await expect(page.locator('.page-status')).toBeVisible();
     const lines = await page.locator('.page-status p, section[aria-label="Pull request"] .pull-record p, section[aria-label="Pull request"] > p').allInnerTexts();

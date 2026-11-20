@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/alexei-led/archfit-app/internal/gate/approvals"
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/gate/approvals"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 // SetupState is the recorded change-control state, not an admission verdict.

@@ -61,6 +61,6 @@ The three repositories have separate roles:
 
 | Repository                                                       | Role                                               |
 | ---------------------------------------------------------------- | -------------------------------------------------- |
-| [`archfit`](https://github.com/alexei-led/archfit)               | Engine, CLI, images, and report schemas            |
-| [`archfit-action`](https://github.com/alexei-led/archfit-action) | Runs the engine in CI and uploads the report       |
+| [`archfit`](https://github.com/coupling-dev/archfit)               | Engine, CLI, images, and report schemas            |
+| [`archfit-action`](https://github.com/coupling-dev/archfit-action) | Runs the engine in CI and uploads the report       |
 | `archfit-app`                                                    | Approved policy, report intake, gate, and feedback |

@@ -16,10 +16,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/gate"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/github/webhook"
-	"github.com/alexei-led/archfit-app/internal/queue"
+	"github.com/coupling-dev/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/webhook"
+	"github.com/coupling-dev/archfit-app/internal/queue"
 )
 
 const (

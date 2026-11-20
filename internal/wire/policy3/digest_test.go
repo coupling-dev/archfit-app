@@ -3,7 +3,7 @@ package policy3_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
 // The expected digests were computed once with `shasum -a 256` over the vendored fixture

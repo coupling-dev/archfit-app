@@ -5,7 +5,7 @@
 
 ## Contract
 
-The hourly Archfit 4 reconciliation pass is in gate/sweep4.go. This child owns its shared re-check
+The hourly Archfit 4 reconciliation pass is in gate/sweep_result.go. This child owns its shared re-check
 helpers and the count-only `Summary` returned by the gate facade.
 
 `Rerun` requests an Actions re-run only when the stored run is the latest relevant completed attempt

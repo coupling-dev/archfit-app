@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 // inFlightGitHub records the most calls that were in flight at once. The read sleeps before it takes the fake's lock,

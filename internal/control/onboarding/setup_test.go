@@ -10,10 +10,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/gate"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/manifest"
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
+	"github.com/coupling-dev/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/wire/manifest"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
 const setupPolicy = "version: 3\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n"

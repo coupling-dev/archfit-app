@@ -6,7 +6,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/alexei-led/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
 )
 
 func TestPageBindsOnlyCompleteWaitSteps(t *testing.T) {

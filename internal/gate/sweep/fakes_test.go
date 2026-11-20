@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 // t0 has an hour index divisible by 3, so a three-installation pass starts at index 0.

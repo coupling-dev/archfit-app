@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/github/oidc"
-	"github.com/alexei-led/archfit-app/internal/github/webhook"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/oidc"
+	"github.com/coupling-dev/archfit-app/internal/github/webhook"
 )
 
 const repoPrefix = "/repos/"

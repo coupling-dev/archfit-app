@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/store"
-	"github.com/alexei-led/archfit-app/internal/store/firestore"
+	"github.com/coupling-dev/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store/firestore"
 )
 
 // countedProbe fails with err (nil passes) and counts its calls.

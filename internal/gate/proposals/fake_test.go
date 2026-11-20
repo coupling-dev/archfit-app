@@ -7,7 +7,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 // fakeHub is a small GitHub: commits that hold whole file sets, branches, pull requests that follow their branch,

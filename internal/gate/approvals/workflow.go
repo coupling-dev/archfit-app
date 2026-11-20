@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/alexei-led/archfit-app/internal/gate/proposals"
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/gate/proposals"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 // WorkflowPushed judges a push to the default branch for the workflow approval it uses (M2 task 23): the merge of a

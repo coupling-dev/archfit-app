@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 // ErrAnswered is returned when the request of an answer is no longer open: another owner answered it, or it closed.

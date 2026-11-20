@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/gate/approvals"
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
+	"github.com/coupling-dev/archfit-app/internal/gate/approvals"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
 func ownerViewWorld(t *testing.T, kind string, pull int) *world4 {

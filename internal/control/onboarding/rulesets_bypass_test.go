@@ -3,7 +3,7 @@ package onboarding
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 func TestPolicyPushBypassIsRequiredNotRemoved(t *testing.T) {

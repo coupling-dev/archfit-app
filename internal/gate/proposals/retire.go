@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 // Why a proposal's head no longer carries its verdict.

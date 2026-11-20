@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
 )
 
 func TestKeyLayout(t *testing.T) {

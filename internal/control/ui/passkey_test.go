@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/control/passkey"
+	"github.com/coupling-dev/archfit-app/internal/control/passkey"
 )
 
 const passkeysAPI = "/api/repos/" + repoName + "/passkeys"

@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/control/answers"
-	"github.com/alexei-led/archfit-app/internal/control/onboarding"
-	"github.com/alexei-led/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/control/answers"
+	"github.com/coupling-dev/archfit-app/internal/control/onboarding"
+	"github.com/coupling-dev/archfit-app/internal/gate"
 )
 
 func TestHomeDoesNotOfferAnotherSignatureWhilePendingOrUnknown(t *testing.T) {

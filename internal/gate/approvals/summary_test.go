@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
 )
 
 func TestApprovalSummaryMatchesReview(t *testing.T) {

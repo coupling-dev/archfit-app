@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/wire/request"
+	"github.com/coupling-dev/archfit-app/internal/wire/request"
 )
 
 // today is the App's date of every golden: the date of the engine's result goldens.

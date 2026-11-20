@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 func TestOwnerVerdictIsResolvedInsideThePublicationLease(t *testing.T) {

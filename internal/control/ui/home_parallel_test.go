@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/control/onboarding"
-	"github.com/alexei-led/archfit-app/internal/control/passkey"
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/control/onboarding"
+	"github.com/coupling-dev/archfit-app/internal/control/passkey"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 type blockedSetup struct {

@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
-	"github.com/alexei-led/archfit-app/internal/wire/request"
-	"github.com/alexei-led/archfit-app/internal/wire/wording"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
+	"github.com/coupling-dev/archfit-app/internal/wire/request"
+	"github.com/coupling-dev/archfit-app/internal/wire/wording"
 )
 
 func TestAnswerNoteNamesTheAnswerOwnerPasskeyAndPull(t *testing.T) {
