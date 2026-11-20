@@ -13,8 +13,8 @@ import (
 )
 
 // ActionRepository is the repository of the Action that runs an approved engine in a workflow:
-// `uses: coupling-dev/archfit-action@<commit>`.
-const ActionRepository = "coupling-dev/archfit-action"
+// `uses: alexei-led/archfit-action@<commit>`.
+const ActionRepository = "alexei-led/archfit-action"
 
 // manifest4.json lists the Archfit 4 engines the App approves: per release, the image digest of each platform and
 // the archfit-action commits that run it. It has no measurement profile.

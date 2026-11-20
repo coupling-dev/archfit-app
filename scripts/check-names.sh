@@ -3,6 +3,9 @@
 # docs/archive, docs/plans and docs/reviews record history.
 # This script contains the rule itself.
 # Listed vendored paths come from the pinned engine/Action; refresh in 5.2/5.3.
+# Runtime references to approved v4 Action/engine move with manifest in 5.3,
+# both repositories accepted during epic 6.
+# Workflow parser tests retain the v4 Action contract.
 set -eu
 pattern='alexei-led/(archfit|homebrew-tap|tap/archfit)|ghcr\.io/alexei-led|archfit(-app)?/v[0-9]+\b'
 if git grep -n -I -E "$pattern" -- \

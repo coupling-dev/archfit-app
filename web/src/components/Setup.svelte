@@ -33,7 +33,7 @@
     {:else}
       <p>Run <code>archfit init</code> in your repository. It creates .archfit.yaml and adds its agent block to AGENTS.md. It does not write the workflow.</p>
       <pre class="command"><code>archfit init</code></pre>
-      <p>Copy the workflow from <a href="https://github.com/coupling-dev/archfit-action">the Archfit action repository</a> into <code>.github/workflows/archfit.yaml</code>.</p>
+      <p>Copy the workflow from <a href="https://github.com/alexei-led/archfit-action">the Archfit action repository</a> into <code>.github/workflows/archfit.yaml</code>.</p>
     {/if}
   {:else if i === 1}
     {#if pullStep.kind === 'review'}
