@@ -16,16 +16,21 @@ import (
 )
 
 const (
-	schemaFile   = "archfit.schema.json"
-	sourceFile   = "SCHEMA_SOURCE"
-	sourceRepo   = "alexei-led/archfit"
-	sourceCommit = "37dd38244081ad1159c27515cec94560f3e44e30"
+	schemaFile = "archfit.schema.json"
+	sourceFile = "SCHEMA_SOURCE"
 )
 
-// readSource reads SCHEMA_SOURCE: key: value lines, then one "sha256  path" line per vendored file.
-func readSource(t *testing.T) (meta, sums map[string]string) {
+// sources names the repository of each corpus. The version 3 corpus is pinned to engine v4.0.0's commit and is
+// never re-vendored; task 6.5 deletes it.
+var sources = map[string]struct{ repository, revision string }{
+	v1: {repository: "coupling-dev/archfit"},
+	v3: {repository: "alexei-led/archfit", revision: "37dd38244081ad1159c27515cec94560f3e44e30"},
+}
+
+// readSource reads a corpus's SCHEMA_SOURCE: key: value lines, then one "sha256  path" line per vendored file.
+func readSource(t *testing.T, dir string) (meta, sums map[string]string) {
 	t.Helper()
-	raw, err := os.ReadFile(sourceFile)
+	raw, err := os.ReadFile(filepath.Join(dir, sourceFile)) //nolint:gosec // fixed test data paths
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,37 +56,61 @@ func readSource(t *testing.T) (meta, sums map[string]string) {
 // A vendored file changes only together with its SCHEMA_SOURCE line, and the line names the
 // engine commit it came from (M2 plan, D4).
 func TestSourcePinsEveryVendoredFile(t *testing.T) {
-	meta, sums := readSource(t)
-	if meta["repository"] != sourceRepo || meta["revision"] != sourceCommit {
-		t.Errorf("SCHEMA_SOURCE names %s at %s, want %s at %s", meta["repository"], meta["revision"], sourceRepo, sourceCommit)
+	for version, want := range sources {
+		t.Run(version, func(t *testing.T) {
+			dir := filepath.Join("testdata", version)
+			meta, sums := readSource(t, dir)
+			if meta["repository"] != want.repository || !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(meta["revision"]) ||
+				want.revision != "" && meta["revision"] != want.revision {
+				t.Errorf("SCHEMA_SOURCE names %s at %s, want %s at %s", meta["repository"], meta["revision"], want.repository, cmpOr(want.revision, "a commit"))
+			}
+			vendored := []string{schemaFile}
+			for _, kind := range []string{"valid", "invalid"} {
+				files, err := filepath.Glob(filepath.Join(dir, kind, "*.yaml"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, f := range files {
+					vendored = append(vendored, strings.TrimPrefix(filepath.ToSlash(f), filepath.ToSlash(dir)+"/"))
+				}
+			}
+			for _, path := range vendored {
+				data, err := os.ReadFile(filepath.Join(dir, path)) //nolint:gosec // globbed test data paths
+				if err != nil {
+					t.Fatal(err)
+				}
+				sum := sha256.Sum256(data)
+				if got := sums[path]; got != hex.EncodeToString(sum[:]) {
+					t.Errorf("%s: SCHEMA_SOURCE says sha256 %q, the file is %x", path, got, sum)
+				}
+			}
+			if len(sums) != len(vendored) {
+				t.Errorf("SCHEMA_SOURCE has %d files, %d are vendored", len(sums), len(vendored))
+			}
+		})
 	}
-	vendored := []string{schemaFile}
-	for _, kind := range []string{"valid", "invalid"} {
-		files, err := filepath.Glob(filepath.Join("testdata", kind, "*.yaml"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		vendored = append(vendored, files...)
+}
+
+func cmpOr(a, b string) string {
+	if a != "" {
+		return a
 	}
-	for _, path := range vendored {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sum := sha256.Sum256(data)
-		if got := sums[filepath.ToSlash(path)]; got != hex.EncodeToString(sum[:]) {
-			t.Errorf("%s: SCHEMA_SOURCE says sha256 %q, the file is %x", path, got, sum)
-		}
-	}
-	if len(sums) != len(vendored) {
-		t.Errorf("SCHEMA_SOURCE has %d files, %d are vendored", len(sums), len(vendored))
-	}
+	return b
 }
 
 // The Go types and the vendored schema name the same keys, so a new engine key cannot be
 // vendored without the types that read it.
 func TestTypesHaveTheKeysOfTheSchema(t *testing.T) {
-	raw, err := os.ReadFile(schemaFile)
+	for version := range sources {
+		t.Run(version, func(t *testing.T) { typesHaveTheKeys(t, version) })
+	}
+}
+
+// notInV3 are the keys of the Go types that version 3 does not have.
+var notInV3 = map[string]bool{"Module.model": true}
+
+func typesHaveTheKeys(t *testing.T, version string) {
+	raw, err := os.ReadFile(filepath.Join("testdata", version, schemaFile)) //nolint:gosec // fixed test data paths
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,6 +147,9 @@ func TestTypesHaveTheKeysOfTheSchema(t *testing.T) {
 		var out []string
 		for i := range typ.NumField() {
 			name, _, _ := strings.Cut(typ.Field(i).Tag.Get("yaml"), ",")
+			if version == v3 && notInV3[typ.Name()+"."+name] {
+				continue
+			}
 			out = append(out, name)
 		}
 		slices.Sort(out)

@@ -1,7 +1,8 @@
-// Package policy3 is the App's reader and writer of Archfit policy schema 3, the
-// `.archfit.yaml` of Archfit 4: a strict decoder that accepts and rejects the same files
-// as the engine, the digest that binds an answer to the bytes it was written against, and
-// a writer that adds an answer to a policy without changing any other byte.
+// Package policy3 is the App's reader and writer of the Archfit policy `.archfit.yaml`:
+// version 1 (engine 0.9.0) and version 3 (engine v4.0.0, read until task 6.5). It holds a
+// strict decoder that accepts and rejects the same files as the engine, the digest that
+// binds an answer to the bytes it was written against, and a writer that adds an answer
+// to a policy without changing any other byte.
 //
 // The types mirror the file. An absent key keeps its zero value (nil slice, empty string,
 // nil pointer), so a caller can tell an absent key from a set one and apply the defaults
@@ -36,10 +37,12 @@ type File struct {
 	Coverage   Coverage          `yaml:"coverage"`
 }
 
-// Module is a named set of paths with a public part, a volatility and the modules it may depend on.
+// Module is a named set of paths with a public part, a model part, a volatility and the
+// modules it may depend on. Model exists in version 1 only.
 type Module struct {
 	Paths      []string `yaml:"paths"`
 	Public     []string `yaml:"public"`
+	Model      []string `yaml:"model"`
 	Volatility string   `yaml:"volatility"`
 	Subdomain  string   `yaml:"subdomain"`
 	Layer      string   `yaml:"layer"`

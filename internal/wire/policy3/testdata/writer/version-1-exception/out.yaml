@@ -1,0 +1,14 @@
+version: 1
+owners: [alexei-led]
+modules:
+  core:
+    paths: [internal/core/**]
+    model: [internal/core/model]
+  cli:
+    paths: [cmd/**]
+exceptions:
+  - rule: coupling  # request #12
+    from: cli
+    to: core
+    expires: 2027-01-31
+    why: 'Request #12 is open.'

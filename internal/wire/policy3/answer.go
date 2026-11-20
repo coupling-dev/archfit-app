@@ -16,15 +16,20 @@ const (
 	Reject Answer = "reject"
 	// Confirm accepts the policy as it is on the default branch after a change outside the flow.
 	Confirm Answer = "confirm"
+	// DeclarePublic adds the package a surface request asks about to the target's public part.
+	DeclarePublic Answer = "declare-public"
+	// DeclareModel adds the package a surface request asks about to the target's model part.
+	DeclareModel Answer = "declare-model"
 )
 
 // Loosens reports whether an answer of this kind loosens the policy, so it needs a passkey
 // (design 9.2). Milestone 2 decides by the kind alone (D10): approve, approve-until and
 // confirm loosen; reject tightens. The App compares two policies only with the YAML editor
-// of milestone 3. An unknown kind is an error, never a guess.
+// of milestone 3. A surface declaration widens what other modules may use, so it loosens. An
+// unknown kind is an error, never a guess.
 func Loosens(kind Answer) (bool, error) {
 	switch kind {
-	case Approve, ApproveUntil, Confirm:
+	case Approve, ApproveUntil, Confirm, DeclarePublic, DeclareModel:
 		return true, nil
 	case Reject:
 		return false, nil

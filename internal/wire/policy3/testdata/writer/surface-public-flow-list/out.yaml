@@ -1,0 +1,9 @@
+version: 1
+owners: [alexei-led]
+modules:
+  assessment:
+    paths: [internal/assessment/**]
+    public:  # the findings API
+      - internal/assessment/finding
+      - internal/assessment/score  # request #431
+    volatility: high

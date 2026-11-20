@@ -1,0 +1,6 @@
+version: 1
+owners: [alexei-led]
+modules:
+  app:
+    paths: [cmd/**]
+gate: fail

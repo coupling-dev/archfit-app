@@ -1,0 +1,13 @@
+version: 1
+owners: [alexei-led]
+modules:
+  core:
+    paths: [internal/core/**]
+    model: [internal/core/model]
+  cli:
+    paths: [cmd/**]
+    depends_on:
+      - core
+      - store  # request #12
+  store:
+    paths: [internal/store/**]
