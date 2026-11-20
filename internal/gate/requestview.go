@@ -24,6 +24,8 @@ type RequestView struct {
 	Earlier                                              []RequestEarlier
 	Answer                                               *RequestAnswer
 	Dependencies                                         []RequestDependency
+	Surface                                              *records.Surface // a surface request (engine 0.9.0)
+	PolicyVersion                                        int              // the version of the policy at the tip; 0 without one
 }
 
 // RequestView reads a request. Layers, modules and dependencies share one target-policy snapshot.
@@ -37,7 +39,7 @@ func (g *Gate) RequestView(ctx context.Context, t Target, number int) (RequestVi
 	}
 	out := RequestView{Number: v.Number, State: v.State, Reason: v.Reason, Rule: v.Rule, Path: v.Path, From: v.From, To: v.To,
 		Expires: v.Expires, Record: v.Record, Numbers: v.Numbers, Policy: v.Policy, Layers: v.Layers, Modules: v.Modules,
-		Allowed: v.Allowed, Earlier: v.Earlier, Dependencies: v.Dependencies, IssueHref: fmt.Sprintf("https://github.com/%s/issues/%d", t.Repo.FullName, number)}
+		Allowed: v.Allowed, Earlier: v.Earlier, Dependencies: v.Dependencies, Surface: v.Surface, PolicyVersion: v.PolicyVersion, IssueHref: fmt.Sprintf("https://github.com/%s/issues/%d", t.Repo.FullName, number)}
 	if v.State != records.StateAnswered {
 		return out, nil
 	}
@@ -67,7 +69,7 @@ func (g *Gate) RequestView(ctx context.Context, t Target, number int) (RequestVi
 		return RequestView{}, fmt.Errorf("request view: answer does not match request")
 	}
 	switch change.Kind {
-	case policy3.Approve, policy3.ApproveUntil, policy3.Reject:
+	case policy3.Approve, policy3.ApproveUntil, policy3.Reject, policy3.DeclarePublic, policy3.DeclareModel:
 		out.Answer = &RequestAnswer{Kind: change.Kind, Until: change.Until, Instead: change.Instead}
 	default:
 		return RequestView{}, fmt.Errorf("request view: unknown answer")

@@ -39,6 +39,10 @@ func (n AnswerNote) Text() string {
 		b.WriteString("approved until " + n.Until)
 	case policy3.Reject:
 		b.WriteString("rejected")
+	case policy3.DeclarePublic:
+		b.WriteString("declared public")
+	case policy3.DeclareModel:
+		b.WriteString("declared a model part")
 	default:
 		b.WriteString("approved")
 	}

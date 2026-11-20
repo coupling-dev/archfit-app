@@ -57,7 +57,7 @@ export interface AdminBody {
 }
 
 // The request page (internal/control/ui/requests.go, answers.go): one request, the preview of an answer, the outcome.
-export type AnswerKind = 'approve' | 'approve-until' | 'reject';
+export type AnswerKind = 'approve' | 'approve-until' | 'reject' | 'declare-public' | 'declare-model';
 
 export interface RequestModule {
   name: string;
@@ -97,6 +97,9 @@ export interface RequestView {
   dependencies: { kind: 'deny' | 'exception'; from: string; to: string; rule: string; expires?: string }[];
   allowed: boolean; // the policy already allows from -> to
   earlier: RequestEarlier[];
+  // A surface request (engine 0.9.0): the declared parts of `to` and the package past them a declaration adds.
+  surface?: { public: string[]; model: string[]; package?: string };
+  policy_version?: number; // 1 or 3; absent without a policy
 }
 
 export interface PullEffect {

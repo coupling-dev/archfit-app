@@ -124,6 +124,16 @@ type Request struct {
 	// Record is the record the issue shows: the asked errors as the check prints them, or the reported `can` answer.
 	// It is check output, never source.
 	Record string `json:"record,omitempty"`
+	// Surface is set for a surface request: a coupling error past the declared surface of To (engine 0.9.0).
+	Surface *Surface `json:"surface,omitempty"`
+}
+
+// Surface is the declared surface of the module a surface request reaches, as the error reported it, and the package
+// past it that the request asks about. Without a package the request gets no surface answer.
+type Surface struct {
+	Public  []string `json:"public"`
+	Model   []string `json:"model"`
+	Package string   `json:"package,omitempty"`
 }
 
 // Numbers are a request's figures: verified from a stored result, or "as reported" by the CLI.

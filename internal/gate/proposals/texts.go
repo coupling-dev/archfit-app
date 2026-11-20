@@ -70,6 +70,10 @@ func answerWords(c requests.Change) string {
 		return "approve until " + c.Until
 	case policy3.Reject:
 		return "reject"
+	case policy3.DeclarePublic:
+		return "declare " + c.Glob + " public"
+	case policy3.DeclareModel:
+		return "declare " + c.Glob + " a model part"
 	}
 	return "approve"
 }

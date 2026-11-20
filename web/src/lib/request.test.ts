@@ -4,6 +4,7 @@ import type { AnswerKind, Preview, RequestView } from './api';
 import {
   answerProblem,
   decisionState,
+  answerKinds,
   balanceLine,
   balanceText,
   dependency,
@@ -240,5 +241,19 @@ describe('decisionState', () => {
   it('does not confirm a missing preview or another answer', () => {
     expect(decisionState('approve', undefined, true)).toMatchObject({ ready: false, mergeLater: false });
     expect(decisionState('approve', preview('reject'), true)).toMatchObject({ ready: false, mergeLater: false });
+  });
+});
+
+describe('answerKinds', () => {
+  const kinds = (r: Parameters<typeof answerKinds>[0]) => answerKinds(r).map((k) => k.title);
+  it('offers approve, approve until and reject for a request that is not about the surface', () => {
+    expect(kinds(open)).toEqual(['Approve and merge', 'Approve until a date', 'Reject']);
+    expect(kinds(null)).toEqual(['Approve and merge', 'Approve until a date', 'Reject']);
+  });
+  it('never approves a use past the surface: it declares the package, allows it until a date or rejects it', () => {
+    const surface = { public: ['pkg/util'], model: [], package: 'pkg/util/retry' };
+    expect(kinds({ surface, policy_version: 1 })).toEqual(['Declare as public', 'Declare as model', 'Allow until a date', 'Reject']);
+    expect(kinds({ surface, policy_version: 3 })).toEqual(['Declare as public', 'Allow until a date', 'Reject']);
+    expect(kinds({ surface: { ...surface, package: undefined }, policy_version: 1 })).toEqual(['Allow until a date', 'Reject']);
   });
 });

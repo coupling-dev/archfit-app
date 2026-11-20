@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
@@ -604,5 +605,83 @@ func TestViewKeepsStructuredDenyAndExceptionEndpoints(t *testing.T) {
 	pol := policy3.File{Rules: []policy3.Rule{{ID: "deny", Deny: &policy3.Deny{From: []string{"a, b", "other"}, To: []string{"c"}}}}}
 	if got := dependencies(pol, "a, b", "c"); !slices.Equal(got, []Dependency{{Kind: EarlierDeny, Rule: "deny", From: "a, b", To: "c"}}) {
 		t.Fatalf("comma module: %+v", got)
+	}
+}
+
+// A surface request (the surfaces design 6.9) takes declare-public, declare-model, approve-until or reject. A use past
+// the surface is never approved as such, and a request that names no package past the surface gets no declaration.
+func TestChangeOfASurfaceRequest(t *testing.T) {
+	today := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
+	surface := records.Request{Rule: "coupling", From: "pkg_tc", To: "pkg_util",
+		Surface: &records.Surface{Public: []string{"pkg/util"}, Model: []string{"pkg/util/model"}, Package: "pkg/util/retry"}}
+	noPackage := surface
+	noPackage.Surface = &records.Surface{Public: []string{"pkg/util"}, Model: []string{}}
+	plain := records.Request{Rule: "coupling", From: "pkg_tc", To: "pkg_util"}
+	for _, tc := range []struct {
+		name     string
+		req      records.Request
+		a        Answer
+		wantGlob string
+		wantErr  bool
+	}{
+		{"declare public", surface, Answer{Kind: policy3.DeclarePublic}, "pkg/util/retry", false},
+		{"declare a model part", surface, Answer{Kind: policy3.DeclareModel}, "pkg/util/retry", false},
+		{"allow until a date", surface, Answer{Kind: policy3.ApproveUntil, Until: "2026-12-20"}, "", false},
+		{"reject with instead", surface, Answer{Kind: policy3.Reject, Instead: "Use pkg/util."}, "", false},
+		{"approve a use past the surface", surface, Answer{Kind: policy3.Approve}, "", true},
+		{"declare without a package", noPackage, Answer{Kind: policy3.DeclarePublic}, "", true},
+		{"declare on another request", plain, Answer{Kind: policy3.DeclareModel}, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := ChangeOf(7, tc.req, tc.a, today)
+			if tc.wantErr {
+				if !errors.Is(err, ErrAnswer) {
+					t.Fatalf("err = %v, want ErrAnswer", err)
+				}
+				return
+			}
+			if err != nil || c.Glob != tc.wantGlob || c.Kind != tc.a.Kind {
+				t.Fatalf("ChangeOf = %+v, %v", c, err)
+			}
+		})
+	}
+}
+
+func TestEditDeclaresThePackageInTheSurface(t *testing.T) {
+	const v1 = "version: 1\nowners: [olivia]\nmodules:\n  pkg_tc:\n    paths: [pkg/tc/**]\n  pkg_util:\n    paths: [pkg/util/**]\n    public: [pkg/util]\n"
+	declare := func(kind policy3.Answer) Change {
+		return Change{Request: 7, Kind: kind, Rule: "coupling", From: "pkg_tc", To: "pkg_util", Glob: "pkg/util/retry"}
+	}
+	out, err := Edit([]byte(v1), declare(policy3.DeclarePublic), "request #7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := changed(v1, string(out)); got != "    public:\n      - pkg/util\n      - pkg/util/retry  # request #7\n" {
+		t.Errorf("declare public: changed lines = %q", got)
+	}
+	out, err = Edit([]byte(v1), declare(policy3.DeclareModel), "request #7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := changed(v1, string(out)); got != "    model:\n      - pkg/util/retry  # request #7\n" {
+		t.Errorf("declare a model part: changed lines = %q", got)
+	}
+	v3 := strings.Replace(v1, "version: 1", "version: 3", 1)
+	if _, err := Edit([]byte(v3), declare(policy3.DeclareModel), "request #7"); !errors.Is(err, ErrByHand) {
+		t.Errorf("a model part in version 3: err = %v, want ErrByHand", err)
+	}
+}
+
+// Until the engine names the package past the surface, a request keeps the surface and gets no declaration.
+func TestSurfaceOfACouplingError(t *testing.T) {
+	s := &result.Surface{Public: []string{"pkg/util"}, Model: []string{}}
+	if got := surfaceOf(s, result.Error{Rule: "coupling"}); got == nil || got.Package != "" || !slices.Equal(got.Public, s.Public) {
+		t.Errorf("surfaceOf(coupling) = %+v", got)
+	}
+	if got := surfaceOf(s, result.Error{Rule: "graph"}); got != nil {
+		t.Errorf("surfaceOf(graph) = %+v, want nil", got)
+	}
+	if got := surfaceOf(nil, result.Error{Rule: "coupling"}); got != nil {
+		t.Errorf("surfaceOf(no surface) = %+v, want nil", got)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
@@ -63,6 +64,10 @@ func (s *Service) Filed(ctx context.Context, i Issue) (string, error) {
 		From: form.Answer.From, To: form.Answer.To, Record: capRecord(form.Record), Numbers: records.Numbers{}}
 	if b := form.Answer.Balance; b != nil {
 		req.Numbers.Balance = &records.Balance{Score: b.Value, Max: 10, Min: b.Min, Strength: b.Strength, Volatility: b.Volatility}
+	}
+	if s := form.Answer.Surface; s != nil && form.Answer.Rule == ruleCoupling {
+		// A `can` answer names no package past the surface yet (see pastSurface): no surface answer.
+		req.Surface = &records.Surface{Public: slices.Clone(s.Public), Model: slices.Clone(s.Model)}
 	}
 	other, err := put(ctx, s.store, i.Repo, i.Number, req)
 	switch {

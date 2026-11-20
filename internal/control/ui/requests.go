@@ -32,6 +32,16 @@ type requestJSON struct {
 	Allowed      bool                    `json:"allowed"`
 	Earlier      []earlierJSON           `json:"earlier"`
 	Answer       *requestAnswerJSON      `json:"answer,omitempty"`
+	// Surface is set for a surface request (engine 0.9.0): the declared parts of to, and the package past them that a
+	// declaration adds; without a package the page offers no declaration. PolicyVersion is 0 without a policy.
+	Surface       *requestSurfaceJSON `json:"surface,omitempty"`
+	PolicyVersion int                 `json:"policy_version,omitempty"`
+}
+
+type requestSurfaceJSON struct {
+	Public  []string `json:"public"`
+	Model   []string `json:"model"`
+	Package string   `json:"package,omitempty"`
 }
 
 type requestDependencyJSON struct {
@@ -111,6 +121,10 @@ func (s *server) apiRequest(r *http.Request, sc scope) (any, error) {
 	}
 	if v.Answer != nil {
 		body.Answer = &requestAnswerJSON{Kind: string(v.Answer.Kind), Until: v.Answer.Until, Instead: v.Answer.Instead}
+	}
+	body.PolicyVersion = v.PolicyVersion
+	if s := v.Surface; s != nil {
+		body.Surface = &requestSurfaceJSON{Public: append([]string{}, s.Public...), Model: append([]string{}, s.Model...), Package: s.Package}
 	}
 	if b := v.Numbers.Balance; b != nil {
 		body.Balance = &balanceJSON{Value: b.Score, Max: b.Max, Min: b.Min, Strength: b.Strength, Volatility: b.Volatility}

@@ -4,6 +4,27 @@ import type { MapModel } from '../components/map/model';
 
 import type { AnswerKind, Preview, PullEffect, RequestEarlier, RequestModule, RequestView } from './api';
 
+// answerKinds are the answers a request offers, in order. A surface request (a use past the declared parts of the
+// module it reaches) is never approved as such: it offers declaring the package public or a model part (a model part
+// needs policy version 1), allowing it until a date, or rejecting it. Without a named package it offers no
+// declaration.
+export function answerKinds(r: Pick<RequestView, 'surface' | 'policy_version'> | null): { kind: AnswerKind; title: string }[] {
+  if (!r?.surface) {
+    return [
+      { kind: 'approve', title: 'Approve and merge' },
+      { kind: 'approve-until', title: 'Approve until a date' },
+      { kind: 'reject', title: 'Reject' },
+    ];
+  }
+  const out: { kind: AnswerKind; title: string }[] = [];
+  if (r.surface.package) {
+    out.push({ kind: 'declare-public', title: 'Declare as public' });
+    if (r.policy_version === 1) out.push({ kind: 'declare-model', title: 'Declare as model' });
+  }
+  out.push({ kind: 'approve-until', title: 'Allow until a date' }, { kind: 'reject', title: 'Reject' });
+  return out;
+}
+
 // loosens is true for an answer that loosens the policy: it needs the owner's passkey (design 9.2). A reject does not.
 export function loosens(kind: AnswerKind): boolean {
   return kind !== 'reject';
@@ -30,7 +51,13 @@ export function decisionState(kind: AnswerKind, preview: Preview | undefined, la
   const ready = preview?.answer === kind;
   const changesPolicy = ready && !!preview.diff;
   const mergeLater = changesPolicy && later;
-  const verb = kind === 'reject' ? 'Reject' : kind === 'approve-until' ? 'Approve until date' : 'Approve';
+  const verbs: Partial<Record<AnswerKind, string>> = {
+    reject: 'Reject',
+    'approve-until': 'Approve until date',
+    'declare-public': 'Declare as public',
+    'declare-model': 'Declare as model',
+  };
+  const verb = verbs[kind] ?? 'Approve';
   return {
     ready,
     changesPolicy,

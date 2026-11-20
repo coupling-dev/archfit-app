@@ -260,7 +260,7 @@ func (s *Service) open(ctx context.Context, r api.Repo, pol policy3.File, g grou
 	e := g.errs[0]
 	req := records.Request{Key: g.key, Reason: line.Reason, Expires: line.Expires, Rule: e.Rule, Path: e.Path,
 		From: e.From, To: e.To, Record: recordsOf(g.errs), Waiting: []int{pull}, Listed: []int{pull},
-		Numbers: records.Numbers{Verified: true, Balance: balance(e.Balance)}}
+		Numbers: records.Numbers{Verified: true, Balance: balance(e.Balance)}, Surface: surfaceOf(e.Surface, e)}
 	issue := issueOf(req)
 	created, err := s.gh.CreateIssue(ctx, r.RepoRef, api.NewIssue{Title: issue.Title(), Body: issue.Body()})
 	if err != nil {
@@ -529,6 +529,18 @@ func (s *Service) setStatus(ctx context.Context, r api.Repo, pull int, rec recor
 	}
 	return nil
 }
+
+// surfaceOf is the surface a request keeps from a coupling error past the target's declared surface, or nil.
+func surfaceOf(s *result.Surface, e result.Error) *records.Surface {
+	if s == nil || e.Rule != ruleCoupling {
+		return nil
+	}
+	return &records.Surface{Public: slices.Clone(s.Public), Model: slices.Clone(s.Model), Package: pastSurface(e)}
+}
+
+// pastSurface is the package past the surface that a surface request asks about. The engine names it in a field of
+// task 3.3 that is not vendored yet; until then it is "", and the request gets no surface answer (fail closed).
+func pastSurface(result.Error) string { return "" }
 
 func balance(b *result.Balance) *records.Balance {
 	if b == nil {
