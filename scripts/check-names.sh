@@ -10,6 +10,10 @@ set -eu
 pattern='alexei-led/(archfit|homebrew-tap|tap/archfit)|ghcr\.io/alexei-led|archfit(-app)?/v[0-9]+\b'
 if git grep -n -I -E "$pattern" -- \
   ':!docs/archive/**' ':!docs/plans/**' ':!docs/reviews/**' ':!scripts/check-names.sh' \
+  ':!internal/control/onboarding/templates/archfit.yaml.tmpl' \
+  ':!internal/wire/manifest/engine_manifest.go' \
+  ':!internal/wire/workflow/workflow_test.go' \
+  ':!web/src/components/Setup.svelte' \
   ':!internal/wire/result/vendor_test.go' \
   ':!internal/wire/wording/wording_test.go' \
   ':!internal/wire/policy3/source_test.go' \

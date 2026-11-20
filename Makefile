@@ -55,5 +55,9 @@ web-check: ## type-check, test, build, size-check and smoke-test the web app (ne
 web-if-node:
 	@if command -v node >/dev/null 2>&1; then $(MAKE) web-check; else echo 'node not found: web checks skipped' >&2; fi
 
+.PHONY: names
+names: ## check for old project homes
+	sh scripts/check-names.sh
+
 .PHONY: all
-all: fmt lint web-if-node test build ## format, lint, check the web app (when Node is installed), test, and build
+all: names fmt lint web-if-node test build ## format, lint, check the web app (when Node is installed), test, and build
