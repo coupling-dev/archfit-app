@@ -1,10 +1,10 @@
 repository: github.com/coupling-dev/archfit
-commit: 5bd583e777e9e83a0473a6bdf2abe890b7eec8c4
+commit: 954c72c8c024e67abee3507d4bd4524dbbae2b75
 from: archfit.result.schema.json <- archfit.result.schema.json
 from: result/ <- internal/model/result/testdata/
 from: record/ <- internal/output/record/testdata/
-87ac4bd3738fe0de0a137abffa0b1eb5bdffe61e695a16a999b80bf4c617350e  archfit.result.schema.json
-6730e98fb7430eebaeca93c5f07310041507125d399f4fbb9be392df8172be5a  result/coupling.json
+5216a494a271c78a185dc90f1e272c8a74dc685cae65db3d9d37df3d84673973  archfit.result.schema.json
+f3d292dd476d70064dd9d94a2365fd341581819d7a38ee4ce587a23d5ec59bd0  result/coupling.json
 1b6a2f6af80687697520cd8380e7c8782d86087db34f1838cfe5c53d636f5e14  result/deny.json
 92e7fde1baf07e45c9a9df2ea46b3a4437bc9cc211aa29b71a34cfddb0f0c9b7  result/duplication.json
 a4307515264ceb2db41d95946fa30ede1c4371ae188f215f8efdcd97413a5bda  result/expired_exception.json

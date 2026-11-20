@@ -439,7 +439,7 @@
           },
           "type": "array",
           "minItems": 1,
-          "description": "Globs other modules may use. Absent: the whole module is public. Add public to protect its inside."
+          "description": "Globs other modules may use as a contract. Absent: the whole module is public. With model and no public, the module has no public part. Add public to protect its inside; a use of anything else is intrusive."
         },
         "model": {
           "items": {
@@ -448,7 +448,7 @@
           },
           "type": "array",
           "minItems": 1,
-          "description": "Globs inside paths that other modules may use as a shared model. Absent: no model part."
+          "description": "Globs inside paths that other modules may use as a shared model. A path is not in both public and model. Absent: no model part."
         },
         "volatility": {
           "type": "string",

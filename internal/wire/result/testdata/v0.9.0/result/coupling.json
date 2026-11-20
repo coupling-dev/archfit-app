@@ -12,7 +12,7 @@
       "balance": {
         "value": 2,
         "min": 7,
-        "strength": "functional",
+        "strength": "intrusive",
         "volatility": "high"
       },
       "surface": {

@@ -78,7 +78,9 @@ const (
 //     so a first glob would narrow the surface, not widen it;
 //   - the model role in a version 3 policy, which the v4.0.0 engine reads and which has no
 //     model key (task 6.5 removes this case);
-//   - a glob the other role lists: the engine refuses a path in both parts.
+//   - a glob the other role lists, as the engine's policy check refuses it. The engine also refuses a file that
+//     both parts cover by different globs; a surface request names a package in neither part (else the use would not
+//     be past the surface), so its declaration cannot cause that.
 func AddSurface(file []byte, module string, role Role, glob, note string) ([]byte, error) {
 	comment, err := lineComment(note)
 	if err != nil {
