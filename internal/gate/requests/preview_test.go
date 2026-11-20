@@ -416,16 +416,35 @@ func TestEditWritesEachAnswerOfEachRule(t *testing.T) {
 		{name: "reject unowned code", c: Change{Request: 4, Kind: policy3.Reject, Rule: "unowned", Path: "tools/gen.go", Instead: "Add it to a module."}},
 		{name: "reject an only rule", c: Change{Request: 4, Kind: policy3.Reject, Rule: "no-docker", From: "pkg_tc", To: "github.com/docker/docker", Instead: "Go through pkg_net."}},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			out, err := Edit([]byte(previewPolicy), tt.c, "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := changed(previewPolicy, string(out)); got != tt.want {
-				t.Errorf("changed lines =\n%s\nwant\n%s", got, tt.want)
-			}
-		})
+	for version, policy := range map[string]string{"version 3": previewPolicy, "version 1": previewPolicyV1} {
+		for _, tt := range tests {
+			t.Run(version+"/"+tt.name, func(t *testing.T) {
+				out, err := Edit([]byte(policy), tt.c, "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := changed(policy, string(out)); got != tt.want {
+					t.Errorf("changed lines =\n%s\nwant\n%s", got, tt.want)
+				}
+			})
+		}
+	}
+}
+
+// previewPolicyV1 is previewPolicy at version 1 of engine 0.9.0, with a model part.
+var previewPolicyV1 = strings.Replace(strings.Replace(previewPolicy, "version: 3\n", "version: 1\n", 1),
+	"    paths: [pkg/util/**]\n", "    paths: [pkg/util/**]\n    model: [pkg/util/model]\n", 1)
+
+func TestEditKeepsTheRequestCommentInAVersion1Policy(t *testing.T) {
+	out, err := Edit([]byte(previewPolicyV1), Change{Request: 2, Kind: policy3.Approve, Rule: "graph", From: "pkg_tc", To: "pkg_util"}, "request #2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := changed(previewPolicyV1, string(out)); got != "    depends_on:\n      - pkg_net\n      - pkg_util  # request #2\n" {
+		t.Errorf("changed lines = %q", got)
+	}
+	if p := mustPolicy(t, string(out)); p.Version != policy3.Version1 || len(p.Modules["pkg_util"].Model) != 1 {
+		t.Errorf("policy = version %d, pkg_util %+v", p.Version, p.Modules["pkg_util"])
 	}
 }
 

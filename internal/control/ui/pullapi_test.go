@@ -31,7 +31,7 @@ func TestPullAPIGoldens(t *testing.T) {
 			e := newEnv(t)
 			e.now = time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
 			if tc.source != "" {
-				raw, err := os.ReadFile(filepath.Join("..", "..", "wire", "result", "testdata", "result", tc.source+".json"))
+				raw, err := os.ReadFile(filepath.Join("..", "..", "wire", "result", "testdata", "v0.9.0", "result", tc.source+".json"))
 				if err != nil {
 					t.Fatal(err)
 				}

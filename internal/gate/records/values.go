@@ -132,11 +132,14 @@ type Numbers struct {
 	Balance  *Balance `json:"balance,omitempty"` // when the rule is about coupling
 }
 
-// Balance is "balance: score/max (min min)" of the record.
+// Balance is "balance: score/max (min min)" of the record. Engine 0.9.0 adds the inputs the balance was computed with;
+// they are absent for engine v4.0.0 (until task 6.5) and in records written before.
 type Balance struct {
-	Score int `json:"score"`
-	Max   int `json:"max"`
-	Min   int `json:"min"`
+	Score      int    `json:"score"`
+	Max        int    `json:"max"`
+	Min        int    `json:"min"`
+	Strength   string `json:"strength,omitempty"`
+	Volatility string `json:"volatility,omitempty"`
 }
 
 // Approval is one owner action at ApprovalKey.

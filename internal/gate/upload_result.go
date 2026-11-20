@@ -46,7 +46,7 @@ const (
 	reasonResultInvalid    = "result_invalid"
 	reasonUnknownEngine    = "unknown_engine"
 	reasonFirstPolicy      = "first_policy"
-	reasonFirstApproval    = "first_approval"    // a schema 3 policy no owner approved yet: no change control yet
+	reasonFirstApproval    = "first_approval"    // a policy no owner approved yet: no change control yet
 	reasonOutsideFlow      = "outside_flow"      // the policy on the default branch changed with no recorded approval
 	reasonPolicyUnapproved = "policy_unapproved" // the tip's policy is not the approved one, and no judgement says why
 	reasonTargetOffBranch  = "target_not_on_branch"
@@ -220,12 +220,12 @@ func (v *upload4) decide(ctx context.Context, u ingest.Upload4) (decision4, erro
 		// No approved policy yet: this pull request brings the first one, which an administrator approves (task 23).
 		if approval == nil || approval.Kind != records.ProposalFirst || approval.ExpectedDigest != env.PolicyDigest {
 			add(reasonFirstPolicy, result.Unknown{Path: policyPath, Cause: "policy",
-				What: branch + " has no policy of version 3 yet",
+				What: branch + " has no valid policy yet",
 				Why:  "an administrator approves the first policy",
 				Next: result.Next{Kind: "wait", Text: "an administrator approves the first policy in the App"}})
 		}
 	case !validTip:
-		// Change control started, and the default branch has no policy of version 3: a change no approval made.
+		// Change control started, and the default branch has no valid policy: a change no approval made.
 		checkState(state, b.Repo, add)
 		if state.OutsideFlow == nil {
 			add(reasonPolicyUnapproved, result.Unknown{Path: policyPath, Cause: "policy",

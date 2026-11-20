@@ -30,7 +30,7 @@ var (
 	// a workflow approval before the first approval or outside the flow, a confirm inside the flow.
 	ErrNotDue = errors.New("approvals: the repository's state does not call for this action")
 	// ErrNotApprovable refuses a pull request the action cannot approve: not open, from a fork, into another branch, a
-	// head without a policy of version 3 or without the workflow, a workflow approval of a head that does not change it.
+	// head without a valid policy or without the workflow, a workflow approval of a head that does not change it.
 	ErrNotApprovable = errors.New("approvals: the pull request cannot be approved this way")
 	// ErrMoved refuses an action whose change is not the one the owner's step-up was bound to: the pull request, the
 	// default branch or the state moved since the owner looked.
@@ -147,7 +147,7 @@ func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action) (Change, e
 	if a.Kind == records.KindWorkflow {
 		second.Go(func() { target, targetErr = s.fileAt(ctx, ref, tip, WorkflowPath) })
 	} else {
-		// An onboarding pull request brings the first policy of version 3: a default branch that has one already is
+		// An onboarding pull request brings the first valid policy: a default branch that has one already is
 		// approved as it is (bindTip).
 		second.Go(func() { current, currentErr = s.fileAt(ctx, ref, tip, PolicyPath) })
 	}
@@ -156,7 +156,7 @@ func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action) (Change, e
 		return Change{}, headErr
 	}
 	if _, derr := policy3.Decode(head); head == nil || derr != nil {
-		return Change{}, fmt.Errorf("%w: the head has no policy of version 3", ErrNotApprovable)
+		return Change{}, fmt.Errorf("%w: the head has no valid policy", ErrNotApprovable)
 	}
 	if runErr != nil {
 		return Change{}, runErr
@@ -176,7 +176,7 @@ func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action) (Change, e
 			return Change{}, currentErr
 		}
 		if _, derr := policy3.Decode(current); current != nil && derr == nil {
-			return Change{}, fmt.Errorf("%w: %s has a policy of version 3; approve it as it is", ErrNotApprovable, r.DefaultBranch)
+			return Change{}, fmt.Errorf("%w: %s has a valid policy; approve it as it is", ErrNotApprovable, r.DefaultBranch)
 		}
 	}
 	return Change{Kind: a.Kind, Pull: a.Pull, HeadSHA: pull.HeadSHA, Policy: policy3.Digest(head),
@@ -195,7 +195,7 @@ func (s *Service) bindTip(ctx context.Context, r api.Repo, a Action, repo record
 		return Change{}, err
 	}
 	if _, derr := policy3.Decode(raw); raw == nil || derr != nil {
-		return Change{}, fmt.Errorf("%w: %s has no policy of version 3", ErrNotApprovable, r.DefaultBranch)
+		return Change{}, fmt.Errorf("%w: %s has no valid policy", ErrNotApprovable, r.DefaultBranch)
 	}
 	digest := policy3.Digest(raw)
 	if a.Kind == records.KindConfirm && digest != repo.OutsideFlow.Digest {
@@ -320,7 +320,7 @@ func (s *Service) mayAct(ctx context.Context, r api.Repo, in Input, c Change) ([
 	return owners, nil
 }
 
-// ownersAt are the owners of the policy at commit; none when it has no policy of version 3.
+// ownersAt are the owners of the policy at commit; none when it has no valid policy.
 func (s *Service) ownersAt(ctx context.Context, ref api.RepoRef, commit string) ([]string, error) {
 	raw, err := s.fileAt(ctx, ref, commit, PolicyPath)
 	if err != nil {

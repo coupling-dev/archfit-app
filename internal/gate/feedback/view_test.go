@@ -22,20 +22,26 @@ const (
 		"**Author:** fix the code and push.\n"
 	designAsk = "## Archfit: fail, 1 error\n\n" +
 		"`pkg/tc/netem.go:12` **graph** pkg_tc -> pkg_util is not an allowed dependency\n" +
-		"- balance: 9/10 (min 7)\n\n" +
+		"- balance: 9/10 (min 7): contract, pkg_util is low\n\n" +
 		"**Author:** reply `/archfit request <why you need it>`. Do not copy the code.\n" +
 		"**Owner:** nothing to do until a request exists.\n"
 	designWaiting = "## Archfit: waiting, request #431\n\n" +
 		"`pkg/tc/netem.go:12` **graph** pkg_tc -> pkg_util is not an allowed dependency\n" +
-		"- balance: 9/10 (min 7)\n\n" +
+		"- balance: 9/10 (min 7): contract, pkg_util is low\n\n" +
 		"**Author:** nothing to do. This check runs again when #431 is answered.\n" +
 		"**Owner:** answer #431.\n"
 )
 
 // engineResult reads a vendored engine result golden of wire/result.
+// engineResult is a vendored result of engine 0.9.0; engineResultOf reads another engine's corpus.
 func engineResult(t *testing.T, name string) result.Result {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "wire", "result", "testdata", "result", name+".json"))
+	return engineResultOf(t, "v0.9.0", name)
+}
+
+func engineResultOf(t *testing.T, engine, name string) result.Result {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "wire", "result", "testdata", engine, "result", name+".json")) //nolint:gosec // fixed test data paths
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,6 +109,8 @@ func viewFixtures(t *testing.T) []viewFixture {
 		{"fail-fix", engineResult(t, "deny"), false},
 		{"fail-advisory", engineResult(t, "deny"), true},
 		{"fail-ask", engineResult(t, "graph"), false},
+		// Until task 6.5 the onboarded repositories upload engine v4.0.0 results: a balance without inputs.
+		{"fail-ask-v4.0.0", engineResultOf(t, "v4.0.0", "graph"), false},
 		{"fail-copy", engineResult(t, "duplication"), false},
 		{"fail-expired-exception", engineResult(t, "expired_exception"), false},
 		{"waiting", engineResult(t, "waiting"), false},
@@ -350,7 +358,7 @@ func TestAnnotationsOnlyForErrorsWithALine(t *testing.T) {
 	}
 	v = newView(engineResult(t, "graph"))
 	want := []api.Annotation{{Path: "pkg/tc/netem.go", Line: 12, Level: "failure",
-		Message: "pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency\n  why: a new dependency between modules needs an owner\n  balance: 9/10 (min 7)\n  next: archfit request -m \"<why you need it>\"     (do not copy the code)"}}
+		Message: "pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency\n  why: a new dependency between modules needs an owner\n  balance: 9/10 (min 7): contract, pkg_util is low\n  next: archfit request -m \"<why you need it>\"     (do not copy the code)"}}
 	if got := v.annotations(); len(got) != 1 || got[0] != want[0] {
 		t.Errorf("annotations = %+v, want %+v", got, want)
 	}

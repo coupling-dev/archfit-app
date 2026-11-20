@@ -26,7 +26,7 @@ type requestJSON struct {
 	Record       string                  `json:"record"`
 	Verified     bool                    `json:"verified"` // false: the numbers are "as reported" by the CLI
 	Balance      *balanceJSON            `json:"balance,omitempty"`
-	Policy       bool                    `json:"policy"` // false: the default branch has no policy of version 3
+	Policy       bool                    `json:"policy"` // false: the default branch has no policy the App reads
 	Layers       []string                `json:"layers"`
 	Modules      []moduleJSON            `json:"modules"`
 	Allowed      bool                    `json:"allowed"`
@@ -48,10 +48,14 @@ type requestAnswerJSON struct {
 	Instead string `json:"instead,omitempty"`
 }
 
+// balanceJSON is a request's balance. Strength and volatility are the inputs engine 0.9.0 names; the balance's
+// subject is the request's to.
 type balanceJSON struct {
-	Value int `json:"value"`
-	Max   int `json:"max"`
-	Min   int `json:"min"`
+	Value      int    `json:"value"`
+	Max        int    `json:"max"`
+	Min        int    `json:"min"`
+	Strength   string `json:"strength,omitempty"`
+	Volatility string `json:"volatility,omitempty"`
 }
 
 type moduleJSON struct {
@@ -109,7 +113,7 @@ func (s *server) apiRequest(r *http.Request, sc scope) (any, error) {
 		body.Answer = &requestAnswerJSON{Kind: string(v.Answer.Kind), Until: v.Answer.Until, Instead: v.Answer.Instead}
 	}
 	if b := v.Numbers.Balance; b != nil {
-		body.Balance = &balanceJSON{Value: b.Score, Max: b.Max, Min: b.Min}
+		body.Balance = &balanceJSON{Value: b.Score, Max: b.Max, Min: b.Min, Strength: b.Strength, Volatility: b.Volatility}
 	}
 	for _, m := range v.Modules {
 		body.Modules = append(body.Modules, moduleJSON{Name: m.Name, Layer: m.Layer, Volatility: m.Volatility,

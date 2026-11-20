@@ -85,7 +85,7 @@ direct push to the policy is the new rule with no owner's word.
   `Confirm`) and records it on GitHub, naming the owner and the passkey (design 19):
   - **first** of an onboarding pull request: a repository administrator who is also an owner named in the policy at
     the PR's immutable head; the pull request is open, of this repository,
-    into the default branch, which has no policy of version 3; its head has one and has the workflow file. Recorded on
+    into the default branch, which has no valid policy; its head has one and has the workflow file. Recorded on
     the pull request.
   - **first** of the policy already on the default branch (an already-converted repository with no record): a
     repository administrator who is also an owner the policy names (manager, 2026-11-13; the passkey registration rule

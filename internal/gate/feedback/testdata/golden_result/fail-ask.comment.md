@@ -2,7 +2,7 @@
 
 `pkg/tc/netem.go:12` **graph** pkg_tc -> pkg_util is not an allowed dependency
 - why: a new dependency between modules needs an owner
-- balance: 9/10 (min 7)
+- balance: 9/10 (min 7): contract, pkg_util is low
 
 **Author:** reply `/archfit request <why you need it>`. Do not copy the code.
 **Owner:** nothing to do until a request exists.

@@ -358,14 +358,14 @@ func (s *Service) writer(ctx context.Context, ref api.RepoRef, login string) (bo
 	return slices.Contains(mayAsk, p), nil
 }
 
-// policy reads the policy at the default branch's tip; found is false when there is none of version 3.
+// policy reads the policy at the default branch's tip; found is false when there is no valid one.
 func (s *Service) policy(ctx context.Context, r api.Repo) (policy3.File, bool, error) {
 	pol, _, found, err := s.policyAt(ctx, r)
 	return pol, found, err
 }
 
-// policyAt reads the policy at the default branch's tip, decoded and as bytes; found is false when there is none of
-// version 3.
+// policyAt reads the policy at the default branch's tip, decoded and as bytes; found is false when there is no valid
+// one (version 1, or version 3 until task 6.5).
 func (s *Service) policyAt(ctx context.Context, r api.Repo) (pol policy3.File, raw []byte, found bool, err error) {
 	tip, err := s.gh.BranchHead(ctx, r.RepoRef, r.DefaultBranch)
 	if err != nil {
@@ -534,5 +534,5 @@ func balance(b *result.Balance) *records.Balance {
 	if b == nil {
 		return nil
 	}
-	return &records.Balance{Score: b.Value, Max: 10, Min: b.Min}
+	return &records.Balance{Score: b.Value, Max: 10, Min: b.Min, Strength: string(b.Strength), Volatility: string(b.Volatility)}
 }

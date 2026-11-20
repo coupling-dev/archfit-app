@@ -1,7 +1,6 @@
 package feedback
 
 import (
-	"fmt"
 	"regexp"
 	"slices"
 	"strconv"
@@ -265,7 +264,7 @@ func (r Record) markdown() string {
 		b.WriteString("- instead: " + prose(r.Instead) + "\n")
 	}
 	if r.Balance != nil {
-		fmt.Fprintf(&b, "- balance: %d/10 (min %d)\n", r.Balance.Value, r.Balance.Min)
+		b.WriteString("- balance: " + prose(result.BalanceText(*r.Balance, r.Subject)) + "\n")
 	}
 	if r.ShowNext {
 		next := r.Next

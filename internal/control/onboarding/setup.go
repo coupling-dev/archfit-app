@@ -82,7 +82,7 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 	}
 	digest, valid := policy.Digest, policy.ReadErr == nil && policy.DecodeErr == nil
 	if !valid {
-		out.Missing = append(out.Missing, "The default branch has no version 3 policy.")
+		out.Missing = append(out.Missing, "The default branch has no valid policy.")
 	}
 	if workflowErr != nil {
 		return out, workflowErr

@@ -41,7 +41,7 @@ var sentinels = []struct {
 	{gate.ErrAnswer, http.StatusUnprocessableEntity, "answer",
 		"Choose an answer: approve, approve until a date (YYYY-MM-DD), or reject with what to do instead."},
 	{gate.ErrNoPolicy, http.StatusConflict, "no_policy",
-		"The default branch has no policy of version 3, so no answer can be written. Add .archfit.yaml first."},
+		"The default branch has no valid policy, so no answer can be written. Add .archfit.yaml first."},
 	{gate.ErrOutsideFlow, http.StatusConflict, "outside_flow",
 		"The policy changed outside the flow. An owner must confirm or revert it before a request can be answered."},
 	{gate.ErrFirstApproval, http.StatusConflict, "first_approval",

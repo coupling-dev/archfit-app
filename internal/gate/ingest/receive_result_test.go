@@ -34,7 +34,7 @@ type v2Scenario struct {
 // passResult is the vendored engine golden of a pass, read as JSON so a test can change any key.
 func passResult(t *testing.T) map[string]any {
 	t.Helper()
-	raw, err := os.ReadFile("../../wire/result/testdata/result/pass.json")
+	raw, err := os.ReadFile("../../wire/result/testdata/v0.9.0/result/pass.json")
 	if err != nil {
 		t.Fatal(err)
 	}

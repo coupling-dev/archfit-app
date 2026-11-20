@@ -18,7 +18,7 @@ func TestPullViewFacade(t *testing.T) {
 		"waiting": "waiting", "unknown": "policy_differs",
 	} {
 		t.Run(name, func(t *testing.T) {
-			raw, err := os.ReadFile(filepath.Join("..", "wire", "result", "testdata", "result", source+".json"))
+			raw, err := os.ReadFile(filepath.Join("..", "wire", "result", "testdata", "v0.9.0", "result", source+".json"))
 			if err != nil {
 				t.Fatal(err)
 			}
