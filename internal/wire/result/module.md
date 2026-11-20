@@ -62,7 +62,7 @@ surface answers. Which engines may upload at all is the manifest's decision (`wi
 ## Encapsulated Knowledge
 
 - The vendored files, byte copies from the repository and commit in each corpus's `SCHEMA_SOURCE` (M2 plan D4). One
-  corpus per engine: `testdata/v0.9.0/` (`coupling-dev/archfit`) and `testdata/v4.0.0/` (`alexei-led/archfit`, tag
+  corpus per engine: `testdata/v0.9.0/` (`coupling-dev/archfit`) and `testdata/v4.0.0/` (the old engine repository, tag
   v4.0.0's commit):
 
   | Here, under `testdata/<engine>/` | Engine                                           |

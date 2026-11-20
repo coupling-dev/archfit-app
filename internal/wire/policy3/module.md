@@ -32,7 +32,7 @@ A version 2 file (Archfit 3) is refused with `ErrVersion2`.
   refuses a path in both parts).
 - `Loosens`: whether an answer loosens the policy, by its kind alone (D10).
 - Vendor the engine's `archfit.schema.json` and its valid and invalid policy fixtures, one corpus per version:
-  `testdata/v1/` (`coupling-dev/archfit`) and `testdata/v3/` (`alexei-led/archfit` at v4.0.0's commit), each pinned by
+  `testdata/v1/` (`coupling-dev/archfit`) and `testdata/v3/` (the old engine repository, at v4.0.0's commit), each pinned by
   its own `SCHEMA_SOURCE`. Task 6.5 deletes `testdata/v3/`, `Version3` and the version 3 cases (see
   `wire/result/module.md`).
 - Nothing else: no I/O, no GitHub, no storage, no passkey, no check that a module's paths match a file, no engine
