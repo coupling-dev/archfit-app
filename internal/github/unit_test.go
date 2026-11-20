@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	modulePath = "github.com/alexei-led/archfit-app"
+	modulePath = "github.com/coupling-dev/archfit-app"
 	branchPath = modulePath + "/internal/github"
 )
 

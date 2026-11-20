@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/result"
-	"github.com/alexei-led/archfit-app/internal/wire/wording"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/wire/wording"
 )
 
 // The three comments of design 12.5, as the design prints them.
@@ -188,7 +188,7 @@ func golden4(t *testing.T, name, got string) {
 	if found := wording.NotUsedIn(got); len(found) > 0 {
 		t.Errorf("%s uses %q", name, found)
 	}
-	path := filepath.Join("testdata", "golden4", name)
+	path := filepath.Join("testdata", "golden_result", name)
 	if *update {
 		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
 			t.Fatalf("write golden: %v", err)
@@ -205,7 +205,7 @@ func golden4(t *testing.T, name, got string) {
 }
 
 func TestGoldensOfArchfit4UseNoNotUsedWord(t *testing.T) {
-	entries, err := os.ReadDir(filepath.Join("testdata", "golden4"))
+	entries, err := os.ReadDir(filepath.Join("testdata", "golden_result"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestGoldensOfArchfit4UseNoNotUsedWord(t *testing.T) {
 		t.Fatal("no golden to check")
 	}
 	for _, e := range entries {
-		raw, err := os.ReadFile(filepath.Join("testdata", "golden4", e.Name()))
+		raw, err := os.ReadFile(filepath.Join("testdata", "golden_result", e.Name()))
 		if err != nil {
 			t.Fatal(err)
 		}

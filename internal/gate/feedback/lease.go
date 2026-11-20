@@ -9,8 +9,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/gate/inputs"
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/gate/inputs"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 // A publication lease serializes every write to one head SHA across all instances: GitHub has no conditional

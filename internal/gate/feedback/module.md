@@ -44,11 +44,11 @@ repair issues and legacy publisher methods are removed.
 ## Checks
 
 `view_test.go` uses one fixture set for comment, check title, summary, annotations and page JSON
-in `testdata/golden4/`, with wording checks on every form. It covers design 8.1 and the three
+in `testdata/golden_result/`, with wording checks on every form. It covers design 8.1 and the three
 12.5 comments byte for byte. The non-uploadable `can` example contributes its text record to a
 fail fixture. `page_test.go` and `page_bounds_test.go` check request binding, next-step display,
-text bounds and isolation from the source result. `publish4_test.go` and
-`withdraw4_test.go` cover status mapping, ordering, batching and authority races.
+text bounds and isolation from the source result. `publish_result_test.go` and
+`withdraw_result_test.go` cover status mapping, ordering, batching and authority races.
 `lease_test.go` exercises the retained lease failures, cancellation, takeover and release behavior through v4.
 
 ## Publication receipts

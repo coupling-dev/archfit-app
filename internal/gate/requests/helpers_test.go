@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
 var testToday = time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC)

@@ -481,7 +481,7 @@ func TestGraphQLRateLimitIsImmediate(t *testing.T) {
 
 func TestAPIImportsOnlyStdlibAndAuth(t *testing.T) {
 	const (
-		module = "github.com/alexei-led/archfit-app/"
+		module = "github.com/coupling-dev/archfit-app/"
 		self   = module + "internal/github/api"
 		auth   = module + "internal/github/auth"
 	)

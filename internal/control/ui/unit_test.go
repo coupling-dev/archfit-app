@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/control/ui/session"
+	"github.com/coupling-dev/archfit-app/internal/control/ui/session"
 )
 
 func TestCSRFToken(t *testing.T) {

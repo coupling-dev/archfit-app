@@ -31,7 +31,7 @@ engine release, and old and new contracts are never accepted side by side (desig
 
 ## Encapsulated Knowledge
 
-- The vendored files, byte copies from `github.com/alexei-led/archfit` at the commit in `SCHEMA_SOURCE` (M2 plan D4):
+- The vendored files, byte copies from the repository and commit in `SCHEMA_SOURCE` (M2 plan D4):
 
   | Here                         | Engine                                           |
   | ---------------------------- | ------------------------------------------------ |

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/gate/proposals"
-	"github.com/alexei-led/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/gate/proposals"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
 )
 
 func TestPullApprovalSetsAnOwnerVerdictOnce(t *testing.T) {

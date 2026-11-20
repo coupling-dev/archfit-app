@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/control/onboarding"
-	"github.com/alexei-led/archfit-app/internal/wire/wording"
+	"github.com/coupling-dev/archfit-app/internal/control/onboarding"
+	"github.com/coupling-dev/archfit-app/internal/wire/wording"
 )
 
 func TestReposGoldens(t *testing.T) {

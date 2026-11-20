@@ -3,7 +3,7 @@ package account
 import (
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/gate"
 )
 
 // [default] values, expected to change before launch.

@@ -7,7 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/alexei-led/archfit-app/internal/wire/request"
+	"github.com/coupling-dev/archfit-app/internal/wire/request"
 )
 
 // FuzzParseComment: a parsed reason is one trimmed line of 1 to 500 characters and a parsed date is in range; every

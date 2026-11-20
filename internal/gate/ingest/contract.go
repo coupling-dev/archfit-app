@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/github/oidc"
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
-	"github.com/alexei-led/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/oidc"
+	"github.com/coupling-dev/archfit-app/internal/wire/envelope"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
 )
 
 // Problem is an eligibility defect found after the tenant was authenticated.

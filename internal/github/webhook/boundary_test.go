@@ -278,7 +278,7 @@ func TestWebhookImportsOnlyStdlib(t *testing.T) {
 	if err != nil {
 		t.Fatalf("go list: %v", err)
 	}
-	const self = "github.com/alexei-led/archfit-app/internal/github/webhook"
+	const self = "github.com/coupling-dev/archfit-app/internal/github/webhook"
 	for _, pkg := range strings.Fields(string(out)) {
 		if pkg != self {
 			t.Errorf("non-standard dependency: %s", pkg)

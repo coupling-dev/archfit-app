@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 func editSetup(t *testing.T) (store.Store, records.Merge) {

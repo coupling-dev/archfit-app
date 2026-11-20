@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/alexei-led/archfit-app/internal/gate/approvals"
-	"github.com/alexei-led/archfit-app/internal/gate/sweep"
-	"github.com/alexei-led/archfit-app/internal/github/webhook"
+	"github.com/coupling-dev/archfit-app/internal/gate/approvals"
+	"github.com/coupling-dev/archfit-app/internal/gate/sweep"
+	"github.com/coupling-dev/archfit-app/internal/github/webhook"
 )
 
 // policyPushed judges a default-branch push for the policy it brings (design 7.1, 9.2; M2 task 20, gate/approvals):
 // the merge of a proposal with the policy its approvals wrote consumes them, once; in a repository with an approved
-// policy, any other change of the policy puts it outside the flow, where every upload is unknown (upload4.go) and one
+// policy, any other change of the policy puts it outside the flow, where every upload is unknown (upload_result.go) and one
 // issue is open to the owners. A repository without an approved policy is not under change control yet: the push is
 // recorded, and its uploads say first_approval. A consume hands the pull requests waiting on its requests to the
 // re-check after an answer (sweep.AfterAnswer). A failed read or write is returned, so the delivery is retried; a

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
 var update = flag.Bool("update", false, "write each writer golden out.yaml from the current output; read the diff before you commit it")

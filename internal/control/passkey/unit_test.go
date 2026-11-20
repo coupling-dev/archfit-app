@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-webauthn/webauthn/protocol/webauthncose"
 
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 func TestRecordsAreReadStrictly(t *testing.T) {

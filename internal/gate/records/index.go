@@ -6,7 +6,7 @@ import (
 	"errors"
 	"slices"
 
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 // ErrExists is returned by Index.Add when the key is in the index with another id.

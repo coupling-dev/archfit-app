@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/gate/feedback"
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/gate/feedback"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 // TestRerunConditions is the exported guard: the run checks it always made, then each condition of design 10.5 false

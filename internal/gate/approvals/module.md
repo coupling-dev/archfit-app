@@ -77,7 +77,7 @@ direct push to the policy is the new rule with no owner's word.
   the approved workflow file, and voided otherwise. A push that leaves `.github/workflows/archfit.yaml` alone is
   `none`, and so is the same push again. `Pushed` passes over workflow proposals, `WorkflowPushed` over the others. A
   workflow file changed with no approval is not a state of its own: each run is compared with the default branch's
-  file (`gate`, `upload4.go`).
+  file (`gate`, `upload_result.go`).
 - Owner actions outside requests (M2 task 23): `Bind` reads what an action binds to now (`Change`: the pull request's
   head, its policy digest and workflow digest; or the default branch's tip and its policy digest), and `Act` binds it
   again, refuses a change that is not the one the owner's step-up was bound to (`ErrMoved`, before the step-up is
@@ -110,7 +110,7 @@ The check names the owner and both digests and explicitly is not an engine pass;
 
 Not provided: the re-check of the waiting pull requests (`sweep.AfterAnswer`, called by the gate), the revert
 (written by `gate/proposals` as an answer is), the re-run of an approved head's workflow (`gate`, `owner.go`),
-traversing installations and the guarded re-check handoff (gate/sweep4.go).
+traversing installations and the guarded re-check handoff (gate/sweep_result.go).
 
 ## Narrow sweep recovery
 
@@ -199,7 +199,7 @@ var ErrNotAdmin, ErrNotOwner, ErrNotDue, ErrNotApprovable, ErrMoved, ErrNeedsPas
 - **gate** (parent): builds the `Service` with the gate's GitHub client and Store; `events.go` calls `Pushed` through
   the façade file `approvals.go` on every `DefaultBranchPush`, before the repository sweep, and hands a consume's
   waiting pull requests to `sweep.AfterAnswer` (the re-check after an answer, M2 task 21); it then calls
-  `WorkflowPushed` through `owner.go`. `owner.go` calls `Bind` and `Act`. `upload4.go` reads the state it sets
+  `WorkflowPushed` through `owner.go`. `owner.go` calls `Bind` and `Act`. `upload_result.go` reads the state it sets
   (`Repo.OutsideFlow`, `ApprovedDigest`) and the open first and workflow proposals.
 - **gate/records**: `Consume` (`Merge`), `Outside`, `Unguarded`, `OutsideIssue`, `Void`, `VoidProposal`, `First`,
   `Workflow`, `ConsumeWorkflow`, `ApproveCurrent`, `Confirm`, `FileDigest`, `Push`, the keys and values.

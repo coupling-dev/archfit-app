@@ -64,7 +64,7 @@ func TestPublicTagCommitIsAnonymousAndPeelsOnlyCommitTags(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			env := muxEnv(t, func(mux *http.ServeMux) {
-				mux.HandleFunc("GET /repos/alexei-led/archfit-action/git/ref/tags/{tag...}", func(w http.ResponseWriter, r *http.Request) {
+				mux.HandleFunc("GET /repos/coupling-dev/archfit-action/git/ref/tags/{tag...}", func(w http.ResponseWriter, r *http.Request) {
 					if r.Header.Get("Authorization") != "" {
 						t.Error("public read sent credentials")
 					}
@@ -73,7 +73,7 @@ func TestPublicTagCommitIsAnonymousAndPeelsOnlyCommitTags(t *testing.T) {
 					}
 					writeJSON(w, http.StatusOK, map[string]any{"object": map[string]any{"type": tt.kind, "sha": tt.sha}})
 				})
-				mux.HandleFunc("GET /repos/alexei-led/archfit-action/git/tags/{sha}", func(w http.ResponseWriter, r *http.Request) {
+				mux.HandleFunc("GET /repos/coupling-dev/archfit-action/git/tags/{sha}", func(w http.ResponseWriter, r *http.Request) {
 					if r.Header.Get("Authorization") != "" {
 						t.Error("tag peeling sent credentials")
 					}
@@ -84,7 +84,7 @@ func TestPublicTagCommitIsAnonymousAndPeelsOnlyCommitTags(t *testing.T) {
 					writeJSON(w, http.StatusOK, map[string]any{"object": map[string]any{"type": kind, "sha": sha}})
 				})
 			})
-			got, err := env.c.PublicTagCommit(context.Background(), "alexei-led/archfit-action", "v4/rc")
+			got, err := env.c.PublicTagCommit(context.Background(), "coupling-dev/archfit-action", "v4/rc")
 			if tt.ok && (err != nil || got != commit) || !tt.ok && (err == nil || got != "") {
 				t.Fatalf("PublicTagCommit = %q, %v", got, err)
 			}
@@ -94,13 +94,13 @@ func TestPublicTagCommitIsAnonymousAndPeelsOnlyCommitTags(t *testing.T) {
 
 func TestPublicTagCommitNeverFallsBackToABranch(t *testing.T) {
 	env := muxEnv(t, func(mux *http.ServeMux) {
-		mux.HandleFunc("GET /repos/alexei-led/archfit-action/git/ref/tags/main", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) })
-		mux.HandleFunc("GET /repos/alexei-led/archfit-action/git/ref/heads/main", func(w http.ResponseWriter, _ *http.Request) {
+		mux.HandleFunc("GET /repos/coupling-dev/archfit-action/git/ref/tags/main", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) })
+		mux.HandleFunc("GET /repos/coupling-dev/archfit-action/git/ref/heads/main", func(w http.ResponseWriter, _ *http.Request) {
 			t.Error("resolved a branch")
 			writeJSON(w, http.StatusOK, map[string]any{"object": map[string]any{"type": "commit", "sha": strings.Repeat("a", 40)}})
 		})
 	})
-	got, err := env.c.PublicTagCommit(context.Background(), "alexei-led/archfit-action", "main")
+	got, err := env.c.PublicTagCommit(context.Background(), "coupling-dev/archfit-action", "main")
 	if got != "" || !errors.Is(err, ErrNotFound) {
 		t.Fatalf("PublicTagCommit = %q, %v", got, err)
 	}

@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/gate/feedback"
-	"github.com/alexei-led/archfit-app/internal/gate/markdown"
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/gate/feedback"
+	"github.com/coupling-dev/archfit-app/internal/gate/markdown"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 func TestExceptionLiteralsUseTheirPublicDate(t *testing.T) {

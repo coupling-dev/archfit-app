@@ -3,7 +3,7 @@ package approvals
 import (
 	"context"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 // SummaryInputs supplies immutable file inputs to the read-only setup summary.

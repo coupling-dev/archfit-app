@@ -6,8 +6,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/gate/feedback"
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/gate/feedback"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 const runCompleted = "completed"

@@ -3,7 +3,7 @@ package result_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
 )
 
 // The goldens cover each field of an error and an unknown reason with a path; these cover the rest of the grammar.

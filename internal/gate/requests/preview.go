@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
-	"github.com/alexei-led/archfit-app/internal/wire/request"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
+	"github.com/coupling-dev/archfit-app/internal/wire/request"
 )
 
 // The request data and the preview of each answer (design 10.4, 12.3, 19; M2 task 17). The owner decides on more

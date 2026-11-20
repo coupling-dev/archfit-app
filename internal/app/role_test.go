@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/github/webhook"
-	"github.com/alexei-led/archfit-app/internal/queue"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/webhook"
+	"github.com/coupling-dev/archfit-app/internal/queue"
 )
 
 // idToken builds a Google ID token for the invoker with the signature removed, as Cloud Run passes it on.

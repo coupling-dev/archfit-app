@@ -3,9 +3,9 @@ package gate
 import (
 	"context"
 
-	"github.com/alexei-led/archfit-app/internal/gate/proposals"
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	asks "github.com/alexei-led/archfit-app/internal/gate/requests"
+	"github.com/coupling-dev/archfit-app/internal/gate/proposals"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	asks "github.com/coupling-dev/archfit-app/internal/gate/requests"
 )
 
 // Answers takes in an owner's answer to a request (design 9.2, 10.4; M2 task 19): approve, approve until a date, or

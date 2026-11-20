@@ -442,7 +442,7 @@ func TestAuthImportsOnlyStdlib(t *testing.T) {
 	if err != nil {
 		t.Fatalf("go list: %v", err)
 	}
-	const self = "github.com/alexei-led/archfit-app/internal/github/auth"
+	const self = "github.com/coupling-dev/archfit-app/internal/github/auth"
 	for dep := range strings.FieldsSeq(string(out)) {
 		if dep != self {
 			t.Errorf("non-standard dependency %s", dep)

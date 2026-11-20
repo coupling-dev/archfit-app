@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/github/auth"
-	"github.com/alexei-led/archfit-app/internal/github/oidc"
-	"github.com/alexei-led/archfit-app/internal/github/webhook"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/auth"
+	"github.com/coupling-dev/archfit-app/internal/github/oidc"
+	"github.com/coupling-dev/archfit-app/internal/github/webhook"
 )
 
 const audience = "https://archfit.example"

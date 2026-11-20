@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/gate/proposals"
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/gate/proposals"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 // editParent proves that an edit landed immediately on the exact target it was

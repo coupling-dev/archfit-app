@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/github/auth"
+	"github.com/coupling-dev/archfit-app/internal/github/auth"
 )
 
 const (

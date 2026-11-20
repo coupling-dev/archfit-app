@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/alexei-led/archfit-app/internal/gate/drift"
-	"github.com/alexei-led/archfit-app/internal/gate/ingest"
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
+	"github.com/coupling-dev/archfit-app/internal/gate/drift"
+	"github.com/coupling-dev/archfit-app/internal/gate/ingest"
+	"github.com/coupling-dev/archfit-app/internal/wire/envelope"
 )
 
 // driftPushed hands the repository block of a push run to the drift issue (design 7.1, M2 task 22, gate/drift). Only

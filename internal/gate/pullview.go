@@ -1,8 +1,8 @@
 package gate
 
 import (
-	"github.com/alexei-led/archfit-app/internal/gate/feedback"
-	"github.com/alexei-led/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/gate/feedback"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
 )
 
 // PullView is the page form of the shared check and comment model.

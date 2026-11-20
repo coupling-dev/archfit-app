@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/wire/policy3"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
 func TestPolicyDiagnosticsListEveryProblemByLine(t *testing.T) {

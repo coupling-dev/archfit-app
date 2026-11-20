@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/wire/request"
+	"github.com/coupling-dev/archfit-app/internal/wire/request"
 )
 
 func TestTitle(t *testing.T) {

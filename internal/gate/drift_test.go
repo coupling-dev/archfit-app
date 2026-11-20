@@ -7,13 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/gate/drift"
-	"github.com/alexei-led/archfit-app/internal/gate/ingest"
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/store"
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
-	"github.com/alexei-led/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/gate/drift"
+	"github.com/coupling-dev/archfit-app/internal/gate/ingest"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/wire/envelope"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
 )
 
 // pushSpec is an envelope 2 upload of a push run of the default branch's tip with the result golden.

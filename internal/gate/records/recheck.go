@@ -5,7 +5,7 @@ import (
 	"errors"
 	"slices"
 
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 // Rechecked appends rc to the pull record of pull request pr, whatever run the record names now, and reports whether it

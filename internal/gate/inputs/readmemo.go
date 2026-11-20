@@ -5,8 +5,8 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 // The reads of one owner review that several of its probes share. The keys are the same for every caller, so a read

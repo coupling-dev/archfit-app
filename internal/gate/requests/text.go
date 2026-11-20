@@ -4,9 +4,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/wire/request"
-	"github.com/alexei-led/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/wire/request"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
 )
 
 // recordCap bounds the record an issue shows and the App stores, in bytes. With a 500-character reason the issue body

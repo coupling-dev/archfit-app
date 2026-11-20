@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 func rule(kind string) api.RepositoryRule { return api.RepositoryRule{Type: kind, RulesetID: 1} }

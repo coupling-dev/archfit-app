@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/wire/request"
+	"github.com/coupling-dev/archfit-app/internal/wire/request"
 )
 
 func TestParseComment(t *testing.T) {

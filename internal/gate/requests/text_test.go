@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/wire/request"
-	"github.com/alexei-led/archfit-app/internal/wire/result"
-	"github.com/alexei-led/archfit-app/internal/wire/wording"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/wire/request"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/wire/wording"
 )
 
 // githubBodyLimit is GitHub's limit of an issue or comment body, in characters.

@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/control/account"
-	"github.com/alexei-led/archfit-app/internal/gate"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/github/auth"
-	"github.com/alexei-led/archfit-app/internal/github/webhook"
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/control/account"
+	"github.com/coupling-dev/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/auth"
+	"github.com/coupling-dev/archfit-app/internal/github/webhook"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 // account is the login GitHub reports for the installation: the owner of its first repository.
@@ -245,7 +245,7 @@ func TestControlImportsOnlyAllowedPackages(t *testing.T) {
 	if err != nil {
 		t.Skip("go tool not found")
 	}
-	const module = "github.com/alexei-led/archfit-app/internal/"
+	const module = "github.com/coupling-dev/archfit-app/internal/"
 	list := func(args ...string) []string {
 		var stderr bytes.Buffer
 		cmd := exec.Command(goTool, append([]string{"list", "-f", `{{.ImportPath}} {{join .Imports " "}}`}, args...)...)

@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/gate/requests"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/gate/requests"
 )
 
 // The words of the issue of a policy changed outside the flow and of the notes (design 5). They hold only the App's

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/wire/request"
+	"github.com/coupling-dev/archfit-app/internal/wire/request"
 )
 
 const copyKey = "duplication pkg_tc pkg_util sha256:3f1c2a0e5b7d4c6a8e9f0b1d2c3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e"

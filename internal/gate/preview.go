@@ -3,8 +3,8 @@ package gate
 import (
 	"context"
 
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	asks "github.com/alexei-led/archfit-app/internal/gate/requests"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	asks "github.com/coupling-dev/archfit-app/internal/gate/requests"
 )
 
 // RequestViews is what the App's request page reads (design 10.4, 12.3; M2 task 17): a request with its record,

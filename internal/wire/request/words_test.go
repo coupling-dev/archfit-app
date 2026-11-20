@@ -3,7 +3,7 @@ package request_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/wire/wording"
+	"github.com/coupling-dev/archfit-app/internal/wire/wording"
 )
 
 // TestGoldensUseNoNotUsedWord: no golden uses a word of the "Not used" column of design section 5.

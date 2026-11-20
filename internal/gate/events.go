@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/alexei-led/archfit-app/internal/gate/inputs"
-	asks "github.com/alexei-led/archfit-app/internal/gate/requests"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/github/webhook"
+	"github.com/coupling-dev/archfit-app/internal/gate/inputs"
+	asks "github.com/coupling-dev/archfit-app/internal/gate/requests"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/webhook"
 )
 
 // Reactions, as logged.

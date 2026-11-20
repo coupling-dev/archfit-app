@@ -10,8 +10,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/gate/records"
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 func openRequest(ctx context.Context, s store.Store, issue int, key string) error {

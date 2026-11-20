@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/store"
-	"github.com/alexei-led/archfit-app/internal/store/storetest"
+	"github.com/coupling-dev/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store/storetest"
 )
 
 const marker = "SECRET-MARKER"

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/wire/workflow"
+	"github.com/coupling-dev/archfit-app/internal/wire/workflow"
 )
 
 func TestUsesRefs(t *testing.T) {

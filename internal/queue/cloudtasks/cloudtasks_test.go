@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/queue"
-	"github.com/alexei-led/archfit-app/internal/queue/cloudtasks"
-	"github.com/alexei-led/archfit-app/internal/queue/queuetest"
+	"github.com/coupling-dev/archfit-app/internal/queue"
+	"github.com/coupling-dev/archfit-app/internal/queue/cloudtasks"
+	"github.com/coupling-dev/archfit-app/internal/queue/queuetest"
 )
 
 const (

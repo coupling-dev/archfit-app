@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/control/onboarding"
-	"github.com/alexei-led/archfit-app/internal/gate"
-	"github.com/alexei-led/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/control/onboarding"
+	"github.com/coupling-dev/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
 // An installation no operator has admitted: the list reads nothing from it. Operators admit; owners approve.

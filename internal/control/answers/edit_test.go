@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/control/answers"
-	"github.com/alexei-led/archfit-app/internal/control/passkey"
-	"github.com/alexei-led/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/control/answers"
+	"github.com/coupling-dev/archfit-app/internal/control/passkey"
+	"github.com/coupling-dev/archfit-app/internal/gate"
 )
 
 type editGate struct {

@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	modulePath = "github.com/alexei-led/archfit-app"
+	modulePath = "github.com/coupling-dev/archfit-app"
 	internal   = modulePath + "/internal/"
 	yamlModule = "go.yaml.in/yaml/"
 	// webauthnModule is go-webauthn, the passkey verifier of M2 D9: control/passkey alone imports it.

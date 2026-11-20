@@ -22,6 +22,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - run: sh scripts/check-names.sh
       - run: go vet ./...
       - run: go test -race ./...
       - run: CGO_ENABLED=0 go build ./...
@@ -204,7 +205,7 @@ jobs:
               echo "::error::placeholder Action ref: $ref"
               exit 1
             fi
-            git -C "$checkout" fetch --quiet --depth=1 https://github.com/alexei-led/archfit-action.git "$ref"
+            git -C "$checkout" fetch --quiet --depth=1 https://github.com/coupling-dev/archfit-action.git "$ref"
             test "$(git -C "$checkout" rev-parse FETCH_HEAD)" = "$ref"
             git -C "$checkout" show FETCH_HEAD:schema/envelope.v2.schema.json >"$checkout/envelope.json"
             if ! cmp -s internal/wire/envelope/envelope.v2.schema.json "$checkout/envelope.json"; then

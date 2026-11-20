@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alexei-led/archfit-app/internal/gate/markdown"
-	"github.com/alexei-led/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/gate/markdown"
+	"github.com/coupling-dev/archfit-app/internal/wire/result"
 )
 
 // The bounds of the issue: the records of the drift errors as the check prints them, and the places the check could

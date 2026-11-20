@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 // The repository's owner issues of M2 task 22: one drift issue, and one expiry issue per dated exception. Each issue

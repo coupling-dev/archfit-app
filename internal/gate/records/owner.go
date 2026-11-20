@@ -8,7 +8,7 @@ import (
 	"errors"
 	"slices"
 
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 // Proposal kinds of a pull request someone else wrote, which an owner approved as it is (M2 task 23). The App's

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 // RecoveredDelivery records the real delivery range against immutable recovered-merge evidence, without changing

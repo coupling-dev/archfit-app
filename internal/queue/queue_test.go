@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/queue"
-	"github.com/alexei-led/archfit-app/internal/queue/queuetest"
+	"github.com/coupling-dev/archfit-app/internal/queue"
+	"github.com/coupling-dev/archfit-app/internal/queue/queuetest"
 )
 
 func TestInlineConformance(t *testing.T) {

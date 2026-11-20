@@ -9,16 +9,16 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/control"
-	"github.com/alexei-led/archfit-app/internal/gate"
-	"github.com/alexei-led/archfit-app/internal/gcptoken"
-	"github.com/alexei-led/archfit-app/internal/github/api"
-	"github.com/alexei-led/archfit-app/internal/github/auth"
-	"github.com/alexei-led/archfit-app/internal/github/oidc"
-	"github.com/alexei-led/archfit-app/internal/queue"
-	"github.com/alexei-led/archfit-app/internal/queue/cloudtasks"
-	"github.com/alexei-led/archfit-app/internal/store"
-	"github.com/alexei-led/archfit-app/internal/store/firestore"
+	"github.com/coupling-dev/archfit-app/internal/control"
+	"github.com/coupling-dev/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/gcptoken"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/github/auth"
+	"github.com/coupling-dev/archfit-app/internal/github/oidc"
+	"github.com/coupling-dev/archfit-app/internal/queue"
+	"github.com/coupling-dev/archfit-app/internal/queue/cloudtasks"
+	"github.com/coupling-dev/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store/firestore"
 )
 
 const (

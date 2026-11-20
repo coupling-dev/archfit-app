@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/gate/markdown"
+	"github.com/coupling-dev/archfit-app/internal/gate/markdown"
 )
 
 // The words of the issue and its notes: the App's words, the policy's names and reason in code spans, dates as design 5

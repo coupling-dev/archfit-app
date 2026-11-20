@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	wirePackage = "github.com/alexei-led/archfit-app/internal/wire"
+	wirePackage = "github.com/coupling-dev/archfit-app/internal/wire"
 )
 
 var wireChildren = []string{"envelope", "manifest", "policy3", "request", "result", "wording", "workflow"}

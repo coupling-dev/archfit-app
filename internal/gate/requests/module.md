@@ -136,7 +136,7 @@ without a second note; a reply may be posted again.
 
 - **gate** (parent): builds the `Service` with the gate's `Publisher4`, so a waiting check takes the head's lease
   that uploads take; calls `Comment` on `PullCommented` with a request line, `Filed` on `IssueOpened`, `PullClosed`
-  on `PullClosed`, and `OpenIndex`, `Cover` and `Wait` from the envelope 2 upload (`upload4.go`).
+  on `PullClosed`, and `OpenIndex`, `Cover` and `Wait` from the envelope 2 upload (`upload_result.go`).
 - **gate/records**: the request, its index and the pull record. **gate/feedback**: `Publisher4`, `ErrStaleInputs`.
 - **wire/request**: the grammar, the key, the issue, the rejections. **wire/result**: the result and its record.
   **wire/policy3**: owners, gate mode, deny rules. **wire/envelope**: the payload digest.

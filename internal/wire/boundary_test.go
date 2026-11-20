@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	modulePath = "github.com/alexei-led/archfit-app/"
+	modulePath = "github.com/coupling-dev/archfit-app/"
 	yamlLib    = "go.yaml.in/yaml/v3"
 )
 

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/control/ui/session"
+	"github.com/coupling-dev/archfit-app/internal/control/ui/session"
 )
 
 func TestRemovedPagesAndAPIsReturn404WithoutDataAccess(t *testing.T) {

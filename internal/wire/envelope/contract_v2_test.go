@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
+	"github.com/coupling-dev/archfit-app/internal/wire/envelope"
 )
 
 func TestDecodeV2Goldens(t *testing.T) {

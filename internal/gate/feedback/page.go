@@ -1,6 +1,6 @@
 package feedback
 
-import "github.com/alexei-led/archfit-app/internal/wire/result"
+import "github.com/coupling-dev/archfit-app/internal/wire/result"
 
 // Page is the page form of the comment model. Text is untrusted; a consumer must
 // render it as text or inert Markdown, never HTML.

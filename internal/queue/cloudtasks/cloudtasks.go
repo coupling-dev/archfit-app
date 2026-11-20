@@ -13,7 +13,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/alexei-led/archfit-app/internal/queue"
+	"github.com/coupling-dev/archfit-app/internal/queue"
 )
 
 const (

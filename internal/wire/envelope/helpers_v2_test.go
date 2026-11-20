@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit-app/internal/wire/envelope"
+	"github.com/coupling-dev/archfit-app/internal/wire/envelope"
 )
 
 // fixtureDirV2 holds the envelope 2 goldens. It uses the shared expectation format of internal/wire/module.md and
@@ -35,7 +35,7 @@ func fieldOrderV2() []string {
 func prFieldsV2() map[string]string {
 	return map[string]string{
 		"schema_version": quoted(envelope.SchemaV2),
-		"repository":     `"alexei-led/archfit-demo"`,
+		"repository":     `"coupling-dev/archfit-demo"`,
 		"event":          `"pull_request"`,
 		"pull_request":   `42`,
 		"head_sha":       quoted(hex40),

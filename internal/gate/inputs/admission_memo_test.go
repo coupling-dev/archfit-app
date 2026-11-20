@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 // countingStore answers every admission read with get and counts the reads. Safe for concurrent use.

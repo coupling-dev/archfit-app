@@ -22,5 +22,5 @@ Manifest v1, measurement profiles, `Lookup`, `Current` and `EngineVersions` have
 
 ## Checks
 
-`engine4_test.go` covers strict parsing, empty-list denial, exact matches, wrong/legacy identities
+`engine_manifest_test.go` covers strict parsing, empty-list denial, exact matches, wrong/legacy identities
 and the absence of runtime overrides.
