@@ -7,7 +7,7 @@
       "path": "cmd/main.go",
       "line": 14,
       "rule": "coupling",
-      "what": "cmd -> pkg_tc reaches past the public part of pkg_tc",
+      "what": "cmd -> pkg/tc/netem is past the surface",
       "why": "new knowledge across a module boundary needs a balance of at least 7",
       "balance": {
         "value": 2,
@@ -21,9 +21,10 @@
         ],
         "model": []
       },
+      "package": "pkg/tc/netem",
       "next": {
-        "kind": "fix",
-        "text": "fix the code"
+        "kind": "command",
+        "text": "use the surface, or: archfit request -m \"<why netem belongs to the surface>\""
       },
       "from": "cmd",
       "to": "pkg_tc",

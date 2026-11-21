@@ -32,7 +32,7 @@ func TestVendoredFileMatchesSchemaSource(t *testing.T) {
 		}
 		listed[path] = sum
 	}
-	if got := header["repository"]; !slices.Equal(got, []string{"github.com/alexei-led/archfit"}) {
+	if got := header["repository"]; !slices.Equal(got, []string{"github.com/coupling-dev/archfit"}) {
 		t.Errorf("repository = %q", got)
 	}
 	if got := header["commit"]; len(got) != 1 || !commitPattern.MatchString(got[0]) {

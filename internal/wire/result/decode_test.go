@@ -278,7 +278,6 @@ func TestDecodeRefusesAMixOfBalanceShapes(t *testing.T) {
       "surface": {"public": []}`, "result: errors[0].surface.model: required"},
 		{"a surface on a balance without inputs", v090, "graph", inputs, noInputs + emptySurface, "result: errors[0].surface: needs a balance with strength and volatility"},
 		{"a package without a surface", v090, "graph", `"from_change": true`, `"from_change": true, "package": "pkg/util/retry"`, "result: errors[0].package: needs a surface"},
-		{"an empty package", v090, "graph", inputs, inputs + emptySurface + `, "package": ""`, "result: errors[0].package: must not be empty"},
 		{"a surface without a balance", v090, "duplication", `"from_change": true`, `"from_change": true, "surface": {"public": [], "model": []}`, "result: errors[0].surface: needs a balance with strength and volatility"},
 		{"a surface in a v4.0.0 result", v400, "graph", noInputs, noInputs + emptySurface, "result: errors[0].surface: needs a balance with strength and volatility"},
 		{"both shapes in one result", v090, "graph", `"errors": [`, v4Error, "result: balances mix the v4.0.0 shape and the 0.9.0 shape"},

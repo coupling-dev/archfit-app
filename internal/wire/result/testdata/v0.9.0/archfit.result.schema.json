@@ -95,7 +95,11 @@
         },
         "surface": {
           "$ref": "#/$defs/Surface",
-          "description": "Surface is the declared surface of the target module, when the answer\nis no for a use past it. Not set by the engine of this version."
+          "description": "Surface is the declared surface of the target module, when the answer\nis no for a use past it."
+        },
+        "package": {
+          "type": "string",
+          "description": "Package is the path past the surface, when the answer is no for a use\npast it: the package or file an owner may declare public or model."
         },
         "next": {
           "$ref": "#/$defs/Next",
@@ -170,7 +174,11 @@
         },
         "surface": {
           "$ref": "#/$defs/Surface",
-          "description": "Surface is the declared surface of the target module, for a coupling\nerror of a use past it. Not set by the engine of this version."
+          "description": "Surface is the declared surface of the target module, for a coupling\nerror of a use past it."
+        },
+        "package": {
+          "type": "string",
+          "description": "Package is the path past the surface, for a coupling error of a use\npast it: the package or file an owner may declare public or model.\nWhat names it too, in a fixed form: \"pkg/tc/netem is past the surface\"."
         },
         "next": {
           "$ref": "#/$defs/Next",

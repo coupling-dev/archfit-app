@@ -55,8 +55,8 @@ type Error struct {
 	Why        string     `json:"why,omitempty"`
 	Instead    string     `json:"instead,omitempty"`
 	Balance    *Balance   `json:"balance,omitempty"`
-	Surface    *Surface   `json:"surface,omitempty"`             // the target's declared surface; only with a balance that has inputs
-	Package    string     `json:"package,omitempty" rule:"text"` // the package past the surface; only with a surface
+	Surface    *Surface   `json:"surface,omitempty"` // the target's declared surface; only with a balance that has inputs
+	Package    string     `json:"package,omitempty"` // the package past the surface; only with a surface; "" names none
 	Next       Next       `json:"next"`
 	From       string     `json:"from,omitempty"`
 	To         string     `json:"to,omitempty"`

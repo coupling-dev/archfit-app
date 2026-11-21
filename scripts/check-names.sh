@@ -17,9 +17,7 @@ if git grep -n -I -E "$pattern" -- \
   ':!internal/wire/workflow/workflow_test.go' \
   ':!web/src/components/Setup.svelte' \
   ':!internal/wire/result/vendor_test.go' \
-  ':!internal/wire/wording/wording_test.go' \
   ':!internal/wire/policy3/source_test.go' \
-  ':!internal/wire/wording/SCHEMA_SOURCE' \
   ':!internal/wire/policy3/testdata/v3/SCHEMA_SOURCE' \
   ':!internal/wire/result/testdata/v4.0.0/SCHEMA_SOURCE' \
   ':!internal/wire/policy3/testdata/v3/archfit.schema.json' \

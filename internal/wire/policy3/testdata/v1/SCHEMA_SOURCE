@@ -1,5 +1,5 @@
 repository: coupling-dev/archfit
-revision: 78f388f8a405f902ac53a8ec2bc1401ea1b0c9a0
+revision: 2f60ce1f2948c0fb37e0f1bdfbbeca3b2b1bf49b
 # sha256 is of the file bytes, as shasum -a 256 prints it; a line per vendored file
 0c9fdf66949fb7b38e7cc4f4d87375dc2e4ae84f31cbeb97b9986ae70a3d2c29  archfit.schema.json
 01a3d7e8bc4ca5b8e26e99cac45ce83f70752afea8b8087a0f1d37b36124397d  invalid/builtin-mode-unknown.yaml
