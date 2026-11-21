@@ -17,9 +17,21 @@ either with `-rc.N` (v4 until task 6.5 removes engine v4.0.0), with non-placehol
 one non-placeholder Action commit. Unknown fields and duplicate release/action entries are rejected.
 An empty engine list approves nothing. Invalid embedded data prevents package initialization.
 
-The embedded list approves engine v4.0.0 and Action v4.0.0. The engine image index digest is
-`sha256:8ad49e766ce3e486104077df213f2badc6ed0f66d7fe88ae377efaf6a918ccd2`; uploads use the
-platform-specific digests in the manifest, not the index digest. No runtime override exists.
+The embedded list approves two releases until task 6.5 removes the first:
+
+| Engine | Image | Action commit |
+| --- | --- | --- |
+| v4.0.0 | the old home's image, index `sha256:8ad49e76…8ccd2` | `9669571` (Action v4.0.0) |
+| v0.9.0 | `ghcr.io/coupling-dev/archfit`, index `sha256:adf05068…d32c0` | `53e0c49` (`coupling-dev/archfit-action` v0.9.0) |
+
+Uploads use the platform-specific digests in the manifest, not the index digests. No runtime override exists.
+
+The manifest does not pair an engine with its Action commits: `EngineApproved` and `ActionApproved` are separate
+sets, so an upload claiming one release's engine beside the other release's Action commit is approved. The Action
+pairs them: each release refuses any engine but its own before it uploads, so a mixed claim reaches the App only as a
+forged envelope, which needs a changed workflow, which gives `workflow_changed` unless an owner approved it. The gap
+closes by itself at task 6.5, when only the 0.9.0 row remains.
+
 Manifest v1, measurement profiles, `Lookup`, `Current` and `EngineVersions` have been removed.
 
 ## Checks
