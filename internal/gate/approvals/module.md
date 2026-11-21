@@ -102,11 +102,21 @@ Pull-bound first and workflow actions also publish an owner-approval `archfit/ga
 `proposal:<id>`. A failed write is logged without undoing the approval. `Review` and `Act` refuse a second
 matching open approval with `ErrNotDue` before redeeming a passkey.
 
-`OnboardingCheck` re-binds a first approval and checks its indexed open proposal and recorded approval against
-the current head and both file digests. It returns no check after activation, outside the flow, after a head
-change, or for a closed/fork/retargeted pull. The shared feedback publisher consults it inside the head lease,
-so a later upload, rerun or withdrawal cannot replace a matching onboarding approval with an engine verdict.
-The check names the owner and both digests and explicitly is not an engine pass; run diagnostics remain separate.
+`OwnerCheck` re-binds the pull request's open approval and checks its indexed open proposal and recorded approval
+against the current head and both file digests. It covers two kinds:
+
+- a first approval of an onboarding pull request; it returns no check after activation or outside the flow;
+- a workflow approval of a head whose policy is not the approved one. The pull request that moves an onboarded
+  repository to engine 0.9.0 is one (beta plan task 5.3): it changes the policy to version 1 and the workflow to the
+  Action's new home, and engine 0.9.0 gives unknown while the target branch holds version 3 or 2. A workflow approval
+  of a head that keeps the approved policy returns no check: the engine judges it.
+
+It returns no check after a head change, or for a closed/fork/retargeted pull. The shared feedback publisher consults
+it inside the head lease, so a later upload, rerun or withdrawal cannot replace a matching owner approval with an
+engine verdict. The approval covers the whole head, code included. The check names the owner and both digests and
+explicitly is not an engine pass; run diagnostics remain separate. After the merge, `Pushed` judges the policy change
+as any other: a workflow proposal is consumed by `WorkflowPushed` only, so the push is outside the flow until an owner
+confirms it.
 
 Not provided: the re-check of the waiting pull requests (`sweep.AfterAnswer`, called by the gate), the revert
 (written by `gate/proposals` as an answer is), the re-run of an approved head's workflow (`gate`, `owner.go`),

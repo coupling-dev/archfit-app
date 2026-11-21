@@ -7,7 +7,7 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
 )
 
-func TestOnboardingCheckRequiresTheExactOpenApproval(t *testing.T) {
+func TestOwnerCheckRequiresTheExactOpenApproval(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		change func(*world, Done)
@@ -59,7 +59,7 @@ func TestOnboardingCheckRequiresTheExactOpenApproval(t *testing.T) {
 				t.Fatal(err)
 			}
 			tc.change(w, d)
-			check, err := w.svc.OnboardingCheck(context.Background(), testRepo, 12, "h1")
+			check, err := w.svc.OwnerCheck(context.Background(), testRepo, 12, "h1")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -73,7 +73,7 @@ func TestOnboardingCheckRequiresTheExactOpenApproval(t *testing.T) {
 	}
 }
 
-func TestOnboardingCheckDoesNotHideReadErrors(t *testing.T) {
+func TestOwnerCheckDoesNotHideReadErrors(t *testing.T) {
 	w := newWorld(t)
 	w.gh.bare("c0")
 	w.openPull(12, "h1", policyV(1), "wf-1")
@@ -83,7 +83,7 @@ func TestOnboardingCheckDoesNotHideReadErrors(t *testing.T) {
 	if err := w.mem.Put(context.Background(), w.tenant(), records.ProposalIndexKey(testRepo.FullName), []byte("broken")); err != nil {
 		t.Fatal(err)
 	}
-	if check, err := w.svc.OnboardingCheck(context.Background(), testRepo, 12, "h1"); err == nil || check != nil {
+	if check, err := w.svc.OwnerCheck(context.Background(), testRepo, 12, "h1"); err == nil || check != nil {
 		t.Errorf("check = %+v, err = %v, want a read error", check, err)
 	}
 }

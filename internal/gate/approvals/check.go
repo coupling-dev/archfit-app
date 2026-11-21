@@ -12,26 +12,47 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
-// OnboardingCheck returns the owner's verdict only while the exact onboarding
-// approval still applies. It does not turn an engine report into a verified pass.
-// Publication calls it inside the head lease, including for reruns and withdrawals.
-func (s *Service) OnboardingCheck(ctx context.Context, r api.Repo, pull int, head string) (*api.CheckRun, error) {
+// OwnerCheck returns the owner's verdict on a pull request's head only while the exact approval still applies: a
+// first approval of an onboarding pull request, or a workflow approval of a head that also changes the approved
+// policy, such as the move to the Action of 0.9.0 and policy version 1 (beta plan task 5.3). Both pull requests change
+// what the engine judges with, so no engine run decides them; a workflow approval of a head that keeps the approved
+// policy leaves the verdict to the engine. It does not turn an engine report into a verified pass. Publication calls
+// it inside the head lease, including for reruns and withdrawals.
+func (s *Service) OwnerCheck(ctx context.Context, r api.Repo, pull int, head string) (*api.CheckRun, error) {
 	if pull <= 0 || head == "" {
 		return nil, nil
 	}
-	c, err := s.Bind(ctx, r, Action{Kind: records.KindFirst, Pull: pull})
+	id, p, err := s.pullProposal(ctx, r, pull)
+	if err != nil || p.State != records.StateOpen || p.PullRequest != pull {
+		return nil, err
+	}
+	var kind string
+	switch p.Kind {
+	case records.ProposalFirst:
+		kind = records.KindFirst
+	case records.ProposalWorkflow:
+		kind = records.KindWorkflow
+	default:
+		return nil, nil
+	}
+	c, err := s.Bind(ctx, r, Action{Kind: kind, Pull: pull})
 	if errors.Is(err, ErrNotDue) || errors.Is(err, ErrNotApprovable) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if c.HeadSHA != head {
+	if c.HeadSHA != head || !matchesApproval(p, c) {
 		return nil, nil
 	}
-	id, p, err := s.pullProposal(ctx, r, pull)
-	if err != nil || p.Kind != records.ProposalFirst || p.PullRequest != pull || !matchesApproval(p, c) {
-		return nil, err
+	if kind == records.KindWorkflow {
+		var repo records.Repo
+		if err := records.Load(ctx, s.store, tenant(r), records.RepoKey(r.FullName), &repo); err != nil {
+			return nil, err
+		}
+		if c.Policy == repo.ApprovedDigest {
+			return nil, nil
+		}
 	}
 	for i := len(p.Approvals) - 1; i >= 0; i-- {
 		approvalID := p.Approvals[i]
@@ -43,7 +64,7 @@ func (s *Service) OnboardingCheck(ctx context.Context, r api.Repo, pull int, hea
 		if err := json.Unmarshal(a.Change, &bound); err != nil {
 			return nil, err
 		}
-		if a.State == records.StateOpen && a.Kind == records.KindFirst && a.Proposal == id && a.Login != "" && bound == c {
+		if a.State == records.StateOpen && a.Kind == kind && a.Proposal == id && a.Login != "" && bound == c {
 			check := approvalCheck(approvalID, c, a.Login)
 			return &check, nil
 		}
