@@ -7,6 +7,7 @@ import {
   answerKinds,
   balanceLine,
   balanceText,
+  surfaceLine,
   dependency,
   earlierLine,
   loosens,
@@ -267,5 +268,12 @@ describe('answerKinds', () => {
     expect(kinds({ surface, policy_version: 1 })).toEqual(['Declare as public', 'Declare as model', 'Allow until a date', 'Reject']);
     expect(kinds({ surface, policy_version: 3 })).toEqual(['Declare as public', 'Allow until a date', 'Reject']);
     expect(kinds({ surface: { ...surface, package: undefined }, policy_version: 1 })).toEqual(['Allow until a date', 'Reject']);
+  });
+});
+
+describe('surfaceLine', () => {
+  it('lists the public globs, then the model globs, or says none is declared', () => {
+    expect(surfaceLine({ public: ['pkg/util'], model: ['pkg/util/model'] })).toBe('pkg/util (public), pkg/util/model (model)');
+    expect(surfaceLine({ public: [], model: [] })).toBe('none declared');
   });
 });

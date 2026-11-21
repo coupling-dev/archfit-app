@@ -65,7 +65,7 @@ func writeDetails(b *strings.Builder, why, instead string, balance *Balance, to 
 		b.WriteString("  balance: " + BalanceText(*balance, to) + "\n")
 	}
 	if surface != nil {
-		b.WriteString("  surface: " + surfaceText(*surface) + "\n")
+		b.WriteString("  surface: " + SurfaceText(*surface) + "\n")
 	}
 	b.WriteString("  next: " + next.Text)
 	if next.Note != "" {
@@ -87,8 +87,9 @@ func BalanceText(b Balance, to string) string {
 // noSurface is the surface line of a module that declares no part another module may use.
 const noSurface = "none declared"
 
-// surfaceText lists the public globs, then the model globs, each with its role; "none declared" when both are empty.
-func surfaceText(s Surface) string {
+// SurfaceText is the surface as the record prints it after "surface: ": the public globs, then the model globs, each
+// with its role; "none declared" when both are empty.
+func SurfaceText(s Surface) string {
 	if len(s.Public)+len(s.Model) == 0 {
 		return noSurface
 	}

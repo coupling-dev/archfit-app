@@ -7,11 +7,11 @@
   import { explainLoad, repoAPI, type ApiError } from '../lib/api';
   import { firstJSON } from '../lib/early';
   import { repoPage, type Repo } from '../lib/route';
-  import { balanceLine, type Balance } from '../lib/request';
+  import { balanceLine, surfaceLine, type Balance } from '../lib/request';
 
   interface RecordLine {
     path?: string; line?: number; rule: string; what: string; why?: string; instead?: string;
-    balance?: Balance; subject?: string; next: { kind: string; text: string; note?: string }; show_next: boolean; request?: number;
+    balance?: Balance; subject?: string; surface?: { public: string[]; model: string[] }; next: { kind: string; text: string; note?: string }; show_next: boolean; request?: number;
   }
   interface PullPage {
     message?: string;
@@ -66,6 +66,7 @@
         {#if record.why}<p class="record-field">why: {record.why}</p>{/if}
         {#if record.instead}<p class="record-field">instead: {record.instead}</p>{/if}
         {#if record.balance}<p class="record-field">balance: {balanceLine(record.balance, record.subject)}</p>{/if}
+        {#if record.surface}<p class="record-field">surface: {surfaceLine(record.surface)}</p>{/if}
         {#if record.show_next}<p class="record-field">next: {@render linked(record.next.text)}{#if record.next.note} ({record.next.note}){/if}</p>{/if}
       </article>
     {/each}

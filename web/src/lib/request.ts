@@ -90,6 +90,13 @@ export function balanceLine(b: Balance, subject?: string): string {
   return b.strength && b.volatility && subject ? `${text}: ${b.strength}, ${subject} is ${b.volatility}` : text;
 }
 
+// surfaceLine is the declared surface of a module as the record prints it: the public globs, then the model globs,
+// each with its role, or "none declared".
+export function surfaceLine(s: { public: string[]; model: string[] }): string {
+  const parts = [...s.public.map((g) => `${g} (public)`), ...s.model.map((g) => `${g} (model)`)];
+  return parts.join(', ') || 'none declared';
+}
+
 // balanceText is the balance of a request, whose subject is the module it reaches, and says when the CLI reported it.
 export function balanceText(r: Pick<RequestView, 'balance' | 'verified' | 'to'>): string {
   if (!r.balance) return '';

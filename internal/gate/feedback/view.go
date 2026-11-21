@@ -280,6 +280,9 @@ func (r Record) markdown() string {
 	if r.Balance != nil {
 		b.WriteString("- balance: " + prose(result.BalanceText(*r.Balance, r.Subject)) + "\n")
 	}
+	if r.Surface != nil {
+		b.WriteString("- surface: " + prose(result.SurfaceText(*r.Surface)) + "\n")
+	}
 	if r.ShowNext {
 		next := r.Next
 		step := prose(next.Text)

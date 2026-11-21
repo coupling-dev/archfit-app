@@ -2,6 +2,7 @@ package feedback
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/coupling-dev/archfit-app/internal/wire/result"
@@ -59,5 +60,19 @@ func TestBuildingAPageDoesNotChangeTheResult(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Fatal("building a page changed the result")
+	}
+}
+
+// A use past the surface names that surface in the comment and on the page, as the record does (the surfaces design
+// 6.9). (No golden yet: "surface" is on the "Not used" list until engine task 3.3 is vendored.)
+func TestTheCommentAndThePageNameTheSurface(t *testing.T) {
+	r := engineResult(t, "graph")
+	r.Errors[0].Surface = &result.Surface{Public: []string{"pkg/util"}, Model: []string{"pkg/util/model"}}
+	r.Errors[0].Package = "pkg/util/retry"
+	if comment := newView(r).comment(maxBody); !strings.Contains(comment, "\n- surface: pkg/util (public), pkg/util/model (model)\n") {
+		t.Errorf("comment:\n%s", comment)
+	}
+	if page := BuildPage(r); page.Records[0].Surface == nil || page.Records[0].Surface.Model[0] != "pkg/util/model" {
+		t.Errorf("page record = %+v", page.Records[0])
 	}
 }
