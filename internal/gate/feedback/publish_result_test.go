@@ -34,7 +34,7 @@ func TestPublish4WritesTheGateCheckAndTheComment(t *testing.T) {
 	h.publish4(t, pub4(prTarget(headB), 7, 1, engineResult(t, "graph")))
 
 	run := h.checks.latest(t, headB, gateCheck)
-	if run.Status != statusCompleted || run.Conclusion != conclusionFailure || run.Title != "fail, 1 error" {
+	if run.Status != statusCompleted || run.Conclusion != conclusionFailure || run.Title != "❌ fail, 1 error" {
 		t.Errorf("check = %s %s %q", run.Status, run.Conclusion, run.Title)
 	}
 	if run.ExternalID != "v2:7:1:"+digest4 || run.DetailsURL != appURL+"/r/acme/shop/pull/7" || len(run.Annotations) != 1 {
@@ -154,10 +154,10 @@ func TestPublish4WaitingAfterACompletedRunIsANewRun(t *testing.T) {
 	if len(runs) != 2 {
 		t.Fatalf("%d runs, want 2", len(runs))
 	}
-	if latest := h.checks.latest(t, headB, gateCheck); latest.Status != statusInProgress || latest.Conclusion != "" || latest.Title != "waiting, request #431" {
+	if latest := h.checks.latest(t, headB, gateCheck); latest.Status != statusInProgress || latest.Conclusion != "" || latest.Title != "⏳ waiting, request #431" {
 		t.Errorf("latest = %s %q %q", latest.Status, latest.Conclusion, latest.Title)
 	}
-	mustContain(t, h.comments.all()[0].Body, "## Archfit: waiting, request #431\n")
+	mustContain(t, h.comments.all()[0].Body, "## ⏳ Archfit: waiting, request #431\n")
 }
 
 // A pending check (in_progress, no receipt, no annotation) is completed in place.
@@ -218,7 +218,7 @@ func TestPublish4UpdatesTheOneCommentOfThePullRequest(t *testing.T) {
 	}
 	h.publish4(t, pub4(prTarget(headB), 7, 1, engineResult(t, "pass")))
 	c := h.comments.all()
-	if len(c) != 1 || c[0].ID != old.ID || !strings.HasSuffix(c[0].Body, "\n## Archfit: pass\n") {
+	if len(c) != 1 || c[0].ID != old.ID || !strings.HasSuffix(c[0].Body, "\n## ✅ Archfit: pass\n") {
 		t.Errorf("comments %+v, want the one comment edited", c)
 	}
 }

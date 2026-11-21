@@ -27,12 +27,13 @@ type Publication4 struct {
 	Target      inputs.Target // Repo, PullRequest (0 for a push or a merge group) and HeadSHA
 	RunID       int64
 	RunAttempt  int
-	Digest      string // the payload digest of the upload
-	Advisory    bool   // the policy's gate is advisory: a fail shows as neutral, with the same records
-	Fresh       bool   // create a fresh check instead of updating a reusable one
-	StagedToken string // upload's pending marker, bound before publication
-	Generated   bool   // result is made by the App, not the uploaded engine
-	Source      string // upload, request, sweep, missing_upload or owner
+	Digest      string    // the payload digest of the upload
+	Advisory    bool      // the policy's gate is advisory: a fail shows as neutral, with the same records
+	Fresh       bool      // create a fresh check instead of updating a reusable one
+	StagedToken string    // upload's pending marker, bound before publication
+	Generated   bool      // result is made by the App, not the uploaded engine
+	Source      string    // upload, request, sweep, missing_upload or owner
+	OwnerPage   OwnerPage // the page where a person resolves the step this check waits for; zero when none
 	token       string
 	ownerCheck  *api.CheckRun // independently authorized owner verdict; Result remains the run diagnostics
 	Result      result.Result // Status is the status the App gave; the status line and the records are shown as given

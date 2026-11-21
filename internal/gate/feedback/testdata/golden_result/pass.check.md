@@ -1,6 +1,6 @@
 status: completed
 conclusion: success
-title: pass
+title: ✅ pass
 
 ```text
 archfit: pass

@@ -1,4 +1,4 @@
-## Archfit: fail, 1 error
+## ❌ Archfit: fail, 1 error
 
 `pkg/tc/netem.go:12` **graph** pkg_tc -> pkg_util is not an allowed dependency
 - why: a new dependency between modules needs an owner

@@ -124,7 +124,7 @@ func clean(t *testing.T, text string) {
 func (w *world4) wantWaiting(p *pull, title string) {
 	w.t.Helper()
 	c, ok := w.latestGate(p.head)
-	if !ok || c.Status != runInProgress || c.Title != title {
+	if !ok || c.Status != runInProgress || c.Title != "⏳ "+title {
 		w.t.Fatalf("latest gate on #%d = %+v, want in_progress %q", p.number, c, title)
 	}
 }
@@ -170,7 +170,7 @@ func TestARequestLineOpensAnIssueAndSetsWaiting(t *testing.T) {
 	}
 	clean(t, reply)
 	comment := w.gh.comments[pullKey(shopName, 7)][0].Body
-	if !strings.Contains(comment, "## Archfit: waiting, request #1000") || !strings.Contains(comment, "**Owner:** answer #1000.") {
+	if !strings.Contains(comment, "## ⏳ Archfit: waiting, request #1000") || !strings.Contains(comment, "**Owner:** answer #1000.") {
 		t.Errorf("check comment:\n%s", comment)
 	}
 	if rec, _ := w.pullRecord(p); rec.Status != "waiting" {

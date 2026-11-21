@@ -1,4 +1,4 @@
-## Archfit: fail, 1 error
+## ❌ Archfit: fail, 1 error
 
 `pkg_tc -> pkg_util` **graph** not an allowed dependency
 - balance: 9/10 (min 7): contract, pkg_util is low

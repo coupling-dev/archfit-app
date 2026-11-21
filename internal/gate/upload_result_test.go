@@ -191,7 +191,7 @@ func TestUpload4AcceptsAPullRequest(t *testing.T) {
 			if c.ExternalID != fmt.Sprintf("v2:%d:1:%s", p.runID, s.env.PayloadDigest) {
 				t.Errorf("external_id %q", c.ExternalID)
 			}
-			if comments := w.comments(p); len(comments) != 1 || !strings.Contains(comments[0].Body, "\n## Archfit: "+tc.status) {
+			if comments := w.comments(p); len(comments) != 1 || !strings.Contains(comments[0].Body, "\n## "+statusMark[tc.status]+" Archfit: "+tc.status) {
 				t.Errorf("comments = %+v", comments)
 			}
 			w.noStateCheck()
@@ -302,7 +302,7 @@ func TestUpload4GivesUnknown(t *testing.T) {
 				return
 			}
 			c := w.wantGate(p, "completed", "action_required")
-			if c.Title != "unknown, no verdict" || strings.Contains(w.feedbackText(p), "archfit: pass") {
+			if c.Title != "⚠️ unknown, no verdict" || strings.Contains(w.feedbackText(p), "archfit: pass") {
 				t.Errorf("check %q shows what the App did not accept:\n%s", c.Title, w.feedbackText(p))
 			}
 		})
@@ -556,6 +556,9 @@ func TestUpload4ReadsTheBalanceInputs(t *testing.T) {
 	}
 }
 
+// statusMark is the marker the comment heading starts with, by status.
+var statusMark = map[string]string{"pass": "✅", "fail": "❌", "waiting": "⏳", "unknown": "⚠️"}
+
 func TestUpload4PublishesTheResult(t *testing.T) {
 	t.Run("a fail in a required policy", func(t *testing.T) {
 		w := newWorld4(t)
@@ -564,11 +567,11 @@ func TestUpload4PublishesTheResult(t *testing.T) {
 		w.require(s)
 		w.wantStatus(w.send4(s), "fail", "")
 		c := w.wantGate(p, "completed", "failure")
-		if c.Title != "fail, 1 error" || len(c.Annotations) != 1 || c.Annotations[0].Path != "pkg/chaos/netem/netem.go" || c.Annotations[0].Line != 8 {
+		if c.Title != "❌ fail, 1 error" || len(c.Annotations) != 1 || c.Annotations[0].Path != "pkg/chaos/netem/netem.go" || c.Annotations[0].Line != 8 {
 			t.Errorf("check %q with annotations %+v", c.Title, c.Annotations)
 		}
 		body := w.comments(p)[0].Body
-		if !strings.Contains(body, "\n## Archfit: fail, 1 error\n") || !strings.HasSuffix(body, "**Author:** fix the code and push.\n") {
+		if !strings.Contains(body, "\n## ❌ Archfit: fail, 1 error\n") || !strings.HasSuffix(body, "**Author:** fix the code and push.\n") {
 			t.Errorf("comment:\n%s", body)
 		}
 		w.noStateCheck()
@@ -754,7 +757,7 @@ func TestUpload4SharedHead(t *testing.T) {
 		if c, _ := w.latestGate(p.head); c.Conclusion != "success" || !strings.HasPrefix(c.ExternalID, fmt.Sprintf("v2:%d:1:", q.runID)) {
 			t.Errorf("the older run overwrote the newer check: %+v", c)
 		}
-		if body := w.comments(p)[0].Body; !strings.Contains(body, fmt.Sprintf("run %d.2 -->", p.runID)) || !strings.Contains(body, "\n## Archfit: fail, 1 error\n") {
+		if body := w.comments(p)[0].Body; !strings.Contains(body, fmt.Sprintf("run %d.2 -->", p.runID)) || !strings.Contains(body, "\n## ❌ Archfit: fail, 1 error\n") {
 			t.Errorf("comment of #7:\n%s", body)
 		}
 		page, err := NewPullViews(pullSummaryGitHub{w.gh}, w.mem).PullPage(t.Context(), w.shop, p.number)
@@ -764,7 +767,7 @@ func TestUpload4SharedHead(t *testing.T) {
 		if page.View != nil || page.Message != "A newer check is shown for this commit." {
 			t.Fatalf("superseded page %+v", page)
 		}
-		if body := w.comments(q)[0].Body; !strings.HasSuffix(body, "\n## Archfit: pass\n") {
+		if body := w.comments(q)[0].Body; !strings.HasSuffix(body, "\n## ✅ Archfit: pass\n") {
 			t.Errorf("comment of #9:\n%s", body)
 		}
 	})

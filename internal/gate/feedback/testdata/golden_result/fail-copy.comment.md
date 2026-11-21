@@ -1,4 +1,4 @@
-## Archfit: fail, 1 error
+## ❌ Archfit: fail, 1 error
 
 `pkg/tc/interface.go:12` **duplication** this literal already lives in pkg/util/util.go:15
 - why: two copies must change together and nothing checks that they do

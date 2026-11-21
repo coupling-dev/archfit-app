@@ -223,6 +223,15 @@ The App accepts a `merge_group` upload and binds it to GitHub queue authority. R
 
 ## Owner actions
 
+On GitHub, a check that waits for a person says so and links straight to the page that resolves it. The check
+title reads `⏳ Waiting for an owner: <action>`, and the summary and the pull request comment start with
+`**Next:** [<action>](<page>) (owner, passkey)`; the comment is headed the same way and folds the records into **Details**. The check's **Details** link opens the same page. A branch behind the default branch is told to update the branch, with no owner link. The links are:
+**Review the workflow change** (`/owner/workflow?pull=<number>`), **Confirm the policy** (`/owner/confirm`, also the first
+line of the issue the App opens when the policy changed outside the flow, with a link to revert it) and **Approve the
+first policy** (`/owner/first`, with `?pull=<number>` for an onboarding pull request). Status markers are `✅` pass,
+`❌` fail, `⏳` waiting and `⚠️` unknown. The owner approval check says `✅ Owner approved this head (not an engine pass)`
+and keeps the fingerprints in a collapsed block.
+
 Each page is titled with its action, such as **Approve the first policy**, and names the repository and the pull request
 when there is one. It then shows the status, as `unknown — <why>`, and the files. The GitHub pull request and
 **View policy** links are secondary navigation. The button after the files (**Approve with passkey**, **Confirm with

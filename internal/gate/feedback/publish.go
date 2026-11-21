@@ -2,7 +2,6 @@ package feedback
 
 import (
 	"context"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -31,11 +30,10 @@ type publisher struct {
 
 // pullLink is the App's page of the target's pull request; "" without an App URL.
 func (s *publisher) pullLink(t inputs.Target) string {
-	if s.appURL == "" || t.PullRequest == 0 {
+	if t.PullRequest == 0 {
 		return ""
 	}
-	owner, name, _ := strings.Cut(t.Repo.FullName, "/")
-	return s.appURL + "/r/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/pull/" + strconv.Itoa(t.PullRequest)
+	return OwnerLink(s.appURL, t.Repo.FullName, "/pull/"+strconv.Itoa(t.PullRequest))
 }
 
 // latestRun returns the run with the highest ID. Two concurrent first publications may create two

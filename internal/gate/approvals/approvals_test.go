@@ -407,7 +407,7 @@ func TestADirectPushIsOutsideTheFlow(t *testing.T) {
 	if again.Issue != out.Issue || len(w.gh.openIssues()) != 1 {
 		t.Errorf("a second direct push opened issue %d, want the first %d only", again.Issue, out.Issue)
 	}
-	if notes := w.gh.comments[out.Issue]; len(notes) != 2 || !strings.Contains(notes[1], "changed again in c2") {
+	if notes := w.gh.comments[out.Issue]; len(notes) != 2 || !strings.Contains(notes[1], "changed again in `c2`") {
 		t.Errorf("notes %q, want one note naming c2", notes)
 	}
 }
@@ -563,13 +563,52 @@ func TestAFailedIssueIsOpenedOnTheRetry(t *testing.T) {
 	}
 }
 
+func TestTheOutsideFlowIssueStartsWithTheConfirmLink(t *testing.T) {
+	w := newWorld(t)
+	w.svc.WithAppURL("https://app.test")
+	w.approved(digestV(0))
+	w.gh.commit("c0", policyV(0))
+	w.gh.commit("c1", policyV(1))
+	out := w.push("c0", "c1")
+	issue := w.gh.comments[out.Issue][0]
+	confirm := "https://app.test/r/acme/shop/owner/confirm"
+	if !strings.Contains(issue, "\n**Next:** [Confirm the policy]("+confirm+") (owner, passkey)\n") {
+		t.Errorf("issue does not lead with the confirm link:\n%s", issue)
+	}
+	if !strings.Contains(issue, "[revert it](https://app.test/r/acme/shop/owner/revert)") || !strings.Contains(issue, "`c1`") {
+		t.Errorf("issue lacks the revert link or the commit:\n%s", issue)
+	}
+}
+
+func TestAnInvalidPolicyOutsideTheFlowLeadsWithTheRevert(t *testing.T) {
+	w := newWorld(t)
+	w.svc.WithAppURL("https://app.test")
+	w.approved(digestV(0))
+	w.gh.commit("c0", policyV(0))
+	w.gh.commit("c1", "not: [a policy")
+	out := w.push("c0", "c1")
+	issue := w.gh.comments[out.Issue][0]
+	if !strings.Contains(issue, "\n**Next:** [Revert the policy](https://app.test/r/acme/shop/owner/revert) (owner, passkey)\n") ||
+		strings.Contains(issue, "[Confirm the policy]") {
+		t.Errorf("issue must lead with the revert only:\n%s", issue)
+	}
+}
+
+func TestOutsideBodyListsOnlyRealLogins(t *testing.T) {
+	body := outsideBody(ownerPages{}, "main", "c1", []string{"olivia", "a`b\nc", "x|y", "ok-name"})
+	if !strings.Contains(body, ": `olivia`, `ok-name` |") {
+		t.Errorf("body:\n%s", body)
+	}
+}
+
 func TestTextsUseNoNotUsedWord(t *testing.T) {
 	for name, text := range map[string]string{
-		"title": outsideTitle, "body": outsideBody("main", "c1"), "changed again": changedAgainNote("c2"),
+		"title": outsideTitle, "body": outsideBody(ownerPages{confirm: "https://app.test/r/o/r/owner/confirm", revert: "https://app.test/r/o/r/owner/revert"}, "main", "c1", []string{"olivia"}), "changed again": changedAgainNote(ownerPages{}, "c2"),
 		"duplicate": duplicateNote(12), "merged other": mergedOtherNote(21), "reverted": revertedNote(40, "m3"),
 		"first title": firstTitle, "first body": firstBody("main", Change{Commit: "c0", Policy: "sha256:p"}, "olivia", "pk"),
 		"first pull":    approvedPullNote(Change{Kind: records.KindFirst, HeadSHA: "h1", Policy: "sha256:p"}, "olivia", "pk"),
 		"workflow pull": approvedPullNote(Change{Kind: records.KindWorkflow, HeadSHA: "h1"}, "olivia", "pk"),
+		"check":         approvalCheck("a1", Change{Pull: 12, HeadSHA: "h1"}, "olivia").Title + approvalCheck("a1", Change{Pull: 12, HeadSHA: "h1"}, "olivia").Summary,
 		"confirmed":     confirmedNote(Change{Commit: "c1", Policy: "sha256:x"}, "olivia", "pk"),
 	} {
 		if words := wording.NotUsedIn(text); len(words) > 0 {

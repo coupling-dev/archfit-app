@@ -1,6 +1,6 @@
 status: completed
 conclusion: failure
-title: fail, 1 error (not from this change)
+title: ❌ fail, 1 error (not from this change)
 
 ```text
 .archfit.yaml: exception: duplication pkg_tc -> pkg_util expired on 2026-11-19

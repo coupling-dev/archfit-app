@@ -1,6 +1,6 @@
 status: completed
 conclusion: neutral
-title: fail, 1 error
+title: ❌ fail, 1 error
 
 ```text
 pkg/chaos/netem/netem.go:8: no-chaos-to-runtime: pkg_chaos must not depend on pkg_runtime

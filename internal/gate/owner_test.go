@@ -206,6 +206,14 @@ func TestAWorkflowApprovalGivesItsHeadAVerdict(t *testing.T) {
 	s := w.spec4(p, "pass")
 	w.setFile(w.shop, s.claims.SHA, ingest.WorkflowPath, edited)
 	w.wantStatus(w.send4(s), "unknown", reasonWorkflowChanged)
+	approve := testAudience + "/r/acme/shop/owner/workflow?pull=7"
+	if c := w.wantGate(p, "completed", "action_required"); c.DetailsURL != approve ||
+		!strings.HasPrefix(c.Summary, "**Next:** [Review the workflow change]("+approve+") (owner, passkey)\n") {
+		t.Errorf("check details %q, summary:\n%s", c.DetailsURL, c.Summary)
+	}
+	if c := w.comment(p); !strings.Contains(c, "**Next:** [Review the workflow change]("+approve+") (owner, passkey)") {
+		t.Errorf("comment lacks the direct link:\n%s", c)
+	}
 
 	out, err := w.act(OwnerUser{ID: 501, Login: "olivia"}, OwnerAction{Kind: OwnerWorkflow, Pull: 7})
 	if err != nil {
@@ -215,6 +223,26 @@ func TestAWorkflowApprovalGivesItsHeadAVerdict(t *testing.T) {
 		t.Fatalf("check = %q, want a re-run", out.Check)
 	}
 	w.wantStatus(w.rerunUpload(p, s), "pass", "")
+}
+
+// A branch behind the default branch, which changed the workflow since the branch started, has nothing for an owner to
+// approve: the feedback says to update the branch and links no owner page.
+func TestABehindBranchIsToldToUpdateNotToReviewTheWorkflow(t *testing.T) {
+	w := newWorld4(t)
+	w.approvedAt(policy4, w.tip)
+	p := w.openPull(w.shop, 7)
+	old := workflow4(actionPinned, " # v4.0.0", "      - run: echo old\n")
+	mergeBase := w.gh.pulls[pullKey(shopName, 7)].MergeBaseSHA
+	w.setFile(w.shop, mergeBase, ingest.WorkflowPath, old)
+	w.setFile(w.shop, p.head, ingest.WorkflowPath, old)
+	s := w.spec4(p, "pass")
+	w.setFile(w.shop, s.claims.SHA, ingest.WorkflowPath, old)
+	w.wantStatus(w.send4(s), "unknown", reasonWorkflowBehind)
+	c := w.wantGate(p, "completed", "action_required")
+	if strings.Contains(c.Summary+w.comment(p), "/owner/") || c.DetailsURL != testAudience+"/r/acme/shop/pull/7" ||
+		!strings.Contains(c.Summary, "next: update the branch") {
+		t.Errorf("details %q, summary:\n%s\ncomment:\n%s", c.DetailsURL, c.Summary, w.comment(p))
+	}
 }
 
 // approvedAt records policy, at commit, as the approved policy of the shop.

@@ -1,6 +1,6 @@
 status: completed
 conclusion: action_required
-title: unknown, no verdict
+title: ⚠️ unknown, no verdict
 
 ```text
 .archfit.yaml: policy: differs from origin/main

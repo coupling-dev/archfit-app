@@ -58,11 +58,12 @@ func (s *Service) OwnerCheck(ctx context.Context, r api.Repo, pull int, head str
 func approvalCheck(id string, c Change, login string) api.CheckRun {
 	return api.CheckRun{
 		Name: proposals.GateCheck, HeadSHA: c.HeadSHA, ExternalID: "approval:" + id,
-		Status: "completed", Conclusion: "success", Title: "archfit: owner approved this head",
-		Summary: fmt.Sprintf("Owner `%s` approved these exact policy and workflow bytes at head `%s` for pull request #%d.\n\n"+
-			"Policy (`%s`): `%s`.\nWorkflow (`%s`): `%s`.\n\n"+
-			"This is an owner approval, not an engine pass. A new head needs a new approval.\n",
-			login, c.HeadSHA, c.Pull, PolicyPath, c.Policy, WorkflowPath, c.Workflow),
+		Status: "completed", Conclusion: "success", Title: "✅ Owner approved this head (not an engine pass)",
+		Summary: fmt.Sprintf("**Owner `%s` approved these exact files.** This is an owner approval, not an engine pass. "+
+			"A new head needs a new approval.\n\n"+
+			"| | |\n| --- | --- |\n| Pull request | #%d |\n| Head | `%s` |\n| Covers | `%s`, `%s` |\n\n"+
+			"<details><summary>Fingerprints</summary>\n\nPolicy: `%s`\n\nWorkflow: `%s`\n\n</details>\n",
+			login, c.Pull, c.HeadSHA, PolicyPath, WorkflowPath, c.Policy, c.Workflow),
 	}
 }
 
