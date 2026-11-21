@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/coupling-dev/archfit-app/internal/gate/ingest"
+	"github.com/coupling-dev/archfit-app/internal/github/api"
 	"github.com/coupling-dev/archfit-app/internal/wire/manifest"
 	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
@@ -115,28 +116,56 @@ func TestAMigrationPullRequestGoesGreenByTheOwnersApproval(t *testing.T) {
 	}
 }
 
-// TestAWorkflowApprovalOfAHeadThatKeepsThePolicyLeavesTheVerdictToTheEngine: only a head that changes the approved
-// policy takes the owner's approval as its check; a move to the Action's new home alone is judged by the engine.
-func TestAWorkflowApprovalOfAHeadThatKeepsThePolicyLeavesTheVerdictToTheEngine(t *testing.T) {
-	w := newWorld4(t)
-	w.setFile(w.shop, testBranch, policyPath, []byte(policy4Required))
-	w.setFile(w.shop, testBranch, ingest.WorkflowPath, actionWorkflow(manifest.LegacyActionRepository, actionPinned, " # v4.0.0"))
-	w.approvedAt(policy4Required, w.tip)
-	p := w.openPull(w.shop, 7)
-	moved := actionWorkflow(manifest.ActionRepository, actionBumped, " # v0.9.0")
-	w.setFile(w.shop, p.head, policyPath, []byte(policy4Required))
-	w.setFile(w.shop, p.head, ingest.WorkflowPath, moved)
-	s := w.spec4(p, "deny")
-	s.env.PolicyDigest = policy3.Digest([]byte(policy4Required))
-	s.result["policy"].(map[string]any)["digest"] = s.env.PolicyDigest
-	w.setFile(w.shop, s.claims.SHA, ingest.WorkflowPath, moved)
-	w.wantStatus(w.send4(s), "unknown", reasonWorkflowChanged)
+// TestAWorkflowApprovalOfAPullRequestThatKeepsThePolicyLeavesTheVerdictToTheEngine: only a pull request that changes
+// the policy from its base takes the owner's approval as its check. A move to the Action's new home alone is judged by
+// the engine, also when its head sits on an older policy than the approved one, or when the approved policy moves
+// after the approval; the approval writes no success of its own either.
+func TestAWorkflowApprovalOfAPullRequestThatKeepsThePolicyLeavesTheVerdictToTheEngine(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// head is the policy at the pull request's base and head; the default branch holds policy4Required, approved.
+		head string
+		// after runs once the owner approved.
+		after func(w *world4)
+	}{
+		{"the head keeps the approved policy", policy4Required, func(*world4) {}},
+		{"the head sits on an older policy", policy4, func(*world4) {}},
+		{"the approved policy moves after the approval", policy4Required, func(w *world4) {
+			w.setFile(w.shop, testBranch, policyPath, []byte(policy1Required))
+			w.approvedAt(policy1Required, w.tip)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld4(t)
+			w.setFile(w.shop, testBranch, policyPath, []byte(policy4Required))
+			w.setFile(w.shop, testBranch, ingest.WorkflowPath, actionWorkflow(manifest.LegacyActionRepository, actionPinned, " # v4.0.0"))
+			w.approvedAt(policy4Required, w.tip)
+			p := w.openPull(w.shop, 7)
+			if tc.head != policy4Required {
+				base := w.sha()
+				w.setFile(w.shop, base, policyPath, []byte(tc.head))
+				w.editPull(p, func(pl *api.Pull) { pl.BaseSHA = base })
+			}
+			moved := actionWorkflow(manifest.ActionRepository, actionBumped, " # v0.9.0")
+			w.setFile(w.shop, p.head, policyPath, []byte(tc.head))
+			w.setFile(w.shop, p.head, ingest.WorkflowPath, moved)
+			s := w.spec4(p, "deny")
+			s.env.PolicyDigest = policy3.Digest([]byte(policy4Required))
+			s.result["policy"].(map[string]any)["digest"] = s.env.PolicyDigest
+			w.setFile(w.shop, s.claims.SHA, ingest.WorkflowPath, moved)
+			w.wantStatus(w.send4(s), "unknown", reasonWorkflowChanged)
 
-	if _, err := w.act(OwnerUser{ID: 501, Login: "olivia"}, OwnerAction{Kind: OwnerWorkflow, Pull: 7}); err != nil {
-		t.Fatal(err)
-	}
-	w.wantStatus(w.rerunUpload(p, s), "fail", "")
-	if run, ok := w.latestGate(p.head); !ok || run.Conclusion != "failure" || strings.HasPrefix(run.ExternalID, "approval:") {
-		t.Errorf("archfit/gate = %+v, want the engine's failure", run)
+			if _, err := w.act(OwnerUser{ID: 501, Login: "olivia"}, OwnerAction{Kind: OwnerWorkflow, Pull: 7}); err != nil {
+				t.Fatal(err)
+			}
+			if run, _ := w.latestGate(p.head); strings.HasPrefix(run.ExternalID, "approval:") {
+				t.Fatalf("archfit/gate after the approval = %+v, want no owner verdict", run)
+			}
+			tc.after(w)
+			w.rerunUpload(p, s)
+			if run, ok := w.latestGate(p.head); !ok || run.Conclusion == "success" || strings.HasPrefix(run.ExternalID, "approval:") {
+				t.Errorf("archfit/gate = %+v, want the engine's verdict", run)
+			}
+		})
 	}
 }

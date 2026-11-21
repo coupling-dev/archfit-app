@@ -12,12 +12,11 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
-// OwnerCheck returns the owner's verdict on a pull request's head only while the exact approval still applies: a
-// first approval of an onboarding pull request, or a workflow approval of a head that also changes the approved
-// policy, such as the move to the Action of 0.9.0 and policy version 1 (beta plan task 5.3). Both pull requests change
-// what the engine judges with, so no engine run decides them; a workflow approval of a head that keeps the approved
-// policy leaves the verdict to the engine. It does not turn an engine report into a verified pass. Publication calls
-// it inside the head lease, including for reruns and withdrawals.
+// OwnerCheck returns the owner's verdict on a pull request's head (Change.OwnerVerdict) only while the exact approval
+// still applies: a first approval of an onboarding pull request, or a workflow approval of a pull request that also
+// changes the policy. A workflow approval of any other head leaves the verdict to the engine, decided from the stored
+// approval before any GitHub read. It does not turn an engine report into a verified pass. Publication calls it inside
+// the head lease, including for reruns and withdrawals.
 func (s *Service) OwnerCheck(ctx context.Context, r api.Repo, pull int, head string) (*api.CheckRun, error) {
 	if pull <= 0 || head == "" {
 		return nil, nil
@@ -35,6 +34,30 @@ func (s *Service) OwnerCheck(ctx context.Context, r api.Repo, pull int, head str
 	default:
 		return nil, nil
 	}
+	// The newest open approval of the proposal is the one bound to its head.
+	var (
+		approvalID string
+		a          records.Approval
+		bound      Change
+	)
+	for i := len(p.Approvals) - 1; i >= 0 && approvalID == ""; i-- {
+		var cur records.Approval
+		if err := records.Load(ctx, s.store, tenant(r), records.ApprovalKey(r.FullName, p.Approvals[i]), &cur); err != nil {
+			return nil, err
+		}
+		if cur.State == records.StateOpen && cur.Kind == kind && cur.Proposal == id && cur.Login != "" {
+			approvalID, a = p.Approvals[i], cur
+		}
+	}
+	if approvalID == "" {
+		return nil, nil
+	}
+	if err := json.Unmarshal(a.Change, &bound); err != nil {
+		return nil, err
+	}
+	if !bound.OwnerVerdict() || bound.HeadSHA != head {
+		return nil, nil
+	}
 	c, err := s.Bind(ctx, r, Action{Kind: kind, Pull: pull})
 	if errors.Is(err, ErrNotDue) || errors.Is(err, ErrNotApprovable) {
 		return nil, nil
@@ -42,34 +65,11 @@ func (s *Service) OwnerCheck(ctx context.Context, r api.Repo, pull int, head str
 	if err != nil {
 		return nil, err
 	}
-	if c.HeadSHA != head || !matchesApproval(p, c) {
+	if c != bound || !matchesApproval(p, c) {
 		return nil, nil
 	}
-	if kind == records.KindWorkflow {
-		var repo records.Repo
-		if err := records.Load(ctx, s.store, tenant(r), records.RepoKey(r.FullName), &repo); err != nil {
-			return nil, err
-		}
-		if c.Policy == repo.ApprovedDigest {
-			return nil, nil
-		}
-	}
-	for i := len(p.Approvals) - 1; i >= 0; i-- {
-		approvalID := p.Approvals[i]
-		var a records.Approval
-		if err := records.Load(ctx, s.store, tenant(r), records.ApprovalKey(r.FullName, approvalID), &a); err != nil {
-			return nil, err
-		}
-		var bound Change
-		if err := json.Unmarshal(a.Change, &bound); err != nil {
-			return nil, err
-		}
-		if a.State == records.StateOpen && a.Kind == kind && a.Proposal == id && a.Login != "" && bound == c {
-			check := approvalCheck(approvalID, c, a.Login)
-			return &check, nil
-		}
-	}
-	return nil, nil
+	check := approvalCheck(approvalID, c, a.Login)
+	return &check, nil
 }
 
 func approvalCheck(id string, c Change, login string) api.CheckRun {

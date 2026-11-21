@@ -97,19 +97,24 @@ direct push to the policy is the new rule with no owner's word.
   Owners are read from the policy at `Repo.ApprovedCommit`, never from the default branch: a policy changed outside the
   flow could name anyone.
 
-Pull-bound first and workflow actions also publish an owner-approval `archfit/gate` success on the exact
-`Change.HeadSHA` after recording, under feedback's head lease. The external ID is `approval:<id>`, never
+A pull-bound approval that is the head's verdict (`Change.OwnerVerdict`, below) also publishes an owner-approval
+`archfit/gate` success on the exact `Change.HeadSHA` after recording, under feedback's head lease. The external ID is `approval:<id>`, never
 `proposal:<id>`. A failed write is logged without undoing the approval. `Review` and `Act` refuse a second
 matching open approval with `ErrNotDue` before redeeming a passkey.
 
-`OwnerCheck` re-binds the pull request's open approval and checks its indexed open proposal and recorded approval
-against the current head and both file digests. It covers two kinds:
+`OwnerCheck` returns the check of the pull request's newest open approval when that approval is the head's verdict
+(`Change.OwnerVerdict`), after it re-binds the approval and checks its indexed open proposal and recorded approval
+against the current head and the file digests. Two kinds are the head's verdict:
 
 - a first approval of an onboarding pull request; it returns no check after activation or outside the flow;
-- a workflow approval of a head whose policy is not the approved one. The pull request that moves an onboarded
-  repository to engine 0.9.0 is one (beta plan task 5.3): it changes the policy to version 1 and the workflow to the
-  Action's new home, and engine 0.9.0 gives unknown while the target branch holds version 3 or 2. A workflow approval
-  of a head that keeps the approved policy returns no check: the engine judges it.
+- a workflow approval of a pull request that also changes the policy: the head's policy differs from the policy at
+  the pull request's base commit (`Change.Base`), the base the owner's review page shows the policy diff from. The pull
+  request that moves an onboarded repository to engine 0.9.0 is one (beta plan task 5.3): it changes the policy to
+  version 1 and the workflow to the Action's new home, and engine 0.9.0 gives unknown while the target branch holds
+  version 3 or 2. Any other workflow approval returns no check, decided from the stored approval before any GitHub
+  read: the engine judges that head, also when it sits on an older policy than the approved one, or when the approved
+  policy moves after the approval. A moved base whose policy changed re-binds to another `Change`, so the approval
+  stops applying.
 
 It returns no check after a head change, or for a closed/fork/retargeted pull. The shared feedback publisher consults
 it inside the head lease, so a later upload, rerun or withdrawal cannot replace a matching owner approval with an

@@ -59,7 +59,8 @@ type Publisher4 interface {
 type OwnerCheck func(context.Context, api.Repo, int, string) (*api.CheckRun, error)
 
 // New4 serializes publication through a per-head Store lease. appURL links feedback to the App's pull page.
-// ownerCheck, when non-nil, resolves an onboarding approval before publishing any run's check.
+// ownerCheck, when non-nil, resolves an owner's approval that is the head's verdict (gate/approvals) before publishing
+// any run's check.
 func New4(checks api.Checks, comments api.Comments, pulls api.Pulls, s store.Store, appURL string, now func() time.Time, ownerCheck OwnerCheck) Publisher4 {
 	return &serialized{
 		next:       &publisher{checks: checks, comments: comments, pulls: pulls, appURL: appURL, now: now},

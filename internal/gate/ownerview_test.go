@@ -108,23 +108,37 @@ func TestOwnerViewsFailClosed(t *testing.T) {
 }
 
 func TestOwnerViewDigestIncludesAnUnchangedActionWithAMovedBase(t *testing.T) {
-	w := ownerViewWorld(t, OwnerWorkflow, 7)
-	a := OwnerAction{Kind: OwnerWorkflow, Pull: 7}
-	v, err := w.gate.OwnerView(t.Context(), Target{Repo: w.shop}, a)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pl := w.gh.pulls[pullKey(shopName, 7)]
-	next := w.sha()
-	w.setFile(w.shop, next, policyPath, []byte(policy4+"# base moved"))
-	pl.BaseSHA = next
-	w.gh.pulls[pullKey(shopName, 7)] = pl
-	moved, err := w.gate.OwnerView(t.Context(), Target{Repo: w.shop}, a)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if moved.ActionDigest != v.ActionDigest || moved.Digest == v.Digest {
-		t.Fatal("base movement was not separately bound")
+	// A workflow approval binds the policy at the base, which decides whether the pull request changes the policy
+	// (approvals.Change.OwnerVerdict); any other base move leaves the action as it was.
+	for _, tc := range []struct {
+		name        string
+		basePolicy  string
+		actionMoves bool
+	}{
+		{"the base moved, its policy did not", policy4, false},
+		{"the base's policy changed", policy4 + "# base moved", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := ownerViewWorld(t, OwnerWorkflow, 7)
+			a := OwnerAction{Kind: OwnerWorkflow, Pull: 7}
+			v, err := w.gate.OwnerView(t.Context(), Target{Repo: w.shop}, a)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pl := w.gh.pulls[pullKey(shopName, 7)]
+			next := w.sha()
+			w.setFile(w.shop, next, policyPath, []byte(tc.basePolicy))
+			pl.BaseSHA = next
+			w.gh.pulls[pullKey(shopName, 7)] = pl
+			moved, err := w.gate.OwnerView(t.Context(), Target{Repo: w.shop}, a)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (moved.ActionDigest != v.ActionDigest) != tc.actionMoves || moved.Digest == v.Digest {
+				t.Fatalf("action digest moved = %v, want %v; view digest moved = %v, want true",
+					moved.ActionDigest != v.ActionDigest, tc.actionMoves, moved.Digest != v.Digest)
+			}
+		})
 	}
 }
 

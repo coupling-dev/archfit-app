@@ -63,6 +63,18 @@ type Change struct {
 	Commit   string `json:"commit,omitempty"`   // the default branch's tip, when there is no pull request
 	Policy   string `json:"policy"`             // the policy digest at HeadSHA or Commit
 	Workflow string `json:"workflow,omitempty"` // the workflow digest at HeadSHA
+	// Base is the policy digest at the pull request's base commit, for a workflow approval: what the pull request
+	// changes the policy from, as the owner's review page shows it. "" when the base has no policy.
+	Base string `json:"base,omitempty"`
+}
+
+// OwnerVerdict reports whether the approval of c is the archfit/gate verdict of its head: a first approval, or a
+// workflow approval of a pull request that also changes the policy, such as the move to engine 0.9.0 and policy
+// version 1 (beta plan task 5.3). Both change what the engine judges with. Any other workflow approval leaves the
+// verdict to the engine: a head that merely sits on an older policy, or one whose approved policy moved since, is not a
+// policy change.
+func (c Change) OwnerVerdict() bool {
+	return c.Pull > 0 && (c.Kind == records.KindFirst || c.Kind == records.KindWorkflow && c.Policy != c.Base)
 }
 
 // Digest is "sha256:" and the hex SHA-256 of the change's JSON.
@@ -131,21 +143,24 @@ func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action) (Change, e
 		return Change{}, fmt.Errorf("%w: no pull request #%d", ErrNotApprovable, a.Pull)
 	case pullErr != nil:
 		return Change{}, fmt.Errorf("approvals: read pull request %d: %w", a.Pull, pullErr)
-	case pull.State != "open" || pull.BaseRef != r.DefaultBranch || !strings.EqualFold(pull.HeadRepo, r.FullName) || pull.HeadSHA == "":
+	case pull.State != "open" || pull.BaseRef != r.DefaultBranch || !strings.EqualFold(pull.HeadRepo, r.FullName) || pull.HeadSHA == "" ||
+		a.Kind == records.KindWorkflow && pull.BaseSHA == "":
 		return Change{}, fmt.Errorf("%w: #%d is not an open pull request of this repository into %s", ErrNotApprovable,
 			a.Pull, r.DefaultBranch)
 	case tipErr != nil:
 		return Change{}, fmt.Errorf("approvals: read the default branch head: %w", tipErr)
 	}
 	var (
-		head, run, target, current             []byte
-		headErr, runErr, targetErr, currentErr error
-		second                                 sync.WaitGroup
+		head, run, target, current, base                []byte
+		headErr, runErr, targetErr, currentErr, baseErr error
+		second                                          sync.WaitGroup
 	)
 	second.Go(func() { head, headErr = s.fileAt(ctx, ref, pull.HeadSHA, PolicyPath) })
 	second.Go(func() { run, runErr = s.fileAt(ctx, ref, pull.HeadSHA, WorkflowPath) })
 	if a.Kind == records.KindWorkflow {
 		second.Go(func() { target, targetErr = s.fileAt(ctx, ref, tip, WorkflowPath) })
+		// The base the owner's review page shows the policy change from (gate, ownerview.go).
+		second.Go(func() { base, baseErr = s.fileAt(ctx, ref, pull.BaseSHA, PolicyPath) })
 	} else {
 		// An onboarding pull request brings the first valid policy: a default branch that has one already is
 		// approved as it is (bindTip).
@@ -171,6 +186,9 @@ func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action) (Change, e
 		if target != nil && records.FileDigest(target) == records.FileDigest(run) {
 			return Change{}, fmt.Errorf("%w: the pull request does not change %s", ErrNotApprovable, WorkflowPath)
 		}
+		if baseErr != nil {
+			return Change{}, baseErr
+		}
 	} else {
 		if currentErr != nil {
 			return Change{}, currentErr
@@ -179,8 +197,12 @@ func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action) (Change, e
 			return Change{}, fmt.Errorf("%w: %s has a valid policy; approve it as it is", ErrNotApprovable, r.DefaultBranch)
 		}
 	}
-	return Change{Kind: a.Kind, Pull: a.Pull, HeadSHA: pull.HeadSHA, Policy: policy3.Digest(head),
-		Workflow: records.FileDigest(run)}, nil
+	c := Change{Kind: a.Kind, Pull: a.Pull, HeadSHA: pull.HeadSHA, Policy: policy3.Digest(head),
+		Workflow: records.FileDigest(run)}
+	if a.Kind == records.KindWorkflow && base != nil {
+		c.Base = policy3.Digest(base)
+	}
+	return c, nil
 }
 
 // bindTip binds a first approval of the policy on the default branch, or a confirm, to the default branch's tip. A
@@ -259,7 +281,7 @@ func (s *Service) Act(ctx context.Context, r api.Repo, in Input) (Done, error) {
 	if done.Issue, err = s.record(ctx, r, done.Approval, a, c); err != nil {
 		return Done{}, err
 	}
-	if c.Pull > 0 {
+	if c.OwnerVerdict() {
 		s.checkApproved(ctx, r, done, in.Owner.Login)
 	}
 	if c.Kind == records.KindConfirm {
