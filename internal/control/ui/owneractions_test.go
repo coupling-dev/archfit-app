@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -73,6 +74,21 @@ func TestOwnerActionsCountsARepositoryItCouldNotRead(t *testing.T) {
 
 	if len(got.Actions) != 0 || got.Unread != 1 {
 		t.Fatalf("an unread repository is not an empty one: %+v", got)
+	}
+}
+
+func TestOwnerActionsSaysWhenItReadsOnlyTheFirstRepositories(t *testing.T) {
+	e := newHomeEnv(t, homePolicy)
+	for i := maxOverviewRepos; i >= 0; i-- {
+		name := fmt.Sprintf("acme/repo-%03d", i)
+		e.addRepo(name, installA, int64(100+i))
+		e.grant("alice", name, permRead)
+	}
+
+	got := decodeAs[ownerActionsBody](t, e.signIn("alice").get(ownerActionsAPI))
+
+	if !got.Truncated {
+		t.Fatalf("101 repositories are read as complete: %+v", got)
 	}
 }
 

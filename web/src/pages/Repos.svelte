@@ -82,12 +82,15 @@
       {/each}
     </section>
   {/if}
-  {#if ownerFailed || owner?.unread || owner?.truncated}
+  {#if ownerFailed}
+    <p class="muted small" role="status">The App could not read the steps that wait for an owner.</p>
+  {:else if owner?.unread}
     <p class="muted small" role="status">
-      {#if ownerFailed}The App could not read the steps that wait for an owner.
-      {:else if owner?.unread}The App could not read the owner steps of {owner.unread} {owner.unread === 1 ? 'repository' : 'repositories'}.
-      {:else}Owner steps are shown for the first repositories by name only.{/if}
+      The App could not read the owner steps of {owner.unread} {owner.unread === 1 ? 'repository' : 'repositories'}.
     </p>
+  {/if}
+  {#if owner?.truncated}
+    <p class="muted small" role="status">Owner steps are shown for the first repositories by name only.</p>
   {/if}
   <div class="box repo-list" aria-busy={probing}>
     <table class="data">

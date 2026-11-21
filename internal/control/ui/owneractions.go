@@ -39,11 +39,11 @@ func (s *server) apiOwnerActions(r *http.Request, sc scope) (any, error) {
 		return nil, err
 	}
 	sort.Slice(repos, func(i, j int) bool { return repos[i].FullName < repos[j].FullName })
-	if len(repos) > maxOverviewRepos {
+	body := ownerActionsBody{Actions: []ownerActionRow{}, Truncated: len(repos) > maxOverviewRepos}
+	if body.Truncated {
 		repos = repos[:maxOverviewRepos]
 	}
 	admitted := s.admittedSet(ctx, repos)
-	body := ownerActionsBody{Actions: []ownerActionRow{}}
 	read := make([]api.Repo, 0, len(repos))
 	for _, repo := range repos {
 		if admitted[repo.InstallationID] {
