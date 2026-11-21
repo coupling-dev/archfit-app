@@ -1,5 +1,5 @@
 repository: github.com/coupling-dev/archfit
-commit: 954c72c8c024e67abee3507d4bd4524dbbae2b75
+commit: 78f388f8a405f902ac53a8ec2bc1401ea1b0c9a0
 from: archfit.result.schema.json <- archfit.result.schema.json
 from: result/ <- internal/model/result/testdata/
 from: record/ <- internal/output/record/testdata/
@@ -15,9 +15,10 @@ d6fda035b3c4ce6a9eef3eb310e2f24cc6b7a8c7137babb74a1822f85dec9ddd  result/reposit
 a552a59825a22bc5c8c9e089ca6af2a41d8c13dcf12a7373b32827986c54eb1b  result/repository_drift.json
 05b2fcc0fcceee4fc953e4906039077e562caae9d6a4c57e349f62cccaea35e5  result/repository_expired.json
 0d34dfa7654c8b2ffeacc48fbdcff7ac9e0237fb00d13eb03c84163d7dfc15a6  result/waiting.json
+cf26a290bcbe2a538360cc75a9cc705b758d11b7ba713ab9d41243d92b8bc0b1  record/coupling.txt
 130694404ad4c59b678659bd0dd5b43bf4d9152b97af6cd0305e87284d62f4bb  record/deny.txt
 3e354a63223c1aa5b288a3d7ec3608ef6023978cac8c265b2d44da6c49015dd3  record/duplication.txt
 5d984a61ca57a04b2d00bedb29a58e9a6085d08277e17d4f14e7347a2927bebc  record/expired_exception.txt
-38cd0f6e42352f8f5c81a1e3a048f813c081c3a6023ca1d551a3ae927a31e6d1  record/graph.txt
+44e0e3fb13c2c4fe18e3271ba34acb29edea4e2f13f7a74a6ebafbe20742921e  record/graph.txt
 d29e388467a0862d165d2148f52f5306a1557f44dc25fdec5f49205a263b4c89  record/pass.txt
 70612c4c7df3b073715101ac68bcd12babce34d7b1e60362b27e3b6c11a9fe6a  record/policy_differs.txt
