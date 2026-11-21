@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/coupling-dev/archfit-app/internal/gate/approvals"
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
@@ -40,6 +41,7 @@ type HomeState struct {
 	DriftIssue              int
 	ExceptionIssues         map[HomeException]int
 	WorkflowPulls           []int
+	WorkflowUpdated         map[int]time.Time // when each pull request of WorkflowPulls last changed on GitHub
 	Touched                 []HomeError
 }
 
@@ -173,6 +175,7 @@ func (h *homeViews) read(ctx context.Context, r api.Repo) (HomeState, error) {
 		approved                   map[int]string
 		approvedErr                error
 		workflowPulls              []int
+		workflowUpdated            map[int]time.Time
 		workflowErr                error
 		repoDone, tipDone          = make(chan struct{}), make(chan struct{})
 		workflowDone, proposalDone = make(chan struct{}), make(chan struct{})
@@ -229,6 +232,10 @@ func (h *homeViews) read(ctx context.Context, r api.Repo) (HomeState, error) {
 			return
 		}
 		workflowPulls, workflowErr = h.workflowListed(ctx, r, current, candidates, heads)
+		workflowUpdated = map[int]time.Time{}
+		for _, p := range candidates {
+			workflowUpdated[p.Number] = p.UpdatedAt
+		}
 	})
 	stages.Wait()
 
@@ -303,7 +310,7 @@ func (h *homeViews) read(ctx context.Context, r api.Repo) (HomeState, error) {
 		}
 	}
 	if rec.ApprovedDigest != "" && !out.OutsideFlow {
-		out.WorkflowPulls = workflowPulls
+		out.WorkflowPulls, out.WorkflowUpdated = workflowPulls, workflowUpdated
 	}
 	return out, nil
 }

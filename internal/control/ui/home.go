@@ -45,6 +45,7 @@ type homeNeedJSON struct {
 	Expires  string `json:"expires,omitempty"`
 	DaysLeft *int   `json:"days_left,omitempty"`
 	Record   string `json:"record,omitempty"`
+	Since    string `json:"since,omitempty"` // RFC 3339; when an owner step last changed, so the page can say how long it waits
 }
 type homeMapJSON struct {
 	Layers  []string         `json:"layers"`
@@ -162,11 +163,14 @@ func homeBody(view gate.HomeState, setup setupJSON, shown *setupJSON, repo strin
 	}
 	// The state is the first that holds, in the order of how much it matters to a pull request.
 	outside := view.OutsideFlow || setup.State == "outside_flow"
-	if outside {
-		if view.PolicyAvailable {
-			out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "confirm", Text: "Confirm the policy changed outside the flow.", Href: base + "/owner/confirm"})
+	view.OutsideFlow = outside
+	// The owner's steps come first: they are the ones nobody else can take.
+	for _, a := range view.OwnerActions() {
+		need := homeNeedJSON{Kind: a.Kind, Text: ownerNeedText(a), Href: base + a.Path, Pull: a.Pull}
+		if !a.Since.IsZero() {
+			need.Since = a.Since.UTC().Format(time.RFC3339)
 		}
-		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "revert", Text: "Revert the policy changed outside the flow.", Href: base + "/owner/revert"})
+		out.NeedsYou = append(out.NeedsYou, need)
 	}
 	var waits []string
 	if n := len(view.Requests); n > 0 {
@@ -203,10 +207,6 @@ func homeBody(view gate.HomeState, setup setupJSON, shown *setupJSON, repo strin
 	if drift {
 		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "drift", Text: "Drift on the default branch.", Href: issueHref(view.DriftIssue)})
 	}
-	for _, pull := range view.WorkflowPulls {
-		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "workflow", Text: fmt.Sprintf("Workflow change in pull request #%d waits for an owner.", pull),
-			Pull: pull})
-	}
 	if n := len(view.WorkflowPulls); n > 0 {
 		if n == 1 {
 			waits = append(waits, "1 workflow change waits.")
@@ -239,6 +239,17 @@ func homeBody(view gate.HomeState, setup setupJSON, shown *setupJSON, repo strin
 		out.Status += " Nothing needs you."
 	}
 	return out
+}
+
+// ownerNeedText is the row of an owner step, as Home words it before a review replaces it.
+func ownerNeedText(a gate.PendingOwnerAction) string {
+	switch a.Kind {
+	case gate.OwnerConfirm:
+		return "Confirm the policy changed outside the flow."
+	case gate.OwnerRevert:
+		return "Revert the policy changed outside the flow."
+	}
+	return fmt.Sprintf("Workflow change in pull request #%d waits for an owner.", a.Pull)
 }
 
 func homeExceptionStatus(left int) string {
