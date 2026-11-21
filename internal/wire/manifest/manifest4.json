@@ -10,6 +10,16 @@
       "action_commits": [
         "9669571b7b25e3f37fd7f1d99d7b89741c6c95d6"
       ]
+    },
+    {
+      "engine_version": "v0.9.0",
+      "images": {
+        "linux/amd64": "sha256:e841f7b519e5d4a787407887f784f121dff9801c25d0bc892695d783d7805db4",
+        "linux/arm64": "sha256:3e8739e40375e711f3cecd2d44f2dad60b05b94602479d0aff5a598e1adeed9f"
+      },
+      "action_commits": [
+        "53e0c49d80627efa4262d7ee78c56dd6054a6e43"
+      ]
     }
   ]
 }

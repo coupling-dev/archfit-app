@@ -31,30 +31,52 @@ func engineDoc(t *testing.T, version int, engines []row) []byte {
 	return data
 }
 
+// TestEmbeddedManifest4PinsRelease: until task 6.5 the App approves engine v4.0.0, which the onboarded repositories run,
+// and engine 0.9.0 beside it. Each was read from its source: the image index's per-platform manifests and the Action's
+// release tag.
 func TestEmbeddedManifest4PinsRelease(t *testing.T) {
 	table, err := parseEngines(manifest4JSON)
 	if err != nil {
 		t.Fatalf("embedded manifest4.json: %v", err)
 	}
-	want := []Identity{
-		{EngineVersion: "v4.0.0", Platform: platformAMD64, ImageDigest: "sha256:be1eac8f73513c6d0ef4ff17a78255629e4e4bc2d1b3e044b49afcbfdd6aac29"},
-		{EngineVersion: "v4.0.0", Platform: platformARM64, ImageDigest: "sha256:3ac782cb5acd177ab1225ce5f68d8b77acea71d0a0cf724c8ecd429cc180fbff"},
+	releases := []struct {
+		version, amd64, arm64, index, action string
+	}{
+		{"v4.0.0",
+			"sha256:be1eac8f73513c6d0ef4ff17a78255629e4e4bc2d1b3e044b49afcbfdd6aac29",
+			"sha256:3ac782cb5acd177ab1225ce5f68d8b77acea71d0a0cf724c8ecd429cc180fbff",
+			"sha256:8ad49e766ce3e486104077df213f2badc6ed0f66d7fe88ae377efaf6a918ccd2",
+			"9669571b7b25e3f37fd7f1d99d7b89741c6c95d6"},
+		{"v0.9.0",
+			"sha256:e841f7b519e5d4a787407887f784f121dff9801c25d0bc892695d783d7805db4",
+			"sha256:3e8739e40375e711f3cecd2d44f2dad60b05b94602479d0aff5a598e1adeed9f",
+			"sha256:adf05068581dce841246876dec766d931483134344439beaf12a038c213d32c0",
+			"53e0c49d80627efa4262d7ee78c56dd6054a6e43"},
 	}
-	if len(table.identities) != len(want) || len(table.actions) != 1 {
-		t.Errorf("manifest approves %d identities and %d Action commits, want 2 and 1", len(table.identities), len(table.actions))
+	if len(table.identities) != 2*len(releases) || len(table.actions) != len(releases) {
+		t.Errorf("manifest approves %d identities and %d Action commits, want %d and %d",
+			len(table.identities), len(table.actions), 2*len(releases), len(releases))
 	}
-	for _, id := range want {
-		if !table.identities[id] || !EngineApproved(id) {
-			t.Errorf("release identity not approved: %+v", id)
-		}
-	}
-	const action = "9669571b7b25e3f37fd7f1d99d7b89741c6c95d6"
-	if !table.actions[action] || !ActionApproved(action) {
-		t.Error("release Action commit not approved")
-	}
-	index := Identity{EngineVersion: "v4.0.0", Platform: platformAMD64, ImageDigest: "sha256:8ad49e766ce3e486104077df213f2badc6ed0f66d7fe88ae377efaf6a918ccd2"}
-	if EngineApproved(index) {
-		t.Error("image index digest must not be approved as a platform digest")
+	for _, r := range releases {
+		t.Run(r.version, func(t *testing.T) {
+			for platform, digest := range map[string]string{platformAMD64: r.amd64, platformARM64: r.arm64} {
+				if id := (Identity{EngineVersion: r.version, Platform: platform, ImageDigest: digest}); !EngineApproved(id) {
+					t.Errorf("release identity not approved: %+v", id)
+				}
+			}
+			if !ActionApproved(r.action) {
+				t.Errorf("release Action commit %s not approved", r.action)
+			}
+			if index := (Identity{EngineVersion: r.version, Platform: platformAMD64, ImageDigest: r.index}); EngineApproved(index) {
+				t.Error("image index digest must not be approved as a platform digest")
+			}
+			// One release's digest under the other release's version is no identity the manifest lists.
+			for _, other := range releases {
+				if other.version != r.version && EngineApproved(Identity{EngineVersion: other.version, Platform: platformAMD64, ImageDigest: r.amd64}) {
+					t.Errorf("%s's image approved as engine %s", r.version, other.version)
+				}
+			}
+		})
 	}
 }
 
