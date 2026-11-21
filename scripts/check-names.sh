@@ -5,17 +5,15 @@
 # Listed vendored paths come from the pinned engine/Action. The engine v4.0.0
 # result corpus, the version 3 policy corpus and the tests that pin them name
 # the old home until task 6.5 deletes them (internal/wire/result/module.md).
-# Runtime references to approved v4 Action/engine move with manifest in 5.3,
-# both repositories accepted during epic 6.
+# engine_manifest.go names the Action's old home, which the App accepts beside
+# the new one until task 6.5 (internal/wire/result/module.md).
 # Workflow parser tests retain the v4 Action contract.
 set -eu
 pattern='alexei-led/(archfit|homebrew-tap|tap/archfit)|ghcr\.io/alexei-led|archfit(-app)?/v[0-9]+\b'
 if git grep -n -I -E "$pattern" -- \
   ':!docs/archive/**' ':!docs/plans/**' ':!docs/reviews/**' ':!scripts/check-names.sh' \
-  ':!internal/control/onboarding/templates/archfit.yaml.tmpl' \
   ':!internal/wire/manifest/engine_manifest.go' \
   ':!internal/wire/workflow/workflow_test.go' \
-  ':!web/src/components/Setup.svelte' \
   ':!internal/wire/result/vendor_test.go' \
   ':!internal/wire/policy3/source_test.go' \
   ':!internal/wire/policy3/testdata/v3/SCHEMA_SOURCE' \

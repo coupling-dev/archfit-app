@@ -57,7 +57,9 @@ surface answers. Which engines may upload at all is the manifest's decision (`wi
 - in `wire/request`, the `balance:` line without inputs (`issue.go`);
 - in `wire/policy3`, the reading of version 3 (`Version3`, `testdata/v3/`, the `model` refusal of a version 3 file)
   and the refusal of `declare-model` on a version 3 policy;
-- the `scripts/check-names.sh` exclusions of these v4.0.0 and v3 files.
+- the Action's old home: `manifest.LegacyActionRepository` and `ActionRepositories` (the gate's `actionUse` and the
+  onboarding `actionRef` then read `ActionRepository` alone);
+- the `scripts/check-names.sh` exclusions of these v4.0.0 and v3 files and of `engine_manifest.go`.
 
 ## Encapsulated Knowledge
 
