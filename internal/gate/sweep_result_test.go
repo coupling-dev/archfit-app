@@ -143,7 +143,7 @@ func TestSweepNeverRefreshesAnUnverifiableWaitingResult(t *testing.T) {
 				w.wantSweepGate(p, "in_progress", "")
 			} else {
 				w.wantSweepGate(p, "completed", "action_required")
-				if strings.Contains(w.comment(p), "## Archfit: pass") {
+				if strings.Contains(w.comment(p), "## ✅ Archfit: pass") {
 					t.Error("unverifiable artifact passed")
 				}
 			}

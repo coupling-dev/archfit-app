@@ -1,6 +1,6 @@
 status: completed
 conclusion: failure
-title: fail, 1 error
+title: ❌ fail, 1 error
 
 ```text
 pkg/tc/interface.go:12: duplication: this literal already lives in pkg/util/util.go:15

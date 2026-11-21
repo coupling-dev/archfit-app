@@ -593,6 +593,32 @@ func (d decision4) shown(r *result.Result) result.Result {
 	return s
 }
 
+// The owner pages (docs/user-guide.md, "Owner actions") that resolve a reason, by its action name.
+const (
+	labelConfirm  = "Confirm the policy"
+	labelWorkflow = "Review the workflow change"
+	labelFirst    = "Approve the first policy"
+)
+
+// ownerPage is the App page that resolves the first reason that waits for a person, or none. A reason that only
+// waits for the check to run again, or asks the author to push, has no page.
+func (d decision4) ownerPage(b ingest.Binding4) feedback.OwnerPage {
+	pull := strconv.Itoa(b.PullRequest)
+	for _, r := range d.Reasons {
+		switch {
+		case r.Code == reasonOutsideFlow:
+			return feedback.OwnerPage{Label: labelConfirm, Path: "/owner/confirm", Role: "owner"}
+		case r.Code == reasonWorkflowChanged && b.PullRequest > 0:
+			return feedback.OwnerPage{Label: labelWorkflow, Path: "/owner/workflow?pull=" + pull, Role: "owner"}
+		case r.Code == reasonFirstPolicy && b.PullRequest > 0:
+			return feedback.OwnerPage{Label: labelFirst, Path: "/owner/first?pull=" + pull, Role: "administrator"}
+		case r.Code == reasonFirstPolicy, r.Code == reasonFirstApproval:
+			return feedback.OwnerPage{Label: labelFirst, Path: "/owner/first", Role: "administrator"}
+		}
+	}
+	return feedback.OwnerPage{}
+}
+
 // publish writes the check of the upload's head and, for a pull request, its comment. Inside the head's lease it reads
 // the default branch's head again: when it moved, the decision may be stale, nothing is written and the upload answers
 // 503, so the Action's retry decides from the new head. An upload of the same run decided earlier then never replaces
@@ -608,6 +634,7 @@ func (v *upload4) publish(ctx context.Context, u ingest.Upload4, d decision4) er
 		Digest:     u.Envelope.PayloadDigest,
 		Advisory:   d.Advisory,
 		Result:     d.shown(u.Result),
+		OwnerPage:  d.ownerPage(b),
 		Current: func(ctx context.Context) (bool, error) {
 			tip, err := v.repos.BranchHead(ctx, b.Repo.RepoRef, b.Repo.DefaultBranch)
 			if err != nil {

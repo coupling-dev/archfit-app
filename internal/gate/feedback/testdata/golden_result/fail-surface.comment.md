@@ -1,4 +1,4 @@
-## Archfit: fail, 1 error
+## ❌ Archfit: fail, 1 error
 
 `cmd/main.go:14` **coupling** cmd -> pkg/tc/netem is past the surface
 - why: new knowledge across a module boundary needs a balance of at least 7

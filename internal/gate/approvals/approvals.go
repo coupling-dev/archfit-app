@@ -69,15 +69,22 @@ type GitHub interface {
 
 // Service judges the pushes of the repositories of one App.
 type Service struct {
-	gh    GitHub
-	store store.Store
-	now   func() time.Time // the time an owner action records
+	gh     GitHub
+	store  store.Store
+	now    func() time.Time // the time an owner action records
+	appURL string           // the App's base URL; "" leaves the links out of what the App writes on GitHub
 }
 
 // New returns a Service over gh and s.
 // Under inputs.WithReadMemo its reads of records are shared with the other reads of the request.
 func New(gh GitHub, s store.Store) *Service {
 	return &Service{gh: gh, store: inputs.MemoStore(s), now: time.Now}
+}
+
+// WithAppURL makes what the App writes on GitHub link to its owner pages under url, and returns s.
+func (s *Service) WithAppURL(url string) *Service {
+	s.appURL = url
+	return s
 }
 
 // Push is a push to the default branch.
@@ -235,7 +242,7 @@ func (s *Service) finishOutside(ctx context.Context, p Push, r records.Repo, mar
 	}
 	if out.Issue = r.OutsideFlow.Issue; out.Issue != 0 {
 		if marked {
-			s.note(ctx, p.Repo, out.Issue, changedAgainNote(p.After))
+			s.note(ctx, p.Repo, out.Issue, changedAgainNote(s.outsideLinks(p.Repo), p.After))
 		}
 		return out, nil
 	}
@@ -244,7 +251,7 @@ func (s *Service) finishOutside(ctx context.Context, p Push, r records.Repo, mar
 	if err != nil {
 		return Outcome{}, err
 	}
-	created, err := s.gh.CreateIssue(ctx, ref, api.NewIssue{Title: outsideTitle, Body: outsideBody(p.Repo.DefaultBranch, p.After)})
+	created, err := s.gh.CreateIssue(ctx, ref, api.NewIssue{Title: outsideTitle, Body: outsideBody(s.outsideLinks(p.Repo), p.Repo.DefaultBranch, p.After, logins(owners))})
 	if err != nil {
 		return Outcome{}, fmt.Errorf("approvals: open the issue of the policy changed outside the flow: %w", err)
 	}
@@ -281,14 +288,20 @@ func (s *Service) owners(ctx context.Context, ref api.RepoRef, before, after str
 	return nil, nil
 }
 
-// assign assigns the owners to the issue. It is a notification, never authority: a failure is logged.
-func (s *Service) assign(ctx context.Context, r api.Repo, issue int, owners []string) {
-	var logins []string
+// logins are the GitHub logins of owners, once each, at most maxAssignees: teams are no login.
+func logins(owners []string) []string {
+	var out []string
 	for _, o := range owners {
-		if login := trimLogin(o); login != "" && !slices.Contains(logins, login) && len(logins) < maxAssignees {
-			logins = append(logins, login)
+		if login := trimLogin(o); login != "" && !slices.Contains(out, login) && len(out) < maxAssignees {
+			out = append(out, login)
 		}
 	}
+	return out
+}
+
+// assign assigns the owners to the issue. It is a notification, never authority: a failure is logged.
+func (s *Service) assign(ctx context.Context, r api.Repo, issue int, owners []string) {
+	logins := logins(owners)
 	if len(logins) == 0 {
 		return
 	}

@@ -48,7 +48,7 @@ for (const [state, comment] of [
     await expect(page.locator('.page-status')).toBeVisible();
     const lines = await page.locator('.page-status p, section[aria-label="Pull request"] .pull-record p, section[aria-label="Pull request"] > p').allInnerTexts();
     const expected = text.split('\n').filter((line) => line !== '').map((line) =>
-      line.replace(/^## /, '').replace(/^- /, '').replaceAll('**', '').replaceAll('`', '').replaceAll('&lt;', '<'),
+      line.replace(/^## (?:(?:✅|❌|⏳|⚠️) )?/u, '').replace(/^- /, '').replaceAll('**', '').replaceAll('`', '').replaceAll('&lt;', '<'),
     );
     expect(lines).toEqual(expected);
   });

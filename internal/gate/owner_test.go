@@ -206,6 +206,14 @@ func TestAWorkflowApprovalGivesItsHeadAVerdict(t *testing.T) {
 	s := w.spec4(p, "pass")
 	w.setFile(w.shop, s.claims.SHA, ingest.WorkflowPath, edited)
 	w.wantStatus(w.send4(s), "unknown", reasonWorkflowChanged)
+	approve := testAudience + "/r/acme/shop/owner/workflow?pull=7"
+	if c := w.wantGate(p, "completed", "action_required"); c.DetailsURL != approve ||
+		!strings.HasPrefix(c.Summary, "**Next:** [Review the workflow change]("+approve+") (owner, passkey)\n") {
+		t.Errorf("check details %q, summary:\n%s", c.DetailsURL, c.Summary)
+	}
+	if c := w.comment(p); !strings.Contains(c, "**Next:** [Review the workflow change]("+approve+") (owner, passkey)") {
+		t.Errorf("comment lacks the direct link:\n%s", c)
+	}
 
 	out, err := w.act(OwnerUser{ID: 501, Login: "olivia"}, OwnerAction{Kind: OwnerWorkflow, Pull: 7})
 	if err != nil {

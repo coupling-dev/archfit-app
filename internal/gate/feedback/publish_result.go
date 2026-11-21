@@ -163,11 +163,18 @@ func (s *publisher) publish4(ctx context.Context, p Publication4) (written, supe
 	}()
 
 	v := newView(p.Result)
+	if p.ownerCheck == nil { // an approved head waits for nobody
+		v = v.withNext(p.OwnerPage, s.appURL, p.Target.Repo.FullName, p.Target.HeadSHA)
+	}
+	details := s.pullLink(p.Target)
+	if v.next != nil {
+		details = v.next.url
+	}
 	run := api.CheckRun{
 		Name:        gateCheck,
 		HeadSHA:     p.Target.HeadSHA,
 		ExternalID:  externalID4(p),
-		DetailsURL:  s.pullLink(p.Target),
+		DetailsURL:  details,
 		Status:      status,
 		Conclusion:  conclusion,
 		Title:       v.title(),

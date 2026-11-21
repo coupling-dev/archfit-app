@@ -1,6 +1,6 @@
 status: completed
 conclusion: failure
-title: fail, 1 error
+title: ❌ fail, 1 error
 
 ```text
 pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency

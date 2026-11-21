@@ -39,7 +39,7 @@ func TestACodePullRequestThatEditsThePolicyIsUnknown(t *testing.T) {
 	w.setFile(w.shop, p.head, policyPath, []byte(policy4+"  extra:\n    paths: [x/**]\n"))
 	w.wantStatus(w.send4(w.spec4(p, "policy_differs")), "unknown", "")
 	w.wantGate(p, "completed", "action_required")
-	if c := w.comment(p); !strings.Contains(c, "## Archfit: unknown") || !strings.Contains(c, "differs from origin/main") ||
+	if c := w.comment(p); !strings.Contains(c, "## ⚠️ Archfit: unknown") || !strings.Contains(c, "differs from origin/main") ||
 		!strings.Contains(c, "git checkout origin/main -- .archfit.yaml") {
 		t.Errorf("comment:\n%s", c)
 	}
@@ -79,8 +79,13 @@ func TestADirectPushPutsEveryUploadOutsideTheFlow(t *testing.T) {
 
 	p := w.openPull(w.shop, 7)
 	w.wantStatus(w.send4(w.spec4(p, "pass")), "unknown", reasonOutsideFlow)
-	w.wantGate(p, "completed", "action_required")
-	if c := w.comment(p); !strings.Contains(c, "changed on main with no recorded approval") ||
+	confirm := testAudience + "/r/acme/shop/owner/confirm"
+	gate := w.wantGate(p, "completed", "action_required")
+	if gate.DetailsURL != confirm || !strings.HasPrefix(gate.Summary, "**Next:** [Confirm the policy]("+confirm+") (owner, passkey)\n") {
+		t.Errorf("check details %q, summary:\n%s", gate.DetailsURL, gate.Summary)
+	}
+	if c := w.comment(p); !strings.Contains(c, "## ⏳ Archfit: unknown, no verdict\n\n**Next:** [Confirm the policy]("+confirm+")") ||
+		!strings.Contains(c, "changed on main with no recorded approval") ||
 		!strings.Contains(c, "an owner confirms or reverts it in the App: #"+strconv.Itoa(issues[0].Number)) {
 		t.Errorf("comment:\n%s", c)
 	}
