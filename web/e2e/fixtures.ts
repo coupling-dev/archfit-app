@@ -79,6 +79,7 @@ export interface Mock {
   operator?: boolean; // the signed-in user approves installations
   tokenRejected?: boolean; // the session stands, but GitHub rejects the user's token on the first repository call
   repos?: object;
+  ownerActions?: object; // /api/owner-actions; none wait by default
   passkeys?: object;
   appBuild?: object;
   serverError?: { status: number; sentence: string }; // the server answers the page as its error page
@@ -134,6 +135,8 @@ export async function open(page: Page, path: string, mock: Mock = {}) {
       case '/api/admin/waiting':
         if (!mock.operator) return json(404, { error: 'Not found.' });
         return json(200, { waiting: 1 });
+      case '/api/owner-actions':
+        return json(200, mock.ownerActions ?? { actions: [], unread: 0, truncated: false });
       case '/api/repos': {
         const probe = url.searchParams.get('probe') === '1';
         await mock.holdRepos;

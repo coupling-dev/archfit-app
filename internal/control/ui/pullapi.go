@@ -27,7 +27,9 @@ func (s *server) apiPull(r *http.Request, sc scope) (any, error) {
 		return nil, err
 	}
 	body := pullJSON{PullPage: page}
-	if page.View != nil && page.View.Status == result.StatusUnknown {
+	// A pull request that waits for an owner may have no stored result yet, or a waiting one. Only a result that passed or
+	// failed says the pull request needs no owner step.
+	if page.View == nil || page.View.Status != result.StatusPass && page.View.Status != result.StatusFail {
 		body.Review = s.ownerReview(r, sc, number)
 	}
 	return body, nil

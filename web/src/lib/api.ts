@@ -24,6 +24,22 @@ export interface Repos {
   truncated: boolean;
 }
 
+// One owner step that waits on a repository, from /api/owner-actions. since is absent when no time is recorded.
+export interface OwnerActionRow {
+  repo: string;
+  kind: string;
+  label: string;
+  pull_request?: number;
+  since?: string;
+  href: string;
+}
+
+export interface OwnerActions {
+  actions: OwnerActionRow[];
+  unread: number; // repositories whose owner steps could not be read
+  truncated: boolean;
+}
+
 export interface AppBuild {
   version: string;
   source_revision: string;
