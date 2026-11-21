@@ -159,6 +159,14 @@ func TestRequestAPIGoldens(t *testing.T) {
 			v.Answer = &gate.RequestAnswer{Kind: policy3.ApproveUntil, Until: "2026-12-10"}
 			return v
 		}()},
+		{"surface", func() gate.RequestView {
+			v := base
+			v.Rule, v.Record = "coupling", "app.go:3 coupling: app -> util/retry is past the surface\n  balance: 2/10 (min 7): intrusive, util is high\n  surface: util/api (public)\n"
+			v.Numbers = gate.RequestNumbers{Verified: true, Balance: &gate.RequestBalance{Score: 2, Max: 10, Min: 7, Strength: "intrusive", Volatility: "high"}}
+			v.Surface = &records.Surface{Public: []string{"util/api"}, Model: []string{}, Package: "util/retry"}
+			v.PolicyVersion = 1
+			return v
+		}()},
 		{"answered", func() gate.RequestView {
 			v := base
 			v.State = "answered"
@@ -201,8 +209,7 @@ func TestRequestAPIGoldens(t *testing.T) {
 }
 
 // The request page gets the 0.9.0 balance inputs, the surface of a surface request and the policy version that says
-// whether a model part can be declared. (The JSON golden test above checks the words of the page; "surface" is on the
-// "Not used" list until engine task 3.3 is vendored, so this test reads the fields instead.)
+// whether a model part can be declared.
 func TestRequestAPICarriesTheInputsAndTheSurface(t *testing.T) {
 	e := newEnv(t)
 	e.requests.view = gate.RequestView{Number: 431, State: "open", Rule: "coupling", From: "app", To: "util",

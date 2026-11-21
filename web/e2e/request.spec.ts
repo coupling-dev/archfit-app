@@ -328,6 +328,7 @@ test('request: a surface request declares the package, allows it until a date or
   await open(page, path, { [`GET ${req}`]: () => [200, surface], [`GET ${req}/preview`]: (_, url) => preview(url) });
   const answers = page.getByRole('group', { name: 'Choose an answer' });
   await expect(answers.getByRole('button')).toHaveText(['Declare as public', 'Declare as model', 'Allow until a date', 'Reject']);
+  await expectPageText(page, 'request-surface');
   await answers.getByRole('button', { name: 'Declare as public' }).click();
   await expect(page.getByText('Adds pkg/util/retry to the public part of pkg_util.')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Why the balance', exact: true })).toContainText('2/10 (min 7): intrusive, pkg_util is high');

@@ -111,6 +111,8 @@ func viewFixtures(t *testing.T) []viewFixture {
 		{"fail-ask", engineResult(t, "graph"), false},
 		// Until task 6.5 the onboarded repositories upload engine v4.0.0 results: a balance without inputs.
 		{"fail-ask-v4.0.0", engineResultOf(t, "v4.0.0", "graph"), false},
+		// Engine 0.9.0: a use past the surface names it and can be asked.
+		{"fail-surface", engineResult(t, "coupling"), false},
 		{"fail-copy", engineResult(t, "duplication"), false},
 		{"fail-expired-exception", engineResult(t, "expired_exception"), false},
 		{"waiting", engineResult(t, "waiting"), false},

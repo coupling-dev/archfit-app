@@ -1,0 +1,51 @@
+{
+  "record": {
+    "schema": "archfit-app.pull.v1",
+    "head_sha": "0000000000000000000000000000000000000004",
+    "run_id": 42,
+    "run_attempt": 1,
+    "payload_digest": "sha256:5f94473bbf4b64f7177e8e778c41e9ca5a408c8c207e78091af5fe7e119f9585",
+    "policy_digest": "accepted",
+    "status": "fail"
+  },
+  "head_sha": "0000000000000000000000000000000000000004",
+  "run_id": 42,
+  "run_attempt": 1,
+  "status": "fail",
+  "check_status": "completed",
+  "check_conclusion": "failure",
+  "waiting": [],
+  "view": {
+    "status": "fail",
+    "status_line": "Archfit: fail, 1 error",
+    "records": [
+      {
+        "path": "cmd/main.go",
+        "line": 14,
+        "rule": "coupling",
+        "what": "cmd -\u003e pkg/tc/netem is past the surface",
+        "why": "new knowledge across a module boundary needs a balance of at least 7",
+        "balance": {
+          "value": 2,
+          "min": 7,
+          "strength": "intrusive",
+          "volatility": "high"
+        },
+        "subject": "pkg_tc",
+        "surface": {
+          "public": [
+            "pkg/tc"
+          ],
+          "model": []
+        },
+        "next": {
+          "kind": "command",
+          "text": "use the surface, or: archfit request -m \"\u003cwhy netem belongs to the surface\u003e\""
+        },
+        "show_next": true
+      }
+    ],
+    "author": "reply `/archfit request \u003cwhy you need it\u003e`. Do not copy the code.",
+    "owner": "nothing to do until a request exists."
+  }
+}
