@@ -41,8 +41,13 @@ type schemaDifference struct {
 }
 
 var schemaDifferences = map[string]schemaDifference{
-	"testdata/v0.9.0": {optional: map[string]bool{"Balance.strength": true, "Balance.volatility": true}},
-	"testdata/v4.0.0": {absent: map[string]bool{"Balance.strength": true, "Balance.volatility": true, "Error.surface": true}},
+	"testdata/v0.9.0": {
+		optional: map[string]bool{"Balance.strength": true, "Balance.volatility": true},
+		// Error.package comes with engine task 3.3 (decided); the vendored 3.1 schema lacks it. The re-vendor after 3.3
+		// deletes this line, and the test then holds the field to the schema.
+		absent: map[string]bool{"Error.package": true},
+	},
+	"testdata/v4.0.0": {absent: map[string]bool{"Balance.strength": true, "Balance.volatility": true, "Error.surface": true, "Error.package": true}},
 }
 
 // TestTypesFollowTheVendoredSchema ties the Go types and the decoder's rules to each vendored schema: for every

@@ -54,6 +54,9 @@ type Answer struct {
 	To      string   `json:"to"`
 	Balance *Balance `json:"balance,omitempty"`
 	Surface *Surface `json:"surface,omitempty"`
+	// Package is the package past the surface, read from the head "<pkg> is past the surface" of a coupling answer that
+	// has a surface line; "" for any other answer.
+	Package string `json:"package,omitempty"`
 }
 
 // Balance is the coupling number of a dependency, "Value/10 (min Min)". Engine 0.9.0 adds the inputs it was computed

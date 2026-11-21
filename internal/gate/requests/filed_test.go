@@ -43,13 +43,13 @@ func TestFiledUnprotectedCan(t *testing.T) {
 	}
 }
 
-// A `can` answer of engine 0.9.0 keeps its balance inputs and the surface of a use past it, as reported. It names no
-// package past the surface, so the request offers no declaration.
+// A `can` answer of engine 0.9.0 keeps its balance inputs, the surface of a use past it and the package its head
+// names, as reported.
 func TestFiledCanOfEngine090KeepsTheInputsAndTheSurface(t *testing.T) {
 	w := newPreviewWorld(t)
 	gh := &filedGitHub{previewGH: w.gh}
 	svc := New(gh, w.mem, nil)
-	record := "pkg_tc -> pkg_util: coupling: pkg/util/retry is past the declared parts\n" +
+	record := "pkg_tc -> pkg_util: coupling: pkg/util/retry is past the surface\n" +
 		"  balance: 2/10 (min 7): intrusive, pkg_util is high\n  surface: pkg/util (public)\n  next: request\n"
 	reaction, err := svc.Filed(context.Background(), Issue{Repo: previewRepo, Number: 78, Author: "writer", Today: testToday,
 		Body: "/archfit request why\n\n```text\n" + record + "```\n"})
@@ -63,7 +63,7 @@ func TestFiledCanOfEngine090KeepsTheInputsAndTheSurface(t *testing.T) {
 	if b := req.Numbers.Balance; b == nil || b.Score != 2 || b.Strength != "intrusive" || b.Volatility != "high" || req.Numbers.Verified {
 		t.Errorf("numbers = %+v", req.Numbers)
 	}
-	if s := req.Surface; s == nil || len(s.Public) != 1 || s.Public[0] != "pkg/util" || s.Package != "" {
+	if s := req.Surface; s == nil || len(s.Public) != 1 || s.Public[0] != "pkg/util" || s.Package != "pkg/util/retry" {
 		t.Errorf("surface = %+v", req.Surface)
 	}
 }

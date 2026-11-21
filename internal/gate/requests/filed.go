@@ -65,8 +65,7 @@ func (s *Service) Filed(ctx context.Context, i Issue) (string, error) {
 		req.Numbers.Balance = &records.Balance{Score: b.Value, Max: 10, Min: b.Min, Strength: b.Strength, Volatility: b.Volatility}
 	}
 	if surface := form.Answer.Surface; surface != nil && form.Answer.Rule == ruleCoupling {
-		// A `can` answer names no package past the surface yet (see pastSurface): no surface answer.
-		req.Surface = boundedSurface(surface.Public, surface.Model, "")
+		req.Surface = boundedSurface(surface.Public, surface.Model, form.Answer.Package)
 	}
 	other, err := put(ctx, s.store, i.Repo, i.Number, req)
 	switch {

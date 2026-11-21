@@ -115,6 +115,9 @@ func checkShape(r Result) error {
 	check := func(loc string, errs []Error) error {
 		for i, e := range errs {
 			at := loc + "[" + strconv.Itoa(i) + "]"
+			if e.Package != "" && e.Surface == nil {
+				return locError(at+".package", "needs a surface")
+			}
 			if e.Balance == nil {
 				if e.Surface != nil {
 					return locError(at+".surface", "needs a balance with strength and volatility")

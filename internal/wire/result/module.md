@@ -40,7 +40,7 @@ Both use the id `archfit.result.v1`. They differ only in the balance and the sur
 | Engine | `balance` | `surface` on an error |
 | --- | --- | --- |
 | v4.0.0 | `{value, min}` | never |
-| 0.9.0 | `{value, min, strength, volatility}` | only on an error whose balance has the two inputs |
+| 0.9.0 | `{value, min, strength, volatility}` | only on an error whose balance has the two inputs; `package`, the package past the surface, only with a surface |
 
 `Decode` decides by what the result holds, not by the engine version: a balance has both inputs or neither, every
 balance of one result (errors and `repository.drift`) has the same shape, and a surface needs a balance with inputs.
@@ -96,7 +96,7 @@ const SchemaV1 = "archfit.result.v1"
 type Status string // StatusPass, StatusFail, StatusWaiting (set by the App only), StatusUnknown
 
 type Result struct { Schema, Status, Summary, Errors, Unknown, Repository, Policy, Base, Head, Date, Engine }
-type Error struct { Path, Line, Rule, What, Why, Instead, Balance, Surface, Next, From, To, Key, FromChange, Exception }
+type Error struct { Path, Line, Rule, What, Why, Instead, Balance, Surface, Package, Next, From, To, Key, FromChange, Exception }
 type Unknown struct { Path, Line, Cause, What, Why, Next }
 type Next struct { Kind, Text, Note }
 type Balance struct { Value, Min, Strength, Volatility } // the inputs only from 0.9.0; HasInputs

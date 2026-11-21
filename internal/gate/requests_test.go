@@ -611,6 +611,7 @@ func (w *world4) uploadCoupling(p *pull, surface bool, status string) {
 	e["balance"] = map[string]any{"value": 2, "min": 7, "strength": "intrusive", "volatility": "high"}
 	if surface {
 		e["surface"] = map[string]any{"public": []any{"pkg/util"}, "model": []any{}}
+		e["package"] = "pkg/util/retry"
 	}
 	w.wantStatus(w.send4(s), status, "")
 }
@@ -628,7 +629,7 @@ func TestARequestKeepsTheInputsAndTheSurfaceOfALaterPullRequest(t *testing.T) {
 	}
 	w.uploadCoupling(second, true, "waiting") // covered by #1000 before it asks
 	w.ask(second, workerLogin, "/archfit request the same need")
-	if r := w.storedRequest(firstRequest); r.Surface == nil || !slices.Equal(r.Surface.Public, []string{"pkg/util"}) || r.Surface.Package != "" {
+	if r := w.storedRequest(firstRequest); r.Surface == nil || !slices.Equal(r.Surface.Public, []string{"pkg/util"}) || r.Surface.Package != "pkg/util/retry" {
 		t.Errorf("after the join, surface = %+v", r.Surface)
 	}
 }

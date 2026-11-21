@@ -151,6 +151,7 @@ func closes(line string, n int) bool {
 
 var (
 	answerFields = regexp.MustCompile(`^  (why|instead|balance|surface|next): `)
+	pastSurface  = regexp.MustCompile(`^(\S+) is past the surface$`)
 	// balanceLine is the v4.0.0 line, or the 0.9.0 line with its inputs, whose subject is the answer's target.
 	balanceLine = regexp.MustCompile(`^  balance: (10|[1-9])/10 \(min (10|[1-9])\)(?:: (contract|model|intrusive), (.+) is (low|medium|high))?$`)
 	surfaceItem = regexp.MustCompile(`^(\S+) \((public|model)\)$`)
@@ -164,7 +165,7 @@ func parseAnswer(record string) *Answer {
 		return nil
 	}
 	from, to, ok := strings.Cut(head, " -> ")
-	rule, _, hasWhat := strings.Cut(fields, ": ")
+	rule, what, hasWhat := strings.Cut(fields, ": ")
 	if !ok || !hasWhat || !word(from) || !word(to) || !word(rule) {
 		return nil
 	}
@@ -199,6 +200,9 @@ func parseAnswer(record string) *Answer {
 				return nil
 			}
 		}
+	}
+	if m := pastSurface.FindStringSubmatch(what); m != nil && a.Rule == "coupling" && a.Surface != nil {
+		a.Package = m[1]
 	}
 	return a
 }

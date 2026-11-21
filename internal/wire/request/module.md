@@ -55,7 +55,10 @@ with an engine release that vendors its goldens.
   indented `why`, `instead`, `balance`, `surface`, `next` lines, optionally followed by the exact line `policy: not protected`. Anything else gives no answer.
   The `balance` line is the v4.0.0 form `balance: 9/10 (min 7)` or the 0.9.0 form with its inputs,
   `balance: 2/10 (min 7): intrusive, assessment-repair is high`, whose subject must be the answer's target. A `surface`
-  line (`glob (public), glob (model)`) comes only after a balance with inputs. Both forms are read until task 6.5
+  line (`glob (public), glob (model)`, or `none declared`) comes only after a balance with inputs. For a coupling answer
+  with a surface line, a head `<pkg> is past the surface` names the package past the surface (`Answer.Package`); any
+  other head leaves it empty, and the App offers no declaration. The CLI's `question:` preview line is never in the
+  body and is not read. `testdata/form/can.md` is the v4.0.0 form and `can-inputs.md` the 0.9.0 form. Both forms are read until task 6.5
   removes the v4.0.0 one (`wire/result/module.md`). The numbers stay "as reported"
   until a pull request confirms them.
 - The key, its parts joined by one space (M2 plan D3, as reviewed):

@@ -277,6 +277,8 @@ func TestDecodeRefusesAMixOfBalanceShapes(t *testing.T) {
 		{"a surface without a list", v090, "graph", inputs, inputs + `,
       "surface": {"public": []}`, "result: errors[0].surface.model: required"},
 		{"a surface on a balance without inputs", v090, "graph", inputs, noInputs + emptySurface, "result: errors[0].surface: needs a balance with strength and volatility"},
+		{"a package without a surface", v090, "graph", `"from_change": true`, `"from_change": true, "package": "pkg/util/retry"`, "result: errors[0].package: needs a surface"},
+		{"an empty package", v090, "graph", inputs, inputs + emptySurface + `, "package": ""`, "result: errors[0].package: must not be empty"},
 		{"a surface without a balance", v090, "duplication", `"from_change": true`, `"from_change": true, "surface": {"public": [], "model": []}`, "result: errors[0].surface: needs a balance with strength and volatility"},
 		{"a surface in a v4.0.0 result", v400, "graph", noInputs, noInputs + emptySurface, "result: errors[0].surface: needs a balance with strength and volatility"},
 		{"both shapes in one result", v090, "graph", `"errors": [`, v4Error, "result: balances mix the v4.0.0 shape and the 0.9.0 shape"},
@@ -317,12 +319,15 @@ func TestDecodeReadsBothBalanceShapes(t *testing.T) {
 
 func TestDecodeReadsTheSurface(t *testing.T) {
 	r, err := result.Decode(edit(t, "graph", inputs, inputs+`,
-      "surface": {"public": ["pkg/util/api"], "model": ["pkg/util/model"]}`))
+      "surface": {"public": ["pkg/util/api"], "model": ["pkg/util/model"]}, "package": "pkg/util/retry"`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := r.Errors[0].Surface
 	if s == nil || !slices.Equal(s.Public, []string{"pkg/util/api"}) || !slices.Equal(s.Model, []string{"pkg/util/model"}) {
 		t.Errorf("surface = %+v", s)
+	}
+	if p := r.Errors[0].Package; p != "pkg/util/retry" {
+		t.Errorf("package = %q", p)
 	}
 }

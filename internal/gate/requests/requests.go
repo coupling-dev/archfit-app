@@ -585,9 +585,9 @@ func mergeSurface(kept, s *records.Surface) (*records.Surface, bool) {
 	return kept, false
 }
 
-// pastSurface is the package past the surface that a surface request asks about. The engine names it in a field of
-// task 3.3 that is not vendored yet; until then it is "", and the request gets no surface answer (fail closed).
-func pastSurface(result.Error) string { return "" }
+// pastSurface is the package past the surface that a surface request asks about, as the verified result names it
+// (engine 0.9.0, `package`). Without it the request gets no declaration (fail closed).
+func pastSurface(e result.Error) string { return e.Package }
 
 func balance(b *result.Balance) *records.Balance {
 	if b == nil {
