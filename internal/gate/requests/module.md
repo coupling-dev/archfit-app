@@ -70,8 +70,9 @@ who asked still sees `fail`.
   request keeps that surface (`records.Surface`) from the first of its errors that has one, and from any verified
   result that joins it later; it never loses it. Such a request is never approved as such: `ChangeOf` refuses approve
   and takes declare-public, declare-model (a model part needs a version 1 policy), approve-until and reject. A
-  declaration needs the package past the surface, which the engine names in a field of task 3.3 (`pastSurface`); until
-  it is vendored no request has one, and declarations are refused (fail closed). The stored lists are bounded.
+  declaration needs the package past the surface: the verified result's `package` (`pastSurface`), or for a CLI issue
+  the head `<pkg> is past the surface` of its `can` record. A request without one is refused a declaration (fail
+  closed). The stored lists are bounded, and a package past the bound is dropped, not cut.
 
 Not provided: the answers (task 19), the pages (task 24).
 

@@ -672,7 +672,7 @@ func TestEditDeclaresThePackageInTheSurface(t *testing.T) {
 	}
 }
 
-// Until the engine names the package past the surface, a request keeps the surface and gets no declaration.
+// A request keeps the surface of a coupling error past it, with the package the error names; another rule keeps none.
 func TestSurfaceOfACouplingError(t *testing.T) {
 	s := &result.Surface{Public: []string{"pkg/util"}, Model: []string{}}
 	if got := surfaceOf(result.Error{Rule: "coupling", Surface: s}); got == nil || got.Package != "" || !slices.Equal(got.Public, s.Public) {

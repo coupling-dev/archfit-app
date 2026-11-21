@@ -64,7 +64,7 @@ func TestBuildingAPageDoesNotChangeTheResult(t *testing.T) {
 }
 
 // A use past the surface names that surface in the comment and on the page, as the record does (the surfaces design
-// 6.9). (No golden yet: "surface" is on the "Not used" list until engine task 3.3 is vendored.)
+// 6.9). The fail-surface golden shows the same from the vendored result.
 func TestTheCommentAndThePageNameTheSurface(t *testing.T) {
 	r := engineResult(t, "graph")
 	r.Errors[0].Surface = &result.Surface{Public: []string{"pkg/util"}, Model: []string{"pkg/util/model"}}
