@@ -54,6 +54,7 @@ const (
 	reasonPolicyNotTarget  = "policy_not_target"
 	reasonPolicyChanged    = "policy_changed"
 	reasonWorkflowChanged  = "workflow_changed"
+	reasonWorkflowBehind   = "workflow_behind" // the run read an older workflow than the branch has; the pull request did not change it
 )
 
 // The compare statuses that put target_sha on the default branch: the tip itself, or behind it.
@@ -106,6 +107,7 @@ type decision4 struct {
 	Reasons  []reason4 // in rule order
 	Advisory bool      // the default branch's policy has no gate: required, so a fail does not block
 	Tip      string    // the default branch's head every rule read; the decision holds while it is the head
+	NoPolicy bool      // the default branch has no valid policy: it cannot be confirmed, only reverted
 	// Coverable is a fail of a pull request in required mode that the App accepted as it is: open requests decide
 	// whether it is waiting. Covered are those requests; Waiting is the result shown then.
 	Coverable   bool
@@ -258,12 +260,12 @@ func (v *upload4) decide(ctx context.Context, u ingest.Upload4) (decision4, erro
 				Next: result.Next{Kind: "wait", Text: "the check runs again"}})
 		}
 	}
-	if err := v.checkWorkflow(ctx, ref, branch, tip, b.RunSHA, approval, add); err != nil {
+	if err := v.checkWorkflow(ctx, ref, branch, tip, b, env.MergeBaseSHA, approval, add); err != nil {
 		return decision4{}, err
 	}
 
 	if len(reasons) > 0 || u.Result == nil {
-		return decision4{Status: result.StatusUnknown, Reasons: reasons, Advisory: advisory, Tip: tip}, nil
+		return decision4{Status: result.StatusUnknown, Reasons: reasons, Advisory: advisory, Tip: tip, NoPolicy: !validTip}, nil
 	}
 	return decision4{Status: u.Result.Status, Advisory: advisory, Tip: tip}, nil
 }
@@ -381,11 +383,12 @@ func (v *upload4) onBranch(ctx context.Context, ref api.RepoRef, commit, tip str
 // checkWorkflow requires the workflow file the run executed to be the default branch's, or to differ only in the
 // Action's ref, moved to commits manifest 4 lists, or to be the file an owner approved for this head (approval, M2 task
 // 23). A pull request runs its own workflow file, so a changed one could upload a forged pass (design 9.2).
-func (v *upload4) checkWorkflow(ctx context.Context, ref api.RepoRef, branch, tip, runSHA string, approval *records.Proposal,
+func (v *upload4) checkWorkflow(ctx context.Context, ref api.RepoRef, branch, tip string, b ingest.Binding4, mergeBase string, approval *records.Proposal,
 	add func(string, result.Unknown),
 ) error {
 	same := false
 	// An empty ref would read the default branch: only a commit SHA names the file the run executed.
+	runSHA := b.RunSHA
 	if commitSHA.MatchString(runSHA) {
 		run, runBlob, runFound, err := v.fileBlob(ctx, ref, runSHA, ingest.WorkflowPath)
 		if err != nil {
@@ -400,12 +403,36 @@ func (v *upload4) checkWorkflow(ctx context.Context, ref api.RepoRef, branch, ti
 			runFound && approval != nil && approval.WorkflowDigest == records.FileDigest(run)
 	}
 	if !same {
+		if v.workflowUntouched(ctx, ref, b.HeadSHA, mergeBase) {
+			add(reasonWorkflowBehind, result.Unknown{Path: ingest.WorkflowPath, Cause: "tool",
+				What: "differs from " + branch + ", which has changed it since this branch started",
+				Why:  "a pull request runs its own workflow file",
+				Next: result.Next{Kind: "fix", Text: "update the branch"}})
+			return nil
+		}
 		add(reasonWorkflowChanged, result.Unknown{Path: ingest.WorkflowPath, Cause: "tool",
 			What: "differs from " + branch,
 			Why:  "a pull request runs its own workflow file",
 			Next: result.Next{Kind: "fix", Text: "update the branch; if the pull request changes the workflow, an owner approves it in the App"}})
 	}
 	return nil
+}
+
+// workflowUntouched reports whether the pull request's head has the workflow file of its merge base: the branch did not
+// change it, so it is behind the default branch and an owner has nothing to approve. It only picks the words of the
+// feedback and never the status: a read that fails, an unknown input, or a merge base equal to the head (nothing to
+// compare) says false, which keeps the owner path. The merge base is self-reported, so a forged one can only pick the
+// other words.
+func (v *upload4) workflowUntouched(ctx context.Context, ref api.RepoRef, head, mergeBase string) bool {
+	if !commitSHA.MatchString(head) || !commitSHA.MatchString(mergeBase) || head == mergeBase {
+		return false
+	}
+	_, headBlob, headFound, err := v.fileBlob(ctx, ref, head, ingest.WorkflowPath)
+	if err != nil {
+		return false
+	}
+	_, baseBlob, baseFound, err := v.fileBlob(ctx, ref, mergeBase, ingest.WorkflowPath)
+	return err == nil && headFound && baseFound && headBlob != "" && headBlob == baseBlob
 }
 
 // refOnly reports whether run differs from target only in the Action's refs and their version comments, and every
@@ -593,6 +620,35 @@ func (d decision4) shown(r *result.Result) result.Result {
 	return s
 }
 
+// The owner pages (docs/user-guide.md, "Owner actions") that resolve a reason, by its action name.
+const (
+	labelConfirm  = "Confirm the policy"
+	labelRevert   = "Revert the policy"
+	labelWorkflow = "Review the workflow change"
+	labelFirst    = "Approve the first policy"
+)
+
+// ownerPage is the App page that resolves the first reason that waits for a person, or none. A reason that only
+// waits for the check to run again, or asks the author to push, has no page.
+func (d decision4) ownerPage(b ingest.Binding4) feedback.OwnerPage {
+	pull := strconv.Itoa(b.PullRequest)
+	for _, r := range d.Reasons {
+		switch {
+		case r.Code == reasonOutsideFlow && d.NoPolicy:
+			return feedback.OwnerPage{Label: labelRevert, Path: "/owner/revert", Role: "owner"}
+		case r.Code == reasonOutsideFlow:
+			return feedback.OwnerPage{Label: labelConfirm, Path: "/owner/confirm", Role: "owner"}
+		case r.Code == reasonWorkflowChanged && b.PullRequest > 0:
+			return feedback.OwnerPage{Label: labelWorkflow, Path: "/owner/workflow?pull=" + pull, Role: "owner"}
+		case r.Code == reasonFirstPolicy && b.PullRequest > 0:
+			return feedback.OwnerPage{Label: labelFirst, Path: "/owner/first?pull=" + pull, Role: "administrator"}
+		case r.Code == reasonFirstPolicy, r.Code == reasonFirstApproval:
+			return feedback.OwnerPage{Label: labelFirst, Path: "/owner/first", Role: "administrator"}
+		}
+	}
+	return feedback.OwnerPage{}
+}
+
 // publish writes the check of the upload's head and, for a pull request, its comment. Inside the head's lease it reads
 // the default branch's head again: when it moved, the decision may be stale, nothing is written and the upload answers
 // 503, so the Action's retry decides from the new head. An upload of the same run decided earlier then never replaces
@@ -608,6 +664,7 @@ func (v *upload4) publish(ctx context.Context, u ingest.Upload4, d decision4) er
 		Digest:     u.Envelope.PayloadDigest,
 		Advisory:   d.Advisory,
 		Result:     d.shown(u.Result),
+		OwnerPage:  d.ownerPage(b),
 		Current: func(ctx context.Context) (bool, error) {
 			tip, err := v.repos.BranchHead(ctx, b.Repo.RepoRef, b.Repo.DefaultBranch)
 			if err != nil {

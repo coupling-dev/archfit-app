@@ -1,4 +1,4 @@
-## Archfit: unknown, no verdict
+## ⚠️ Archfit: unknown, no verdict
 
 Archfit could not check this pull request. The record below says what to do.
 

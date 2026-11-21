@@ -16,6 +16,12 @@ check output, not the engine result. The PR comment and publication receipt reta
 blocked reruns. A lookup error prevents publication. `WriteOwnerCheck` uses that head lease for the initial
 recorded approval too, so uploads and owner actions cannot write over each other out of order.
 
+`Publication4.OwnerPage` names the App page that resolves a pending owner step. When set (and the head has no
+owner approval), the check title says who the check waits for, the check summary and the comment start with
+`**Next:** [action](url) (role, passkey)` (`NextLine`), the summary adds a short table, and the check's
+`details_url` is that page; otherwise it is the pull page. Status markers (pass, fail, waiting, unknown) head the
+title and the comment heading. None of this changes a status or a conclusion.
+
 Every publication holds the installation/head Store lease. `Current` rechecks live authority
 inside that lease; false returns `ErrStaleInputs` without writing. `Withdraw4` accepts only unknown
 and can take the live check receipt when the caller lacks a matching pull record.

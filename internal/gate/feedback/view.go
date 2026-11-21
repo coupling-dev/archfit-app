@@ -48,6 +48,8 @@ type view struct {
 	owner    string        // "" when the owner has nothing to do
 	requests []int         // the requests the wait steps of the errors name, in record order, once each
 	covered  string        // candidate next kind; says checks whether the author line covers each individual step
+	next     *nextLink     // the App page of a pending owner step; nil when none is known
+	head     string        // the commit the check is for, shown with next
 }
 
 // newView builds the view of r, whose Status is the status the App gave it.
@@ -183,7 +185,10 @@ func cut(s string) string {
 // title is the check title: the status line without "archfit: ", because the check's name already says archfit
 // ("fail, 1 error", "waiting, request #431"; design 11.6).
 func (v view) title() string {
-	return strings.TrimPrefix(v.result.Summary, statusPrefix)
+	if v.next != nil {
+		return v.mark() + " Waiting for an " + v.next.role + ": " + v.next.label
+	}
+	return v.mark() + " " + strings.TrimPrefix(v.result.Summary, statusPrefix)
 }
 
 const statusPrefix = "archfit: "
@@ -193,9 +198,10 @@ const statusPrefix = "archfit: "
 func (v view) summary() string {
 	blocks := textRecords(v.result)
 	fence := fenceFor(strings.Join(blocks, "") + v.result.Summary)
-	frame := len(fence) + len("text\n") + len("\n") + len(fence)
+	lead := v.lead()
+	frame := len(lead) + len(fence) + len("text\n") + len("\n") + len(fence)
 	kept := fit(blocks, maxBody-frame-len(v.result.Summary)-1, func(n int) string { return moreLine(n) + "\n" })
-	return fence + "text\n" + strings.Join(kept, "") + v.result.Summary + "\n" + fence
+	return lead + fence + "text\n" + strings.Join(kept, "") + v.result.Summary + "\n" + fence
 }
 
 // textRecords is the text record of each error and unknown reason, in record order, without the status line.
@@ -229,7 +235,13 @@ func (v view) annotations() []api.Annotation {
 // out after a line that counts them.
 func (v view) comment(budget int) string {
 	p := v.page()
-	head := "## " + p.StatusLine + "\n"
+	head := "## " + v.mark() + " " + p.StatusLine + "\n"
+	closing := ""
+	if v.next != nil {
+		// A pending owner step is the whole message; the records and the lines for author and owner fold away.
+		head = "## " + v.title() + "\n\n" + v.nextLine() + "\n" + v.facts() + "\n<details><summary>Details</summary>\n\n**" + prose(p.StatusLine) + "**\n"
+		closing = "\n</details>\n"
+	}
 	if p.Note != "" {
 		head += "\n" + prose(p.Note) + "\n"
 	}
@@ -247,8 +259,8 @@ func (v view) comment(budget int) string {
 	for _, r := range p.Records {
 		blocks = append(blocks, "\n"+r.markdown())
 	}
-	kept := fit(blocks, budget-len(head)-tail.Len(), func(n int) string { return "\n" + moreLine(n) + "\n" })
-	return head + strings.Join(kept, "") + tail.String()
+	kept := fit(blocks, budget-len(head)-tail.Len()-len(closing), func(n int) string { return "\n" + moreLine(n) + "\n" })
+	return head + strings.Join(kept, "") + tail.String() + closing
 }
 
 // heading is the status line with "Archfit" as the first word of a heading.

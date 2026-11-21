@@ -15,17 +15,17 @@ import (
 
 // The three comments of design 12.5, as the design prints them.
 const (
-	designRule = "## Archfit: fail, 1 error\n\n" +
+	designRule = "## ❌ Archfit: fail, 1 error\n\n" +
 		"`pkg/chaos/netem/netem.go:8` **no-chaos-to-runtime** pkg_chaos must not depend on pkg_runtime\n" +
 		"- why: A direct import ties a chaos action to one runtime.\n" +
 		"- instead: Add a method to container.Client.\n\n" +
 		"**Author:** fix the code and push.\n"
-	designAsk = "## Archfit: fail, 1 error\n\n" +
+	designAsk = "## ❌ Archfit: fail, 1 error\n\n" +
 		"`pkg/tc/netem.go:12` **graph** pkg_tc -> pkg_util is not an allowed dependency\n" +
 		"- balance: 9/10 (min 7): contract, pkg_util is low\n\n" +
 		"**Author:** reply `/archfit request <why you need it>`. Do not copy the code.\n" +
 		"**Owner:** nothing to do until a request exists.\n"
-	designWaiting = "## Archfit: waiting, request #431\n\n" +
+	designWaiting = "## ⏳ Archfit: waiting, request #431\n\n" +
 		"`pkg/tc/netem.go:12` **graph** pkg_tc -> pkg_util is not an allowed dependency\n" +
 		"- balance: 9/10 (min 7): contract, pkg_util is low\n\n" +
 		"**Author:** nothing to do. This check runs again when #431 is answered.\n" +
