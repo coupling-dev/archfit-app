@@ -30,23 +30,13 @@ const (
 
 func ptr[T any](v T) *T { return &v }
 
-// The vendored corpora, one per policy version the App reads (module.md).
-const (
-	v1 = "v1"
-	v3 = "v3"
-)
+// v1 is the vendored corpus of the one policy version the App reads (module.md).
+const v1 = "v1"
 
-var versions = map[string]int{v1: policy3.Version1, v3: policy3.Version3}
-
-// readFixture reads a vendored fixture of the version 3 corpus.
+// readFixture reads a vendored fixture of the version 1 corpus.
 func readFixture(t *testing.T, kind, name string) []byte {
 	t.Helper()
-	return readFixtureOf(t, v3, kind, name)
-}
-
-func readFixtureOf(t *testing.T, version, kind, name string) []byte {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", version, kind, name+".yaml"))
+	data, err := os.ReadFile(filepath.Join("testdata", v1, kind, name+".yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,23 +48,16 @@ func decodeFixture(t *testing.T, kind, name string) (policy3.File, error) {
 	return policy3.Decode(readFixture(t, kind, name))
 }
 
-func TestDecodeValidFixtures(t *testing.T) {
-	for version, number := range versions {
-		t.Run(version, func(t *testing.T) { decodesValidFixtures(t, version, validFixtures(number)) })
-	}
-}
-
-// validFixtures is what each valid fixture decodes to at a version. The two corpora differ only by the version and the
-// model part of every-key.yaml's core module, which version 1 has.
-func validFixtures(version int) map[string]policy3.File {
-	tests := map[string]policy3.File{
+// validFixtures is what each valid fixture decodes to.
+func validFixtures() map[string]policy3.File {
+	return map[string]policy3.File{
 		"smallest": {
-			Version: version,
+			Version: policy3.Version1,
 			Owners:  []string{owner},
 			Modules: map[string]policy3.Module{modApp: {Paths: []string{cmdGlob, "pkg/**"}}},
 		},
 		"typical": {
-			Version: version,
+			Version: policy3.Version1,
 			Owners:  []string{owner},
 			Gate:    "required",
 			Layers:  []string{core, layerCmd},
@@ -112,13 +95,13 @@ func validFixtures(version int) map[string]policy3.File {
 			}},
 		},
 		"every-key": {
-			Version: version,
+			Version: policy3.Version1,
 			Owners:  []string{owner, "octocat"},
 			Gate:    "advisory",
 			Layers:  []string{"domain", "adapter", layerCmd},
 			Modules: map[string]policy3.Module{
 				core: {
-					Paths: []string{"internal/core/**"}, Public: []string{"internal/core"},
+					Paths: []string{"internal/core/**"}, Public: []string{"internal/core"}, Model: []string{"internal/core/model"},
 					Subdomain: core, Layer: "domain", DependsOn: []string{},
 				},
 				modStore: {
@@ -179,25 +162,20 @@ func validFixtures(version int) map[string]policy3.File {
 			},
 		},
 	}
-	if version == policy3.Version1 {
-		m := tests["every-key"].Modules[core]
-		m.Model = []string{"internal/core/model"}
-		tests["every-key"].Modules[core] = m
-	}
-	return tests
 }
 
-func decodesValidFixtures(t *testing.T, version string, tests map[string]policy3.File) {
-	files, err := filepath.Glob(filepath.Join("testdata", version, "valid", "*.yaml"))
+func TestDecodeValidFixtures(t *testing.T) {
+	tests := validFixtures()
+	files, err := filepath.Glob(filepath.Join("testdata", v1, "valid", "*.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(files) != len(tests) {
-		t.Errorf("testdata/%s/valid has %d files, the table has %d rows", version, len(files), len(tests))
+		t.Errorf("testdata/%s/valid has %d files, the table has %d rows", v1, len(files), len(tests))
 	}
 	for name, want := range tests {
 		t.Run(name, func(t *testing.T) {
-			got, err := policy3.Decode(readFixtureOf(t, version, "valid", name))
+			got, err := policy3.Decode(readFixture(t, "valid", name))
 			if err != nil {
 				t.Fatalf("Decode: %v", err)
 			}
@@ -221,26 +199,16 @@ func TestDecodeKeepsAbsentKeysZero(t *testing.T) {
 	}
 }
 
-// invalidFixtures maps each file in testdata/<version>/invalid to the messages its error must contain. The messages
-// are the engine's, except where yaml.v3 words the unknown key itself, and the version messages, which are the App's:
-// it reads two versions.
-var invalidFixtures = map[string]map[string][]string{
-	v3: invalidCommon(`version "3"`),
-	v1: withModel(invalidCommon(`version "1"`)),
-}
-
-func withModel(m map[string][]string) map[string][]string {
-	m["model-empty"] = []string{"modules.app.model: empty: list at least one glob, or remove the key"}
-	return m
-}
-
-func invalidCommon(quoted string) map[string][]string {
+// invalidFixtures maps each file in testdata/v1/invalid to the messages its error must contain. The messages are the
+// engine's, except where yaml.v3 words the unknown key itself, and the version messages, which are the App's.
+var invalidFixtures = func() map[string][]string {
 	return map[string][]string{
+		"model-empty":        {"modules.app.model: empty: list at least one glob, or remove the key"},
 		"unknown-key":        {"field owner not found", "line 6"},
 		"version-missing":    {`version: missing: add "version: 1"`},
 		"version-2":          {`version 2 is the Archfit 3 policy format: remove the file and run "archfit init" to write a version 1 policy`},
-		"version-4":          {"version 4 is not supported: the App reads policy version 1, and version 3 of engine v4.0.0"},
-		"version-string":     {quoted + " is not supported: the App reads policy version 1"},
+		"version-4":          {"version 4 is not supported: the App reads policy version 1"},
+		"version-string":     {`version "1" is not supported: the App reads policy version 1`},
 		"expires-shape":      {`exceptions[0].expires: "19-11-2026" is not a date: use YYYY-MM-DD`},
 		"expires-impossible": {`exceptions[0].expires: "2026-02-30" is not a date: use YYYY-MM-DD`},
 		"rule-two-forms":     {"rules[0] (two-forms): has deny and note: a rule has exactly one of deny, only or note"},
@@ -275,65 +243,53 @@ func invalidCommon(quoted string) map[string][]string {
 		"timeout-bad":          {`analyzers.roslyn.timeout: "five minutes" is not a Go duration, such as 5m`},
 		"coverage-no-sources":  {"coverage.sources: required when coverage is enabled: list at least one file"},
 	}
-}
+}()
 
 func TestDecodeInvalidFixtures(t *testing.T) {
-	for version, fixtures := range invalidFixtures {
-		for name, wants := range fixtures {
-			t.Run(version+"/"+name, func(t *testing.T) {
-				_, err := policy3.Decode(readFixtureOf(t, version, "invalid", name))
-				if err == nil {
-					t.Fatal("Decode accepted an invalid policy")
+	for name, wants := range invalidFixtures {
+		t.Run(name, func(t *testing.T) {
+			_, err := policy3.Decode(readFixture(t, "invalid", name))
+			if err == nil {
+				t.Fatal("Decode accepted an invalid policy")
+			}
+			for _, want := range wants {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not contain %q", err, want)
 				}
-				for _, want := range wants {
-					if !strings.Contains(err.Error(), want) {
-						t.Errorf("error %q does not contain %q", err, want)
-					}
-				}
-			})
-		}
+			}
+		})
 	}
 }
 
 func TestEveryInvalidFixtureHasExpectedMessages(t *testing.T) {
-	for version, fixtures := range invalidFixtures {
-		files, err := filepath.Glob(filepath.Join("testdata", version, "invalid", "*.yaml"))
-		if err != nil {
-			t.Fatal(err)
+	files, err := filepath.Glob(filepath.Join("testdata", v1, "invalid", "*.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		name := strings.TrimSuffix(filepath.Base(file), ".yaml")
+		if _, ok := invalidFixtures[name]; !ok {
+			t.Errorf("%s has no row in invalidFixtures", file)
 		}
-		for _, file := range files {
-			name := strings.TrimSuffix(filepath.Base(file), ".yaml")
-			if _, ok := fixtures[name]; !ok {
-				t.Errorf("%s has no row in invalidFixtures", file)
-			}
-		}
-		if len(files) != len(fixtures) {
-			t.Errorf("testdata/%s/invalid has %d files, the table has %d rows", version, len(files), len(fixtures))
-		}
+	}
+	if len(files) != len(invalidFixtures) {
+		t.Errorf("testdata/%s/invalid has %d files, the table has %d rows", v1, len(files), len(invalidFixtures))
 	}
 }
 
-// The model key exists only in version 1: the v4.0.0 engine rejects it in a version 3 file, so the App does too.
-func TestDecodeModelNeedsVersion1(t *testing.T) {
-	policy := func(version string) []byte {
-		return []byte("version: " + version + "\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n    model: [cmd/model]\n")
-	}
-	got, err := policy3.Decode(policy("1"))
-	if err != nil {
-		t.Fatalf("version 1: %v", err)
-	}
-	if m := got.Modules[modApp].Model; len(m) != 1 || m[0] != "cmd/model" {
-		t.Errorf("model = %q", m)
-	}
-	_, err = policy3.Decode(policy("3"))
-	if want := "modules.app.model: needs policy version 1"; err == nil || !strings.Contains(err.Error(), want) {
-		t.Errorf("version 3: error = %v, want %q", err, want)
+// Engine v4.0.0 wrote version 3 policies; the App no longer reads them.
+func TestDecodeRefusesAVersion3Policy(t *testing.T) {
+	for _, version := range []string{"3", "3.0", `"3"`} {
+		_, err := policy3.Decode([]byte("version: " + version + "\n" + header))
+		if want := "is not supported: the App reads policy version 1"; err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("version %s: error = %v, want %q", version, err, want)
+		}
 	}
 }
 
 // The value checks list every problem at once, so an owner fixes the file in one pass.
 func TestDecodeReportsEveryProblem(t *testing.T) {
-	_, err := policy3.Decode([]byte(`version: 3
+	_, err := policy3.Decode([]byte(`version: 1
 owners: []
 modules:
   app:
@@ -361,9 +317,8 @@ func TestDecodeVersionNumbers(t *testing.T) {
 	}{
 		{version: "1", want: policy3.Version1},
 		{version: "1.0", want: policy3.Version1},
-		{version: "3", want: policy3.Version3},
-		{version: "3.0", want: policy3.Version3},
 		{version: "2.0", wantErr: `version 2 is the Archfit 3 policy format: remove the file and run "archfit init"`},
+		{version: "3", wantErr: "version 3 is not supported"},
 		{version: "3.5", wantErr: "version 3.5 is not supported"},
 		{version: "-3", wantErr: "version -3 is not supported"},
 		{version: "0", wantErr: "version 0 is not supported"},
@@ -403,7 +358,7 @@ func TestDecodeSwitchForms(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.enabled, func(t *testing.T) {
-			got, err := policy3.Decode([]byte("version: 3\n" + header + "languages:\n  go:\n    enabled: " + tt.enabled + "\n"))
+			got, err := policy3.Decode([]byte("version: 1\n" + header + "languages:\n  go:\n    enabled: " + tt.enabled + "\n"))
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v, want %q", err, tt.wantErr)
@@ -441,7 +396,7 @@ func TestDecodeNamesForms(t *testing.T) {
 			if entry != "" {
 				entry += ", "
 			}
-			got, err := policy3.Decode([]byte("version: 3\nowners: [alexei-led]\nmodules:\n  app:\n    paths: [cmd/**]\n" +
+			got, err := policy3.Decode([]byte("version: 1\nowners: [alexei-led]\nmodules:\n  app:\n    paths: [cmd/**]\n" +
 				"rules:\n  - id: r\n    deny: { " + entry + "to: lib }\n    why: w\n    instead: i\n"))
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
@@ -470,7 +425,7 @@ func TestDecodeRejectsConvertedKinds(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := policy3.Decode([]byte("version: 3\n" + tt.yaml))
+			_, err := policy3.Decode([]byte("version: 1\n" + tt.yaml))
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("error = %v, want %q", err, tt.wantErr)
 			}
@@ -558,7 +513,7 @@ func TestDecodeFollowsTheEngineScalarRules(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := policy3.Decode([]byte("version: 3\n" + tt.yaml))
+			got, err := policy3.Decode([]byte("version: 1\n" + tt.yaml))
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v, want %q", err, tt.wantErr)

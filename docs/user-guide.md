@@ -2,12 +2,12 @@
 
 This guide is for repository administrators and policy owners using Archfit 4. The App checks changes against `.archfit.yaml` on the protected default branch. It records owner answers and carries policy changes in a pull request. See [architecture](architecture.md) for the trust boundary and failure handling.
 
-The checked-in [release manifest](../internal/wire/manifest/manifest4.json) approves engine v4.0.0 and Action v4.0.0 by their exact identities.
+The checked-in [release manifest](../internal/wire/manifest/manifest4.json) approves engine v0.9.0 and Action v0.9.0 by their exact identities.
 
 ## Install and set up
 
 1. Install the GitHub App for the repository. An account not on the operator's approved list waits for operator admission.
-2. Put a version 1 `.archfit.yaml` (version 3 is read too while a repository still runs engine v4.0.0) and `.github/workflows/archfit.yaml` in the repository. Read them before the first approval. The App does not generate these files.
+2. Put a version 1 `.archfit.yaml` (the App reads no other version) and `.github/workflows/archfit.yaml` in the repository. Read them before the first approval. The App does not generate these files.
 3. Sign in to the App and register a passkey as a repository administrator. See [Register a passkey](#register-a-passkey).
 4. A repository administrator named as an owner in the proposed policy must approve the first policy with a passkey. The owner action supports a same-repository open pull request when the default branch has no valid policy, or the current default-branch policy otherwise. Follow **Review and approve** from Home when you have a passkey, or **Review proposed files** without one. The pull page uses **Review first policy**. The App resolves the correct destination for eligible viewers; other viewers see which role can act.
 5. Configure the branch ruleset below and verify the workflow and engine are approved in the App's release manifest.
@@ -252,8 +252,7 @@ page links to the other.
 
 For a workflow change, **unknown** means no verdict until the change is approved: the App cannot use the
 changed workflow's result without your approval. When the pull request also changes the policy (its branch changed
-`.archfit.yaml` since it left the default branch), as the move to Archfit 0.9.0 and policy version 1 does,
-your approval is the verdict: the App sets `archfit/gate` to success on that exact head, as for an onboarding pull
+`.archfit.yaml` since it left the default branch), your approval is the verdict: the App sets `archfit/gate` to success on that exact head, as for an onboarding pull
 request, because no engine run can judge the change. The approval covers the whole head, code included, so such a pull
 request should change only the policy and the workflow. A new head needs a new approval. After the merge, the App
 treats the new policy as changed outside the flow until an owner confirms it. The workflow diff compares with the named default-branch
@@ -340,7 +339,7 @@ A worker can comment `/archfit request <reason>` on a pull request, or file a re
 1. Open `/r/<owner>/<repo>/requests/<number>`. The page reads in this order: status, reason, record, map, the balance with a one-line gloss, the preview of the selected answer, earlier answers, and then the answer controls. The balance appears once, under **Why the balance**. Follow the request issue link for its discussion. Numbers without a confirming pull request remain **as reported**. A balance from engine 0.9.0 names its inputs, for example `9/10 (min 7): contract, pkg_util is low`: the strength of the use and the volatility of the module it reaches.
 2. Choose **Approve and merge**, **Approve until a date**, or **Reject**. No answer is preselected. Choosing **Approve and merge** loads its preview; the other two load one after **Preview**. For a dated approval, enter the expiry date as `yyyy-mm-dd`, then select **Preview**. For a rejection, enter what to do instead and select **Preview**. An expiry date must be in the future and at most 365 days away.
 
-   A request for a use past the declared public and model parts of a module (engine 0.9.0) is never approved as such. It offers **Declare as public** and **Declare as model**, which add the package to that part of the module (a model part needs a version 1 policy), **Allow until a date**, which adds a dated exception, and **Reject**. The declarations appear only when the request names the package.
+   A request for a use past the declared public and model parts of a module (engine 0.9.0) is never approved as such. It offers **Declare as public** and **Declare as model**, which add the package to that part of the module **Allow until a date**, which adds a dated exception, and **Reject**. The declarations appear only when the request names the package.
 3. Review the selected answer's diff, exception date and affected pull requests in the preview above the answer controls, then use its confirmation button. Each affected PR links to Archfit and GitHub. Editing an input removes its old preview and confirmation until you preview again. Previewing, changing your selection and leaving the page do not submit an answer.
 4. If the answer changes policy, **Merge the policy pull request now** is checked by default. Clear it to keep the policy pull request open. This applies to rejection rules too. The confirmation label states whether the App will attempt to merge or keep the policy PR open. Answers with no policy change have no merge control.
 5. Confirm the selected answer. Approvals require your passkey; rejection does not. Check the result: if GitHub refuses a merge, the policy PR stays open. A change kept open takes effect only when that PR merges. The affected code PRs are not merged by answering, and a cleared error is not a passing check.

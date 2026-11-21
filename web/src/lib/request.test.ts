@@ -74,7 +74,7 @@ describe('balanceText', () => {
 });
 
 describe('balanceLine', () => {
-  it('prints a v4.0.0 balance without inputs, and a 0.9.0 balance with them', () => {
+  it('prints a stored balance without inputs, and a balance with them', () => {
     expect(balanceLine({ value: 9, min: 7 })).toBe('9/10 (min 7)');
     expect(balanceLine({ value: 2, min: 7, strength: 'intrusive', volatility: 'high' }, 'assessment-repair')).toBe(
       '2/10 (min 7): intrusive, assessment-repair is high',
@@ -265,9 +265,8 @@ describe('answerKinds', () => {
   });
   it('never approves a use past the surface: it declares the package, allows it until a date or rejects it', () => {
     const surface = { public: ['pkg/util'], model: [], package: 'pkg/util/retry' };
-    expect(kinds({ surface, policy_version: 1 })).toEqual(['Declare as public', 'Declare as model', 'Allow until a date', 'Reject']);
-    expect(kinds({ surface, policy_version: 3 })).toEqual(['Declare as public', 'Allow until a date', 'Reject']);
-    expect(kinds({ surface: { ...surface, package: undefined }, policy_version: 1 })).toEqual(['Allow until a date', 'Reject']);
+    expect(kinds({ surface })).toEqual(['Declare as public', 'Declare as model', 'Allow until a date', 'Reject']);
+    expect(kinds({ surface: { ...surface, package: undefined } })).toEqual(['Allow until a date', 'Reject']);
   });
 });
 

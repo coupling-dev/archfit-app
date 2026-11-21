@@ -152,8 +152,8 @@ func closes(line string, n int) bool {
 var (
 	answerFields = regexp.MustCompile(`^  (why|instead|balance|surface|next): `)
 	pastSurface  = regexp.MustCompile(`^(\S+) is past the surface$`)
-	// balanceLine is the v4.0.0 line, or the 0.9.0 line with its inputs, whose subject is the answer's target.
-	balanceLine = regexp.MustCompile(`^  balance: (10|[1-9])/10 \(min (10|[1-9])\)(?:: (contract|model|intrusive), (.+) is (low|medium|high))?$`)
+	// balanceLine is the balance with its inputs, whose subject is the answer's target.
+	balanceLine = regexp.MustCompile(`^  balance: (10|[1-9])/10 \(min (10|[1-9])\): (contract|model|intrusive), (.+) is (low|medium|high)$`)
 	surfaceItem = regexp.MustCompile(`^(\S+) \((public|model)\)$`)
 )
 
@@ -183,7 +183,7 @@ func parseAnswer(record string) *Answer {
 		}
 		switch m := balanceLine.FindStringSubmatch(line); {
 		case m != nil:
-			if m[3] != "" && m[4] != to {
+			if m[4] != to {
 				return nil
 			}
 			value, _ := strconv.Atoi(m[1])
@@ -192,8 +192,7 @@ func parseAnswer(record string) *Answer {
 		case strings.HasPrefix(line, "  balance: "):
 			return nil
 		case strings.HasPrefix(line, "  surface: "):
-			// A surface is printed only after a balance with its inputs.
-			if a.Balance == nil || a.Balance.Strength == "" || a.Surface != nil {
+			if a.Balance == nil || a.Surface != nil {
 				return nil
 			}
 			if a.Surface = parseSurface(strings.TrimPrefix(line, "  surface: ")); a.Surface == nil {

@@ -223,10 +223,8 @@ type View struct {
 	Allowed      bool     // the policy already allows From to depend on To
 	Earlier      []Earlier
 	Dependencies []Dependency
-	// Surface is set for a surface request; PolicyVersion is the version of the policy at the tip (0 without one): a
-	// model part needs version 1.
-	Surface       *records.Surface
-	PolicyVersion int
+	// Surface is set for a surface request.
+	Surface *records.Surface
 }
 
 // PullEffect is what an answer does to one open pull request, by its stored errors (M2 D6). An answer clears an
@@ -264,7 +262,7 @@ func (s *Service) View(ctx context.Context, r api.Repo, number int) (View, error
 	if err != nil || !found {
 		return v, err
 	}
-	v.Policy, v.PolicyVersion = true, pol.Version
+	v.Policy = true
 	v.Layers = slices.Clone(pol.Layers)
 	slices.Reverse(v.Layers)
 	for _, name := range []string{req.From, req.To} {

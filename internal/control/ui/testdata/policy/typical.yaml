@@ -1,4 +1,4 @@
-version: 3
+version: 1
 owners: [alexei-led]
 gate: required              # default: advisory
 layers: [core, cmd]         # inner first

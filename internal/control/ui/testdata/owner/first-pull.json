@@ -16,8 +16,8 @@
       "role": "current",
       "ref": "000000000000000000000000000000000000000a",
       "path": ".archfit.yaml",
-      "digest": "sha256:2bd1008f0c36e371955aeb7929fae4e977798ee08f1d1794cb7fc73afdb85366",
-      "text": "version: 3\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n",
+      "digest": "sha256:cd90b90d088b95f8e7943392e3b624136daef9b7f0e38e0e3926fd4ecbc3f085",
+      "text": "version: 1\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n",
       "missing": false
     }
   ],
@@ -25,7 +25,7 @@
     {
       "title": "The first policy",
       "path": ".archfit.yaml",
-      "text": "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -0,0 +1,5 @@\n+version: 3\n+owners: [alice]\n+modules:\n+  app:\n+    paths: [cmd/**]\n"
+      "text": "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -0,0 +1,5 @@\n+version: 1\n+owners: [alice]\n+modules:\n+  app:\n+    paths: [cmd/**]\n"
     }
   ],
   "proposals": []

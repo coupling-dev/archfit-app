@@ -709,19 +709,19 @@ func TestChangesContract(t *testing.T) {
 	t.Run("CommitOn", func(t *testing.T) {
 		env, repo := setup(t)
 		tip := repo.refs["main"]
-		policy := []FileChange{{Path: ".archfit.yaml", Content: []byte("version: 3\n")}}
+		policy := []FileChange{{Path: ".archfit.yaml", Content: []byte("version: 1\n")}}
 
 		created, err := env.c.CommitOn(ctx, repoA, "archfit/policy", tip, "answer #1", policy, false)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if repo.refs["archfit/policy"] != created || repo.commits[created].parents[0] != tip ||
-			string(repo.fileAt("archfit/policy", ".archfit.yaml")) != "version: 3\n" ||
+			string(repo.fileAt("archfit/policy", ".archfit.yaml")) != "version: 1\n" ||
 			string(repo.fileAt("archfit/policy", "README.md")) != "readme" {
 			t.Errorf("a missing branch: head %q, commit %+v", repo.refs["archfit/policy"], repo.commits[created])
 		}
 
-		next := []FileChange{{Path: ".archfit.yaml", Content: []byte("version: 3\n# two\n")}}
+		next := []FileChange{{Path: ".archfit.yaml", Content: []byte("version: 1\n# two\n")}}
 		forward, err := env.c.CommitOn(ctx, repoA, "archfit/policy", created, "answer #2", next, false)
 		if err != nil || repo.refs["archfit/policy"] != forward || repo.commits[forward].parents[0] != created {
 			t.Errorf("a fast-forward: %q, %v; head %q", forward, err, repo.refs["archfit/policy"])

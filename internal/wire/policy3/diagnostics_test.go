@@ -9,7 +9,7 @@ import (
 )
 
 func TestPolicyDiagnosticsListEveryProblemByLine(t *testing.T) {
-	data := []byte("version: 3\nowners: []\nmodules:\n  api:\n    paths: []\n    volatility: loud\nbuiltin:\n  graph: maybe\nunknown: true\n")
+	data := []byte("version: 1\nowners: []\nmodules:\n  api:\n    paths: []\n    volatility: loud\nbuiltin:\n  graph: maybe\nunknown: true\n")
 	got := strings.Join(policy3.Diagnostics(data), "\n")
 	for _, want := range []string{
 		".archfit.yaml:2: policy: owners:",
@@ -51,7 +51,7 @@ func TestNamedRuleDiagnosticsUseTheRuleLine(t *testing.T) {
 }
 
 func TestCustomTypeErrorsKeepAllSiblingDiagnostics(t *testing.T) {
-	data := []byte("version: 3\nowners: []\nmodules: {}\nlanguages:\n  go:\n    enabled: []\n")
+	data := []byte("version: 1\nowners: []\nmodules: {}\nlanguages:\n  go:\n    enabled: []\n")
 	got := strings.Join(policy3.Diagnostics(data), "\n")
 	for _, want := range []string{".archfit.yaml:2: policy: owners:", ".archfit.yaml:3: policy: modules:", ".archfit.yaml:6: policy:"} {
 		if !strings.Contains(got, want) {
@@ -61,7 +61,7 @@ func TestCustomTypeErrorsKeepAllSiblingDiagnostics(t *testing.T) {
 }
 
 func TestPolicyRefusesTrailingDocuments(t *testing.T) {
-	data := []byte("version: 3\nowners: [olivia]\nmodules:\n  api:\n    paths: [api/**]\n---\nversion: 3\n")
+	data := []byte("version: 1\nowners: [olivia]\nmodules:\n  api:\n    paths: [api/**]\n---\nversion: 1\n")
 	if _, err := policy3.Decode(data); err == nil {
 		t.Fatal("accepted a second YAML document")
 	}

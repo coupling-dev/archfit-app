@@ -111,9 +111,8 @@ against the current head and the file digests. Two kinds are the head's verdict:
   the pull request's merge base (`Change.Base`). GitHub's base SHA is the base branch's tip at the last
   synchronization, so a branch cut before a later policy change differs from it with no change of its own; the merge
   base is read only when the head's policy differs from the base SHA's, so a workflow-only pull request costs no
-  extra read. The pull request that moves an onboarded repository to engine 0.9.0 is one (beta plan task 5.3): it changes the policy to
-  version 1 and the workflow to the Action's new home, and engine 0.9.0 gives unknown while the target branch holds
-  version 3 or 2. Any other workflow approval returns no check, decided from the stored approval before any GitHub
+  extra read. The engine gives unknown for such a head: its policy differs from the target's, and only owners change the
+  policy. Any other workflow approval returns no check, decided from the stored approval before any GitHub
   read: the engine judges that head, also when it sits on an older policy than the approved one, or when the approved
   policy moves after the approval. A base whose policy changed under the same head re-binds to another `Change`, so
   the approval stops applying, and `Review` and `Act` take a new approval of that head (the proposal holds no `Base`;

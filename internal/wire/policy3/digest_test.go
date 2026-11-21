@@ -11,9 +11,9 @@ import (
 // "sha256:" and the hex SHA-256 of the file bytes. No engine code runs here.
 func TestDigestEqualsTheEngineDigest(t *testing.T) {
 	tests := map[string]string{
-		"smallest":  "sha256:c482e499dc88f1c036864461493fb14806607166ba068bed2e5513918efe0729",
-		"typical":   "sha256:1cf7e56b7dc701c6f69fd8bacee1be2b8b1d241e2aea04bf6545b3ba3bcc05f7",
-		"every-key": "sha256:6fc4a9fa72ad6b9579c9c32c0eed453ed49db8282106c78a8d58bd41162b7949",
+		"smallest":  "sha256:17916240d7ea7a93c7a27fc2547961290093c2db7b7b777327845502fd487454",
+		"typical":   "sha256:b97b969edbaaa63b92487dc438fae62ae65307d713013ed6fe24bd09c0a143c2",
+		"every-key": "sha256:3905f29b47d2b12b88fe62a74a98e8d364d51b4680e8803ae29b1554b1ca95fe",
 	}
 	for name, want := range tests {
 		t.Run(name, func(t *testing.T) {

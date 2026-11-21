@@ -115,17 +115,17 @@ for (const changed of [false, true]) {
         missing: false,
         digest: 'sha256:' + createHash('sha256').update(text).digest('hex'),
       });
-      const base = 'version: 3\nowners: [alice]\n';
+      const base = 'version: 1\nowners: [alice]\n';
       const head = changed ? base + '# proposed policy\n' : base;
       body.files = [
-        file('approved', body.approved, policy, 'version: 3\nowners: [alice, bob]\n'),
+        file('approved', body.approved, policy, 'version: 1\nowners: [alice, bob]\n'),
         file('base', body.base, policy, base),
         file('head', body.head, policy, head),
         file('workflow-base', body.tip, workflow, 'name: old\n'),
         file('workflow-head', body.head, workflow, 'name: archfit\n'),
       ];
       body.diffs[1].text = changed
-        ? '--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -1,2 +1,3 @@\n version: 3\n owners: [alice]\n+# proposed policy\n'
+        ? '--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -1,2 +1,3 @@\n version: 1\n owners: [alice]\n+# proposed policy\n'
         : '';
       await page.setViewportSize({ width, height: 900 });
       const writes = await open(page, root + 'workflow?pull=7', {

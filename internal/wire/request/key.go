@@ -59,8 +59,8 @@ type Answer struct {
 	Package string `json:"package,omitempty"`
 }
 
-// Balance is the coupling number of a dependency, "Value/10 (min Min)". Engine 0.9.0 adds the inputs it was computed
-// with, "Value/10 (min Min): strength, to is volatility"; engine v4.0.0 does not (until task 6.5).
+// Balance is the coupling number of a dependency with the inputs it was computed with,
+// "Value/10 (min Min): strength, to is volatility". Answers stored before engine 0.9.0 have no inputs.
 type Balance struct {
 	Value      int    `json:"value"`
 	Min        int    `json:"min"`

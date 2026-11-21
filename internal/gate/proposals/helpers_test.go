@@ -15,7 +15,7 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
-const testPolicy = `version: 3
+const testPolicy = `version: 1
 owners: [olivia, oscar]
 modules:
   pkg_tc:

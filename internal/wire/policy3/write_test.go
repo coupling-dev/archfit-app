@@ -220,7 +220,7 @@ func TestWriterKeepsLineEndingsAndFinalNewline(t *testing.T) {
 }
 
 func TestWriterRefuses(t *testing.T) {
-	const base = "version: 3\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n  lib:\n    paths: [lib/**]\n"
+	const base = "version: 1\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n  lib:\n    paths: [lib/**]\n"
 	tests := []struct {
 		name    string
 		do      func() ([]byte, error)
@@ -239,13 +239,13 @@ func TestWriterRefuses(t *testing.T) {
 		},
 		{
 			name:    "a policy that does not decode",
-			do:      func() ([]byte, error) { return policy3.AddDependsOn([]byte("version: 3\n"), "app", "lib", "") },
+			do:      func() ([]byte, error) { return policy3.AddDependsOn([]byte("version: 1\n"), "app", "lib", "") },
 			wantErr: "owners: required",
 		},
 		{
 			name: "a module written as a flow mapping",
 			do: func() ([]byte, error) {
-				return policy3.AddDependsOn([]byte("version: 3\nowners: [o]\nmodules:\n  app: {paths: [cmd/**]}\n  lib: {paths: [lib/**]}\n"), "app", "lib", "")
+				return policy3.AddDependsOn([]byte("version: 1\nowners: [o]\nmodules:\n  app: {paths: [cmd/**]}\n  lib: {paths: [lib/**]}\n"), "app", "lib", "")
 			},
 			wantErr: "not a block mapping", layout: true,
 		},
@@ -287,14 +287,14 @@ func TestWriterRefuses(t *testing.T) {
 		{
 			name: "a merge key at the root, so modules is not under its own key",
 			do: func() ([]byte, error) {
-				return policy3.AddDependsOn([]byte("version: 3\nowners: [o]\n<<: {modules: {app: {paths: [app/**]}, lib: {paths: [lib/**]}}}\n"), "app", "lib", "")
+				return policy3.AddDependsOn([]byte("version: 1\nowners: [o]\n<<: {modules: {app: {paths: [app/**]}, lib: {paths: [lib/**]}}}\n"), "app", "lib", "")
 			},
 			wantErr: "merge key", layout: true,
 		},
 		{
 			name: "an alias",
 			do: func() ([]byte, error) {
-				return policy3.AddDependsOn([]byte("version: 3\nowners: [o]\nmodules:\n  app:\n    paths: &p [cmd/**]\n  lib:\n    paths: *p\n"), "app", "lib", "")
+				return policy3.AddDependsOn([]byte("version: 1\nowners: [o]\nmodules:\n  app:\n    paths: &p [cmd/**]\n  lib:\n    paths: *p\n"), "app", "lib", "")
 			},
 			wantErr: "alias", layout: true,
 		},
@@ -394,7 +394,7 @@ func TestWriterRefuses(t *testing.T) {
 
 // A block list keeps a name with a comma as one entry, where a flow list would split it.
 func TestWriterKeepsANameWithACommaWhole(t *testing.T) {
-	in := "version: 3\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n    depends_on: [lib]\n  lib:\n    paths: [lib/**]\n" +
+	in := "version: 1\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n    depends_on: [lib]\n  lib:\n    paths: [lib/**]\n" +
 		"  \"a, b\":\n    paths: [x/**]\n"
 	got, err := policy3.AddDependsOn([]byte(in), "app", "a, b", "request #1")
 	if err != nil {
@@ -412,7 +412,7 @@ func TestWriterKeepsANameWithACommaWhole(t *testing.T) {
 // A flow list becomes a block list: each entry keeps its text, the comment stays on the key's
 // line, and only the added entry carries the note.
 func TestFlowListBecomesABlockList(t *testing.T) {
-	head := "version: 3\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n"
+	head := "version: 1\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n"
 	tail := "  lib:\n    paths: [lib/**]\n  \"x, y\":\n    paths: [x/**]\n  db:\n    paths: [db/**]\n"
 	tests := map[string]struct{ list, want string }{
 		"a quoted entry with a comma": {
@@ -443,7 +443,7 @@ func TestFlowListBecomesABlockList(t *testing.T) {
 
 // A document start marker on the first line is not a second document.
 func TestWriterAcceptsALeadingDocumentStart(t *testing.T) {
-	in := "---\nversion: 3\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n  lib:\n    paths: [lib/**]\n"
+	in := "---\nversion: 1\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n  lib:\n    paths: [lib/**]\n"
 	got, err := policy3.AddDependsOn([]byte(in), "app", "lib", "")
 	if err != nil {
 		t.Fatal(err)
@@ -456,7 +456,6 @@ func TestWriterAcceptsALeadingDocumentStart(t *testing.T) {
 func TestAddSurfaceRefuses(t *testing.T) {
 	const (
 		v1Policy = "version: 1\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n  lib:\n    paths: [lib/**]\n    public: [lib]\n    model: [lib/model]\n"
-		v3Policy = "version: 3\nowners: [o]\nmodules:\n  lib:\n    paths: [lib/**]\n    public: [lib]\n"
 	)
 	for _, tc := range []struct {
 		name, policy, module string
@@ -464,7 +463,7 @@ func TestAddSurfaceRefuses(t *testing.T) {
 		glob, want           string
 	}{
 		{"a module without a surface", v1Policy, "app", policy3.RolePublic, "cmd/api", `module "app" declares neither public nor model`},
-		{"a model part in version 3", v3Policy, "lib", policy3.RoleModel, "lib/model", "a model part needs policy version 1"},
+		{"a policy of version 3", "version: 3\nowners: [o]\nmodules:\n  lib:\n    paths: [lib/**]\n    public: [lib]\n", "lib", policy3.RoleModel, "lib/model", "version 3 is not supported"},
 		{"a glob in the model part", v1Policy, "lib", policy3.RolePublic, "lib/model", `already lists "lib/model" in the other part`},
 		{"a glob in the public part", v1Policy, "lib", policy3.RoleModel, "lib", `already lists "lib" in the other part`},
 		{"an unknown module", v1Policy, "nope", policy3.RolePublic, "x", `module "nope" is not in the policy`},

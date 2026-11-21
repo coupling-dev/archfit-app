@@ -28,7 +28,7 @@ func TestFiledUnprotectedCan(t *testing.T) {
 	w := newPreviewWorld(t)
 	gh := &filedGitHub{previewGH: w.gh}
 	svc := New(gh, w.mem, nil)
-	record := "pkg_tc -> pkg_util: graph: not an allowed dependency\n  balance: 9/10 (min 7)\n  next: request\npolicy: not protected\n"
+	record := "pkg_tc -> pkg_util: graph: not an allowed dependency\n  balance: 9/10 (min 7): contract, pkg_util is low\n  next: request\npolicy: not protected\n"
 	reaction, err := svc.Filed(context.Background(), Issue{Repo: previewRepo, Number: 77, Author: "writer", Today: testToday,
 		Body: "/archfit request why\n\n```text\n" + record + "```\n"})
 	if err != nil || reaction != ReactionFiled {

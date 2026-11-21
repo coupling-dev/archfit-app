@@ -139,7 +139,7 @@ func TestHomeAndRequestLayerOrderAgree(t *testing.T) {
 	p := w.pullBy(7)
 	w.uploadAsk(p, "graph", "fail")
 	w.ask(p, workerLogin, "/archfit request need the helper")
-	pol := "version: 3\nowners: [olivia]\nlayers: [core, adapters, outer]\nmodules:\n  pkg_tc:\n    paths: [pkg/tc/**]\n    layer: outer\n    volatility: high\n  pkg_util:\n    paths: [pkg/util/**]\n    layer: core\n    volatility: low\n"
+	pol := "version: 1\nowners: [olivia]\nlayers: [core, adapters, outer]\nmodules:\n  pkg_tc:\n    paths: [pkg/tc/**]\n    layer: outer\n    volatility: high\n  pkg_util:\n    paths: [pkg/util/**]\n    layer: core\n    volatility: low\n"
 	w.setFile(w.shop, testBranch, policyPath, []byte(pol))
 	w.approved(w.shop, pol)
 	home, err := NewHome(w.gh, w.mem, NewAdmissions(w.mem, []string{strings.SplitN(shopName, "/", 2)[0]})).Home(t.Context(), w.shop)

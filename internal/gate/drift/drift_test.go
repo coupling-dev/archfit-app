@@ -20,7 +20,7 @@ const (
 	installation = 7
 	repoName     = "acme/shop"
 	branch       = "main"
-	policy       = "version: 3\nowners: [\"@alice\", bob, \"@acme/architects\"]\nmodules:\n  app:\n    paths: [cmd/**]\n"
+	policy       = "version: 1\nowners: [\"@alice\", bob, \"@acme/architects\"]\nmodules:\n  app:\n    paths: [cmd/**]\n"
 )
 
 var repo = api.Repo{RepoRef: api.RepoRef{InstallationID: installation, FullName: repoName}, ID: 42, DefaultBranch: branch}

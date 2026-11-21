@@ -16,13 +16,7 @@ const hex64 = "1a954628a960aaef81d7b2d4521929579f3541e61a954628a960aaef81d7b2d4"
 // edit replaces old, which must occur exactly once in the vendored 0.9.0 example name, with new.
 func edit(t *testing.T, name, old, new string) []byte {
 	t.Helper()
-	return editIn(t, v090, name, old, new)
-}
-
-// editIn is edit in the corpus c.
-func editIn(t *testing.T, c corpus, name, old, new string) []byte {
-	t.Helper()
-	raw := string(read(t, c.dir+"/result/"+name+".json"))
+	raw := string(read(t, resultDir+"/"+name+".json"))
 	if n := strings.Count(raw, old); n != 1 {
 		t.Fatalf("%s.json holds %q %d times, want once", name, old, n)
 	}
@@ -239,7 +233,7 @@ func TestDecodeReadsTheRepositoryBlock(t *testing.T) {
 	}
 }
 
-// The balance of the 0.9.0 graph golden; its v4.0.0 form has no inputs.
+// The balance of the graph golden; the balance of engine v4.0.0 has no inputs.
 const (
 	inputs = `"min": 7,
         "strength": "contract",
@@ -252,39 +246,32 @@ const (
         "volatility": "low"`
 	emptySurface = `,
       "surface": {"public": [], "model": []}`
-	// v4Error is an error with a v4.0.0 balance, put before the 0.9.0 error of the graph golden.
-	v4Error = `"errors": [
-    {"path": "a.go", "line": 1, "rule": "graph", "what": "a -> b is not an allowed dependency",
-     "balance": {"value": 9, "min": 7}, "next": {"kind": "fix", "text": "fix the code"}, "key": "graph a b", "from_change": true},`
 )
 
-// The two balance shapes are read side by side until task 6.5; a result never mixes them (module.md).
-func TestDecodeRefusesAMixOfBalanceShapes(t *testing.T) {
+// A balance names its inputs; a surface needs one. The balance of engine v4.0.0, which has no inputs, is refused.
+func TestDecodeRefusesABalanceWithoutItsInputs(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		c        corpus
 		example  string
 		old, new string
 		want     string
 	}{
-		{"strength without volatility", v090, "graph", volatility, ``, "result: errors[0].balance.volatility: required with strength"},
-		{"volatility without strength", v090, "graph", strength, ``, "result: errors[0].balance.strength: required with volatility"},
-		{"a strength outside the contract", v090, "graph", `"strength": "contract"`, `"strength": "` + leak + `"`, "result: errors[0].balance.strength: must be one of contract, model, intrusive"},
-		{"the 4.0 strength name", v090, "graph", `"strength": "contract"`, `"strength": "functional"`, "result: errors[0].balance.strength: must be one of contract, model, intrusive"},
-		{"an unknown volatility", v090, "graph", `"volatility": "low"`, `"volatility": "` + leak + `"`, "result: errors[0].balance.volatility: must be one of low, medium, high"},
-		{"an unknown balance key", v090, "graph", `"volatility": "low"`, `"volatility": "low", "` + leak + `": 1`, "result: errors[0].balance: unknown key"},
-		{"a question key on an error", v090, "graph", `"from_change": true`, `"from_change": true, "question": "` + leak + `"`, "result: errors[0]: unknown key"},
-		{"a surface without a list", v090, "graph", inputs, inputs + `,
+		{"strength without volatility", "graph", volatility, ``, "result: errors[0].balance.volatility: required"},
+		{"a balance without inputs, as engine v4.0.0 wrote it", "graph", inputs, noInputs, "result: errors[0].balance.strength: required"},
+		{"volatility without strength", "graph", strength, ``, "result: errors[0].balance.strength: required"},
+		{"a strength outside the contract", "graph", `"strength": "contract"`, `"strength": "` + leak + `"`, "result: errors[0].balance.strength: must be one of contract, model, intrusive"},
+		{"the 4.0 strength name", "graph", `"strength": "contract"`, `"strength": "functional"`, "result: errors[0].balance.strength: must be one of contract, model, intrusive"},
+		{"an unknown volatility", "graph", `"volatility": "low"`, `"volatility": "` + leak + `"`, "result: errors[0].balance.volatility: must be one of low, medium, high"},
+		{"an unknown balance key", "graph", `"volatility": "low"`, `"volatility": "low", "` + leak + `": 1`, "result: errors[0].balance: unknown key"},
+		{"a question key on an error", "graph", `"from_change": true`, `"from_change": true, "question": "` + leak + `"`, "result: errors[0]: unknown key"},
+		{"a surface without a list", "graph", inputs, inputs + `,
       "surface": {"public": []}`, "result: errors[0].surface.model: required"},
-		{"a surface on a balance without inputs", v090, "graph", inputs, noInputs + emptySurface, "result: errors[0].surface: needs a balance with strength and volatility"},
-		{"a package without a surface", v090, "graph", `"from_change": true`, `"from_change": true, "package": "pkg/util/retry"`, "result: errors[0].package: needs a surface"},
-		{"a surface without a balance", v090, "duplication", `"from_change": true`, `"from_change": true, "surface": {"public": [], "model": []}`, "result: errors[0].surface: needs a balance with strength and volatility"},
-		{"a surface in a v4.0.0 result", v400, "graph", noInputs, noInputs + emptySurface, "result: errors[0].surface: needs a balance with strength and volatility"},
-		{"both shapes in one result", v090, "graph", `"errors": [`, v4Error, "result: balances mix the v4.0.0 shape and the 0.9.0 shape"},
-		{"both shapes in errors and drift", v090, "repository_drift", `"errors": [],`, strings.TrimSuffix(v4Error, ",") + "],", "result: balances mix the v4.0.0 shape and the 0.9.0 shape"},
+		{"a surface on a balance without inputs", "graph", inputs, noInputs + emptySurface, "result: errors[0].balance.strength: required"},
+		{"a package without a surface", "graph", `"from_change": true`, `"from_change": true, "package": "pkg/util/retry"`, "result: errors[0].package: needs a surface"},
+		{"a surface without a balance", "duplication", `"from_change": true`, `"from_change": true, "surface": {"public": [], "model": []}`, "result: errors[0].surface: needs a balance"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r, err := result.Decode(editIn(t, tc.c, tc.example, tc.old, tc.new))
+			r, err := result.Decode(edit(t, tc.example, tc.old, tc.new))
 			if err == nil {
 				t.Fatalf("Decode accepted it: %+v", r)
 			}
@@ -298,15 +285,8 @@ func TestDecodeRefusesAMixOfBalanceShapes(t *testing.T) {
 	}
 }
 
-func TestDecodeReadsBothBalanceShapes(t *testing.T) {
-	old, err := result.Decode(read(t, v400.dir+"/result/graph.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if b := old.Errors[0].Balance; b == nil || *b != (result.Balance{Value: 9, Min: 7}) || b.HasInputs() {
-		t.Errorf("v4.0.0 balance = %+v", b)
-	}
-	cur, err := result.Decode(read(t, v090.dir+"/result/graph.json"))
+func TestDecodeReadsTheBalanceInputs(t *testing.T) {
+	cur, err := result.Decode(read(t, resultDir+"/graph.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

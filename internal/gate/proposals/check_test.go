@@ -31,7 +31,7 @@ func TestTheCheckIsSetOnlyWhenEveryD13ConditionHolds(t *testing.T) {
 			w.hub.branches[Branch] = pin.HeadSHA
 		}},
 		{"the head's policy has another digest", func(_ *world, pin *records.Pin) {
-			pin.Digest = policy3.Digest([]byte("version: 3\n"))
+			pin.Digest = policy3.Digest([]byte("version: 1\n"))
 		}},
 		{"the pull request comes from another repository", func(w *world, pin *records.Pin) {
 			w.hub.pulls[pin.PullRequest].HeadRepo = "fork/shop"

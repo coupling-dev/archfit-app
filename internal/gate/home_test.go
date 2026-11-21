@@ -22,7 +22,7 @@ func (g *homeFiles) BranchHead(context.Context, api.RepoRef, string) (string, er
 func (g *homeFiles) File(_ context.Context, _ api.RepoRef, ref, path string) ([]byte, string, error) {
 	g.reads = append(g.reads, ref+":"+path)
 	if path == homePolicyPath {
-		return []byte("version: 3\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n"), "", nil
+		return []byte("version: 1\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n"), "", nil
 	}
 	return nil, "", api.ErrNotFound
 }

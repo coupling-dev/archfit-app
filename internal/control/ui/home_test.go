@@ -26,7 +26,7 @@ import (
 )
 
 const homeAPI = "/api/repos/" + repoName + "/home"
-const homePolicy = "version: 3\nowners: [alice]\nlayers: [core, cmd]\nmodules:\n  app:\n    paths: [cmd/**]\n    layer: cmd\n    volatility: high\n    depends_on: [util]\n  util:\n    paths: [internal/util/**]\n    layer: core\n    subdomain: generic\n  other:\n    paths: [other/**]\n"
+const homePolicy = "version: 1\nowners: [alice]\nlayers: [core, cmd]\nmodules:\n  app:\n    paths: [cmd/**]\n    layer: cmd\n    volatility: high\n    depends_on: [util]\n  util:\n    paths: [internal/util/**]\n    layer: core\n    subdomain: generic\n  other:\n    paths: [other/**]\n"
 const homeDeny = "rules:\n  - id: no-app-to-other\n    deny: {from: app, to: other}\n    why: Keep this import out.\n    instead: Pass a value in.\n"
 
 func newHomeEnv(t *testing.T, pol string) *env {

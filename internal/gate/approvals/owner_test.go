@@ -23,7 +23,7 @@ var (
 )
 
 // mallorysPolicy is a policy a direct push wrote: it names its author as an owner.
-const mallorysPolicy = "version: 3\nowners: [mallory]\nmodules:\n  app:\n    paths: [cmd/**]\n"
+const mallorysPolicy = "version: 1\nowners: [mallory]\nmodules:\n  app:\n    paths: [cmd/**]\n"
 
 // bare appends commit, which has no policy, to the default branch.
 func (h *hub) bare(commit string) {

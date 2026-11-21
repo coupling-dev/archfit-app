@@ -16,13 +16,8 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// The policy versions this package reads: version 1 of engine 0.9.0, and version 3 of
-// engine v4.0.0 until task 6.5 removes it. They differ only by the key modules.<name>.model,
-// which version 1 has.
-const (
-	Version1 = 1
-	Version3 = 3
-)
+// Version1 is the one policy version this package reads: version 1 of engine 0.9.0.
+const Version1 = 1
 
 // RuleUnowned is the built-in rule whose exceptions name a path, not a module pair.
 const RuleUnowned = "unowned"
@@ -42,15 +37,13 @@ var (
 // The same pattern the engine schema publishes for a timeout.
 var durationRE = regexp.MustCompile(`^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$`)
 
-// Decode reads a version 1 or version 3 policy, by the version the file states. Unknown
-// keys, wrong kinds, values outside their list or range, bad dates, missing required keys
-// and a rule without exactly one form are errors; so is a model key in a version 3 file,
-// which the v4.0.0 engine rejects. A version 2 file fails with a message that names
-// archfit init. The value checks list every problem, one per line, so an owner fixes the
+// Decode reads a version 1 policy. Unknown keys, wrong kinds, values outside their list or
+// range, bad dates, missing required keys and a rule without exactly one form are errors.
+// A version 2 file fails with a message that names archfit init; any other version is not
+// supported. The value checks list every problem, one per line, so an owner fixes the
 // file in one pass.
 func Decode(data []byte) (File, error) {
-	version, err := checkVersion(data)
-	if err != nil {
+	if err := checkVersion(data); err != nil {
 		return File{}, err
 	}
 	var doc, extra yaml.Node
@@ -79,7 +72,7 @@ func Decode(data []byte) (File, error) {
 	var kinds problems
 	checkKinds(&kinds, toAny(doc.Content[0]), reflect.TypeFor[File](), "")
 	all = append(all, kinds...)
-	if err := f.check(version); err != nil {
+	if err := f.check(); err != nil {
 		all = append(all, err.Error())
 	}
 	if len(all) > 0 {
@@ -93,30 +86,30 @@ var ErrVersion2 = errors.New(`version 2 is the Archfit 3 policy format: remove t
 
 // checkVersion reads only the version, before the strict decode, so a version 2 file
 // gets its message instead of its first unknown key.
-func checkVersion(data []byte) (int, error) {
+func checkVersion(data []byte) error {
 	var header struct {
 		Version any `yaml:"version"`
 	}
 	if err := yaml.Unmarshal(data, &header); err != nil {
-		return 0, err
+		return err
 	}
 	version := header.Version
-	// As in JSON Schema, a number with no fraction is an integer: 3.0 is 3.
+	// As in JSON Schema, a number with no fraction is an integer: 1.0 is 1.
 	if f, ok := version.(float64); ok && f == math.Trunc(f) && math.Abs(f) < 1<<53 {
 		version = int(f)
 	}
 	switch v := version.(type) {
 	case nil:
-		return 0, errors.New(`version: missing: add "version: 1"`)
+		return errors.New(`version: missing: add "version: 1"`)
 	case int:
 		switch v {
-		case Version1, Version3:
-			return v, nil
+		case Version1:
+			return nil
 		case 2:
-			return 0, ErrVersion2
+			return ErrVersion2
 		}
 	}
-	return 0, fmt.Errorf("version %v is not supported: the App reads policy version 1, and version 3 of engine v4.0.0", yamlValue(header.Version))
+	return fmt.Errorf("version %v is not supported: the App reads policy version 1", yamlValue(header.Version))
 }
 
 // yamlValue prints a value as the file wrote it, quoting strings.
@@ -141,7 +134,7 @@ func (p problems) err() error {
 	return errors.New(strings.Join(p, "\n"))
 }
 
-func (f File) check(version int) error {
+func (f File) check() error {
 	var p problems
 	if len(f.Owners) == 0 {
 		p.add("owners", "required: list at least one GitHub login")
@@ -158,7 +151,7 @@ func (f File) check(version int) error {
 		p.add("modules", "required: declare at least one module")
 	}
 	for _, name := range slices.Sorted(maps.Keys(f.Modules)) {
-		f.Modules[name].check(&p, "modules."+name, version)
+		f.Modules[name].check(&p, "modules."+name)
 	}
 	f.Builtin.check(&p)
 	for i, r := range f.Rules {
@@ -181,17 +174,14 @@ func (f File) check(version int) error {
 	return p.err()
 }
 
-func (m Module) check(p *problems, path string, version int) {
+func (m Module) check(p *problems, path string) {
 	if len(m.Paths) == 0 {
 		p.add(path+".paths", "required: list at least one glob")
 	}
 	if m.Public != nil && len(m.Public) == 0 {
 		p.add(path+".public", "empty: list at least one glob, or remove the key to make the whole module public")
 	}
-	switch {
-	case m.Model != nil && version != Version1:
-		p.add(path+".model", "needs policy version 1: the v4.0.0 engine reads version 3, which has no model")
-	case m.Model != nil && len(m.Model) == 0:
+	if m.Model != nil && len(m.Model) == 0 {
 		p.add(path+".model", "empty: list at least one glob, or remove the key")
 	}
 	checkEnum(p, path+".volatility", m.Volatility, volatilities)

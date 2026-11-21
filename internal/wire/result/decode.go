@@ -79,10 +79,7 @@ func locError(loc, violated string) error {
 // omitempty required, no null, each value of its JSON type, integers whole and >= 1 (the schema's minimum for every
 // integer), the value rules of the rule tags (enums, patterns, minLength, maximum), and nothing after the object. The caller bounds the size.
 //
-// Two engine contracts are read side by side until task 6.5 (see module.md): the v4.0.0 balance {value, min} and the
-// 0.9.0 balance with strength and volatility. The shape check below enforces that a balance has both inputs or
-// neither, that every balance of one result has the same shape, and that a surface sits only on an error whose
-// balance has the inputs.
+// A surface sits only on an error that has a balance, and a package only with a surface.
 func Decode(raw []byte) (Result, error) {
 	// encoding/json replaces invalid UTF-8 silently.
 	if !utf8.Valid(raw) {
@@ -109,33 +106,16 @@ func Decode(raw []byte) (Result, error) {
 	return r, nil
 }
 
-// checkShape holds the result to one of the two balance shapes. It names locations, never values.
+// checkShape holds the surface and the package to the errors they may sit on. It names locations, never values.
 func checkShape(r Result) error {
-	withInputs, without := 0, 0
 	check := func(loc string, errs []Error) error {
 		for i, e := range errs {
 			at := loc + "[" + strconv.Itoa(i) + "]"
-			if e.Package != "" && e.Surface == nil {
-				return locError(at+".package", "needs a surface")
-			}
-			if e.Balance == nil {
-				if e.Surface != nil {
-					return locError(at+".surface", "needs a balance with strength and volatility")
-				}
-				continue
-			}
 			switch {
-			case e.Balance.Strength == "" && e.Balance.Volatility != "":
-				return locError(at+".balance.strength", "required with volatility")
-			case e.Balance.Strength != "" && e.Balance.Volatility == "":
-				return locError(at+".balance.volatility", "required with strength")
-			case e.Balance.HasInputs():
-				withInputs++
-			default:
-				without++
-				if e.Surface != nil {
-					return locError(at+".surface", "needs a balance with strength and volatility")
-				}
+			case e.Package != "" && e.Surface == nil:
+				return locError(at+".package", "needs a surface")
+			case e.Surface != nil && e.Balance == nil:
+				return locError(at+".surface", "needs a balance")
 			}
 		}
 		return nil
@@ -144,12 +124,7 @@ func checkShape(r Result) error {
 		return err
 	}
 	if r.Repository != nil {
-		if err := check("repository.drift", r.Repository.Drift); err != nil {
-			return err
-		}
-	}
-	if withInputs > 0 && without > 0 {
-		return errors.New("result: balances mix the v4.0.0 shape and the 0.9.0 shape")
+		return check("repository.drift", r.Repository.Drift)
 	}
 	return nil
 }

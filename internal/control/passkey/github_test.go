@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	schema3Policy  = "version: 3\nowners: [alice, Carol]\nmodules:\n  app:\n    paths: [cmd/**, pkg/**]\n"
+	schema3Policy  = "version: 1\nowners: [alice, Carol]\nmodules:\n  app:\n    paths: [cmd/**, pkg/**]\n"
 	archfit3Policy = "version: 2\nmodules:\n  a:\n    layer: core\n    paths: [\"pkg/a/**\"]\n"
 )
 
@@ -37,8 +37,8 @@ func TestOwnersComeFromThePolicyOnTheDefaultBranch(t *testing.T) {
 		{"a schema 3 policy", fakeFiles{content: []byte(schema3Policy)}, []string{"alice", "Carol"}, true, nil},
 		{"no policy", fakeFiles{err: api.ErrNotFound}, nil, false, nil},
 		{"an Archfit 3 policy", fakeFiles{content: []byte(archfit3Policy)}, nil, false, nil},
-		{"a schema 3 policy that does not decode", fakeFiles{content: []byte("version: 3\nowners: []\n")}, nil, false, ErrPolicy},
-		{"a schema 3 policy with Archfit 3 keys only", fakeFiles{content: []byte("version: 3\nmodules:\n  app:\n    paths: [x]\n")}, nil, false, ErrPolicy},
+		{"a schema 3 policy that does not decode", fakeFiles{content: []byte("version: 1\nowners: []\n")}, nil, false, ErrPolicy},
+		{"a schema 3 policy with Archfit 3 keys only", fakeFiles{content: []byte("version: 1\nmodules:\n  app:\n    paths: [x]\n")}, nil, false, ErrPolicy},
 		{"a version 2 policy with other keys", fakeFiles{content: []byte(archfit3Policy + "owners: [mallory]\n")}, nil, false, nil},
 		{"not YAML", fakeFiles{content: []byte(":\n\t- [")}, nil, false, ErrPolicy},
 		{"GitHub fails", fakeFiles{err: githubDown}, nil, false, githubDown},

@@ -16,7 +16,7 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
-const setupPolicy = "version: 3\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n"
+const setupPolicy = "version: 1\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n"
 const setupCommit = "0123456789abcdef0123456789abcdef01234567"
 
 var setupRepo = api.Repo{RepoRef: api.RepoRef{InstallationID: 7, FullName: "acme/app"}, DefaultBranch: "main", OwnerType: "Organization", Visibility: "private"}
@@ -151,9 +151,9 @@ func TestSetupAdmissionFromImmutableDefaultBranchFiles(t *testing.T) {
 	}
 }
 
-// TestSetupAcceptsBothActionRepositories: until task 6.5 the workflow may run the Action from its new home or from
-// its old one, and a tag is looked up in the repository the line names. Any other repository is not the Action.
-func TestSetupAcceptsBothActionRepositories(t *testing.T) {
+// TestSetupAcceptsOnlyTheActionRepository: a tag is looked up in the Action's repository. The Action's old home and any
+// other repository are not the Action.
+func TestSetupAcceptsOnlyTheActionRepository(t *testing.T) {
 	for _, tc := range []struct {
 		name, repo, ref string
 		admitted        bool
@@ -161,8 +161,8 @@ func TestSetupAcceptsBothActionRepositories(t *testing.T) {
 	}{
 		{"new repository, listed commit", manifest.ActionRepository, setupCommit, true, nil},
 		{"new repository, tag", manifest.ActionRepository, "v0.9.0", true, []string{manifest.ActionRepository + "@v0.9.0"}},
-		{"old repository, listed commit", manifest.LegacyActionRepository, setupCommit, true, nil},
-		{"old repository, tag", manifest.LegacyActionRepository, "v0.9.0", true, []string{manifest.LegacyActionRepository + "@v0.9.0"}},
+		{"old home, listed commit", "alexei-led/archfit-action", setupCommit, false, nil},
+		{"old home, tag", "alexei-led/archfit-action", "v0.9.0", false, nil},
 		{"another repository, listed commit", "someone/archfit-action", setupCommit, false, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

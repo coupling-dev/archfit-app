@@ -176,7 +176,7 @@ func envelopeMatchesV2(env envelope.EnvelopeV2, b Binding4, defaultBranch string
 }
 
 // resultMatches ties the result to the envelope: the same policy digest, the same head, and the engine the
-// envelope names ("v4.0.0" in the envelope is "4.0.0" in the result).
+// envelope names ("v0.9.0" in the envelope is "0.9.0" in the result).
 func resultMatches(res result.Result, env envelope.EnvelopeV2) bool {
 	return res.Policy.Digest == env.PolicyDigest &&
 		res.Head == env.HeadSHA &&

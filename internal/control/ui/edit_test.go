@@ -72,7 +72,7 @@ func TestEditAPIHasStrictScopeCSRFAndJSON(t *testing.T) {
 func TestEditPreviewShowsAllLineErrorsAndNoPasskey(t *testing.T) {
 	e := newEnv(t)
 	res := e.as("alice", permRead).postJSON(policyAPI+"/edit/preview", map[string]any{
-		"answer": "edit", "yaml": "version: 3\nowners: []\nmodules: {}\n", "base_digest": "sha256:base",
+		"answer": "edit", "yaml": "version: 1\nowners: []\nmodules: {}\n", "base_digest": "sha256:base",
 	})
 	wantStatus(t, res, http.StatusOK)
 	var body editPreviewJSON
@@ -139,7 +139,7 @@ func TestEditJSONRefusesTrailingValues(t *testing.T) {
 func TestInvalidEditCannotBeginAPasskeyPrompt(t *testing.T) {
 	e := newEnv(t)
 	res := e.as("alice", permRead).postJSON("/api/repos/"+repoName+"/passkeys/step-up", map[string]any{
-		"action": "edit", "yaml": "version: 3\nowners: []\nmodules: {}\n", "base_digest": "sha256:base", "target": sha(7), "digest": "sha256:new",
+		"action": "edit", "yaml": "version: 1\nowners: []\nmodules: {}\n", "base_digest": "sha256:base", "target": sha(7), "digest": "sha256:new",
 	})
 	wantStatus(t, res, http.StatusUnprocessableEntity)
 	if len(e.passkeys.calls) != 0 {

@@ -60,7 +60,7 @@ func TestOwnerViewsBindExactInputsAndRendering(t *testing.T) {
 			if err != nil || same.Digest != v.Digest {
 				t.Fatalf("unstable view = %s, %v", same.Digest, err)
 			}
-			if tt.kind == OwnerFirst && !strings.Contains(v.Diffs[0].Text, "+version: 3") {
+			if tt.kind == OwnerFirst && !strings.Contains(v.Diffs[0].Text, "+version: 1") {
 				t.Fatalf("not all additions: %s", v.Diffs[0].Text)
 			}
 			v.Digest = ""
@@ -93,7 +93,7 @@ func TestOwnerViewsFailClosed(t *testing.T) {
 				r.OutsideFlow.Digest = ""
 				w.put4(records.RepoKey(shopName), &r)
 				v, err := w.gate.OwnerView(t.Context(), Target{Repo: w.shop}, OwnerAction{Kind: OwnerRevert})
-				if err != nil || !strings.Contains(v.Diffs[0].Text, "+version: 3") {
+				if err != nil || !strings.Contains(v.Diffs[0].Text, "+version: 1") {
 					t.Fatalf("deleted revert: %+v, %v", v, err)
 				}
 				want = false

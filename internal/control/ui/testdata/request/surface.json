@@ -50,6 +50,5 @@
     ],
     "model": [],
     "package": "util/retry"
-  },
-  "policy_version": 1
+  }
 }

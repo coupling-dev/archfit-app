@@ -52,9 +52,7 @@ func (v view) page() Page {
 		var subject string
 		if e.Balance != nil {
 			balance = new(*e.Balance)
-			if e.Balance.HasInputs() {
-				subject = e.To
-			}
+			subject = e.To
 		}
 		p.Records = append(p.Records, Record{
 			Path: e.Path, Line: e.Line, Rule: e.Rule, What: e.What,

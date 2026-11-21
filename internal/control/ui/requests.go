@@ -33,9 +33,8 @@ type requestJSON struct {
 	Earlier      []earlierJSON           `json:"earlier"`
 	Answer       *requestAnswerJSON      `json:"answer,omitempty"`
 	// Surface is set for a surface request (engine 0.9.0): the declared parts of to, and the package past them that a
-	// declaration adds; without a package the page offers no declaration. PolicyVersion is 0 without a policy.
-	Surface       *requestSurfaceJSON `json:"surface,omitempty"`
-	PolicyVersion int                 `json:"policy_version,omitempty"`
+	// declaration adds; without a package the page offers no declaration.
+	Surface *requestSurfaceJSON `json:"surface,omitempty"`
 }
 
 type requestSurfaceJSON struct {
@@ -122,7 +121,6 @@ func (s *server) apiRequest(r *http.Request, sc scope) (any, error) {
 	if v.Answer != nil {
 		body.Answer = &requestAnswerJSON{Kind: string(v.Answer.Kind), Until: v.Answer.Until, Instead: v.Answer.Instead}
 	}
-	body.PolicyVersion = v.PolicyVersion
 	if surface := v.Surface; surface != nil {
 		body.Surface = &requestSurfaceJSON{Public: append([]string{}, surface.Public...), Model: append([]string{}, surface.Model...), Package: surface.Package}
 	}
