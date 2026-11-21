@@ -735,3 +735,26 @@ func TestBoundedSurface(t *testing.T) {
 		t.Error("a package past the bound is cut, not dropped: a declaration would write another glob")
 	}
 }
+
+// A surface request with its package previews each declaration against the version 1 policy at the tip, and refuses
+// a plain approve.
+func TestPreviewOfASurfaceRequest(t *testing.T) {
+	w := newPreviewWorld(t)
+	w.gh.policy = []byte("version: 1\nowners: [olivia]\nmodules:\n  pkg_tc:\n    paths: [pkg/tc/**]\n  pkg_util:\n    paths: [pkg/util/**]\n    public: [pkg/util]\n")
+	w.put(432, records.Request{Key: "coupling pkg_tc pkg_util", Reason: "retry is shared", Rule: "coupling", From: "pkg_tc", To: "pkg_util",
+		Numbers: records.Numbers{Verified: true, Balance: &records.Balance{Score: 2, Max: 10, Min: 7, Strength: "intrusive", Volatility: "high"}},
+		Surface: &records.Surface{Public: []string{"pkg/util"}, Model: []string{}, Package: "pkg/util/retry"}})
+	ctx := context.Background()
+	for kind, want := range map[policy3.Answer]string{
+		policy3.DeclarePublic: "+      - pkg/util/retry  # request #432\n",
+		policy3.DeclareModel:  "+    model:\n+      - pkg/util/retry  # request #432\n",
+	} {
+		p, err := w.svc.Preview(ctx, previewRepo, 432, Answer{Kind: kind}, testToday)
+		if err != nil || !p.Loosens || !strings.Contains(p.Diff, want) {
+			t.Errorf("%s: preview %+v, %v; want a diff with %q", kind, p, err, want)
+		}
+	}
+	if _, err := w.svc.Preview(ctx, previewRepo, 432, Answer{Kind: policy3.Approve}, testToday); !errors.Is(err, ErrAnswer) {
+		t.Errorf("approve: err = %v, want ErrAnswer", err)
+	}
+}
