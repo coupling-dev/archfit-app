@@ -1,0 +1,84 @@
+Policy
+
+acme/app
+
+View source
+Edit
+Owners
+alice
+Layers, inner first
+None
+The check
+required — a failing rule makes archfit/gate fail
+
+Whether GitHub requires the check is shown on Home.
+
+3
+Modules
+Declared boundaries
+6
+Ask and deny rules
+of 6 rules
+0
+Exceptions
+No recorded expiry has passed
+0
+Expiring in 30 days
+Includes today
+Search policy
+
+Expand a row for details.
+
+Rules
+
+Expand a rule to see why it exists and what to do instead.
+
+View source
+graph
+Ask owner
+coupling
+Deny
+duplication
+Ask owner
+cycle
+Deny
+layers
+Deny
+unowned
+Deny
+Exceptions
+
+Follow the linked request to renew or replace an exception.
+
+No exceptions.
+
+Modules
+
+Paths and allowed dependencies of each module. Volatility is how often a module is expected to change. Subdomain is its business role.
+
+Module / paths	Layer	Allowed dependencies
+
+app
+
+cmd/**
+
+	Not provided	billing, events
+
+billing
+
+internal/billing/**
+
+	Not provided	None
+
+events
+
+internal/events/**
+
+	Not provided	None
+Show graph All 3 modules
+Policy file
+Copy digest
+
+Digest: sha256:568c4643c3d9f37c8263657a654d251366e290937a8977e0cc1568f5f8b2137b
+
+Show raw YAML

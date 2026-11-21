@@ -1,0 +1,55 @@
+{
+  "dependencies": [
+    {
+      "kind": "deny",
+      "rule": "no-util-to-app",
+      "from": "util",
+      "to": "app"
+    }
+  ],
+  "issue_href": "https://github.com/acme/app/issues/431",
+  "number": 431,
+  "state": "open",
+  "reason": "Need the helper.",
+  "rule": "coupling",
+  "from": "app",
+  "to": "util",
+  "record": "app.go:3 coupling: app -\u003e util/retry is past the surface\n  balance: 2/10 (min 7): intrusive, util is high\n  surface: util/api (public)\n",
+  "verified": true,
+  "balance": {
+    "value": 2,
+    "max": 10,
+    "min": 7,
+    "strength": "intrusive",
+    "volatility": "high"
+  },
+  "policy": true,
+  "layers": [
+    "outer",
+    "core"
+  ],
+  "modules": [
+    {
+      "name": "app",
+      "layer": "outer",
+      "volatility": "high",
+      "depends_on": []
+    },
+    {
+      "name": "util",
+      "layer": "core",
+      "volatility": "low",
+      "depends_on": []
+    }
+  ],
+  "allowed": false,
+  "earlier": [],
+  "surface": {
+    "public": [
+      "util/api"
+    ],
+    "model": [],
+    "package": "util/retry"
+  },
+  "policy_version": 1
+}

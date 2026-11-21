@@ -20,7 +20,7 @@ Admission errors are retried rather than dropping installation work.
 
 There is no discovery receiver or Sandbox dependency. Discovery, baseline and reanchor upload handlers,
 two-PR v3 onboarding and its proposal service have been removed. The app explicitly returns 404 for
-their upload endpoints. Schema 3 setup and owner actions are preserved.
+their upload endpoints. Setup and owner actions are preserved.
 
 ## Integrations and checks
 

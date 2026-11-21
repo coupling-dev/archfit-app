@@ -5,7 +5,7 @@ title: fail, 1 error
 ```text
 pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency
   why: a new dependency between modules needs an owner
-  balance: 9/10 (min 7)
+  balance: 9/10 (min 7): contract, pkg_util is low
   next: archfit request -m "<why you need it>"     (do not copy the code)
 archfit: fail, 1 error
 ```
@@ -13,5 +13,5 @@ archfit: fail, 1 error
 annotation pkg/tc/netem.go:12 failure
 pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency
   why: a new dependency between modules needs an owner
-  balance: 9/10 (min 7)
+  balance: 9/10 (min 7): contract, pkg_util is low
   next: archfit request -m "<why you need it>"     (do not copy the code)

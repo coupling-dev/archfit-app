@@ -56,7 +56,81 @@ func AddDependsOn(file []byte, module, dependency, note string) ([]byte, error) 
 	if slices.Contains(mod.DependsOn, dependency) {
 		return file, nil
 	}
-	item, err := scalar(dependency)
+	return addToModuleList(file, module, "depends_on", dependency, comment, func(m *Module) {
+		m.DependsOn = append(slices.Clone(m.DependsOn), dependency)
+	})
+}
+
+// Role is a part of a module's surface that an answer declares a glob in.
+type Role string
+
+// The two roles of a surface (the surfaces design 6.1).
+const (
+	RolePublic Role = "public"
+	RoleModel  Role = "model"
+)
+
+// AddSurface declares glob as part of the public or the model part of module, as one entry
+// of a block list that ends with the note: the answer to a surface request. When the role
+// already lists the glob, the file comes back unchanged. It refuses:
+//
+//   - a module that declares neither public nor model: its whole paths are its public part,
+//     so a first glob would narrow the surface, not widen it;
+//   - the model role in a version 3 policy, which the v4.0.0 engine reads and which has no
+//     model key (task 6.5 removes this case);
+//   - a glob the other role lists, as the engine's policy check refuses it. The engine also refuses a file that
+//     both parts cover by different globs; a surface request names a package in neither part (else the use would not
+//     be past the surface), so its declaration cannot cause that.
+func AddSurface(file []byte, module string, role Role, glob, note string) ([]byte, error) {
+	comment, err := lineComment(note)
+	if err != nil {
+		return nil, err
+	}
+	old, err := Decode(file)
+	if err != nil {
+		return nil, err
+	}
+	mod, ok := old.Modules[module]
+	if !ok {
+		return nil, fmt.Errorf("module %q is not in the policy", module)
+	}
+	if glob == "" {
+		return nil, errors.New("the glob is empty")
+	}
+	var list, other []string
+	switch role {
+	case RolePublic:
+		list, other = mod.Public, mod.Model
+	case RoleModel:
+		if old.Version != Version1 {
+			return nil, fmt.Errorf("a model part needs policy version 1; this policy is version %d", old.Version)
+		}
+		list, other = mod.Model, mod.Public
+	default:
+		return nil, fmt.Errorf("unknown surface role %q", role)
+	}
+	switch {
+	case mod.Public == nil && mod.Model == nil:
+		return nil, fmt.Errorf("module %q declares neither public nor model, so its whole paths are public: a glob would narrow it", module)
+	case slices.Contains(list, glob):
+		return file, nil
+	case slices.Contains(other, glob):
+		return nil, fmt.Errorf("module %q already lists %q in the other part of its surface", module, glob)
+	}
+	return addToModuleList(file, module, string(role), glob, comment, func(m *Module) {
+		if role == RolePublic {
+			m.Public = append(slices.Clone(m.Public), glob)
+		} else {
+			m.Model = append(slices.Clone(m.Model), glob)
+		}
+	})
+}
+
+// addToModuleList adds value as the last entry of the list key of module, with comment at the
+// end of its line. An absent key is added as a block list at the end of the module; a flow list
+// on its key's line becomes a block list; any other layout is ErrLayout.
+func addToModuleList(file []byte, module, key, value, comment string, mutate func(*Module)) ([]byte, error) {
+	item, err := scalar(value)
 	if err != nil {
 		return nil, err
 	}
@@ -71,15 +145,15 @@ func AddDependsOn(file []byte, module, dependency, note string) ([]byte, error) 
 		return nil, fmt.Errorf("%w: module %q is not a block mapping", ErrLayout, module)
 	}
 	var out []byte
-	switch depKey, deps := entry(node, "depends_on"); {
-	case deps == nil:
+	switch listKey, list := entry(node, key); {
+	case list == nil:
 		indent := node.Content[0].Column - 1
 		line := d.blockEnd(modKey.Line, modKey.Column-1, false)
-		out = d.insertAfter(line, spaces(indent)+"depends_on:", spaces(indent+2)+"- "+item+comment)
-	case deps.Kind == yaml.SequenceNode && deps.Style&yaml.FlowStyle != 0:
-		out, err = d.blockFlow(depKey, deps, item+comment)
+		out = d.insertAfter(line, spaces(indent)+key+":", spaces(indent+2)+"- "+item+comment)
+	case list.Kind == yaml.SequenceNode && list.Style&yaml.FlowStyle != 0:
+		out, err = d.blockFlow(listKey, list, item+comment)
 	default:
-		out, err = d.appendItem(depKey, deps, func(dash, field int) []string {
+		out, err = d.appendItem(listKey, list, func(dash, field int) []string {
 			return itemLines(dash, field, []string{item}, comment)
 		})
 	}
@@ -88,7 +162,7 @@ func AddDependsOn(file []byte, module, dependency, note string) ([]byte, error) 
 	}
 	return verify(file, out, func(f *File) {
 		m := f.Modules[module]
-		m.DependsOn = append(slices.Clone(m.DependsOn), dependency)
+		mutate(&m)
 		f.Modules[module] = m
 	})
 }

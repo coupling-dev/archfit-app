@@ -17,7 +17,7 @@ import (
 type Setup struct {
 	Approval  gate.ApprovalSummary
 	Admitted  bool
-	Policy    bool   // valid schema 3 policy on the default branch
+	Policy    bool   // valid policy (version 1, or 3) on the default branch
 	Workflow  bool   // accepted Archfit workflow on the default branch
 	OpenPull  int    // open pull request adding an accepted workflow; 0 when none
 	State     string // not_admitted, first_approval, approved, outside_flow
@@ -82,7 +82,7 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 	}
 	digest, valid := policy.Digest, policy.ReadErr == nil && policy.DecodeErr == nil
 	if !valid {
-		out.Missing = append(out.Missing, "The default branch has no version 3 policy.")
+		out.Missing = append(out.Missing, "The default branch has no valid policy.")
 	}
 	if workflowErr != nil {
 		return out, workflowErr

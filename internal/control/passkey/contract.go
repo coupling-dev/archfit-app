@@ -59,7 +59,7 @@ type Passkey struct {
 // Owners is the port that reads the owners of the target policy.
 type Owners interface {
 	// Owners returns the logins named in owners of the policy on the default branch of r, and whether that branch has
-	// a schema 3 policy. An error refuses the step that asked, so a policy that does not decode refuses it too.
+	// a valid policy. An error refuses the step that asked, so a policy that does not decode refuses it too.
 	Owners(ctx context.Context, r api.Repo) (logins []string, hasPolicy bool, err error)
 }
 
@@ -113,7 +113,7 @@ var (
 	ErrUnknown = errors.New("passkey: no such passkey")
 	// ErrInvalid is a Purpose that is not well formed.
 	ErrInvalid = errors.New("passkey: invalid purpose")
-	// ErrPolicy is a policy on the default branch that is neither schema 3 nor an Archfit 3 policy: who registers
+	// ErrPolicy is a policy on the default branch that is neither a valid policy (version 1, or 3) nor an Archfit 3 policy: who registers
 	// cannot be known, so nobody does.
 	ErrPolicy = errors.New("passkey: the policy on the default branch does not decode")
 )

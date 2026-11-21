@@ -4,7 +4,10 @@ import type { AnswerKind, Preview, RequestView } from './api';
 import {
   answerProblem,
   decisionState,
+  answerKinds,
+  balanceLine,
   balanceText,
+  surfaceLine,
   dependency,
   earlierLine,
   loosens,
@@ -63,6 +66,21 @@ describe('balanceText', () => {
     expect(balanceText({ ...open, verified: false })).toBe('9/10 (min 7), as reported');
     expect(balanceText({ ...open, balance: undefined })).toBe('');
   });
+  it('names the inputs of a 0.9.0 balance, with the target as subject', () => {
+    const inputs = { ...open, balance: { value: 9, max: 10, min: 7, strength: 'contract', volatility: 'low' } };
+    expect(balanceText(inputs)).toBe('9/10 (min 7): contract, pkg_util is low');
+    expect(balanceText({ ...inputs, verified: false })).toBe('9/10 (min 7): contract, pkg_util is low, as reported');
+  });
+});
+
+describe('balanceLine', () => {
+  it('prints a v4.0.0 balance without inputs, and a 0.9.0 balance with them', () => {
+    expect(balanceLine({ value: 9, min: 7 })).toBe('9/10 (min 7)');
+    expect(balanceLine({ value: 2, min: 7, strength: 'intrusive', volatility: 'high' }, 'assessment-repair')).toBe(
+      '2/10 (min 7): intrusive, assessment-repair is high',
+    );
+    expect(balanceLine({ value: 2, min: 7, strength: 'intrusive', volatility: 'high' })).toBe('2/10 (min 7)');
+  });
 });
 
 describe('dependency', () => {
@@ -92,7 +110,7 @@ describe('statusOf', () => {
       { ...open, policy: false },
       'waiting',
       'attention',
-      'Request #431 cannot be answered here: the default branch has no policy of version 3.',
+      'Request #431 cannot be answered here: the default branch has no valid policy.',
     ],
     [{ ...open, state: 'answered' }, 'answered', 'neutral', 'An owner answered this request.'],
     [
@@ -106,6 +124,18 @@ describe('statusOf', () => {
       'answered',
       'neutral',
       'An owner rejected this request.',
+    ],
+    [
+      { ...open, state: 'answered', answer: { kind: 'declare-public' } },
+      'answered',
+      'neutral',
+      'An owner declared the package public.',
+    ],
+    [
+      { ...open, state: 'answered', answer: { kind: 'declare-model' } },
+      'answered',
+      'neutral',
+      'An owner declared the package a model part.',
     ],
     [{ ...open, state: 'closed' }, 'closed', 'neutral', 'Request #431 is closed.'],
   ] as const)('%o', (r, word, tone, line) => {
@@ -224,5 +254,26 @@ describe('decisionState', () => {
   it('does not confirm a missing preview or another answer', () => {
     expect(decisionState('approve', undefined, true)).toMatchObject({ ready: false, mergeLater: false });
     expect(decisionState('approve', preview('reject'), true)).toMatchObject({ ready: false, mergeLater: false });
+  });
+});
+
+describe('answerKinds', () => {
+  const kinds = (r: Parameters<typeof answerKinds>[0]) => answerKinds(r).map((k) => k.title);
+  it('offers approve, approve until and reject for a request that is not about the surface', () => {
+    expect(kinds(open)).toEqual(['Approve and merge', 'Approve until a date', 'Reject']);
+    expect(kinds(null)).toEqual(['Approve and merge', 'Approve until a date', 'Reject']);
+  });
+  it('never approves a use past the surface: it declares the package, allows it until a date or rejects it', () => {
+    const surface = { public: ['pkg/util'], model: [], package: 'pkg/util/retry' };
+    expect(kinds({ surface, policy_version: 1 })).toEqual(['Declare as public', 'Declare as model', 'Allow until a date', 'Reject']);
+    expect(kinds({ surface, policy_version: 3 })).toEqual(['Declare as public', 'Allow until a date', 'Reject']);
+    expect(kinds({ surface: { ...surface, package: undefined }, policy_version: 1 })).toEqual(['Allow until a date', 'Reject']);
+  });
+});
+
+describe('surfaceLine', () => {
+  it('lists the public globs, then the model globs, or says none is declared', () => {
+    expect(surfaceLine({ public: ['pkg/util'], model: ['pkg/util/model'] })).toBe('pkg/util (public), pkg/util/model (model)');
+    expect(surfaceLine({ public: [], model: [] })).toBe('none declared');
   });
 });

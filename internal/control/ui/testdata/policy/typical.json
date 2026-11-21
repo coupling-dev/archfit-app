@@ -17,6 +17,7 @@
         "pkg/chaos",
         "pkg/chaos/cliflags"
       ],
+      "model": null,
       "volatility": "high",
       "subdomain": "",
       "layer": "core",
@@ -33,6 +34,7 @@
       "public": [
         "pkg/tc"
       ],
+      "model": null,
       "volatility": "high",
       "subdomain": "",
       "layer": "core",
@@ -44,6 +46,7 @@
         "pkg/util/**"
       ],
       "public": null,
+      "model": null,
       "volatility": "low",
       "subdomain": "",
       "layer": "core",

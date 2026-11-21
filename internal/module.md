@@ -20,7 +20,7 @@ Only policy3 and workflow import the YAML library; only control/passkey imports 
 
 ## Accepted inputs
 
-POST /v1/reports accepts upload envelope 2 with engine result v1 only. Policy is schema 3 and identities
+POST /v1/reports accepts upload envelope 2 with engine result v1 only. Policy is version 1 (or 3 until task 6.5) and identities
 come from manifest 4. Provenance is necessary, not independent verification of report content.
 Protected policy digests and recorded owner approval authority remain required.
 

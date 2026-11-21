@@ -62,7 +62,10 @@ func (s *Service) Filed(ctx context.Context, i Issue) (string, error) {
 	req := records.Request{Key: key, Reason: form.Reason, Expires: form.Expires, Rule: form.Answer.Rule,
 		From: form.Answer.From, To: form.Answer.To, Record: capRecord(form.Record), Numbers: records.Numbers{}}
 	if b := form.Answer.Balance; b != nil {
-		req.Numbers.Balance = &records.Balance{Score: b.Value, Max: 10, Min: b.Min}
+		req.Numbers.Balance = &records.Balance{Score: b.Value, Max: 10, Min: b.Min, Strength: b.Strength, Volatility: b.Volatility}
+	}
+	if surface := form.Answer.Surface; surface != nil && form.Answer.Rule == ruleCoupling {
+		req.Surface = boundedSurface(surface.Public, surface.Model, form.Answer.Package)
 	}
 	other, err := put(ctx, s.store, i.Repo, i.Number, req)
 	switch {

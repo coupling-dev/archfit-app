@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { expectClean, expectPageText, open, docsClock, docsShot } from './support';
 
-const states = ['pass', 'fail-advisory', 'fail-advisory-request', 'required-request', 'fail-fix', 'fail-ask', 'fail-copy', 'next-backticks', 'fail-expired-exception', 'unknown', 'unknown-first-policy', 'unknown-workflow', 'unknown-workflow-viewer', 'unknown-outside-flow', 'unknown-missing-evidence', 'waiting', 'unpublished', 'superseded', 'no-result', 'missing-artifact', 'mismatch', 'pending'];
+const states = ['pass', 'fail-advisory', 'fail-advisory-request', 'required-request', 'fail-fix', 'fail-ask', 'fail-surface', 'fail-copy', 'next-backticks', 'fail-expired-exception', 'unknown', 'unknown-first-policy', 'unknown-workflow', 'unknown-workflow-viewer', 'unknown-outside-flow', 'unknown-missing-evidence', 'waiting', 'unpublished', 'superseded', 'no-result', 'missing-artifact', 'mismatch', 'pending'];
 for (const state of states) {
   test(`pull request: ${state}${state === 'waiting' ? ' @docs' : ''}`, async ({ page }) => {
     await docsClock(page);

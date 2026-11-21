@@ -26,7 +26,13 @@ var rules = map[string]rule{
 	"schema": {enum: []string{SchemaV1}},
 	"status": {enum: []string{string(StatusPass), string(StatusFail), string(StatusWaiting), string(StatusUnknown)}},
 	"kind":   {enum: []string{"fix", "command", "wait", "restore"}},
-	"cause":  {enum: []string{"policy", "base", "tool", "import"}},
+	"strength": {enum: []string{
+		string(StrengthContract), string(StrengthModel), string(StrengthIntrusive),
+	}},
+	"volatility": {enum: []string{
+		string(VolatilityLow), string(VolatilityMedium), string(VolatilityHigh),
+	}},
+	"cause": {enum: []string{"policy", "base", "tool", "import"}},
 	"repository": {enum: []string{
 		string(RepositoryClean), string(RepositoryDrift), string(RepositoryExpired),
 	}},
@@ -72,6 +78,11 @@ func locError(loc, violated string) error {
 // so a token pre-pass walks the input beside the Go types first: keys exactly as tagged, each once, a key without
 // omitempty required, no null, each value of its JSON type, integers whole and >= 1 (the schema's minimum for every
 // integer), the value rules of the rule tags (enums, patterns, minLength, maximum), and nothing after the object. The caller bounds the size.
+//
+// Two engine contracts are read side by side until task 6.5 (see module.md): the v4.0.0 balance {value, min} and the
+// 0.9.0 balance with strength and volatility. The shape check below enforces that a balance has both inputs or
+// neither, that every balance of one result has the same shape, and that a surface sits only on an error whose
+// balance has the inputs.
 func Decode(raw []byte) (Result, error) {
 	// encoding/json replaces invalid UTF-8 silently.
 	if !utf8.Valid(raw) {
@@ -92,7 +103,55 @@ func Decode(raw []byte) (Result, error) {
 	if err := dec.Decode(&r); err != nil {
 		return Result{}, errMalformed
 	}
+	if err := checkShape(r); err != nil {
+		return Result{}, err
+	}
 	return r, nil
+}
+
+// checkShape holds the result to one of the two balance shapes. It names locations, never values.
+func checkShape(r Result) error {
+	withInputs, without := 0, 0
+	check := func(loc string, errs []Error) error {
+		for i, e := range errs {
+			at := loc + "[" + strconv.Itoa(i) + "]"
+			if e.Package != "" && e.Surface == nil {
+				return locError(at+".package", "needs a surface")
+			}
+			if e.Balance == nil {
+				if e.Surface != nil {
+					return locError(at+".surface", "needs a balance with strength and volatility")
+				}
+				continue
+			}
+			switch {
+			case e.Balance.Strength == "" && e.Balance.Volatility != "":
+				return locError(at+".balance.strength", "required with volatility")
+			case e.Balance.Strength != "" && e.Balance.Volatility == "":
+				return locError(at+".balance.volatility", "required with strength")
+			case e.Balance.HasInputs():
+				withInputs++
+			default:
+				without++
+				if e.Surface != nil {
+					return locError(at+".surface", "needs a balance with strength and volatility")
+				}
+			}
+		}
+		return nil
+	}
+	if err := check("errors", r.Errors); err != nil {
+		return err
+	}
+	if r.Repository != nil {
+		if err := check("repository.drift", r.Repository.Drift); err != nil {
+			return err
+		}
+	}
+	if withInputs > 0 && without > 0 {
+		return errors.New("result: balances mix the v4.0.0 shape and the 0.9.0 shape")
+	}
+	return nil
 }
 
 // walker is the token pre-pass.

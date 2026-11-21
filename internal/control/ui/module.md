@@ -12,8 +12,8 @@ The gate facade supplies policy/request views, answers and owner actions; UI imp
 
 ## Retained Archfit 4 APIs
 
-- Setup returns schema 3 admission, first-policy approval state and ruleset findings.
-- Policy reads schema 3 YAML, modules, rules, exceptions and approved/outside-flow edit state.
+- Setup returns admission, first-policy approval state and ruleset findings.
+- Policy reads version 1 or 3 YAML, modules with their public and model parts, rules, exceptions and approved/outside-flow edit state.
 - Requests expose their record, modules, earlier answers and answer previews.
 - Answer digest/answer routes pass the authenticated owner and passkey token to control/answers.
 - Owner digest/action routes support first approval, workflow approval and confirm/revert.

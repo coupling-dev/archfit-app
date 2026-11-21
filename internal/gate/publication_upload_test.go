@@ -135,7 +135,7 @@ func (s failPublicationLease) Get(ctx context.Context, t store.Tenant, key strin
 func TestUploadStagesPendingBeforeLeaseFailure(t *testing.T) {
 	w := newWorld4(t)
 	p := w.openPull(w.shop, 7)
-	body, err := os.ReadFile("../wire/result/testdata/result/pass.json")
+	body, err := os.ReadFile("../wire/result/testdata/v0.9.0/result/pass.json")
 	if err != nil {
 		t.Fatal(err)
 	}

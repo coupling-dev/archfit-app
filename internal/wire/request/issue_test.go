@@ -2,6 +2,7 @@ package request_test
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -70,6 +71,20 @@ func TestParseIssue(t *testing.T) {
 	const line = "/archfit request why\n\n"
 	can := "pkg_tc -> pkg_util: graph: not an allowed dependency\n  balance: 9/10 (min 7)\n  next: archfit request -m \"<why you need it>\"\n"
 	graph := &request.Answer{Rule: "graph", From: "pkg_tc", To: "pkg_util", Balance: &request.Balance{Value: 9, Min: 7}}
+	noneDeclared := "a -> b: coupling: b/x is past the surface\n  balance: 2/10 (min 7): intrusive, b is high\n  surface: none declared\n"
+	can09 := "analysis-application -> assessment-repair: coupling: internal/assessment/score is past the surface\n" +
+		"  balance: 2/10 (min 7): intrusive, assessment-repair is high\n" +
+		"  surface: internal/assessment/finding (public), internal/assessment/result (model)\n" +
+		"  next: use the surface, or: archfit request -m \"<why score belongs to the surface>\"\n"
+	coupling := &request.Answer{
+		Rule: "coupling", From: "analysis-application", To: "assessment-repair",
+		Balance: &request.Balance{Value: 2, Min: 7, Strength: "intrusive", Volatility: "high"},
+		Surface: &request.Surface{Public: []string{"internal/assessment/finding"}, Model: []string{"internal/assessment/result"}},
+		Package: "internal/assessment/score",
+	}
+	noPackage := &request.Answer{Rule: coupling.Rule, From: coupling.From, To: coupling.To, Balance: coupling.Balance, Surface: coupling.Surface}
+	// The question line is the CLI's preview only; the issue body never carries it.
+	withQuestion := strings.Replace(can09, "  next:", "  question: should internal/assessment/score be part of the surface of assessment-repair?\n  next:", 1)
 	for _, tc := range []struct {
 		name   string
 		body   string
@@ -96,6 +111,15 @@ func TestParseIssue(t *testing.T) {
 		{"two answers", line + "```text\na -> b: graph: x\nc -> d: graph: y\n```\n", "a -> b: graph: x\nc -> d: graph: y\n", nil},
 		{"a balance out of scale", line + "```text\na -> b: graph: x\n  balance: 11/10 (min 7)\n```\n", "a -> b: graph: x\n  balance: 11/10 (min 7)\n", nil},
 		{"an empty module", line + "```text\n -> b: graph: x\n```\n", " -> b: graph: x\n", nil},
+		{"a 0.9.0 balance with its inputs", line + "```text\n" + can09 + "```\n", can09, coupling},
+		{"a question line is not an answer field", line + "```text\n" + withQuestion + "```\n", withQuestion, nil},
+		{"a surface answer whose head names no package", line + "```text\n" + strings.Replace(can09, " is past the surface", " reaches past the public part", 1) + "```\n", strings.Replace(can09, " is past the surface", " reaches past the public part", 1), noPackage},
+		{"inputs about another module", line + "```text\na -> b: coupling: x\n  balance: 2/10 (min 7): intrusive, c is high\n```\n", "a -> b: coupling: x\n  balance: 2/10 (min 7): intrusive, c is high\n", nil},
+		{"an unknown strength", line + "```text\na -> b: coupling: x\n  balance: 2/10 (min 7): functional, b is high\n```\n", "a -> b: coupling: x\n  balance: 2/10 (min 7): functional, b is high\n", nil},
+		{"a surface after a v4.0.0 balance", line + "```text\na -> b: coupling: x\n  balance: 2/10 (min 7)\n  surface: b/api (public)\n```\n", "a -> b: coupling: x\n  balance: 2/10 (min 7)\n  surface: b/api (public)\n", nil},
+		{"a surface without a balance", line + "```text\na -> b: coupling: x\n  surface: b/api (public)\n```\n", "a -> b: coupling: x\n  surface: b/api (public)\n", nil},
+		{"a surface with no declared part", line + "```text\n" + noneDeclared + "```\n", noneDeclared, &request.Answer{Rule: "coupling", From: "a", To: "b", Balance: &request.Balance{Value: 2, Min: 7, Strength: "intrusive", Volatility: "high"}, Surface: &request.Surface{Public: []string{}, Model: []string{}}, Package: "b/x"}},
+		{"a surface with an unknown role", line + "```text\na -> b: coupling: x\n  balance: 2/10 (min 7): intrusive, b is high\n  surface: b/api (private)\n```\n", "a -> b: coupling: x\n  balance: 2/10 (min 7): intrusive, b is high\n  surface: b/api (private)\n", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, ok, err := request.ParseIssue(tc.body, today)
@@ -110,7 +134,8 @@ func TestParseIssue(t *testing.T) {
 				t.Errorf("answer %+v, want none", got.Answer)
 			case tc.answer != nil && (got.Answer == nil || got.Answer.Rule != tc.answer.Rule || got.Answer.From != tc.answer.From ||
 				got.Answer.To != tc.answer.To || (got.Answer.Balance == nil) != (tc.answer.Balance == nil) ||
-				got.Answer.Balance != nil && *got.Answer.Balance != *tc.answer.Balance):
+				got.Answer.Balance != nil && *got.Answer.Balance != *tc.answer.Balance ||
+				!reflect.DeepEqual(got.Answer.Surface, tc.answer.Surface) || got.Answer.Package != tc.answer.Package):
 				t.Errorf("answer %+v, want %+v", got.Answer, tc.answer)
 			}
 		})

@@ -107,10 +107,15 @@ func (w *world4) spec4(p *pull, golden string) *spec4 {
 	return s
 }
 
-// result reads a vendored engine result golden and binds it to head and the default branch's policy.
+// result reads a vendored engine result golden and binds it to head and the default branch's policy. golden names a
+// result of engine 0.9.0, or "<engine>/<name>" of another engine's corpus, such as "v4.0.0/deny".
 func (w *world4) result(golden, head string) map[string]any {
 	w.t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "wire", "result", "testdata", "result", golden+".json"))
+	engine, name, ok := strings.Cut(golden, "/")
+	if !ok {
+		engine, name = "v0.9.0", golden
+	}
+	raw, err := os.ReadFile(filepath.Join("..", "wire", "result", "testdata", engine, "result", name+".json")) //nolint:gosec // fixed test data paths
 	if err != nil {
 		w.t.Fatal(err)
 	}
@@ -459,11 +464,22 @@ const policy4Required = "version: 3\ngate: required\nowners: [olivia]\nmodules:\
 
 // require makes the default branch's policy required and s a run of it.
 func (w *world4) require(s *spec4) {
-	w.setFile(w.shop, testBranch, policyPath, []byte(policy4Required))
-	w.approved(w.shop, policy4Required)
-	s.env.PolicyDigest = policy3.Digest([]byte(policy4Required))
+	w.usePolicy(s, policy4Required)
+}
+
+// usePolicy makes policy the default branch's approved policy and s a run of it.
+func (w *world4) usePolicy(s *spec4, policy string) {
+	w.setFile(w.shop, testBranch, policyPath, []byte(policy))
+	w.approved(w.shop, policy)
+	s.env.PolicyDigest = policy3.Digest([]byte(policy))
 	s.result["policy"].(map[string]any)["digest"] = s.env.PolicyDigest
 }
+
+// The version 1 policies of engine 0.9.0, read beside version 3 until task 6.5.
+const (
+	policy1Required = "version: 1\ngate: required\nowners: [olivia]\nmodules:\n  app:\n    paths: [cmd/**, pkg/**]\n    model: [pkg/model]\n"
+	policy1         = "version: 1\nowners: [olivia]\nmodules:\n  app:\n    paths: [cmd/**, pkg/**]\n    model: [pkg/model]\n"
+)
 
 // noStateCheck fails when anything wrote archfit/state.
 func (w *world4) noStateCheck() {
@@ -482,6 +498,29 @@ func (w *world4) latestGate(head string) (api.CheckRun, bool) {
 		return api.CheckRun{}, false
 	}
 	return slices.MaxFunc(runs, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) }), true
+}
+
+func TestUpload4ReadsBothEnginesAndBothPolicyVersions(t *testing.T) {
+	for _, tc := range []struct {
+		name, golden, policy, conclusion, balance string
+	}{
+		{"engine 0.9.0, a required version 1 policy", "graph", policy1Required, "failure", "- balance: 9/10 (min 7): contract, pkg_util is low\n"},
+		{"engine 0.9.0, a version 1 policy without gate", "graph", policy1, "neutral", "- balance: 9/10 (min 7): contract, pkg_util is low\n"},
+		{"engine v4.0.0, a required version 3 policy", "v4.0.0/graph", policy4Required, "failure", "- balance: 9/10 (min 7)\n"},
+		{"engine v4.0.0, a version 3 policy without gate", "v4.0.0/graph", policy4, "neutral", "- balance: 9/10 (min 7)\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld4(t)
+			p := w.openPull(w.shop, 7)
+			s := w.spec4(p, tc.golden)
+			w.usePolicy(s, tc.policy)
+			w.wantStatus(w.send4(s), "fail", "")
+			w.wantGate(p, "completed", tc.conclusion)
+			if body := w.comments(p)[0].Body; !strings.Contains(body, tc.balance) {
+				t.Errorf("comment has no %q:\n%s", tc.balance, body)
+			}
+		})
+	}
 }
 
 func TestUpload4PublishesTheResult(t *testing.T) {

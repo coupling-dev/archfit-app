@@ -25,10 +25,11 @@ var (
 	ErrNoRequest = errors.New("requests: no such request")
 	// ErrClosedRequest is a preview of a request that is not open: it was answered or closed.
 	ErrClosedRequest = errors.New("requests: the request is not open")
-	// ErrAnswer is an answer that cannot be written: an unknown kind, a missing or bad date, no instead.
+	// ErrAnswer is an answer that cannot be written: an unknown kind, a missing or bad date, no instead, an approve of a
+	// use past the surface, or a declaration on a request that names no package past it.
 	ErrAnswer = errors.New("requests: the answer is not complete")
-	// ErrNoPolicy means the default branch has no policy of version 3 to write an answer into.
-	ErrNoPolicy = errors.New("requests: the default branch has no policy of version 3")
+	// ErrNoPolicy means the default branch has no valid policy to write an answer into.
+	ErrNoPolicy = errors.New("requests: the default branch has no valid policy")
 	// ErrByHand is an answer the writer cannot place in this policy file; the owner edits it by hand.
 	ErrByHand = errors.New("requests: the answer cannot be written into this policy")
 )
@@ -36,15 +37,17 @@ var (
 // The rule ids an answer writes apart (wire/request's key treats the same ones apart).
 const (
 	ruleGraph       = "graph"
+	ruleCoupling    = "coupling"
 	ruleDuplication = "duplication"
 	ruleUnowned     = "unowned"
 )
 
 const dateLayout = "2006-01-02"
 
-// Answer is an owner's answer to a request (design 10.4).
+// Answer is an owner's answer to a request (design 10.4). A surface request (the surfaces design 6.9) takes
+// declare-public, declare-model, approve-until or reject: a use past the surface is never approved as such.
 type Answer struct {
-	Kind    policy3.Answer // approve, approve-until or reject
+	Kind    policy3.Answer // approve, approve-until, reject, declare-public or declare-model
 	Until   string         // approve-until: the date, YYYY-MM-DD
 	Instead string         // reject: what to do instead
 }
@@ -60,6 +63,7 @@ type Change struct {
 	To      string         `json:"to,omitempty"`
 	Until   string         `json:"until,omitempty"`
 	Instead string         `json:"instead,omitempty"`
+	Glob    string         `json:"glob,omitempty"` // declare-public, declare-model: the package past the surface
 }
 
 // ChangeOf is the change an answer makes for request number on the App's date today. It checks the answer alone;
@@ -69,6 +73,14 @@ func ChangeOf(number int, req records.Request, a Answer, today time.Time) (Chang
 	c := Change{Request: number, Kind: a.Kind, Rule: req.Rule, Path: req.Path, From: req.From, To: req.To}
 	switch a.Kind {
 	case policy3.Approve:
+		if req.Surface != nil {
+			return Change{}, fmt.Errorf("%w: a use past the surface is not approved as such: declare the package, allow it until a date, or reject", ErrAnswer)
+		}
+	case policy3.DeclarePublic, policy3.DeclareModel:
+		if req.Surface == nil || req.Surface.Package == "" {
+			return Change{}, fmt.Errorf("%w: only a request that names a package past the surface takes this answer", ErrAnswer)
+		}
+		c.Glob = req.Surface.Package
 	case policy3.ApproveUntil:
 		if !ahead(a.Until, today) {
 			return Change{}, fmt.Errorf("%w: approve until needs a date after today, at most %d days ahead, YYYY-MM-DD",
@@ -91,7 +103,8 @@ func ChangeOf(number int, req records.Request, a Answer, today time.Time) (Chang
 
 // Edit writes the change into a policy file (design 10.4): approve adds the dependency to depends_on for the rule
 // graph and an exception without a date for any other rule; approve-until adds an exception with the date; reject
-// adds a deny rule with instead. A reject of a copy, of unowned code or of an only rule writes no line, and the file
+// adds a deny rule with instead; declare-public and declare-model add the package to the public or model part of the
+// module the request reaches. A reject of a copy, of unowned code or of an only rule writes no line, and the file
 // comes back unchanged, as it does for a dependency the policy already allows. An exception for unowned code names the
 // path; one for an only rule has no to. A comment, such as "request #431", ends the first line of the entry the change
 // writes (the writer's note, milestone 3 D8). A writer error wraps ErrByHand.
@@ -122,6 +135,10 @@ func Edit(file []byte, c Change, comment string) ([]byte, error) {
 	case policy3.ApproveUntil:
 		exception.Expires = c.Until
 		out, err = policy3.AddException(file, exception, comment)
+	case policy3.DeclarePublic:
+		out, err = policy3.AddSurface(file, c.To, policy3.RolePublic, c.Glob, comment)
+	case policy3.DeclareModel:
+		out, err = policy3.AddSurface(file, c.To, policy3.RoleModel, c.Glob, comment)
 	case policy3.Reject:
 		if c.Rule == ruleDuplication || c.Rule == ruleUnowned || onlyRule(pol, c.Rule) || c.From == "" || c.To == "" {
 			return file, nil
@@ -199,13 +216,17 @@ type View struct {
 	// answer. Numbers says whether they are verified or "as reported".
 	Record  string
 	Numbers records.Numbers
-	// Policy is false when the default branch has no policy of version 3; Modules, Allowed and Earlier are then empty.
+	// Policy is false when the default branch has no valid policy; Modules, Allowed and Earlier are then empty.
 	Policy       bool
 	Layers       []string // the policy layers, outer-first
 	Modules      []Module // the request's modules the policy declares, From first
 	Allowed      bool     // the policy already allows From to depend on To
 	Earlier      []Earlier
 	Dependencies []Dependency
+	// Surface is set for a surface request; PolicyVersion is the version of the policy at the tip (0 without one): a
+	// model part needs version 1.
+	Surface       *records.Surface
+	PolicyVersion int
 }
 
 // PullEffect is what an answer does to one open pull request, by its stored errors (M2 D6). An answer clears an
@@ -238,12 +259,12 @@ func (s *Service) View(ctx context.Context, r api.Repo, number int) (View, error
 		return View{}, err
 	}
 	v := View{Number: number, State: req.State, Reason: req.Reason, Rule: req.Rule, Path: req.Path, From: req.From,
-		To: req.To, Expires: req.Expires, Record: req.Record, Numbers: req.Numbers}
+		To: req.To, Expires: req.Expires, Record: req.Record, Numbers: req.Numbers, Surface: req.Surface}
 	pol, _, found, err := s.policyAt(ctx, r)
 	if err != nil || !found {
 		return v, err
 	}
-	v.Policy = true
+	v.Policy, v.PolicyVersion = true, pol.Version
 	v.Layers = slices.Clone(pol.Layers)
 	slices.Reverse(v.Layers)
 	for _, name := range []string{req.From, req.To} {

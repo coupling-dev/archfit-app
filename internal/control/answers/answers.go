@@ -14,7 +14,7 @@ import (
 
 // Answer is an owner's answer as the request page sends it.
 type Answer struct {
-	Kind    string // approve, approve-until or reject
+	Kind    string // approve, approve-until, reject, declare-public or declare-model
 	Until   string // approve-until: YYYY-MM-DD
 	Instead string // reject: what to do instead
 	Later   bool   // merge later: the policy pull request stays open and later answers join it

@@ -1,0 +1,12 @@
+{
+  "kind": "approve-until",
+  "loosens": true,
+  "note": "request #12",
+  "exception": {
+    "Rule": "coupling",
+    "From": "cli",
+    "To": "core",
+    "Expires": "2027-01-31",
+    "Why": "Request #12 is open."
+  }
+}

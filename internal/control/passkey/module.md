@@ -16,7 +16,7 @@ the answer redeems. Verification is `go-webauthn`'s (M2 D9): the App never parse
 - Run the registration ceremony with the parameters of the M2 plan, "Passkey": relying party id the App host, origin
   `https://` and that host, attestation `none`, ES256, Ed25519 (COSE -19, and -8 that authenticators still send for
   it), RS256, user verification required, resident key preferred, timeout 5 minutes.
-- Apply "who registers": an owner named in the target policy, or, before the first schema 3 policy, a repository
+- Apply "who registers": an owner named in the target policy, or, before the first valid policy, a repository
   administrator. A second passkey needs a step-up token for `register`. Every registration opens an issue assigned to
   the user and the owners before the passkey is stored.
 - Run the step-up: one assertion with user verification gives a token bound to a `Purpose` (repository, action,
@@ -64,7 +64,7 @@ changes no stored value, because the stored passkey is the App's own type.
 - The token: 32 random bytes in base64url. Only its SHA-256 is stored; the comparison is constant-time.
 - Before the first policy: no .archfit.yaml on the default branch, or policy3.Decode returning
   policy3.ErrVersion2. This is version detection only: it does not validate or accept the schema 2 contract.
-  A schema 3 policy supplies the owners; any other decoder failure is ErrPolicy.
+  A valid policy (version 1, or 3) supplies the owners; any other decoder failure is ErrPolicy.
 
 ## Public Contract
 

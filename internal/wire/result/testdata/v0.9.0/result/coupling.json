@@ -1,0 +1,47 @@
+{
+  "schema": "archfit.result.v1",
+  "status": "fail",
+  "summary": "archfit: fail, 1 error",
+  "errors": [
+    {
+      "path": "cmd/main.go",
+      "line": 14,
+      "rule": "coupling",
+      "what": "cmd -> pkg/tc/netem is past the surface",
+      "why": "new knowledge across a module boundary needs a balance of at least 7",
+      "balance": {
+        "value": 2,
+        "min": 7,
+        "strength": "intrusive",
+        "volatility": "high"
+      },
+      "surface": {
+        "public": [
+          "pkg/tc"
+        ],
+        "model": []
+      },
+      "package": "pkg/tc/netem",
+      "next": {
+        "kind": "command",
+        "text": "use the surface, or: archfit request -m \"<why netem belongs to the surface>\""
+      },
+      "from": "cmd",
+      "to": "pkg_tc",
+      "key": "coupling cmd pkg_tc github.com/alexei-led/pumba/pkg/tc/netem",
+      "from_change": true
+    }
+  ],
+  "unknown": [],
+  "policy": {
+    "path": ".archfit.yaml",
+    "digest": "sha256:7b02700a93eb8af7192724bd1b5ff49fd340f0ef81cfee1fb0d8cdc1467fea8c",
+    "protected": true,
+    "differs": false,
+    "target": "origin/main"
+  },
+  "base": "1405df66cbe219b0bf6355bc3d60361a8376b6b4",
+  "head": "1a954628a960aaef81d7b2d4521929579f3541e6",
+  "date": "2026-11-10",
+  "engine": "4.0.0"
+}

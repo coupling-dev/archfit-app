@@ -183,7 +183,7 @@ func TestAFirstApprovalRefuses(t *testing.T) {
 		{"a pull request from a fork", func(w *world) {
 			w.gh.pulls[12] = api.Pull{Number: 12, State: "open", HeadSHA: "h1", HeadRepo: "fork/shop", BaseRef: "main"}
 		}, 12, ErrNotApprovable},
-		{"a head without a policy of version 3", func(w *world) { w.openPull(12, "h1", "version: 2\n", "wf-1") }, 12, ErrNotApprovable},
+		{"a head without a valid policy", func(w *world) { w.openPull(12, "h1", "version: 2\n", "wf-1") }, 12, ErrNotApprovable},
 		{"a head without the workflow", func(w *world) {
 			w.openPull(12, "h1", policyV(1), "wf-1")
 			delete(w.gh.workflows, "h1")

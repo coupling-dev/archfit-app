@@ -27,6 +27,7 @@ type answerFile struct {
 	Reformats  bool                                         `json:"reformats"`
 	Module     string                                       `json:"module"`
 	Dependency string                                       `json:"dependency"`
+	Glob       string                                       `json:"glob"`
 	Exception  *policy3.Exception                           `json:"exception"`
 	Rule       *struct{ ID, From, To, Why, Instead string } `json:"rule"`
 	Then       *answerFile                                  `json:"then"`
@@ -48,6 +49,10 @@ func (a answerFile) applyOne(in []byte) ([]byte, error) {
 		return policy3.AddException(in, *a.Exception, a.Note)
 	case policy3.Reject:
 		return policy3.AddDenyRule(in, a.Rule.ID, a.Rule.From, a.Rule.To, a.Rule.Why, a.Rule.Instead, a.Note)
+	case policy3.DeclarePublic:
+		return policy3.AddSurface(in, a.Module, policy3.RolePublic, a.Glob, a.Note)
+	case policy3.DeclareModel:
+		return policy3.AddSurface(in, a.Module, policy3.RoleModel, a.Glob, a.Note)
 	case policy3.Confirm:
 	}
 	return nil, fmt.Errorf("answer %q writes nothing", a.Kind)
@@ -445,5 +450,40 @@ func TestWriterAcceptsALeadingDocumentStart(t *testing.T) {
 	}
 	if want := strings.Replace(in, "    paths: [cmd/**]\n", "    paths: [cmd/**]\n    depends_on:\n      - lib\n", 1); string(got) != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestAddSurfaceRefuses(t *testing.T) {
+	const (
+		v1Policy = "version: 1\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n  lib:\n    paths: [lib/**]\n    public: [lib]\n    model: [lib/model]\n"
+		v3Policy = "version: 3\nowners: [o]\nmodules:\n  lib:\n    paths: [lib/**]\n    public: [lib]\n"
+	)
+	for _, tc := range []struct {
+		name, policy, module string
+		role                 policy3.Role
+		glob, want           string
+	}{
+		{"a module without a surface", v1Policy, "app", policy3.RolePublic, "cmd/api", `module "app" declares neither public nor model`},
+		{"a model part in version 3", v3Policy, "lib", policy3.RoleModel, "lib/model", "a model part needs policy version 1"},
+		{"a glob in the model part", v1Policy, "lib", policy3.RolePublic, "lib/model", `already lists "lib/model" in the other part`},
+		{"a glob in the public part", v1Policy, "lib", policy3.RoleModel, "lib", `already lists "lib" in the other part`},
+		{"an unknown module", v1Policy, "nope", policy3.RolePublic, "x", `module "nope" is not in the policy`},
+		{"an unknown role", v1Policy, "lib", "private", "lib/x", `unknown surface role "private"`},
+		{"an empty glob", v1Policy, "lib", policy3.RolePublic, "", "the glob is empty"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := policy3.AddSurface([]byte(tc.policy), tc.module, tc.role, tc.glob, "request #7")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q; output:\n%s", err, tc.want, out)
+			}
+		})
+	}
+}
+
+func TestAddSurfaceKeepsADeclaredGlob(t *testing.T) {
+	in := []byte("version: 1\nowners: [o]\nmodules:\n  lib:\n    paths: [lib/**]\n    public: [lib]\n")
+	out, err := policy3.AddSurface(in, "lib", policy3.RolePublic, "lib", "request #7")
+	if err != nil || !bytes.Equal(out, in) {
+		t.Errorf("AddSurface = %q, %v; want the file unchanged", out, err)
 	}
 }

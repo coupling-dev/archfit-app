@@ -57,7 +57,7 @@ func (g pullPageChainGitHub) Artifact(ctx context.Context, r api.RepoRef, run in
 // The serial chain of a pull page whose result is in the artifact, and of one whose result is already published. The
 // elapsed time is the length of the longest chain of reads that wait for each other.
 func TestPullPageChainOfReads(t *testing.T) {
-	raw, err := os.ReadFile("../wire/result/testdata/result/pass.json")
+	raw, err := os.ReadFile("../wire/result/testdata/v0.9.0/result/pass.json")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,7 @@
+{
+  "kind": "approve",
+  "loosens": true,
+  "note": "request #12",
+  "module": "cli",
+  "dependency": "store"
+}

@@ -31,7 +31,7 @@ func (f *fakePolicyViews) PolicyState(_ context.Context, _ api.Repo) (gate.Polic
 const policyAPI = "/api/repos/" + repoName + "/policy"
 
 func TestPolicyGolden(t *testing.T) {
-	for _, name := range []string{"typical", "pumba"} {
+	for _, name := range []string{"typical", "pumba", "version-1"} {
 		t.Run(name, func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join("testdata/policy", name+".yaml"))
 			if err != nil {
@@ -54,6 +54,11 @@ func TestPolicyGolden(t *testing.T) {
 				t.Fatal(err)
 			}
 			path := filepath.Join("testdata/policy", name+".json")
+			if os.Getenv("UPDATE_GOLDEN") == "1" {
+				if err := os.WriteFile(path, append(pretty.Bytes(), '\n'), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
 			want, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)

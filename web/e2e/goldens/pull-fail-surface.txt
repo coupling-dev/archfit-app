@@ -1,0 +1,24 @@
+Pull request #4
+
+acme/app
+
+fail
+
+Archfit: fail, 1 error
+
+Pull request #4 on GitHub
+View policy
+
+cmd/main.go:14 coupling cmd -> pkg/tc/netem is past the surface
+
+why: new knowledge across a module boundary needs a balance of at least 7
+
+balance: 2/10 (min 7): intrusive, pkg_tc is high
+
+surface: pkg/tc (public)
+
+next: use the surface, or: archfit request -m "<why netem belongs to the surface>"
+
+Author: reply /archfit request <why you need it>. Do not copy the code.
+
+Owner: nothing to do until a request exists.

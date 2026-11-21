@@ -317,9 +317,35 @@ test('request: a request that does not exist is the API sentence, with no reposi
   await expect(page.getByRole('navigation', { name: 'Repository' })).toHaveCount(0);
 });
 
+test('request: a surface request declares the package, allows it until a date or rejects it; never approves it', async ({ page }) => {
+  const surface = {
+    ...request,
+    rule: 'coupling',
+    record:
+      'pkg/tc/netem.go:12: coupling: pkg_tc -> pkg/util/retry is past the surface\n  balance: 2/10 (min 7): intrusive, pkg_util is high\n' +
+      '  surface: pkg/util (public)\n  next: use the surface, or: archfit request -m "<why retry belongs to the surface>"',
+    balance: { value: 2, max: 10, min: 7, strength: 'intrusive', volatility: 'high' },
+    surface: { public: ['pkg/util'], model: [], package: 'pkg/util/retry' },
+    policy_version: 1,
+  };
+  await open(page, path, { [`GET ${req}`]: () => [200, surface], [`GET ${req}/preview`]: (_, url) => preview(url) });
+  const answers = page.getByRole('group', { name: 'Choose an answer' });
+  await expect(answers.getByRole('button')).toHaveText(['Declare as public', 'Declare as model', 'Allow until a date', 'Reject']);
+  await expectPageText(page, 'request-surface');
+  await answers.getByRole('button', { name: 'Declare as public' }).click();
+  await expect(page.getByText('Adds pkg/util/retry to the public part of pkg_util.')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Why the balance', exact: true })).toContainText('2/10 (min 7): intrusive, pkg_util is high');
+  await expectClean(page);
+
+  await open(page, path, { [`GET ${req}`]: () => [200, { ...surface, surface: { ...surface.surface, package: undefined } }] });
+  await expect(page.getByRole('group', { name: 'Choose an answer' }).getByRole('button')).toHaveText(['Allow until a date', 'Reject']);
+});
+
 for (const [name, data] of [
   ['open', request],
   ['as-reported', { ...request, verified: false }],
+  // Engine 0.9.0 names the inputs of a balance; engine v4.0.0 (the other states) does not.
+  ['balance-inputs', { ...request, balance: { value: 9, max: 10, min: 7, strength: 'contract', volatility: 'low' } }],
   [
     'joined',
     {

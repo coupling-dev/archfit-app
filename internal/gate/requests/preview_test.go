@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
@@ -416,16 +417,35 @@ func TestEditWritesEachAnswerOfEachRule(t *testing.T) {
 		{name: "reject unowned code", c: Change{Request: 4, Kind: policy3.Reject, Rule: "unowned", Path: "tools/gen.go", Instead: "Add it to a module."}},
 		{name: "reject an only rule", c: Change{Request: 4, Kind: policy3.Reject, Rule: "no-docker", From: "pkg_tc", To: "github.com/docker/docker", Instead: "Go through pkg_net."}},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			out, err := Edit([]byte(previewPolicy), tt.c, "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := changed(previewPolicy, string(out)); got != tt.want {
-				t.Errorf("changed lines =\n%s\nwant\n%s", got, tt.want)
-			}
-		})
+	for version, policy := range map[string]string{"version 3": previewPolicy, "version 1": previewPolicyV1} {
+		for _, tt := range tests {
+			t.Run(version+"/"+tt.name, func(t *testing.T) {
+				out, err := Edit([]byte(policy), tt.c, "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := changed(policy, string(out)); got != tt.want {
+					t.Errorf("changed lines =\n%s\nwant\n%s", got, tt.want)
+				}
+			})
+		}
+	}
+}
+
+// previewPolicyV1 is previewPolicy at version 1 of engine 0.9.0, with a model part.
+var previewPolicyV1 = strings.Replace(strings.Replace(previewPolicy, "version: 3\n", "version: 1\n", 1),
+	"    paths: [pkg/util/**]\n", "    paths: [pkg/util/**]\n    model: [pkg/util/model]\n", 1)
+
+func TestEditKeepsTheRequestCommentInAVersion1Policy(t *testing.T) {
+	out, err := Edit([]byte(previewPolicyV1), Change{Request: 2, Kind: policy3.Approve, Rule: "graph", From: "pkg_tc", To: "pkg_util"}, "request #2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := changed(previewPolicyV1, string(out)); got != "    depends_on:\n      - pkg_net\n      - pkg_util  # request #2\n" {
+		t.Errorf("changed lines = %q", got)
+	}
+	if p := mustPolicy(t, string(out)); p.Version != policy3.Version1 || len(p.Modules["pkg_util"].Model) != 1 {
+		t.Errorf("policy = version %d, pkg_util %+v", p.Version, p.Modules["pkg_util"])
 	}
 }
 
@@ -585,5 +605,166 @@ func TestViewKeepsStructuredDenyAndExceptionEndpoints(t *testing.T) {
 	pol := policy3.File{Rules: []policy3.Rule{{ID: "deny", Deny: &policy3.Deny{From: []string{"a, b", "other"}, To: []string{"c"}}}}}
 	if got := dependencies(pol, "a, b", "c"); !slices.Equal(got, []Dependency{{Kind: EarlierDeny, Rule: "deny", From: "a, b", To: "c"}}) {
 		t.Fatalf("comma module: %+v", got)
+	}
+}
+
+// A surface request (the surfaces design 6.9) takes declare-public, declare-model, approve-until or reject. A use past
+// the surface is never approved as such, and a request that names no package past the surface gets no declaration.
+func TestChangeOfASurfaceRequest(t *testing.T) {
+	today := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
+	surface := records.Request{Rule: "coupling", From: "pkg_tc", To: "pkg_util",
+		Surface: &records.Surface{Public: []string{"pkg/util"}, Model: []string{"pkg/util/model"}, Package: "pkg/util/retry"}}
+	noPackage := surface
+	noPackage.Surface = &records.Surface{Public: []string{"pkg/util"}, Model: []string{}}
+	plain := records.Request{Rule: "coupling", From: "pkg_tc", To: "pkg_util"}
+	for _, tc := range []struct {
+		name     string
+		req      records.Request
+		a        Answer
+		wantGlob string
+		wantErr  bool
+	}{
+		{"declare public", surface, Answer{Kind: policy3.DeclarePublic}, "pkg/util/retry", false},
+		{"declare a model part", surface, Answer{Kind: policy3.DeclareModel}, "pkg/util/retry", false},
+		{"allow until a date", surface, Answer{Kind: policy3.ApproveUntil, Until: "2026-12-20"}, "", false},
+		{"reject with instead", surface, Answer{Kind: policy3.Reject, Instead: "Use pkg/util."}, "", false},
+		{"approve a use past the surface", surface, Answer{Kind: policy3.Approve}, "", true},
+		{"declare without a package", noPackage, Answer{Kind: policy3.DeclarePublic}, "", true},
+		{"declare on another request", plain, Answer{Kind: policy3.DeclareModel}, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := ChangeOf(7, tc.req, tc.a, today)
+			if tc.wantErr {
+				if !errors.Is(err, ErrAnswer) {
+					t.Fatalf("err = %v, want ErrAnswer", err)
+				}
+				return
+			}
+			if err != nil || c.Glob != tc.wantGlob || c.Kind != tc.a.Kind {
+				t.Fatalf("ChangeOf = %+v, %v", c, err)
+			}
+		})
+	}
+}
+
+func TestEditDeclaresThePackageInTheSurface(t *testing.T) {
+	const v1 = "version: 1\nowners: [olivia]\nmodules:\n  pkg_tc:\n    paths: [pkg/tc/**]\n  pkg_util:\n    paths: [pkg/util/**]\n    public: [pkg/util]\n"
+	declare := func(kind policy3.Answer) Change {
+		return Change{Request: 7, Kind: kind, Rule: "coupling", From: "pkg_tc", To: "pkg_util", Glob: "pkg/util/retry"}
+	}
+	out, err := Edit([]byte(v1), declare(policy3.DeclarePublic), "request #7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := changed(v1, string(out)); got != "    public:\n      - pkg/util\n      - pkg/util/retry  # request #7\n" {
+		t.Errorf("declare public: changed lines = %q", got)
+	}
+	out, err = Edit([]byte(v1), declare(policy3.DeclareModel), "request #7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := changed(v1, string(out)); got != "    model:\n      - pkg/util/retry  # request #7\n" {
+		t.Errorf("declare a model part: changed lines = %q", got)
+	}
+	v3 := strings.Replace(v1, "version: 1", "version: 3", 1)
+	if _, err := Edit([]byte(v3), declare(policy3.DeclareModel), "request #7"); !errors.Is(err, ErrByHand) {
+		t.Errorf("a model part in version 3: err = %v, want ErrByHand", err)
+	}
+}
+
+// A request keeps the surface of a coupling error past it, with the package the error names; another rule keeps none.
+func TestSurfaceOfACouplingError(t *testing.T) {
+	s := &result.Surface{Public: []string{"pkg/util"}, Model: []string{}}
+	if got := surfaceOf(result.Error{Rule: "coupling", Surface: s}); got == nil || got.Package != "" || !slices.Equal(got.Public, s.Public) {
+		t.Errorf("surfaceOf(coupling) = %+v", got)
+	}
+	if got := surfaceOf(result.Error{Rule: "graph", Surface: s}); got != nil {
+		t.Errorf("surfaceOf(graph) = %+v, want nil", got)
+	}
+	if got := surfaceOf(result.Error{Rule: "coupling"}); got != nil {
+		t.Errorf("surfaceOf(no surface) = %+v, want nil", got)
+	}
+}
+
+// A request is a surface request when any of its errors is a use past the surface, not only the first.
+func TestGroupSurfaceTakesTheFirstErrorWithASurface(t *testing.T) {
+	past := result.Error{Rule: "coupling", Surface: &result.Surface{Public: []string{"pkg/util"}, Model: []string{}}}
+	if got := groupSurface([]result.Error{{Rule: "coupling"}, past}); got == nil || !slices.Equal(got.Public, []string{"pkg/util"}) {
+		t.Errorf("groupSurface = %+v", got)
+	}
+	if got := groupSurface([]result.Error{{Rule: "coupling"}}); got != nil {
+		t.Errorf("groupSurface without a surface = %+v, want nil", got)
+	}
+}
+
+// A verified result can make a request a surface request, or give it the package; it never makes it stop being one,
+// and the package a request keeps is only ever one a verified result names.
+func TestMergeSurface(t *testing.T) {
+	bare := &records.Surface{Public: []string{"a"}, Model: []string{}}
+	retry := &records.Surface{Public: []string{"a"}, Model: []string{}, Package: "a/retry"}
+	backoff := &records.Surface{Public: []string{"a"}, Model: []string{}, Package: "a/backoff"}
+	contested := &records.Surface{Public: []string{"a"}, Model: []string{}, Contested: true}
+	for _, tc := range []struct {
+		name        string
+		kept, s     *records.Surface
+		verified    bool
+		want        *records.Surface
+		wantChanged bool
+	}{
+		{"no surface either side", nil, nil, true, nil, false},
+		{"a verified result past the surface", nil, bare, true, bare, true},
+		{"a verified result names the package", bare, retry, true, retry, true},
+		{"a verified result without a surface keeps it", retry, nil, true, retry, false},
+		{"a package is never dropped for none", retry, bare, true, retry, false},
+		{"the same package again", retry, retry, true, retry, false},
+		{"a reported package is replaced by the verified one", retry, backoff, false, backoff, true},
+		{"a reported package is dropped by a verified result without a surface", retry, nil, false, bare, true},
+		{"two verified packages leave none", retry, backoff, true, contested, true},
+		{"a contested request never takes a package again", contested, retry, true, contested, false},
+		{"a contested request keeps its mark against a bare surface", contested, bare, true, contested, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, changed := mergeSurface(tc.kept, tc.s, tc.verified)
+			if !reflect.DeepEqual(got, tc.want) || changed != tc.wantChanged {
+				t.Errorf("mergeSurface = %+v, %v; want %+v, %v", got, changed, tc.want, tc.wantChanged)
+			}
+		})
+	}
+}
+
+func TestBoundedSurface(t *testing.T) {
+	many := make([]string, maxSurfaceGlobs+5)
+	for i := range many {
+		many[i] = strings.Repeat("x", maxSurfaceGlob+10)
+	}
+	got := boundedSurface(many, nil, strings.Repeat("p", maxSurfaceGlob+1))
+	if len(got.Public) != maxSurfaceGlobs || len(got.Public[0]) != maxSurfaceGlob || got.Model == nil || len(got.Model) != 0 {
+		t.Errorf("public %d globs of %d bytes, model %v", len(got.Public), len(got.Public[0]), got.Model)
+	}
+	if got.Package != "" {
+		t.Error("a package past the bound is cut, not dropped: a declaration would write another glob")
+	}
+}
+
+// A surface request with its package previews each declaration against the version 1 policy at the tip, and refuses
+// a plain approve.
+func TestPreviewOfASurfaceRequest(t *testing.T) {
+	w := newPreviewWorld(t)
+	w.gh.policy = []byte("version: 1\nowners: [olivia]\nmodules:\n  pkg_tc:\n    paths: [pkg/tc/**]\n  pkg_util:\n    paths: [pkg/util/**]\n    public: [pkg/util]\n")
+	w.put(432, records.Request{Key: "coupling pkg_tc pkg_util", Reason: "retry is shared", Rule: "coupling", From: "pkg_tc", To: "pkg_util",
+		Numbers: records.Numbers{Verified: true, Balance: &records.Balance{Score: 2, Max: 10, Min: 7, Strength: "intrusive", Volatility: "high"}},
+		Surface: &records.Surface{Public: []string{"pkg/util"}, Model: []string{}, Package: "pkg/util/retry"}})
+	ctx := context.Background()
+	for kind, want := range map[policy3.Answer]string{
+		policy3.DeclarePublic: "+      - pkg/util/retry  # request #432\n",
+		policy3.DeclareModel:  "+    model:\n+      - pkg/util/retry  # request #432\n",
+	} {
+		p, err := w.svc.Preview(ctx, previewRepo, 432, Answer{Kind: kind}, testToday)
+		if err != nil || !p.Loosens || !strings.Contains(p.Diff, want) {
+			t.Errorf("%s: preview %+v, %v; want a diff with %q", kind, p, err, want)
+		}
+	}
+	if _, err := w.svc.Preview(ctx, previewRepo, 432, Answer{Kind: policy3.Approve}, testToday); !errors.Is(err, ErrAnswer) {
+		t.Errorf("approve: err = %v, want ErrAnswer", err)
 	}
 }

@@ -88,3 +88,20 @@ func TestEditCleansClosedProposalsAfterValidRedemption(t *testing.T) {
 		t.Fatal(a)
 	}
 }
+
+// The editor reads the policy versions the App reads: version 1 with a model part, and version 3 until task 6.5,
+// which has no model part.
+func TestEditPreviewReadsVersion1AndRefusesAModelInVersion3(t *testing.T) {
+	const modules = "owners: [olivia]\nmodules:\n  app:\n    paths: [app/**]\n    model: [app/model]\n"
+	w := newWorld(t)
+	v1 := EditInput{File: []byte("version: 1\n" + modules), Base: policy3.Digest([]byte(testPolicy)), Owner: olivia}
+	got, err := w.svc.EditPreview(context.Background(), testRepo, v1)
+	if err != nil || len(got.Errors) != 0 || got.Digest != policy3.Digest(v1.File) {
+		t.Fatalf("version 1 preview %+v %v", got, err)
+	}
+	v3 := EditInput{File: []byte("version: 3\n" + modules), Base: policy3.Digest([]byte(testPolicy)), Owner: olivia}
+	got, err = w.svc.EditPreview(context.Background(), testRepo, v3)
+	if err != nil || len(got.Errors) != 1 || !strings.Contains(got.Errors[0], "modules.app.model: needs policy version 1") || got.Digest != "" {
+		t.Fatalf("version 3 preview %+v %v", got, err)
+	}
+}

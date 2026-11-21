@@ -34,6 +34,7 @@ type policyModuleJSON struct {
 	Name       string   `json:"name"`
 	Paths      []string `json:"paths"`
 	Public     []string `json:"public"`
+	Model      []string `json:"model"` // null when absent; version 1 only
 	Volatility string   `json:"volatility"`
 	Subdomain  string   `json:"subdomain"`
 	Layer      string   `json:"layer"`
@@ -133,7 +134,7 @@ func (s *server) apiPolicy(r *http.Request, sc scope) (any, error) {
 				volatility = "high"
 			}
 		}
-		body.Modules = append(body.Modules, policyModuleJSON{name, m.Paths, m.Public, volatility, m.Subdomain, m.Layer, append([]string{}, m.DependsOn...)})
+		body.Modules = append(body.Modules, policyModuleJSON{name, m.Paths, m.Public, m.Model, volatility, m.Subdomain, m.Layer, append([]string{}, m.DependsOn...)})
 	}
 	for _, rule := range f.Rules {
 		v := policyRuleJSON{ID: rule.ID, Note: rule.Note, NotChecked: rule.Note != "", Why: rule.Why, Instead: rule.Instead}

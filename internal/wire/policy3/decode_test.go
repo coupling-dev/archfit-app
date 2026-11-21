@@ -30,9 +30,23 @@ const (
 
 func ptr[T any](v T) *T { return &v }
 
+// The vendored corpora, one per policy version the App reads (module.md).
+const (
+	v1 = "v1"
+	v3 = "v3"
+)
+
+var versions = map[string]int{v1: policy3.Version1, v3: policy3.Version3}
+
+// readFixture reads a vendored fixture of the version 3 corpus.
 func readFixture(t *testing.T, kind, name string) []byte {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", kind, name+".yaml"))
+	return readFixtureOf(t, v3, kind, name)
+}
+
+func readFixtureOf(t *testing.T, version, kind, name string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", version, kind, name+".yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,14 +59,22 @@ func decodeFixture(t *testing.T, kind, name string) (policy3.File, error) {
 }
 
 func TestDecodeValidFixtures(t *testing.T) {
+	for version, number := range versions {
+		t.Run(version, func(t *testing.T) { decodesValidFixtures(t, version, validFixtures(number)) })
+	}
+}
+
+// validFixtures is what each valid fixture decodes to at a version. The two corpora differ only by the version and the
+// model part of every-key.yaml's core module, which version 1 has.
+func validFixtures(version int) map[string]policy3.File {
 	tests := map[string]policy3.File{
 		"smallest": {
-			Version: 3,
+			Version: version,
 			Owners:  []string{owner},
 			Modules: map[string]policy3.Module{modApp: {Paths: []string{cmdGlob, "pkg/**"}}},
 		},
 		"typical": {
-			Version: 3,
+			Version: version,
 			Owners:  []string{owner},
 			Gate:    "required",
 			Layers:  []string{core, layerCmd},
@@ -90,7 +112,7 @@ func TestDecodeValidFixtures(t *testing.T) {
 			}},
 		},
 		"every-key": {
-			Version: 3,
+			Version: version,
 			Owners:  []string{owner, "octocat"},
 			Gate:    "advisory",
 			Layers:  []string{"domain", "adapter", layerCmd},
@@ -157,16 +179,25 @@ func TestDecodeValidFixtures(t *testing.T) {
 			},
 		},
 	}
-	files, err := filepath.Glob(filepath.Join("testdata", "valid", "*.yaml"))
+	if version == policy3.Version1 {
+		m := tests["every-key"].Modules[core]
+		m.Model = []string{"internal/core/model"}
+		tests["every-key"].Modules[core] = m
+	}
+	return tests
+}
+
+func decodesValidFixtures(t *testing.T, version string, tests map[string]policy3.File) {
+	files, err := filepath.Glob(filepath.Join("testdata", version, "valid", "*.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(files) != len(tests) {
-		t.Errorf("testdata/valid has %d files, the table has %d rows", len(files), len(tests))
+		t.Errorf("testdata/%s/valid has %d files, the table has %d rows", version, len(files), len(tests))
 	}
 	for name, want := range tests {
 		t.Run(name, func(t *testing.T) {
-			got, err := decodeFixture(t, "valid", name)
+			got, err := policy3.Decode(readFixtureOf(t, version, "valid", name))
 			if err != nil {
 				t.Fatalf("Decode: %v", err)
 			}
@@ -190,78 +221,113 @@ func TestDecodeKeepsAbsentKeysZero(t *testing.T) {
 	}
 }
 
-// invalidFixtures maps each file in testdata/invalid to the messages its error must contain.
-// The messages are the engine's, except where yaml.v3 words the unknown key itself.
-var invalidFixtures = map[string][]string{
-	"unknown-key":        {"field owner not found", "line 6"},
-	"version-missing":    {`version: missing: add "version: 3"`},
-	"version-2":          {`version 2 is the Archfit 3 policy format: run "archfit init" to convert it to version 3`},
-	"version-4":          {"version 4: this engine reads version 3"},
-	"version-string":     {`version "3": this engine reads version 3`},
-	"expires-shape":      {`exceptions[0].expires: "19-11-2026" is not a date: use YYYY-MM-DD`},
-	"expires-impossible": {`exceptions[0].expires: "2026-02-30" is not a date: use YYYY-MM-DD`},
-	"rule-two-forms":     {"rules[0] (two-forms): has deny and note: a rule has exactly one of deny, only or note"},
-	"rule-no-form":       {"rules[0] (no-form): needs one of deny, only or note"},
-	"rule-two-forms-no-instead": {
-		"rules[0] (two-forms): has deny and note",
-		"rules[0] (two-forms).instead: required with deny",
-	},
-	"gate-empty":           {"gate: empty string: give a value or remove the key"},
-	"expires-empty":        {"exceptions[0].expires: empty string: give a value or remove the key"},
-	"unowned-to-empty":     {"exceptions[0].to: empty string: give a value or remove the key"},
-	"builtin-mode-unknown": {`builtin.graph: "warn" is not one of deny, ask, off`},
-	"min-balance-low":      {"builtin.min_balance: 0 is outside 1 to 10"},
-	"min-balance-high":     {"builtin.min_balance: 11 is outside 1 to 10"},
-	"volatility-unknown":   {`modules.app.volatility: "frozen" is not one of low, medium, high`},
-	"subdomain-unknown":    {`modules.app.subdomain: "platform" is not one of core, supporting, generic`},
-	"gate-unknown":         {`gate: "fail" is not one of advisory, required`},
-	"enabled-unknown":      {`languages.go.enabled: "on" is not true, false or "auto"`},
-	"owners-missing":       {"owners: required: list at least one GitHub login"},
-	"owners-empty":         {"owners: required: list at least one GitHub login"},
-	"modules-missing":      {"modules: required: declare at least one module"},
-	"paths-missing":        {"modules.app.paths: required: list at least one glob"},
-	"public-empty":         {"modules.app.public: empty: list at least one glob, or remove the key"},
-	"module-duplicate":     {`"app"`, "already defined"},
-	"layers-duplicate":     {`layers: "core" is listed twice`},
-	"why-missing":          {"rules[0] (no-why).why: required: give the reason for the rule"},
-	"instead-missing":      {"rules[0] (no-instead).instead: required with deny: say what to do instead"},
-	"names-empty":          {"rules[0] (empty-from).deny.from: empty: name a module or a path glob"},
-	"exception-to-missing": {"exceptions[0].to: required: name the module the errors reach"},
-	"exception-unowned-to": {"exceptions[0].to: unowned has no target module: remove to"},
-	"exception-only-to":    {"exceptions[0].to: no-docker is an only rule, which names its library itself: remove to"},
-	"timeout-bad":          {`analyzers.roslyn.timeout: "five minutes" is not a Go duration, such as 5m`},
-	"coverage-no-sources":  {"coverage.sources: required when coverage is enabled: list at least one file"},
+// invalidFixtures maps each file in testdata/<version>/invalid to the messages its error must contain. The messages
+// are the engine's, except where yaml.v3 words the unknown key itself, and the version messages, which are the App's:
+// it reads two versions.
+var invalidFixtures = map[string]map[string][]string{
+	v3: invalidCommon(`version "3"`),
+	v1: withModel(invalidCommon(`version "1"`)),
+}
+
+func withModel(m map[string][]string) map[string][]string {
+	m["model-empty"] = []string{"modules.app.model: empty: list at least one glob, or remove the key"}
+	return m
+}
+
+func invalidCommon(quoted string) map[string][]string {
+	return map[string][]string{
+		"unknown-key":        {"field owner not found", "line 6"},
+		"version-missing":    {`version: missing: add "version: 1"`},
+		"version-2":          {`version 2 is the Archfit 3 policy format: remove the file and run "archfit init" to write a version 1 policy`},
+		"version-4":          {"version 4 is not supported: the App reads policy version 1, and version 3 of engine v4.0.0"},
+		"version-string":     {quoted + " is not supported: the App reads policy version 1"},
+		"expires-shape":      {`exceptions[0].expires: "19-11-2026" is not a date: use YYYY-MM-DD`},
+		"expires-impossible": {`exceptions[0].expires: "2026-02-30" is not a date: use YYYY-MM-DD`},
+		"rule-two-forms":     {"rules[0] (two-forms): has deny and note: a rule has exactly one of deny, only or note"},
+		"rule-no-form":       {"rules[0] (no-form): needs one of deny, only or note"},
+		"rule-two-forms-no-instead": {
+			"rules[0] (two-forms): has deny and note",
+			"rules[0] (two-forms).instead: required with deny",
+		},
+		"gate-empty":           {"gate: empty string: give a value or remove the key"},
+		"expires-empty":        {"exceptions[0].expires: empty string: give a value or remove the key"},
+		"unowned-to-empty":     {"exceptions[0].to: empty string: give a value or remove the key"},
+		"builtin-mode-unknown": {`builtin.graph: "warn" is not one of deny, ask, off`},
+		"min-balance-low":      {"builtin.min_balance: 0 is outside 1 to 10"},
+		"min-balance-high":     {"builtin.min_balance: 11 is outside 1 to 10"},
+		"volatility-unknown":   {`modules.app.volatility: "frozen" is not one of low, medium, high`},
+		"subdomain-unknown":    {`modules.app.subdomain: "platform" is not one of core, supporting, generic`},
+		"gate-unknown":         {`gate: "fail" is not one of advisory, required`},
+		"enabled-unknown":      {`languages.go.enabled: "on" is not true, false or "auto"`},
+		"owners-missing":       {"owners: required: list at least one GitHub login"},
+		"owners-empty":         {"owners: required: list at least one GitHub login"},
+		"modules-missing":      {"modules: required: declare at least one module"},
+		"paths-missing":        {"modules.app.paths: required: list at least one glob"},
+		"public-empty":         {"modules.app.public: empty: list at least one glob, or remove the key"},
+		"module-duplicate":     {`"app"`, "already defined"},
+		"layers-duplicate":     {`layers: "core" is listed twice`},
+		"why-missing":          {"rules[0] (no-why).why: required: give the reason for the rule"},
+		"instead-missing":      {"rules[0] (no-instead).instead: required with deny: say what to do instead"},
+		"names-empty":          {"rules[0] (empty-from).deny.from: empty: name a module or a path glob"},
+		"exception-to-missing": {"exceptions[0].to: required: name the module the errors reach"},
+		"exception-unowned-to": {"exceptions[0].to: unowned has no target module: remove to"},
+		"exception-only-to":    {"exceptions[0].to: no-docker is an only rule, which names its library itself: remove to"},
+		"timeout-bad":          {`analyzers.roslyn.timeout: "five minutes" is not a Go duration, such as 5m`},
+		"coverage-no-sources":  {"coverage.sources: required when coverage is enabled: list at least one file"},
+	}
 }
 
 func TestDecodeInvalidFixtures(t *testing.T) {
-	for name, wants := range invalidFixtures {
-		t.Run(name, func(t *testing.T) {
-			_, err := decodeFixture(t, "invalid", name)
-			if err == nil {
-				t.Fatal("Decode accepted an invalid policy")
-			}
-			for _, want := range wants {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("error %q does not contain %q", err, want)
+	for version, fixtures := range invalidFixtures {
+		for name, wants := range fixtures {
+			t.Run(version+"/"+name, func(t *testing.T) {
+				_, err := policy3.Decode(readFixtureOf(t, version, "invalid", name))
+				if err == nil {
+					t.Fatal("Decode accepted an invalid policy")
 				}
-			}
-		})
+				for _, want := range wants {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error %q does not contain %q", err, want)
+					}
+				}
+			})
+		}
 	}
 }
 
 func TestEveryInvalidFixtureHasExpectedMessages(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join("testdata", "invalid", "*.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, file := range files {
-		name := strings.TrimSuffix(filepath.Base(file), ".yaml")
-		if _, ok := invalidFixtures[name]; !ok {
-			t.Errorf("%s has no row in invalidFixtures", file)
+	for version, fixtures := range invalidFixtures {
+		files, err := filepath.Glob(filepath.Join("testdata", version, "invalid", "*.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, file := range files {
+			name := strings.TrimSuffix(filepath.Base(file), ".yaml")
+			if _, ok := fixtures[name]; !ok {
+				t.Errorf("%s has no row in invalidFixtures", file)
+			}
+		}
+		if len(files) != len(fixtures) {
+			t.Errorf("testdata/%s/invalid has %d files, the table has %d rows", version, len(files), len(fixtures))
 		}
 	}
-	if len(files) != len(invalidFixtures) {
-		t.Errorf("testdata/invalid has %d files, the table has %d rows", len(files), len(invalidFixtures))
+}
+
+// The model key exists only in version 1: the v4.0.0 engine rejects it in a version 3 file, so the App does too.
+func TestDecodeModelNeedsVersion1(t *testing.T) {
+	policy := func(version string) []byte {
+		return []byte("version: " + version + "\nowners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n    model: [cmd/model]\n")
+	}
+	got, err := policy3.Decode(policy("1"))
+	if err != nil {
+		t.Fatalf("version 1: %v", err)
+	}
+	if m := got.Modules[modApp].Model; len(m) != 1 || m[0] != "cmd/model" {
+		t.Errorf("model = %q", m)
+	}
+	_, err = policy3.Decode(policy("3"))
+	if want := "modules.app.model: needs policy version 1"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("version 3: error = %v, want %q", err, want)
 	}
 }
 
@@ -289,12 +355,19 @@ builtin:
 const header = "owners: [o]\nmodules:\n  app:\n    paths: [cmd/**]\n"
 
 func TestDecodeVersionNumbers(t *testing.T) {
-	tests := []struct{ version, wantErr string }{
-		{version: "3"},
-		{version: "3.0"},
-		{version: "2.0", wantErr: `version 2 is the Archfit 3 policy format: run "archfit init"`},
-		{version: "3.5", wantErr: "version 3.5: this engine reads version 3"},
-		{version: "-3", wantErr: "version -3: this engine reads version 3"},
+	tests := []struct {
+		version, wantErr string
+		want             int
+	}{
+		{version: "1", want: policy3.Version1},
+		{version: "1.0", want: policy3.Version1},
+		{version: "3", want: policy3.Version3},
+		{version: "3.0", want: policy3.Version3},
+		{version: "2.0", wantErr: `version 2 is the Archfit 3 policy format: remove the file and run "archfit init"`},
+		{version: "3.5", wantErr: "version 3.5 is not supported"},
+		{version: "-3", wantErr: "version -3 is not supported"},
+		{version: "0", wantErr: "version 0 is not supported"},
+		{version: "4", wantErr: "version 4 is not supported"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.version, func(t *testing.T) {
@@ -308,8 +381,8 @@ func TestDecodeVersionNumbers(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Decode: %v", err)
 			}
-			if got.Version != policy3.Version {
-				t.Errorf("Version = %d, want %d", got.Version, policy3.Version)
+			if got.Version != tt.want {
+				t.Errorf("Version = %d, want %d", got.Version, tt.want)
 			}
 		})
 	}

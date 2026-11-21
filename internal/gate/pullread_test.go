@@ -35,7 +35,7 @@ func (*pullReadGitHub) CheckRuns(context.Context, api.RepoRef, string, string) (
 }
 
 func TestPullPageEvidence(t *testing.T) {
-	raw, err := os.ReadFile("../wire/result/testdata/result/pass.json")
+	raw, err := os.ReadFile("../wire/result/testdata/v0.9.0/result/pass.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestPullPagePublicationWithoutUpload(t *testing.T) {
 }
 
 func TestPullPageCoversFromLiveRequests(t *testing.T) {
-	raw, err := os.ReadFile("../wire/result/testdata/result/graph.json")
+	raw, err := os.ReadFile("../wire/result/testdata/v0.9.0/result/graph.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestPullPageCoversFromLiveRequests(t *testing.T) {
 }
 
 func TestAdvisoryFailureDoesNotWaitForOpenRequest(t *testing.T) {
-	raw, err := os.ReadFile("../wire/result/testdata/result/graph.json")
+	raw, err := os.ReadFile("../wire/result/testdata/v0.9.0/result/graph.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestAdvisoryFailureDoesNotWaitForOpenRequest(t *testing.T) {
 }
 
 func TestPullPageNeverShowsPreviousHeadsPass(t *testing.T) {
-	body, err := os.ReadFile("../wire/result/testdata/result/pass.json")
+	body, err := os.ReadFile("../wire/result/testdata/v0.9.0/result/pass.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,11 +259,11 @@ func (s *changeAfterRecordRead) Get(ctx context.Context, tenant store.Tenant, ke
 }
 
 func TestPullPageRequiresConsistentRecordAndPublicationSnapshot(t *testing.T) {
-	pass, err := os.ReadFile("../wire/result/testdata/result/pass.json")
+	pass, err := os.ReadFile("../wire/result/testdata/v0.9.0/result/pass.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	fail, err := os.ReadFile("../wire/result/testdata/result/deny.json")
+	fail, err := os.ReadFile("../wire/result/testdata/v0.9.0/result/deny.json")
 	if err != nil {
 		t.Fatal(err)
 	}

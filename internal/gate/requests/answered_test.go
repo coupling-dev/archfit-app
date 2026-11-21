@@ -35,6 +35,14 @@ func TestAnswerNoteNamesTheAnswerOwnerPasskeyAndPull(t *testing.T) {
 			AnswerNote{Kind: policy3.Reject, Instead: "Use the port.", Owner: "o", Pull: 12, State: PullMerged},
 			"archfit: rejected by `o`. Instead:\n\n```text\nUse the port.\n```\n\nThe policy change merged in #12.\n",
 		},
+		"declare public": {
+			AnswerNote{Kind: policy3.DeclarePublic, Owner: "o", Passkey: "abc", Pull: 12, State: PullMerged},
+			"archfit: declared public by `o` with the passkey `abc`. The policy change merged in #12.\n",
+		},
+		"declare a model part": {
+			AnswerNote{Kind: policy3.DeclareModel, Owner: "o", Passkey: "abc", Pull: 12, State: PullLater},
+			"archfit: declared a model part by `o` with the passkey `abc`. The policy change is in #12; it takes effect when #12 merges.\n",
+		},
 		"a reject with no policy line": {
 			AnswerNote{Kind: policy3.Reject, Instead: "Call the owner module.", Owner: "o"},
 			"archfit: rejected by `o`. Instead:\n\n```text\nCall the owner module.\n```\n\nThe policy has no line for this answer; this issue keeps it.\n",

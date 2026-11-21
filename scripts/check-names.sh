@@ -2,7 +2,9 @@
 # Reject old project homes, not personal logins.
 # docs/archive, docs/plans and docs/reviews record history.
 # This script contains the rule itself.
-# Listed vendored paths come from the pinned engine/Action; refresh in 5.2/5.3.
+# Listed vendored paths come from the pinned engine/Action. The engine v4.0.0
+# result corpus, the version 3 policy corpus and the tests that pin them name
+# the old home until task 6.5 deletes them (internal/wire/result/module.md).
 # Runtime references to approved v4 Action/engine move with manifest in 5.3,
 # both repositories accepted during epic 6.
 # Workflow parser tests retain the v4 Action contract.
@@ -15,13 +17,11 @@ if git grep -n -I -E "$pattern" -- \
   ':!internal/wire/workflow/workflow_test.go' \
   ':!web/src/components/Setup.svelte' \
   ':!internal/wire/result/vendor_test.go' \
-  ':!internal/wire/wording/wording_test.go' \
   ':!internal/wire/policy3/source_test.go' \
-  ':!internal/wire/wording/SCHEMA_SOURCE' \
-  ':!internal/wire/policy3/SCHEMA_SOURCE' \
-  ':!internal/wire/result/SCHEMA_SOURCE' \
-  ':!internal/wire/policy3/archfit.schema.json' \
-  ':!internal/wire/result/archfit.result.schema.json' \
+  ':!internal/wire/policy3/testdata/v3/SCHEMA_SOURCE' \
+  ':!internal/wire/result/testdata/v4.0.0/SCHEMA_SOURCE' \
+  ':!internal/wire/policy3/testdata/v3/archfit.schema.json' \
+  ':!internal/wire/result/testdata/v4.0.0/archfit.result.schema.json' \
   ':!internal/wire/testdata/envelope-v2/invalid-bare-policy-digest.expect.json' \
   ':!internal/wire/testdata/envelope-v2/invalid-bare-policy-digest.json' \
   ':!internal/wire/testdata/envelope-v2/invalid-baseline-digest.expect.json' \

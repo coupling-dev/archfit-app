@@ -21,7 +21,7 @@ import (
 
 func TestPullAPIGoldens(t *testing.T) {
 	cases := []struct{ name, source, status string }{
-		{"pass", "pass", "pass"}, {"fail-advisory", "deny", "fail"}, {"fail-advisory-request", "graph", "fail"}, {"required-request", "graph", "fail"}, {"fail-fix", "deny", "fail"}, {"fail-ask", "graph", "fail"},
+		{"pass", "pass", "pass"}, {"fail-advisory", "deny", "fail"}, {"fail-advisory-request", "graph", "fail"}, {"required-request", "graph", "fail"}, {"fail-fix", "deny", "fail"}, {"fail-ask", "graph", "fail"}, {"fail-surface", "coupling", "fail"},
 		{"fail-copy", "duplication", "fail"}, {"next-backticks", "deny", "fail"}, {"fail-expired-exception", "expired_exception", "fail"},
 		{"unknown", "policy_differs", "unknown"}, {"waiting", "graph", "waiting"},
 		{"unknown-first-policy", "pass", "unknown"}, {"unknown-workflow", "pass", "unknown"}, {"unknown-workflow-viewer", "pass", "unknown"}, {"unknown-outside-flow", "pass", "unknown"}, {"unknown-missing-evidence", "pass", "unknown"}, {"unpublished", "pass", "pass"}, {"superseded", "pass", "pass"}, {"no-result", "", ""}, {"missing-artifact", "pass", "pass"}, {"mismatch", "pass", "pass"}, {"pending", "pass", "pass"},
@@ -31,7 +31,7 @@ func TestPullAPIGoldens(t *testing.T) {
 			e := newEnv(t)
 			e.now = time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
 			if tc.source != "" {
-				raw, err := os.ReadFile(filepath.Join("..", "..", "wire", "result", "testdata", "result", tc.source+".json"))
+				raw, err := os.ReadFile(filepath.Join("..", "..", "wire", "result", "testdata", "v0.9.0", "result", tc.source+".json"))
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -85,7 +85,7 @@ direct push to the policy is the new rule with no owner's word.
   `Confirm`) and records it on GitHub, naming the owner and the passkey (design 19):
   - **first** of an onboarding pull request: a repository administrator who is also an owner named in the policy at
     the PR's immutable head; the pull request is open, of this repository,
-    into the default branch, which has no policy of version 3; its head has one and has the workflow file. Recorded on
+    into the default branch, which has no valid policy; its head has one and has the workflow file. Recorded on
     the pull request.
   - **first** of the policy already on the default branch (an already-converted repository with no record): a
     repository administrator who is also an owner the policy names (manager, 2026-11-13; the passkey registration rule
@@ -273,7 +273,7 @@ Owner actions and workflow pushes (`owner_test.go`, the fake also holds the work
 `TestTheFirstApprovalOfAnOnboardingPullRequestIsConsumedByItsMerge` (a non-administrator refused; the record on the pull
 request), `TestOneFirstApprovalNeverAdmitsAnotherWorkflow`, `TestAFirstApprovalIsBoundToWhatTheAdministratorSaw` (a push
 after `Bind`: `ErrMoved` before the step-up), `TestAFirstApprovalRefuses` (approved repository, fork, head without a
-policy of version 3 or without the workflow, a branch with a policy, no pull request),
+valid policy or without the workflow, a branch with a policy, no pull request),
 `TestTheFirstApprovalOfAnAlreadyConvertedRepository` (an administrator the policy does not name refused; the issue
 assigned to the owners; a later direct push is outside the flow), `TestAWorkflowApprovalIsConsumedByItsMergeOnce`,
 `TestAWorkflowMergedWithAnotherFileVoidsItsApproval`, `TestAWorkflowApprovalRefuses`,

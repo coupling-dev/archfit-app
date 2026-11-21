@@ -1,0 +1,12 @@
+version: 1
+owners: [alexei-led]
+modules:
+  assessment:
+    paths: [internal/assessment/**]
+    public:
+      - internal/assessment/finding
+      - internal/assessment/score  # request #431
+    volatility: high
+  app:
+    paths: [internal/application/**]
+    depends_on: [assessment]

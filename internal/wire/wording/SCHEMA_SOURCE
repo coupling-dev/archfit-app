@@ -1,4 +1,4 @@
-repository: github.com/alexei-led/archfit
-commit: f9138311317407eb35ef1dfa8c50546dad99a1a4
+repository: github.com/coupling-dev/archfit
+commit: 2f60ce1f2948c0fb37e0f1bdfbbeca3b2b1bf49b
 from: wording.go.txt <- internal/testutil/wording.go
-298d63c7379ecf3b0b4f1731ca751e40edbee3188c8c81533febee2f6aeb3474  wording.go.txt
+41627178a0a3a78ba575201eb65179175b0a114c9918339e022ff2bb7746ea61  wording.go.txt

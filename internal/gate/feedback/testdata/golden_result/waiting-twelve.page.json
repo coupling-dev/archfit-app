@@ -10,8 +10,11 @@
       "why": "a new dependency between modules needs an owner",
       "balance": {
         "value": 9,
-        "min": 7
+        "min": 7,
+        "strength": "contract",
+        "volatility": "low"
       },
+      "subject": "pkg_util",
       "next": {
         "kind": "wait",
         "text": "wait for an owner: #431"
@@ -27,8 +30,11 @@
       "why": "a new dependency between modules needs an owner",
       "balance": {
         "value": 9,
-        "min": 7
+        "min": 7,
+        "strength": "contract",
+        "volatility": "low"
       },
+      "subject": "pkg_util",
       "next": {
         "kind": "wait",
         "text": "wait for an owner: #432"
@@ -44,8 +50,11 @@
       "why": "a new dependency between modules needs an owner",
       "balance": {
         "value": 9,
-        "min": 7
+        "min": 7,
+        "strength": "contract",
+        "volatility": "low"
       },
+      "subject": "pkg_util",
       "next": {
         "kind": "wait",
         "text": "wait for an owner: #433"
@@ -61,8 +70,11 @@
       "why": "a new dependency between modules needs an owner",
       "balance": {
         "value": 9,
-        "min": 7
+        "min": 7,
+        "strength": "contract",
+        "volatility": "low"
       },
+      "subject": "pkg_util",
       "next": {
         "kind": "wait",
         "text": "wait for an owner: #434"
@@ -78,8 +90,11 @@
       "why": "a new dependency between modules needs an owner",
       "balance": {
         "value": 9,
-        "min": 7
+        "min": 7,
+        "strength": "contract",
+        "volatility": "low"
       },
+      "subject": "pkg_util",
       "next": {
         "kind": "wait",
         "text": "wait for an owner: #435"
@@ -95,8 +110,11 @@
       "why": "a new dependency between modules needs an owner",
       "balance": {
         "value": 9,
-        "min": 7
+        "min": 7,
+        "strength": "contract",
+        "volatility": "low"
       },
+      "subject": "pkg_util",
       "next": {
         "kind": "wait",
         "text": "wait for an owner: #436"
@@ -112,8 +130,11 @@
       "why": "a new dependency between modules needs an owner",
       "balance": {
         "value": 9,
-        "min": 7
+        "min": 7,
+        "strength": "contract",
+        "volatility": "low"
       },
+      "subject": "pkg_util",
       "next": {
         "kind": "wait",
         "text": "wait for an owner: #437"
@@ -129,8 +150,11 @@
       "why": "a new dependency between modules needs an owner",
       "balance": {
         "value": 9,
-        "min": 7
+        "min": 7,
+        "strength": "contract",
+        "volatility": "low"
       },
+      "subject": "pkg_util",
       "next": {
         "kind": "wait",
         "text": "wait for an owner: #438"
@@ -146,8 +170,11 @@
       "why": "a new dependency between modules needs an owner",
       "balance": {
         "value": 9,
-        "min": 7
+        "min": 7,
+        "strength": "contract",
+        "volatility": "low"
       },
+      "subject": "pkg_util",
       "next": {
         "kind": "wait",
         "text": "wait for an owner: #439"
@@ -163,8 +190,11 @@
       "why": "a new dependency between modules needs an owner",
       "balance": {
         "value": 9,
-        "min": 7
+        "min": 7,
+        "strength": "contract",
+        "volatility": "low"
       },
+      "subject": "pkg_util",
       "next": {
         "kind": "wait",
         "text": "wait for an owner: #440"
@@ -180,8 +210,11 @@
       "why": "a new dependency between modules needs an owner",
       "balance": {
         "value": 9,
-        "min": 7
+        "min": 7,
+        "strength": "contract",
+        "volatility": "low"
       },
+      "subject": "pkg_util",
       "next": {
         "kind": "wait",
         "text": "wait for an owner: #441"
@@ -197,8 +230,11 @@
       "why": "a new dependency between modules needs an owner",
       "balance": {
         "value": 9,
-        "min": 7
+        "min": 7,
+        "strength": "contract",
+        "volatility": "low"
       },
+      "subject": "pkg_util",
       "next": {
         "kind": "wait",
         "text": "wait for an owner: #442"

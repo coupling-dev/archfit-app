@@ -19,6 +19,7 @@
   import { firstJSON } from '../lib/early';
   import { confirm } from '../lib/passkey';
   import {
+    answerKinds,
     answerProblem,
     balanceText,
     dependency,
@@ -39,13 +40,8 @@
 
   const api = (suffix: string) => repoAPI(route.owner, route.name, suffix);
   const github = $derived(`https://github.com/${encodeURIComponent(route.owner)}/${encodeURIComponent(route.name)}`);
-  const kinds: { kind: AnswerKind; title: string }[] = [
-    { kind: 'approve', title: 'Approve and merge' },
-    { kind: 'approve-until', title: 'Approve until a date' },
-    { kind: 'reject', title: 'Reject' },
-  ];
-
   let body = $state<RequestView | null>(null);
+  const kinds = $derived(answerKinds(body));
   let failure = $state('');
   let until = $state('');
   let instead = $state('');
@@ -61,9 +57,9 @@
     preview?: Preview;
     note?: string;
   }
-  let previews = $state<Record<AnswerKind, Shown>>({ approve: {}, 'approve-until': {}, reject: {} });
+  let previews = $state<Record<AnswerKind, Shown>>({ approve: {}, 'approve-until': {}, reject: {}, 'declare-public': {}, 'declare-model': {} });
   // The newest preview read of each answer wins: an older answer that arrives late is dropped.
-  const reads: Record<AnswerKind, number> = { approve: 0, 'approve-until': 0, reject: 0 };
+  const reads: Record<AnswerKind, number> = { approve: 0, 'approve-until': 0, reject: 0, 'declare-public': 0, 'declare-model': 0 };
   // The title says what the answer does: the merge word only when the merge checkbox is on.
   let title = $derived(selected === 'approve' && !mergeNow ? 'Approve' : (kinds.find((item) => item.kind === selected)?.title ?? ''));
   let shown = $derived(previews[selected]);
@@ -144,7 +140,7 @@
 {:else}
   {@const status = statusOf(body)}
   {@const balance = balanceText(body)}
-  {@const approved = body.state === 'answered' && !!body.answer && body.answer.kind !== 'reject'}
+  {@const approved = body.state === 'answered' && (body.answer?.kind === 'approve' || body.answer?.kind === 'approve-until')}
   <div class="page-head">
     <div class="stack-sm">
       <h1>Request #{body.number}</h1>
@@ -260,6 +256,8 @@
             <label for="until">The exception ends on (yyyy-mm-dd)</label>
             <input class="form-control" id="until" type="text" placeholder="yyyy-mm-dd" bind:value={until} disabled={busy} oninput={() => invalidate('approve-until')} />
             <p class="small">Enter a date as yyyy-mm-dd to preview. The exception is valid through that date, in UTC.</p>
+          {:else if (selected === 'declare-public' || selected === 'declare-model') && body.surface?.package}
+            <p class="small">Adds <code>{body.surface.package}</code> to the {selected === 'declare-public' ? 'public' : 'model'} part of <code>{body.to}</code>. Other modules may then use it.</p>
           {:else if selected === 'reject'}
             <label for="instead">What to do instead</label>
             <textarea class="form-control" id="instead" rows="3" maxlength="500" bind:value={instead} disabled={busy} oninput={() => invalidate('reject')}></textarea>
@@ -282,10 +280,12 @@
         </section>
         {/if}
       {:else if body.state === 'open'}
-        <p>Add <code>.archfit.yaml</code> of version 3 to the default branch, then answer.</p>
+        <p>Add a valid <code>.archfit.yaml</code> (version 1) to the default branch, then answer.</p>
       {:else}
         {#if body.answer?.kind === 'approve'}<p>Approved. The request on GitHub names the owner and the passkey.</p>
         {:else if body.answer?.kind === 'approve-until'}<p>Approved until {body.answer.until}. The request on GitHub names the owner and the passkey.</p>
+        {:else if body.answer?.kind === 'declare-public'}<p>Declared public. The request on GitHub names the owner and the passkey.</p>
+        {:else if body.answer?.kind === 'declare-model'}<p>Declared a model part. The request on GitHub names the owner and the passkey.</p>
         {:else if body.answer}<p>Rejected. What to do instead: {body.answer.instead}. The request on GitHub names the owner and the passkey.</p>
         {:else if body.state === 'closed'}<p>No answer is open. The request on GitHub names the owner who answered and the passkey used.</p>
         {:else}<p>The request on GitHub names the owner who answered and the passkey used.</p>{/if}

@@ -17,7 +17,7 @@ const recordCap = 30_000
 // so the App never reads its own text as a request (wire/request).
 const (
 	textNoResult = "archfit: this pull request has no checked result for its head yet. Ask again when the check has run.\n"
-	textNoPolicy = "archfit: the default branch has no policy of version 3 yet, so nothing can be asked.\n"
+	textNoPolicy = "archfit: the default branch has no valid policy yet, so nothing can be asked.\n"
 )
 
 // records is the text record of errs as the check prints it, without the status line. Records past recordCap are

@@ -21,7 +21,7 @@ const ownerPasskey = "pk-olivia-0001"
 
 var oliviaAdmin = OwnerUser{ID: 501, Login: "olivia", Admin: true}
 
-// onboarding makes the shop a repository the App admitted but that has no policy of version 3 and no workflow on its
+// onboarding makes the shop a repository the App admitted but that has no valid policy and no workflow on its
 // default branch yet, and no record: its onboarding pull request brings both.
 func (w *world4) onboarding() {
 	w.t.Helper()

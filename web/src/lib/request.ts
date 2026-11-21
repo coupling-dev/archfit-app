@@ -4,6 +4,27 @@ import type { MapModel } from '../components/map/model';
 
 import type { AnswerKind, Preview, PullEffect, RequestEarlier, RequestModule, RequestView } from './api';
 
+// answerKinds are the answers a request offers, in order. A surface request (a use past the declared parts of the
+// module it reaches) is never approved as such: it offers declaring the package public or a model part (a model part
+// needs policy version 1), allowing it until a date, or rejecting it. Without a named package it offers no
+// declaration.
+export function answerKinds(r: Pick<RequestView, 'surface' | 'policy_version'> | null): { kind: AnswerKind; title: string }[] {
+  if (!r?.surface) {
+    return [
+      { kind: 'approve', title: 'Approve and merge' },
+      { kind: 'approve-until', title: 'Approve until a date' },
+      { kind: 'reject', title: 'Reject' },
+    ];
+  }
+  const out: { kind: AnswerKind; title: string }[] = [];
+  if (r.surface.package) {
+    out.push({ kind: 'declare-public', title: 'Declare as public' });
+    if (r.policy_version === 1) out.push({ kind: 'declare-model', title: 'Declare as model' });
+  }
+  out.push({ kind: 'approve-until', title: 'Allow until a date' }, { kind: 'reject', title: 'Reject' });
+  return out;
+}
+
 // loosens is true for an answer that loosens the policy: it needs the owner's passkey (design 9.2). A reject does not.
 export function loosens(kind: AnswerKind): boolean {
   return kind !== 'reject';
@@ -30,7 +51,13 @@ export function decisionState(kind: AnswerKind, preview: Preview | undefined, la
   const ready = preview?.answer === kind;
   const changesPolicy = ready && !!preview.diff;
   const mergeLater = changesPolicy && later;
-  const verb = kind === 'reject' ? 'Reject' : kind === 'approve-until' ? 'Approve until date' : 'Approve';
+  const verbs: Partial<Record<AnswerKind, string>> = {
+    reject: 'Reject',
+    'approve-until': 'Approve until date',
+    'declare-public': 'Declare as public',
+    'declare-model': 'Declare as model',
+  };
+  const verb = verbs[kind] ?? 'Approve';
   return {
     ready,
     changesPolicy,
@@ -46,10 +73,34 @@ export function decisionState(kind: AnswerKind, preview: Preview | undefined, la
   };
 }
 
-// balanceText is the balance as design 5 writes it, "9/10 (min 7)", and says when the CLI reported it.
-export function balanceText(r: Pick<RequestView, 'balance' | 'verified'>): string {
+// Balance is a coupling number as the record prints it. Engine 0.9.0 names the inputs it was computed with; a
+// balance of engine v4.0.0 has none (until task 6.5).
+export interface Balance {
+  value: number;
+  max?: number;
+  min: number;
+  strength?: string;
+  volatility?: string;
+}
+
+// balanceLine is the balance as the record prints it: "9/10 (min 7)", or with the 0.9.0 inputs
+// "2/10 (min 7): intrusive, assessment-repair is high", whose subject is the target module.
+export function balanceLine(b: Balance, subject?: string): string {
+  const text = `${b.value}/${b.max ?? 10} (min ${b.min})`;
+  return b.strength && b.volatility && subject ? `${text}: ${b.strength}, ${subject} is ${b.volatility}` : text;
+}
+
+// surfaceLine is the declared surface of a module as the record prints it: the public globs, then the model globs,
+// each with its role, or "none declared".
+export function surfaceLine(s: { public: string[]; model: string[] }): string {
+  const parts = [...s.public.map((g) => `${g} (public)`), ...s.model.map((g) => `${g} (model)`)];
+  return parts.join(', ') || 'none declared';
+}
+
+// balanceText is the balance of a request, whose subject is the module it reaches, and says when the CLI reported it.
+export function balanceText(r: Pick<RequestView, 'balance' | 'verified' | 'to'>): string {
   if (!r.balance) return '';
-  const b = `${r.balance.value}/${r.balance.max} (min ${r.balance.min})`;
+  const b = balanceLine(r.balance, r.to);
   return r.verified ? b : `${b}, as reported`;
 }
 
@@ -69,12 +120,20 @@ export interface Status {
 export function statusOf(r: RequestView): Status {
   const name = `Request #${r.number}`;
   if (r.state === 'answered') {
-    const line = r.answer?.kind === 'reject' ? 'An owner rejected this request.' : r.answer ? 'An owner approved this request.' : 'An owner answered this request.';
+    const lines: Record<AnswerKind, string> = {
+      approve: 'An owner approved this request.',
+      'approve-until': 'An owner approved this request.',
+      reject: 'An owner rejected this request.',
+      // A use past the declared parts is never approved: the owner declared the package instead.
+      'declare-public': 'An owner declared the package public.',
+      'declare-model': 'An owner declared the package a model part.',
+    };
+    const line = r.answer ? lines[r.answer.kind] : 'An owner answered this request.';
     return { word: 'answered', tone: 'neutral', line };
   }
   if (r.state === 'closed') return { word: 'closed', tone: 'neutral', line: `${name} is closed.` };
   let line = 'Waiting for an owner to answer.';
-  if (!r.policy) line = `${name} cannot be answered here: the default branch has no policy of version 3.`;
+  if (!r.policy) line = `${name} cannot be answered here: the default branch has no valid policy.`;
   else if (r.allowed) line += ' The policy already allows this dependency.';
   else if (!r.verified) line += ' Its numbers are as reported: no pull request confirmed them yet.';
   return { word: 'waiting', tone: 'attention', line };

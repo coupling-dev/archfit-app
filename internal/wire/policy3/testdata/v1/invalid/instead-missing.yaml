@@ -1,0 +1,9 @@
+version: 1
+owners: [alexei-led]
+modules:
+  app:
+    paths: [cmd/**]
+rules:
+  - id: no-instead
+    deny: { from: app, to: lib }
+    why: The reason.

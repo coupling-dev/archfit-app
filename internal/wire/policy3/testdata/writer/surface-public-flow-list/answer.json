@@ -1,0 +1,8 @@
+{
+  "kind": "declare-public",
+  "loosens": true,
+  "note": "request #431",
+  "reformats": true,
+  "module": "assessment",
+  "glob": "internal/assessment/score"
+}

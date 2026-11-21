@@ -260,7 +260,7 @@ func (s *Service) open(ctx context.Context, r api.Repo, pol policy3.File, g grou
 	e := g.errs[0]
 	req := records.Request{Key: g.key, Reason: line.Reason, Expires: line.Expires, Rule: e.Rule, Path: e.Path,
 		From: e.From, To: e.To, Record: recordsOf(g.errs), Waiting: []int{pull}, Listed: []int{pull},
-		Numbers: records.Numbers{Verified: true, Balance: balance(e.Balance)}}
+		Numbers: records.Numbers{Verified: true, Balance: balance(e.Balance)}, Surface: groupSurface(g.errs)}
 	issue := issueOf(req)
 	created, err := s.gh.CreateIssue(ctx, r.RepoRef, api.NewIssue{Title: issue.Title(), Body: issue.Body()})
 	if err != nil {
@@ -293,7 +293,8 @@ func (s *Service) duplicate(ctx context.Context, r api.Repo, issue, other, pull 
 // records what the body lists. An upload may have joined pull in the store alone (Wait), and a failed edit is done
 // again on a retry, because only a done edit records the list.
 func (s *Service) joinPull(ctx context.Context, r api.Repo, id, pull int, g group) error {
-	req, _, _, err := join(ctx, s.store, r, id, pull, &confirmation{record: recordsOf(g.errs), balance: balance(g.errs[0].Balance)})
+	req, _, _, err := join(ctx, s.store, r, id, pull, &confirmation{record: recordsOf(g.errs), balance: balance(g.errs[0].Balance),
+		surface: groupSurface(g.errs)})
 	if errors.Is(err, errNotOpen) {
 		return nil
 	}
@@ -358,14 +359,14 @@ func (s *Service) writer(ctx context.Context, ref api.RepoRef, login string) (bo
 	return slices.Contains(mayAsk, p), nil
 }
 
-// policy reads the policy at the default branch's tip; found is false when there is none of version 3.
+// policy reads the policy at the default branch's tip; found is false when there is no valid one.
 func (s *Service) policy(ctx context.Context, r api.Repo) (policy3.File, bool, error) {
 	pol, _, found, err := s.policyAt(ctx, r)
 	return pol, found, err
 }
 
-// policyAt reads the policy at the default branch's tip, decoded and as bytes; found is false when there is none of
-// version 3.
+// policyAt reads the policy at the default branch's tip, decoded and as bytes; found is false when there is no valid
+// one (version 1, or version 3 until task 6.5).
 func (s *Service) policyAt(ctx context.Context, r api.Repo) (pol policy3.File, raw []byte, found bool, err error) {
 	tip, err := s.gh.BranchHead(ctx, r.RepoRef, r.DefaultBranch)
 	if err != nil {
@@ -530,9 +531,88 @@ func (s *Service) setStatus(ctx context.Context, r api.Repo, pull int, rec recor
 	return nil
 }
 
+// groupSurface is the surface a request keeps from the first of its errors that is a coupling error past the
+// target's declared surface, or nil when none is.
+func groupSurface(errs []result.Error) *records.Surface {
+	for _, e := range errs {
+		if s := surfaceOf(e); s != nil {
+			return s
+		}
+	}
+	return nil
+}
+
+// surfaceOf is the surface a request keeps from a coupling error past the target's declared surface, or nil. The
+// stored lists are bounded: they are producer text, shown on the request page and kept in one record.
+func surfaceOf(e result.Error) *records.Surface {
+	if e.Surface == nil || e.Rule != ruleCoupling {
+		return nil
+	}
+	return boundedSurface(e.Surface.Public, e.Surface.Model, pastSurface(e))
+}
+
+// The bounds of a stored surface. A package past them is dropped rather than cut, so a declaration never writes a
+// glob other than the one the engine named.
+const (
+	maxSurfaceGlobs = 64
+	maxSurfaceGlob  = 256
+)
+
+func boundedSurface(public, model []string, pkg string) *records.Surface {
+	globs := func(list []string) []string {
+		out := []string{}
+		for _, g := range list[:min(len(list), maxSurfaceGlobs)] {
+			out = append(out, g[:min(len(g), maxSurfaceGlob)])
+		}
+		return out
+	}
+	if len(pkg) > maxSurfaceGlob {
+		pkg = ""
+	}
+	return &records.Surface{Public: globs(public), Model: globs(model), Package: pkg}
+}
+
+// mergeSurface is what a request keeps when a verified result brings surface s; verified says whether the request's
+// numbers were verified before. A request never stops being a surface request, so a use past the surface is never
+// approved as such. The package it declares is only ever one a verified result names:
+//   - a verified surface replaces one the CLI reported, package included;
+//   - a verified result without a surface keeps the reported one's globs but drops its unverified package;
+//   - two verified results that name different packages under one request make it contested: it has no package from
+//     then on, so no declaration is offered (the request key is the module pair, and one declaration covers one
+//     package).
+func mergeSurface(kept, s *records.Surface, verified bool) (*records.Surface, bool) {
+	unnamed := func(k *records.Surface, contested bool) (*records.Surface, bool) {
+		if k.Package == "" && k.Contested == contested {
+			return k, false
+		}
+		c := *k
+		c.Package, c.Contested = "", contested
+		return &c, true
+	}
+	switch {
+	case kept == nil && s == nil:
+		return nil, false
+	case kept != nil && kept.Contested:
+		return kept, false
+	case s == nil && verified:
+		return kept, false
+	case s == nil:
+		return unnamed(kept, false)
+	case kept == nil, !verified, kept.Package == "" && s.Package != "":
+		return s, true
+	case s.Package != "" && kept.Package != s.Package:
+		return unnamed(kept, true)
+	}
+	return kept, false
+}
+
+// pastSurface is the package past the surface that a surface request asks about, as the verified result names it
+// (engine 0.9.0, `package`). Without it the request gets no declaration (fail closed).
+func pastSurface(e result.Error) string { return e.Package }
+
 func balance(b *result.Balance) *records.Balance {
 	if b == nil {
 		return nil
 	}
-	return &records.Balance{Score: b.Value, Max: 10, Min: b.Min}
+	return &records.Balance{Score: b.Value, Max: 10, Min: b.Min, Strength: string(b.Strength), Volatility: string(b.Volatility)}
 }

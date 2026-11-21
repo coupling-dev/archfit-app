@@ -1,0 +1,24 @@
+{
+  "reason": "retry is the shared backoff every module calls",
+  "record": "pkg_tc -> pkg_util: coupling: pkg/util/retry is past the surface\n  balance: 2/10 (min 7): intrusive, pkg_util is high\n  surface: pkg/util (public), pkg/util/types (model)\n  next: use the surface, or: archfit request -m \"<why retry belongs to the surface>\"\n",
+  "answer": {
+    "rule": "coupling",
+    "from": "pkg_tc",
+    "to": "pkg_util",
+    "balance": {
+      "value": 2,
+      "min": 7,
+      "strength": "intrusive",
+      "volatility": "high"
+    },
+    "surface": {
+      "public": [
+        "pkg/util"
+      ],
+      "model": [
+        "pkg/util/types"
+      ]
+    },
+    "package": "pkg/util/retry"
+  }
+}

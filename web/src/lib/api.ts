@@ -57,7 +57,7 @@ export interface AdminBody {
 }
 
 // The request page (internal/control/ui/requests.go, answers.go): one request, the preview of an answer, the outcome.
-export type AnswerKind = 'approve' | 'approve-until' | 'reject';
+export type AnswerKind = 'approve' | 'approve-until' | 'reject' | 'declare-public' | 'declare-model';
 
 export interface RequestModule {
   name: string;
@@ -89,14 +89,17 @@ export interface RequestView {
   expires?: string;
   record: string;
   verified: boolean; // false: the numbers are as reported by the CLI
-  balance?: { value: number; max: number; min: number };
-  policy: boolean; // false: the default branch has no policy of version 3
+  balance?: { value: number; max: number; min: number; strength?: string; volatility?: string };
+  policy: boolean; // false: the default branch has no valid policy
   layers: string[];
   modules: RequestModule[];
   answer?: { kind: AnswerKind; until?: string; instead?: string };
   dependencies: { kind: 'deny' | 'exception'; from: string; to: string; rule: string; expires?: string }[];
   allowed: boolean; // the policy already allows from -> to
   earlier: RequestEarlier[];
+  // A surface request (engine 0.9.0): the declared parts of `to` and the package past them a declaration adds.
+  surface?: { public: string[]; model: string[]; package?: string };
+  policy_version?: number; // 1 or 3; absent without a policy
 }
 
 export interface PullEffect {
@@ -249,6 +252,7 @@ export interface Policy {
     name: string;
     paths: string[] | null;
     public: string[] | null;
+    model: string[] | null; // version 1 only
     volatility: string;
     subdomain: string;
     layer: string;

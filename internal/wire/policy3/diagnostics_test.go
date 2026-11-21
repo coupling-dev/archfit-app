@@ -35,7 +35,7 @@ func TestVersionDiagnosticsUseTheVersionLine(t *testing.T) {
 }
 
 func TestNamedRuleDiagnosticsUseTheRuleLine(t *testing.T) {
-	data, err := os.ReadFile("testdata/invalid/rule-two-forms-no-instead.yaml")
+	data, err := os.ReadFile("testdata/v1/invalid/rule-two-forms-no-instead.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

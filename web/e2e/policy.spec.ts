@@ -28,10 +28,15 @@ const typical = JSON.parse(
 const pumba = JSON.parse(
   readFileSync(new URL('../../internal/control/ui/testdata/policy/pumba.json', import.meta.url), 'utf8'),
 );
+// A version 1 policy of engine 0.9.0, with model parts.
+const version1 = JSON.parse(
+  readFileSync(new URL('../../internal/control/ui/testdata/policy/version-1.json', import.meta.url), 'utf8'),
+);
 
 for (const [name, fixture] of [
   ['typical', typical],
   ['pumba', pumba],
+  ['version-1', version1],
 ] as const) {
   test(`policy: ${name} golden${name === 'pumba' ? ' @docs' : ''}`, async ({ page }) => {
     await docsClock(page);
@@ -52,6 +57,18 @@ for (const [name, fixture] of [
     expect(writes).toEqual([]);
   });
 }
+
+test('policy: a version 1 module shows its model part, and a module with only a model part has no public part', async ({ page }) => {
+  await open(page, path, { [api]: () => [200, version1] });
+  const facts = async (name: string) => {
+    const row = page.locator('details', { has: page.getByText(name, { exact: true }) });
+    await row.locator('summary').click();
+    return row.locator('dl').innerText();
+  };
+  expect(await facts('billing')).toMatch(/Public\s+internal\/billing\/api\s+Model\s+internal\/billing\/types/);
+  expect(await facts('events')).toMatch(/Public\s+None\s+Model\s+internal\/events\/schema/);
+  expect(await facts('app')).toMatch(/Public\s+Whole module\s+Volatility/);
+});
 
 test('policy: Edit opens the whole-file editor from the proposal', async ({ page }) => {
   const body = { ...typical, edit: { available: true, reason: '', file: proposalYAML, digest: baseDigest } };

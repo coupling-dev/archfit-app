@@ -352,14 +352,14 @@ func mustDecode(t *testing.T, policy string) policy3.File {
 func TestResultIsTheEngineRecord(t *testing.T) {
 	xs := Dated(mustDecode(t, policyWith("2026-11-19")))
 	got := Result(xs)
-	golden, err := os.ReadFile("../../wire/result/testdata/record/expired_exception.txt")
+	golden, err := os.ReadFile("../../wire/result/testdata/v0.9.0/record/expired_exception.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if text := result.Record(got); text != string(golden) {
 		t.Errorf("record:\n%s\nwant:\n%s", text, golden)
 	}
-	raw, err := os.ReadFile("../../wire/result/testdata/result/expired_exception.json")
+	raw, err := os.ReadFile("../../wire/result/testdata/v0.9.0/result/expired_exception.json")
 	if err != nil {
 		t.Fatal(err)
 	}

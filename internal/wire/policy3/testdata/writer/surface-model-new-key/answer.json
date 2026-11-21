@@ -1,0 +1,7 @@
+{
+  "kind": "declare-model",
+  "loosens": true,
+  "note": "request #431",
+  "module": "assessment",
+  "glob": "internal/assessment/result"
+}

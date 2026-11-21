@@ -119,7 +119,7 @@ func (f *fakeGitHub) SetAssigneesAndLabels(_ context.Context, _ api.RepoRef, n i
 // block decodes the repository block of a vendored engine golden.
 func block(t *testing.T, golden string) *result.Repository {
 	t.Helper()
-	raw, err := os.ReadFile("../../wire/result/testdata/result/" + golden + ".json")
+	raw, err := os.ReadFile("../../wire/result/testdata/v0.9.0/result/" + golden + ".json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func (w *world) repoRecord() records.Repo {
 
 const driftRecord = "pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency\n" +
 	"  why: a new dependency between modules needs an owner\n" +
-	"  balance: 9/10 (min 7)\n" +
+	"  balance: 9/10 (min 7): contract, pkg_util is low\n" +
 	"  next: fix the code, or ask an owner to add an exception\n"
 
 func TestDriftOpensOneIssueForTheOwners(t *testing.T) {
