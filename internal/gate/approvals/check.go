@@ -34,25 +34,8 @@ func (s *Service) OwnerCheck(ctx context.Context, r api.Repo, pull int, head str
 	default:
 		return nil, nil
 	}
-	// The newest open approval of the proposal is the one bound to its head.
-	var (
-		approvalID string
-		a          records.Approval
-		bound      Change
-	)
-	for i := len(p.Approvals) - 1; i >= 0 && approvalID == ""; i-- {
-		var cur records.Approval
-		if err := records.Load(ctx, s.store, tenant(r), records.ApprovalKey(r.FullName, p.Approvals[i]), &cur); err != nil {
-			return nil, err
-		}
-		if cur.State == records.StateOpen && cur.Kind == kind && cur.Proposal == id && cur.Login != "" {
-			approvalID, a = p.Approvals[i], cur
-		}
-	}
-	if approvalID == "" {
-		return nil, nil
-	}
-	if err := json.Unmarshal(a.Change, &bound); err != nil {
+	approvalID, a, bound, err := s.newestApproval(ctx, r, id, p, kind)
+	if err != nil || approvalID == "" {
 		return nil, err
 	}
 	if !bound.OwnerVerdict() || bound.HeadSHA != head {
@@ -91,6 +74,26 @@ func (s *Service) checkApproved(ctx context.Context, r api.Repo, d Done, login s
 	}
 }
 
+// newestApproval is the newest open approval of kind in proposal p of id, the one bound to its head, with the change
+// it bound; "" when there is none.
+func (s *Service) newestApproval(ctx context.Context, r api.Repo, id string, p records.Proposal, kind string) (string, records.Approval, Change, error) {
+	for i := len(p.Approvals) - 1; i >= 0; i-- {
+		var a records.Approval
+		if err := records.Load(ctx, s.store, tenant(r), records.ApprovalKey(r.FullName, p.Approvals[i]), &a); err != nil {
+			return "", records.Approval{}, Change{}, err
+		}
+		if a.State != records.StateOpen || a.Kind != kind || a.Proposal != id || a.Login == "" {
+			continue
+		}
+		var bound Change
+		if err := json.Unmarshal(a.Change, &bound); err != nil {
+			return "", records.Approval{}, Change{}, err
+		}
+		return p.Approvals[i], a, bound, nil
+	}
+	return "", records.Approval{}, Change{}, nil
+}
+
 // pullProposal is the same indexed lookup for review, action and publication.
 func (s *Service) pullProposal(ctx context.Context, r api.Repo, pull int) (string, records.Proposal, error) {
 	var p records.Proposal
@@ -110,11 +113,17 @@ func (s *Service) notAlreadyApproved(ctx context.Context, r api.Repo, c Change) 
 	if c.Pull <= 0 {
 		return nil
 	}
-	_, p, err := s.pullProposal(ctx, r, c.Pull)
+	id, p, err := s.pullProposal(ctx, r, c.Pull)
+	if err != nil || !matchesApproval(p, c) {
+		return err
+	}
+	// The proposal holds no Base: an approval bound to another one (the policy at the merge base changed under the
+	// same head) no longer applies, and the owner may approve again.
+	_, _, bound, err := s.newestApproval(ctx, r, id, p, c.Kind)
 	if err != nil {
 		return err
 	}
-	if matchesApproval(p, c) {
+	if bound == c {
 		return ErrNotDue
 	}
 	return nil

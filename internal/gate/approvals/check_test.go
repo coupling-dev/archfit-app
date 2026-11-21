@@ -51,6 +51,36 @@ func TestPullApprovalSetsAnOwnerVerdictOnce(t *testing.T) {
 	}
 }
 
+// TestAWorkflowApprovalWhosePolicyBaseMovedMayBeMadeAgain: a workflow approval binds the policy its pull request
+// changes from (Change.Base). When that moves under the same head, the approval no longer applies, so the owner may
+// approve the head again, and the new approval decides whether it is the head's verdict.
+func TestAWorkflowApprovalWhosePolicyBaseMovedMayBeMadeAgain(t *testing.T) {
+	w := newWorld(t)
+	w.gh.commit("c0", policyV(0))
+	w.approvedAt(digestV(0), "c0")
+	w.openPull(12, "h1", policyV(1), "wf-1")
+	w.gh.files["base"] = policyV(1) // the pull request keeps its base's policy
+	if _, err := w.act(admin, Action{Kind: records.KindWorkflow, Pull: 12}); err != nil {
+		t.Fatal(err)
+	}
+	if len(w.gh.checks) != 0 {
+		t.Fatalf("checks = %+v, want no owner verdict for a pull request that keeps the policy", w.gh.checks)
+	}
+
+	w.gh.files["base"] = policyV(0) // the same head now changes the policy from its base
+	if check, err := w.svc.OwnerCheck(context.Background(), testRepo, 12, "h1"); err != nil || check != nil {
+		t.Fatalf("OwnerCheck = %+v, %v; want no verdict from an approval of another base", check, err)
+	}
+	done, err := w.act(admin, Action{Kind: records.KindWorkflow, Pull: 12})
+	if err != nil {
+		t.Fatalf("approving again = %v, want a new approval", err)
+	}
+	check, err := w.svc.OwnerCheck(context.Background(), testRepo, 12, "h1")
+	if err != nil || check == nil || check.ExternalID != "approval:"+done.Approval {
+		t.Errorf("OwnerCheck = %+v, %v; want the new approval's verdict", check, err)
+	}
+}
+
 func TestPullApprovalCheckFailureDoesNotUndoApproval(t *testing.T) {
 	w := newWorld(t)
 	w.gh.bare("c0")

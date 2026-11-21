@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/coupling-dev/archfit-app/internal/gate/ingest"
-	"github.com/coupling-dev/archfit-app/internal/github/api"
 	"github.com/coupling-dev/archfit-app/internal/wire/manifest"
 	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
@@ -36,6 +35,7 @@ func (w *world4) migration(target string) (*pull, *spec4) {
 	}
 
 	p := w.openPull(w.shop, 7)
+	w.setFile(w.shop, w.gh.pulls[pullKey(shopName, 7)].MergeBaseSHA, policyPath, []byte(target))
 	moved := actionWorkflow(manifest.ActionRepository, actionBumped, " # v0.9.0")
 	w.setFile(w.shop, p.head, policyPath, []byte(policy1Required))
 	w.setFile(w.shop, p.head, ingest.WorkflowPath, moved)
@@ -141,11 +141,8 @@ func TestAWorkflowApprovalOfAPullRequestThatKeepsThePolicyLeavesTheVerdictToTheE
 			w.setFile(w.shop, testBranch, ingest.WorkflowPath, actionWorkflow(manifest.LegacyActionRepository, actionPinned, " # v4.0.0"))
 			w.approvedAt(policy4Required, w.tip)
 			p := w.openPull(w.shop, 7)
-			if tc.head != policy4Required {
-				base := w.sha()
-				w.setFile(w.shop, base, policyPath, []byte(tc.head))
-				w.editPull(p, func(pl *api.Pull) { pl.BaseSHA = base })
-			}
+			// GitHub's base SHA is the default branch's tip; the branch started at the merge base, with the head's policy.
+			w.setFile(w.shop, w.gh.pulls[pullKey(shopName, 7)].MergeBaseSHA, policyPath, []byte(tc.head))
 			moved := actionWorkflow(manifest.ActionRepository, actionBumped, " # v0.9.0")
 			w.setFile(w.shop, p.head, policyPath, []byte(tc.head))
 			w.setFile(w.shop, p.head, ingest.WorkflowPath, moved)

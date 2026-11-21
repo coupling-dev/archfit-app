@@ -63,8 +63,9 @@ type Change struct {
 	Commit   string `json:"commit,omitempty"`   // the default branch's tip, when there is no pull request
 	Policy   string `json:"policy"`             // the policy digest at HeadSHA or Commit
 	Workflow string `json:"workflow,omitempty"` // the workflow digest at HeadSHA
-	// Base is the policy digest at the pull request's base commit, for a workflow approval: what the pull request
-	// changes the policy from, as the owner's review page shows it. "" when the base has no policy.
+	// Base is the policy digest the pull request changes the policy from, for a workflow approval: the policy at its
+	// merge base, "" when that has none. A head whose policy is the base branch's (at Pull.BaseSHA) leaves the policy as
+	// it is on merge, so Base is that digest and the merge base is not read.
 	Base string `json:"base,omitempty"`
 }
 
@@ -159,7 +160,6 @@ func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action) (Change, e
 	second.Go(func() { run, runErr = s.fileAt(ctx, ref, pull.HeadSHA, WorkflowPath) })
 	if a.Kind == records.KindWorkflow {
 		second.Go(func() { target, targetErr = s.fileAt(ctx, ref, tip, WorkflowPath) })
-		// The base the owner's review page shows the policy change from (gate, ownerview.go).
 		second.Go(func() { base, baseErr = s.fileAt(ctx, ref, pull.BaseSHA, PolicyPath) })
 	} else {
 		// An onboarding pull request brings the first valid policy: a default branch that has one already is
@@ -199,10 +199,37 @@ func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action) (Change, e
 	}
 	c := Change{Kind: a.Kind, Pull: a.Pull, HeadSHA: pull.HeadSHA, Policy: policy3.Digest(head),
 		Workflow: records.FileDigest(run)}
-	if a.Kind == records.KindWorkflow && base != nil {
-		c.Base = policy3.Digest(base)
+	if a.Kind == records.KindWorkflow {
+		var err error
+		if c.Base, err = s.policyBase(ctx, ref, pull, c.Policy, base); err != nil {
+			return Change{}, err
+		}
 	}
 	return c, nil
+}
+
+// policyBase is Change.Base of the open pull request pull, whose head's policy has digest policy and whose base
+// branch's policy at pull.BaseSHA is atBase. GitHub's base SHA is the base branch's tip when the pull request was last
+// synchronized, not the commit its branch started from: a branch cut before a later policy change differs from it with
+// no change of its own. Only the merge base tells, so it is read when the two differ.
+func (s *Service) policyBase(ctx context.Context, ref api.RepoRef, pull api.Pull, policy string, atBase []byte) (string, error) {
+	if atBase != nil && policy3.Digest(atBase) == policy {
+		return policy, nil
+	}
+	full, err := s.gh.Pull(ctx, ref, pull.Number)
+	switch {
+	case err != nil:
+		return "", fmt.Errorf("approvals: read the merge base of pull request %d: %w", pull.Number, err)
+	case full.HeadSHA != pull.HeadSHA:
+		return "", fmt.Errorf("%w: pull request #%d has a new head", ErrMoved, pull.Number)
+	case full.MergeBaseSHA == "":
+		return "", fmt.Errorf("approvals: pull request #%d has no merge base", pull.Number)
+	}
+	raw, err := s.fileAt(ctx, ref, full.MergeBaseSHA, PolicyPath)
+	if err != nil || raw == nil {
+		return "", err
+	}
+	return policy3.Digest(raw), nil
 }
 
 // bindTip binds a first approval of the policy on the default branch, or a confirm, to the default branch's tip. A

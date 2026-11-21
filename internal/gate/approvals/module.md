@@ -108,13 +108,16 @@ against the current head and the file digests. Two kinds are the head's verdict:
 
 - a first approval of an onboarding pull request; it returns no check after activation or outside the flow;
 - a workflow approval of a pull request that also changes the policy: the head's policy differs from the policy at
-  the pull request's base commit (`Change.Base`), the base the owner's review page shows the policy diff from. The pull
-  request that moves an onboarded repository to engine 0.9.0 is one (beta plan task 5.3): it changes the policy to
+  the pull request's merge base (`Change.Base`). GitHub's base SHA is the base branch's tip at the last
+  synchronization, so a branch cut before a later policy change differs from it with no change of its own; the merge
+  base is read only when the head's policy differs from the base SHA's, so a workflow-only pull request costs no
+  extra read. The pull request that moves an onboarded repository to engine 0.9.0 is one (beta plan task 5.3): it changes the policy to
   version 1 and the workflow to the Action's new home, and engine 0.9.0 gives unknown while the target branch holds
   version 3 or 2. Any other workflow approval returns no check, decided from the stored approval before any GitHub
   read: the engine judges that head, also when it sits on an older policy than the approved one, or when the approved
-  policy moves after the approval. A moved base whose policy changed re-binds to another `Change`, so the approval
-  stops applying.
+  policy moves after the approval. A base whose policy changed under the same head re-binds to another `Change`, so
+  the approval stops applying, and `Review` and `Act` take a new approval of that head (the proposal holds no `Base`;
+  the newest approval's bound `Change` decides `ErrNotDue`).
 
 It returns no check after a head change, or for a closed/fork/retargeted pull. The shared feedback publisher consults
 it inside the head lease, so a later upload, rerun or withdrawal cannot replace a matching owner approval with an
