@@ -8,10 +8,12 @@
 `Identity` is the claimed engine version, platform image digest and platform.
 `EngineApproved` requires an exact nonempty tuple listed in embedded `manifest4.json`.
 `ActionApproved` accepts only a full Action commit SHA listed in that file.
-`ActionRepository` identifies the producer repository.
+`ActionRepository` (`coupling-dev/archfit-action`) identifies the producer repository. Until task 6.5 the App also
+accepts `LegacyActionRepository`, the Action's old home, which the onboarded repositories run until epic 6 moves
+them; `ActionRepositories` lists both. The two share their history, so a listed commit names the same Action in both.
 
-The manifest file has `version: 2` and an `engines` list. Each release is v4.MINOR.PATCH or
-v4.MINOR.PATCH-rc.N, with non-placeholder image digests for linux/amd64 or linux/arm64 and at least
+The manifest file has `version: 2` and an `engines` list. Each release is v0.MINOR.PATCH or v4.MINOR.PATCH, or
+either with `-rc.N` (v4 until task 6.5 removes engine v4.0.0), with non-placeholder image digests for linux/amd64 or linux/arm64 and at least
 one non-placeholder Action commit. Unknown fields and duplicate release/action entries are rejected.
 An empty engine list approves nothing. Invalid embedded data prevents package initialization.
 

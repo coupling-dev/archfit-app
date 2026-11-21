@@ -63,6 +63,19 @@ type Change struct {
 	Commit   string `json:"commit,omitempty"`   // the default branch's tip, when there is no pull request
 	Policy   string `json:"policy"`             // the policy digest at HeadSHA or Commit
 	Workflow string `json:"workflow,omitempty"` // the workflow digest at HeadSHA
+	// Base is the policy digest the pull request changes the policy from, for a workflow approval: the policy at its
+	// merge base, "" when that has none. A head whose policy is the base branch's (at Pull.BaseSHA) leaves the policy as
+	// it is on merge, so Base is that digest and the merge base is not read.
+	Base string `json:"base,omitempty"`
+}
+
+// OwnerVerdict reports whether the approval of c is the archfit/gate verdict of its head: a first approval, or a
+// workflow approval of a pull request that also changes the policy, such as the move to engine 0.9.0 and policy
+// version 1 (beta plan task 5.3). Both change what the engine judges with. Any other workflow approval leaves the
+// verdict to the engine: a head that merely sits on an older policy, or one whose approved policy moved since, is not a
+// policy change.
+func (c Change) OwnerVerdict() bool {
+	return c.Pull > 0 && (c.Kind == records.KindFirst || c.Kind == records.KindWorkflow && c.Policy != c.Base)
 }
 
 // Digest is "sha256:" and the hex SHA-256 of the change's JSON.
@@ -131,21 +144,23 @@ func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action) (Change, e
 		return Change{}, fmt.Errorf("%w: no pull request #%d", ErrNotApprovable, a.Pull)
 	case pullErr != nil:
 		return Change{}, fmt.Errorf("approvals: read pull request %d: %w", a.Pull, pullErr)
-	case pull.State != "open" || pull.BaseRef != r.DefaultBranch || !strings.EqualFold(pull.HeadRepo, r.FullName) || pull.HeadSHA == "":
+	case pull.State != "open" || pull.BaseRef != r.DefaultBranch || !strings.EqualFold(pull.HeadRepo, r.FullName) || pull.HeadSHA == "" ||
+		a.Kind == records.KindWorkflow && pull.BaseSHA == "":
 		return Change{}, fmt.Errorf("%w: #%d is not an open pull request of this repository into %s", ErrNotApprovable,
 			a.Pull, r.DefaultBranch)
 	case tipErr != nil:
 		return Change{}, fmt.Errorf("approvals: read the default branch head: %w", tipErr)
 	}
 	var (
-		head, run, target, current             []byte
-		headErr, runErr, targetErr, currentErr error
-		second                                 sync.WaitGroup
+		head, run, target, current, base                []byte
+		headErr, runErr, targetErr, currentErr, baseErr error
+		second                                          sync.WaitGroup
 	)
 	second.Go(func() { head, headErr = s.fileAt(ctx, ref, pull.HeadSHA, PolicyPath) })
 	second.Go(func() { run, runErr = s.fileAt(ctx, ref, pull.HeadSHA, WorkflowPath) })
 	if a.Kind == records.KindWorkflow {
 		second.Go(func() { target, targetErr = s.fileAt(ctx, ref, tip, WorkflowPath) })
+		second.Go(func() { base, baseErr = s.fileAt(ctx, ref, pull.BaseSHA, PolicyPath) })
 	} else {
 		// An onboarding pull request brings the first valid policy: a default branch that has one already is
 		// approved as it is (bindTip).
@@ -171,6 +186,9 @@ func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action) (Change, e
 		if target != nil && records.FileDigest(target) == records.FileDigest(run) {
 			return Change{}, fmt.Errorf("%w: the pull request does not change %s", ErrNotApprovable, WorkflowPath)
 		}
+		if baseErr != nil {
+			return Change{}, baseErr
+		}
 	} else {
 		if currentErr != nil {
 			return Change{}, currentErr
@@ -179,8 +197,39 @@ func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action) (Change, e
 			return Change{}, fmt.Errorf("%w: %s has a valid policy; approve it as it is", ErrNotApprovable, r.DefaultBranch)
 		}
 	}
-	return Change{Kind: a.Kind, Pull: a.Pull, HeadSHA: pull.HeadSHA, Policy: policy3.Digest(head),
-		Workflow: records.FileDigest(run)}, nil
+	c := Change{Kind: a.Kind, Pull: a.Pull, HeadSHA: pull.HeadSHA, Policy: policy3.Digest(head),
+		Workflow: records.FileDigest(run)}
+	if a.Kind == records.KindWorkflow {
+		var err error
+		if c.Base, err = s.policyBase(ctx, ref, pull, c.Policy, base); err != nil {
+			return Change{}, err
+		}
+	}
+	return c, nil
+}
+
+// policyBase is Change.Base of the open pull request pull, whose head's policy has digest policy and whose base
+// branch's policy at pull.BaseSHA is atBase. GitHub's base SHA is the base branch's tip when the pull request was last
+// synchronized, not the commit its branch started from: a branch cut before a later policy change differs from it with
+// no change of its own. Only the merge base tells, so it is read when the two differ.
+func (s *Service) policyBase(ctx context.Context, ref api.RepoRef, pull api.Pull, policy string, atBase []byte) (string, error) {
+	if atBase != nil && policy3.Digest(atBase) == policy {
+		return policy, nil
+	}
+	full, err := s.gh.Pull(ctx, ref, pull.Number)
+	switch {
+	case err != nil:
+		return "", fmt.Errorf("approvals: read the merge base of pull request %d: %w", pull.Number, err)
+	case full.HeadSHA != pull.HeadSHA:
+		return "", fmt.Errorf("%w: pull request #%d has a new head", ErrMoved, pull.Number)
+	case full.MergeBaseSHA == "":
+		return "", fmt.Errorf("approvals: pull request #%d has no merge base", pull.Number)
+	}
+	raw, err := s.fileAt(ctx, ref, full.MergeBaseSHA, PolicyPath)
+	if err != nil || raw == nil {
+		return "", err
+	}
+	return policy3.Digest(raw), nil
 }
 
 // bindTip binds a first approval of the policy on the default branch, or a confirm, to the default branch's tip. A
@@ -259,7 +308,7 @@ func (s *Service) Act(ctx context.Context, r api.Repo, in Input) (Done, error) {
 	if done.Issue, err = s.record(ctx, r, done.Approval, a, c); err != nil {
 		return Done{}, err
 	}
-	if c.Pull > 0 {
+	if c.OwnerVerdict() {
 		s.checkApproved(ctx, r, done, in.Owner.Login)
 	}
 	if c.Kind == records.KindConfirm {

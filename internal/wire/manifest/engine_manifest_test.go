@@ -81,11 +81,15 @@ func TestManifest4ValidationRules(t *testing.T) {
 		want    error // nil: any error (raised by the JSON decoder)
 	}{
 		{"version 1", 1, func(rows []row) []row { return rows }, errEngineFileVersion},
-		{"engine 3", 2, edit("engine_version", "v3.4.0"), errEngine4Version},
-		{"version without the v", 2, edit("engine_version", "4.0.0"), errEngine4Version},
-		{"beta prerelease", 2, edit("engine_version", "v4.0.0-beta.1"), errEngine4Version},
-		{"rc 0", 2, edit("engine_version", "v4.0.0-rc.0"), errEngine4Version},
-		{"leading zero", 2, edit("engine_version", "v4.01.0"), errEngine4Version},
+		{"engine 3", 2, edit("engine_version", "v3.4.0"), errEngineVersion},
+		{"version without the v", 2, edit("engine_version", "4.0.0"), errEngineVersion},
+		{"beta prerelease", 2, edit("engine_version", "v4.0.0-beta.1"), errEngineVersion},
+		{"rc 0", 2, edit("engine_version", "v4.0.0-rc.0"), errEngineVersion},
+		{"leading zero", 2, edit("engine_version", "v4.01.0"), errEngineVersion},
+		{"engine 5", 2, edit("engine_version", "v5.0.0"), errEngineVersion},
+		{"engine 1", 2, edit("engine_version", "v1.0.0"), errEngineVersion},
+		{"0.x leading zero", 2, edit("engine_version", "v0.09.0"), errEngineVersion},
+		{"0.x rc 0", 2, edit("engine_version", "v0.9.0-rc.0"), errEngineVersion},
 		{"no images", 2, edit("images", map[string]any{}), errNoImages},
 		{"platform darwin/arm64", 2, image("darwin/arm64", testEngine4AMD), errPlatform},
 		{"digest with 63 hex characters", 2, image(platformAMD64, "sha256:"+strings.Repeat("a", 63)), errDigest},
@@ -155,6 +159,36 @@ func TestEngineApprovedExactMatch(t *testing.T) {
 		if got := EngineApproved(tt.id); got != tt.want {
 			t.Errorf("%s: EngineApproved = %v, want %v", tt.name, got, tt.want)
 		}
+	}
+}
+
+// TestManifestApprovesEngine090BesideV4 uses a fake 0.9.0 row: part b of task 5.3 adds the real one.
+func TestManifestApprovesEngine090BesideV4(t *testing.T) {
+	for _, version := range []string{"v0.9.0", "v0.9.0-rc.1", "v0.10.2"} {
+		t.Run(version, func(t *testing.T) {
+			rows := validEngines()
+			rows = append(rows, row{
+				"engine_version": version,
+				"images":         map[string]any{platformAMD64: testEngine4ARM},
+				"action_commits": []any{testActionCommit5},
+			})
+			withEngines(t, engineDoc(t, 2, rows))
+			for _, tc := range []struct {
+				id   Identity
+				want bool
+			}{
+				{Identity{EngineVersion: version, ImageDigest: testEngine4ARM, Platform: platformAMD64}, true},
+				{Identity{EngineVersion: "v4.0.0-rc.1", ImageDigest: testEngine4AMD, Platform: platformAMD64}, true},
+				{Identity{EngineVersion: version, ImageDigest: testEngine4AMD, Platform: platformAMD64}, false},
+			} {
+				if got := EngineApproved(tc.id); got != tc.want {
+					t.Errorf("EngineApproved(%+v) = %v, want %v", tc.id, got, tc.want)
+				}
+			}
+			if !ActionApproved(testActionCommit4) || !ActionApproved(testActionCommit5) {
+				t.Error("the Action commits of both rows are not approved")
+			}
+		})
 	}
 }
 

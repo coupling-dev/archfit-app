@@ -10,7 +10,7 @@ its head and one pull request comment, using the engine result's status and reco
 archfit/state check. Pass is success; fail is failure (neutral only in advisory mode); waiting is
 in_progress; unknown or an unrecognized status is action_required.
 
-The composed publisher's `OwnerCheck` callback resolves an exact onboarding approval inside the same lease.
+The composed publisher's `OwnerCheck` callback resolves an exact owner approval (`gate/approvals`) inside the same lease.
 When present, its owner-approved success, title, summary and `approval:<id>` external ID replace only the
 check output, not the engine result. The PR comment and publication receipt retain run diagnostics, including
 blocked reruns. A lookup error prevents publication. `WriteOwnerCheck` uses that head lease for the initial

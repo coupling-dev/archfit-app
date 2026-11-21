@@ -12,6 +12,8 @@ commit: a valid `.archfit.yaml` (version 1, or 3 until task 6.5) and `.github/wo
 or records are generated. `wire/policy3` owns policy parsing/digests and `wire/workflow` owns extraction of
 job/step Action calls.
 
+An Archfit Action call names `manifest.ActionRepository` or, until task 6.5, the Action's old home
+(`manifest.ActionRepositories`); a tag is read in the repository the call names.
 Every Archfit Action call must use a commit in manifest 4 or a public tag resolving to one. Tag reads use no
 installation credential, never fall back to a branch, and fail closed on missing/unreadable/unlisted targets.
 An unlisted full commit SHA is rejected without tag lookup: GitHub prefers a commit over a same-named tag.

@@ -57,7 +57,7 @@ func (w *world) approvedAt(digest, commit string) {
 // openPull opens pull request pr of this repository into the default branch at head, with policy and workflow there.
 func (w *world) openPull(pr int, head, policy, workflow string) {
 	w.gh.files[head], w.gh.workflows[head] = policy, workflow
-	w.gh.pulls[pr] = api.Pull{Number: pr, State: "open", HeadSHA: head, HeadRepo: testRepo.FullName, BaseRef: "main"}
+	w.gh.pulls[pr] = api.Pull{Number: pr, State: "open", HeadSHA: head, HeadRepo: testRepo.FullName, BaseRef: "main", BaseSHA: "base", MergeBaseSHA: "base"}
 }
 
 // mergeWith merges pull request pr as commit with policy and workflow: the default branch's tip now.

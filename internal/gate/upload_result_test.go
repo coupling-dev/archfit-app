@@ -459,6 +459,41 @@ func TestUpload4WorkflowFile(t *testing.T) {
 	})
 }
 
+// TestUpload4AcceptsBothActionRepositories: until task 6.5 a pin bump needs no owner in the Action's new home and in
+// its old one, where the onboarded repositories still run it; any other repository, or a move between the two, does.
+func TestUpload4AcceptsBothActionRepositories(t *testing.T) {
+	uses := func(repo, commit, comment string) []byte {
+		return []byte("jobs:\n  check:\n    steps:\n      - uses: " + repo + "@" + commit + comment + "\n")
+	}
+	const other = "someone/archfit-action"
+	for _, tc := range []struct {
+		name        string
+		target, run []byte
+		status      string
+		reason      string
+	}{
+		{"a pin bump in the new repository",
+			uses(manifest.ActionRepository, actionPinned, " # v0.9.0"), uses(manifest.ActionRepository, actionBumped, " # v0.9.1"), "pass", ""},
+		{"a pin bump in the old repository",
+			uses(manifest.LegacyActionRepository, actionPinned, " # v4.0.0"), uses(manifest.LegacyActionRepository, actionBumped, " # v4.0.1"), "pass", ""},
+		{"a move from the old repository to the new one",
+			uses(manifest.LegacyActionRepository, actionPinned, " # v4.0.0"), uses(manifest.ActionRepository, actionPinned, " # v0.9.0"), "unknown", reasonWorkflowChanged},
+		{"a move to another repository at a listed commit",
+			uses(manifest.ActionRepository, actionPinned, " # v0.9.0"), uses(other, actionPinned, " # v0.9.0"), "unknown", reasonWorkflowChanged},
+		{"a pin bump in another repository",
+			uses(other, actionPinned, " # v0.9.0"), uses(other, actionBumped, " # v0.9.1"), "unknown", reasonWorkflowChanged},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld4(t)
+			p := w.openPull(w.shop, 7)
+			w.setFile(w.shop, testBranch, ingest.WorkflowPath, tc.target)
+			s := w.spec4(p, "pass")
+			w.setFile(w.shop, s.claims.SHA, ingest.WorkflowPath, tc.run)
+			w.wantStatus(w.send4(s), tc.status, tc.reason)
+		})
+	}
+}
+
 // policy4Required is policy4 with a gate that blocks.
 const policy4Required = "version: 3\ngate: required\nowners: [olivia]\nmodules:\n  app:\n    paths: [cmd/**, pkg/**]\n"
 

@@ -234,7 +234,12 @@ policy** keeps that change and makes it the approved policy. **Revert the policy
 page links to the other.
 
 For a workflow change, **unknown** means no verdict until the change is approved: the App cannot use the
-changed workflow's result without your approval. The workflow diff compares with the named default-branch
+changed workflow's result without your approval. When the pull request also changes the policy (its branch changed
+`.archfit.yaml` since it left the default branch), as the move to Archfit 0.9.0 and policy version 1 does,
+your approval is the verdict: the App sets `archfit/gate` to success on that exact head, as for an onboarding pull
+request, because no engine run can judge the change. The approval covers the whole head, code included, so such a pull
+request should change only the policy and the workflow. A new head needs a new approval. After the merge, the App
+treats the new policy as changed outside the flow until an owner confirms it. The workflow diff compares with the named default-branch
 commit; the policy diff compares with the named pull-request base commit. Added and removed lines have
 `+` and `-` signs and green and red backgrounds, with a legend. An unchanged policy appears as a compact
 row, but its bytes are still included in the approval. Unchanged from the pull-request base does not mean

@@ -97,16 +97,34 @@ direct push to the policy is the new rule with no owner's word.
   Owners are read from the policy at `Repo.ApprovedCommit`, never from the default branch: a policy changed outside the
   flow could name anyone.
 
-Pull-bound first and workflow actions also publish an owner-approval `archfit/gate` success on the exact
-`Change.HeadSHA` after recording, under feedback's head lease. The external ID is `approval:<id>`, never
+A pull-bound approval that is the head's verdict (`Change.OwnerVerdict`, below) also publishes an owner-approval
+`archfit/gate` success on the exact `Change.HeadSHA` after recording, under feedback's head lease. The external ID is `approval:<id>`, never
 `proposal:<id>`. A failed write is logged without undoing the approval. `Review` and `Act` refuse a second
 matching open approval with `ErrNotDue` before redeeming a passkey.
 
-`OnboardingCheck` re-binds a first approval and checks its indexed open proposal and recorded approval against
-the current head and both file digests. It returns no check after activation, outside the flow, after a head
-change, or for a closed/fork/retargeted pull. The shared feedback publisher consults it inside the head lease,
-so a later upload, rerun or withdrawal cannot replace a matching onboarding approval with an engine verdict.
-The check names the owner and both digests and explicitly is not an engine pass; run diagnostics remain separate.
+`OwnerCheck` returns the check of the pull request's newest open approval when that approval is the head's verdict
+(`Change.OwnerVerdict`), after it re-binds the approval and checks its indexed open proposal and recorded approval
+against the current head and the file digests. Two kinds are the head's verdict:
+
+- a first approval of an onboarding pull request; it returns no check after activation or outside the flow;
+- a workflow approval of a pull request that also changes the policy: the head's policy differs from the policy at
+  the pull request's merge base (`Change.Base`). GitHub's base SHA is the base branch's tip at the last
+  synchronization, so a branch cut before a later policy change differs from it with no change of its own; the merge
+  base is read only when the head's policy differs from the base SHA's, so a workflow-only pull request costs no
+  extra read. The pull request that moves an onboarded repository to engine 0.9.0 is one (beta plan task 5.3): it changes the policy to
+  version 1 and the workflow to the Action's new home, and engine 0.9.0 gives unknown while the target branch holds
+  version 3 or 2. Any other workflow approval returns no check, decided from the stored approval before any GitHub
+  read: the engine judges that head, also when it sits on an older policy than the approved one, or when the approved
+  policy moves after the approval. A base whose policy changed under the same head re-binds to another `Change`, so
+  the approval stops applying, and `Review` and `Act` take a new approval of that head (the proposal holds no `Base`;
+  the newest approval's bound `Change` decides `ErrNotDue`).
+
+It returns no check after a head change, or for a closed/fork/retargeted pull. The shared feedback publisher consults
+it inside the head lease, so a later upload, rerun or withdrawal cannot replace a matching owner approval with an
+engine verdict. The approval covers the whole head, code included. The check names the owner and both digests and
+explicitly is not an engine pass; run diagnostics remain separate. After the merge, `Pushed` judges the policy change
+as any other: a workflow proposal is consumed by `WorkflowPushed` only, so the push is outside the flow until an owner
+confirms it.
 
 Not provided: the re-check of the waiting pull requests (`sweep.AfterAnswer`, called by the gate), the revert
 (written by `gate/proposals` as an answer is), the re-run of an approved head's workflow (`gate`, `owner.go`),
