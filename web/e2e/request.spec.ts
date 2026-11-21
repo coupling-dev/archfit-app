@@ -321,6 +321,9 @@ test('request: a surface request declares the package, allows it until a date or
   const surface = {
     ...request,
     rule: 'coupling',
+    record:
+      'pkg/tc/netem.go:12: coupling: pkg_tc -> pkg/util/retry is past the surface\n  balance: 2/10 (min 7): intrusive, pkg_util is high\n' +
+      '  surface: pkg/util (public)\n  next: use the surface, or: archfit request -m "<why retry belongs to the surface>"',
     balance: { value: 2, max: 10, min: 7, strength: 'intrusive', volatility: 'high' },
     surface: { public: ['pkg/util'], model: [], package: 'pkg/util/retry' },
     policy_version: 1,

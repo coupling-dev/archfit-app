@@ -11,8 +11,10 @@ Rule coupling · pkg_tc -> pkg_util · asked until 2026-12-01
 Request #431 on GitHub
 
 Record
-pkg/tc/netem.go:12 graph pkg_tc -> pkg_util is not an allowed dependency
-  balance: 9/10 (min 7)
+pkg/tc/netem.go:12: coupling: pkg_tc -> pkg/util/retry is past the surface
+  balance: 2/10 (min 7): intrusive, pkg_util is high
+  surface: pkg/util (public)
+  next: use the surface, or: archfit request -m "<why retry belongs to the surface>"
 The map
 Show the map as a list
 Show the map as a diagram
