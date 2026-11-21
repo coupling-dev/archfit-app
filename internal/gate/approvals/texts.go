@@ -1,6 +1,8 @@
 package approvals
 
 import (
+	"context"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -8,6 +10,7 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
 	"github.com/coupling-dev/archfit-app/internal/gate/requests"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
 // The words of the issue of a policy changed outside the flow and of the notes (design 5). They hold only the App's
@@ -15,13 +18,20 @@ import (
 const outsideTitle = "archfit: the policy changed outside the flow"
 
 // ownerPages are the links of an issue about a policy changed outside the flow; "" without an App URL.
-type ownerPages struct{ confirm, revert string }
+type ownerPages struct {
+	confirm, revert string
+	revertOnly      bool // the policy on the default branch is not valid, so it cannot be confirmed
+}
 
 // outsideLinks are the confirm and revert pages of the repository.
-func (s *Service) outsideLinks(r api.Repo) ownerPages {
+// A policy at commit that cannot be read or is not valid leaves only the revert.
+func (s *Service) outsideLinks(ctx context.Context, r api.Repo, commit string) ownerPages {
+	raw, err := s.policy(ctx, r.RepoRef, commit)
+	_, derr := policy3.Decode(raw)
 	return ownerPages{
-		confirm: feedback.OwnerLink(s.appURL, r.FullName, "/owner/confirm"),
-		revert:  feedback.OwnerLink(s.appURL, r.FullName, "/owner/revert"),
+		confirm:    feedback.OwnerLink(s.appURL, r.FullName, "/owner/confirm"),
+		revert:     feedback.OwnerLink(s.appURL, r.FullName, "/owner/revert"),
+		revertOnly: err == nil && (raw == nil || derr != nil),
 	}
 }
 
@@ -30,15 +40,34 @@ func (l ownerPages) next() string {
 	if l.confirm == "" {
 		return "**Next:** an owner confirms or reverts the policy in the App (owner, passkey)\n"
 	}
+	if l.revertOnly {
+		return feedback.NextLine("Revert the policy", l.revert, "owner") +
+			"The policy on the default branch is not valid, so it cannot be confirmed.\n"
+	}
 	return feedback.NextLine("Confirm the policy", l.confirm, "owner") +
 		"Or [revert it](" + l.revert + ") to restore the approved policy.\n"
 }
 
+// loginName is a GitHub login: at most 39 letters, digits and single hyphens inside.
+var loginName = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$`)
+
+// cell makes s safe inside a code span in a table cell.
+func cell(s string) string {
+	return strings.NewReplacer("|", "/", "`", "'", "\r", " ", "\n", " ").Replace(s)
+}
+
 func outsideBody(l ownerPages, branch, commit string, owners []string) string {
 	who := "an owner named in the approved policy"
-	if len(owners) > 0 {
-		who += ": `" + strings.Join(owners, "`, `") + "`"
+	var names []string
+	for _, o := range owners {
+		if loginName.MatchString(o) { // policy text is untrusted: only a real login goes in the table
+			names = append(names, o)
+		}
 	}
+	if len(names) > 0 {
+		who += ": `" + strings.Join(names, "`, `") + "`"
+	}
+	branch = cell(branch)
 	return l.next() + "\n" +
 		"Every pull request is `unknown` until then.\n\n" +
 		"| | |\n| --- | --- |\n" +
@@ -89,7 +118,11 @@ func approvedPullNote(c Change, login, passkey string) string {
 		what = "the first policy"
 		ends = "When this pull request merges, its policy is the approved policy and change control starts. " + ends
 	}
-	return "✅ **Owner approved this head.** " + what + " was approved" + byOwner(login, passkey) + ".\n\n" +
+	heading := "**Workflow change approved.** "
+	if c.OwnerVerdict() { // only then is the approval the head's verdict
+		heading = "**Owner approved this head.** "
+	}
+	return "✅ " + heading + what + " was approved" + byOwner(login, passkey) + ".\n\n" +
 		"| | |\n| --- | --- |\n| Head | `" + c.HeadSHA + "` |\n\n" +
 		"The check runs again on this head. " + ends + "\n\n" +
 		"<details><summary>Fingerprints</summary>\n\nPolicy: `" + c.Policy + "`\n\nWorkflow: `" + c.Workflow + "`\n\n</details>\n"

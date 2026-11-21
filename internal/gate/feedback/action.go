@@ -74,13 +74,20 @@ func (v view) lead() string {
 	if v.next == nil {
 		return ""
 	}
+	return v.nextLine() + "\n" + v.facts() + "\n"
+}
+
+// facts is the small table under the next line: who can act and the head.
+func (v view) facts() string {
 	var b strings.Builder
-	b.WriteString(v.nextLine() + "\n")
 	b.WriteString("| | |\n| --- | --- |\n")
-	b.WriteString("| Who can act | an " + v.next.role + " named in the approved policy |\n")
+	policy := "approved"
+	if v.next.role == "administrator" { // the first policy is not approved yet: the proposed one names who may
+		policy = "proposed"
+	}
+	b.WriteString("| Who can act | an " + v.next.role + " named in the " + policy + " policy |\n")
 	if v.head != "" {
 		b.WriteString("| Head | `" + shortHead(v.head) + "` |\n")
 	}
-	b.WriteString("\n")
 	return b.String()
 }

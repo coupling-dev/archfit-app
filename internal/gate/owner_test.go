@@ -225,6 +225,26 @@ func TestAWorkflowApprovalGivesItsHeadAVerdict(t *testing.T) {
 	w.wantStatus(w.rerunUpload(p, s), "pass", "")
 }
 
+// A branch behind the default branch, which changed the workflow since the branch started, has nothing for an owner to
+// approve: the feedback says to update the branch and links no owner page.
+func TestABehindBranchIsToldToUpdateNotToReviewTheWorkflow(t *testing.T) {
+	w := newWorld4(t)
+	w.approvedAt(policy4, w.tip)
+	p := w.openPull(w.shop, 7)
+	old := workflow4(actionPinned, " # v4.0.0", "      - run: echo old\n")
+	mergeBase := w.gh.pulls[pullKey(shopName, 7)].MergeBaseSHA
+	w.setFile(w.shop, mergeBase, ingest.WorkflowPath, old)
+	w.setFile(w.shop, p.head, ingest.WorkflowPath, old)
+	s := w.spec4(p, "pass")
+	w.setFile(w.shop, s.claims.SHA, ingest.WorkflowPath, old)
+	w.wantStatus(w.send4(s), "unknown", reasonWorkflowBehind)
+	c := w.wantGate(p, "completed", "action_required")
+	if strings.Contains(c.Summary+w.comment(p), "/owner/") || c.DetailsURL != testAudience+"/r/acme/shop/pull/7" ||
+		!strings.Contains(c.Summary, "next: update the branch") {
+		t.Errorf("details %q, summary:\n%s\ncomment:\n%s", c.DetailsURL, c.Summary, w.comment(p))
+	}
+}
+
 // approvedAt records policy, at commit, as the approved policy of the shop.
 func (w *world4) approvedAt(policy, commit string) {
 	w.t.Helper()

@@ -84,7 +84,7 @@ func TestADirectPushPutsEveryUploadOutsideTheFlow(t *testing.T) {
 	if gate.DetailsURL != confirm || !strings.HasPrefix(gate.Summary, "**Next:** [Confirm the policy]("+confirm+") (owner, passkey)\n") {
 		t.Errorf("check details %q, summary:\n%s", gate.DetailsURL, gate.Summary)
 	}
-	if c := w.comment(p); !strings.Contains(c, "## ⏳ Archfit: unknown, no verdict\n\n**Next:** [Confirm the policy]("+confirm+")") ||
+	if c := w.comment(p); !strings.Contains(c, "## ⏳ Waiting for an owner: Confirm the policy\n\n**Next:** [Confirm the policy]("+confirm+")") ||
 		!strings.Contains(c, "changed on main with no recorded approval") ||
 		!strings.Contains(c, "an owner confirms or reverts it in the App: #"+strconv.Itoa(issues[0].Number)) {
 		t.Errorf("comment:\n%s", c)

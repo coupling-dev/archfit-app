@@ -236,8 +236,11 @@ func (v view) annotations() []api.Annotation {
 func (v view) comment(budget int) string {
 	p := v.page()
 	head := "## " + v.mark() + " " + p.StatusLine + "\n"
+	closing := ""
 	if v.next != nil {
-		head += "\n" + v.nextLine()
+		// A pending owner step is the whole message; the records and the lines for author and owner fold away.
+		head = "## " + v.title() + "\n\n" + v.nextLine() + "\n" + v.facts() + "\n<details><summary>Details</summary>\n\n**" + prose(p.StatusLine) + "**\n"
+		closing = "\n</details>\n"
 	}
 	if p.Note != "" {
 		head += "\n" + prose(p.Note) + "\n"
@@ -256,8 +259,8 @@ func (v view) comment(budget int) string {
 	for _, r := range p.Records {
 		blocks = append(blocks, "\n"+r.markdown())
 	}
-	kept := fit(blocks, budget-len(head)-tail.Len(), func(n int) string { return "\n" + moreLine(n) + "\n" })
-	return head + strings.Join(kept, "") + tail.String()
+	kept := fit(blocks, budget-len(head)-tail.Len()-len(closing), func(n int) string { return "\n" + moreLine(n) + "\n" })
+	return head + strings.Join(kept, "") + tail.String() + closing
 }
 
 // heading is the status line with "Archfit" as the first word of a heading.

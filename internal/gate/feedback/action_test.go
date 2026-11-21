@@ -36,7 +36,11 @@ func TestAPendingOwnerStepShowsOneLinkOnTheCheckAndTheComment(t *testing.T) {
 	}
 	mustContain(t, run.Summary, "| Who can act | an owner named in the approved policy |", "| Head | `"+shortHead(headB)+"` |", "differs from main")
 	body := h.comments.all()[0].Body
-	mustContain(t, body, "## ⏳ Archfit: unknown, no verdict\n\n"+next)
+	mustContain(t, body, "## ⏳ Waiting for an owner: Review the workflow change\n\n"+next+"\n| | |\n| --- | --- |\n| Who can act | an owner named in the approved policy |\n",
+		"<details><summary>Details</summary>\n\n**Archfit: unknown, no verdict**\n", "differs from main", "\n</details>\n")
+	if strings.Contains(strings.SplitN(body, "<details>", 2)[0], "differs from main") {
+		t.Errorf("the record is not folded:\n%s", body)
+	}
 	for name, text := range map[string]string{"title": run.Title, "summary": run.Summary, "comment": body} {
 		if found := wording.NotUsedIn(text); len(found) > 0 {
 			t.Errorf("%s uses %q", name, found)

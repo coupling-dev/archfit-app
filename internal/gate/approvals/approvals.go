@@ -242,7 +242,7 @@ func (s *Service) finishOutside(ctx context.Context, p Push, r records.Repo, mar
 	}
 	if out.Issue = r.OutsideFlow.Issue; out.Issue != 0 {
 		if marked {
-			s.note(ctx, p.Repo, out.Issue, changedAgainNote(s.outsideLinks(p.Repo), p.After))
+			s.note(ctx, p.Repo, out.Issue, changedAgainNote(s.outsideLinks(ctx, p.Repo, p.After), p.After))
 		}
 		return out, nil
 	}
@@ -251,7 +251,7 @@ func (s *Service) finishOutside(ctx context.Context, p Push, r records.Repo, mar
 	if err != nil {
 		return Outcome{}, err
 	}
-	created, err := s.gh.CreateIssue(ctx, ref, api.NewIssue{Title: outsideTitle, Body: outsideBody(s.outsideLinks(p.Repo), p.Repo.DefaultBranch, p.After, logins(owners))})
+	created, err := s.gh.CreateIssue(ctx, ref, api.NewIssue{Title: outsideTitle, Body: outsideBody(s.outsideLinks(ctx, p.Repo, p.After), p.Repo.DefaultBranch, p.After, logins(owners))})
 	if err != nil {
 		return Outcome{}, fmt.Errorf("approvals: open the issue of the policy changed outside the flow: %w", err)
 	}

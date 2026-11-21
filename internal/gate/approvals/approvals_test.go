@@ -580,6 +580,27 @@ func TestTheOutsideFlowIssueStartsWithTheConfirmLink(t *testing.T) {
 	}
 }
 
+func TestAnInvalidPolicyOutsideTheFlowLeadsWithTheRevert(t *testing.T) {
+	w := newWorld(t)
+	w.svc.WithAppURL("https://app.test")
+	w.approved(digestV(0))
+	w.gh.commit("c0", policyV(0))
+	w.gh.commit("c1", "not: [a policy")
+	out := w.push("c0", "c1")
+	issue := w.gh.comments[out.Issue][0]
+	if !strings.Contains(issue, "\n**Next:** [Revert the policy](https://app.test/r/acme/shop/owner/revert) (owner, passkey)\n") ||
+		strings.Contains(issue, "[Confirm the policy]") {
+		t.Errorf("issue must lead with the revert only:\n%s", issue)
+	}
+}
+
+func TestOutsideBodyListsOnlyRealLogins(t *testing.T) {
+	body := outsideBody(ownerPages{}, "main", "c1", []string{"olivia", "a`b\nc", "x|y", "ok-name"})
+	if !strings.Contains(body, ": `olivia`, `ok-name` |") {
+		t.Errorf("body:\n%s", body)
+	}
+}
+
 func TestTextsUseNoNotUsedWord(t *testing.T) {
 	for name, text := range map[string]string{
 		"title": outsideTitle, "body": outsideBody(ownerPages{confirm: "https://app.test/r/o/r/owner/confirm", revert: "https://app.test/r/o/r/owner/revert"}, "main", "c1", []string{"olivia"}), "changed again": changedAgainNote(ownerPages{}, "c2"),

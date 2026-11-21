@@ -225,7 +225,7 @@ The App accepts a `merge_group` upload and binds it to GitHub queue authority. R
 
 On GitHub, a check that waits for a person says so and links straight to the page that resolves it. The check
 title reads `⏳ Waiting for an owner: <action>`, and the summary and the pull request comment start with
-`**Next:** [<action>](<page>) (owner, passkey)`. The check's **Details** link opens the same page. The links are:
+`**Next:** [<action>](<page>) (owner, passkey)`; the comment is headed the same way and folds the records into **Details**. The check's **Details** link opens the same page. A branch behind the default branch is told to update the branch, with no owner link. The links are:
 **Review the workflow change** (`/owner/workflow?pull=<number>`), **Confirm the policy** (`/owner/confirm`, also the first
 line of the issue the App opens when the policy changed outside the flow, with a link to revert it) and **Approve the
 first policy** (`/owner/first`, with `?pull=<number>` for an onboarding pull request). Status markers are `✅` pass,
