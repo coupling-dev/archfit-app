@@ -58,6 +58,11 @@ GitHub requires pull requests and the check on the default branch, **not require
 and **not confirmed** when the App could not confirm it. The rows appear first; **Checking…** stands in the
 **archfit/gate** column until the App has read each repository's settings, and the check and **Next step** fill in
 then. A **Next step** appears only while setup is incomplete.
+**Needs you** comes above the rows when an owner step waits on any repository. Each row names the step
+(**Review the workflow change #413**, **Confirm the policy**), the repository, how long it has waited, and links to the
+page that resolves it, so you need no URL. The longest wait is first. A step with no recorded time, such as a policy
+changed outside the flow, has no wait and comes last. The App reads the first 25 repositories with an approved
+policy; when it cannot read a repository, or reads fewer, a line under **Needs you** says so.
 A repository whose installation no operator has admitted shows **not admitted**; an operator admits, and an owner
 approves. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** and says the repositories are listed on the home page, with a link to `/`.
 
@@ -76,6 +81,7 @@ for you, such as **Review workflow change**, or else the action of the setup ste
 **Create a pull request on GitHub** or **Open ruleset settings**. With nothing to do there is no primary
 button. **View policy** appears only when the default branch has a policy. A button that leaves for GitHub
 shows an external-link icon.
+Owner steps come first in **Needs you**, so the primary button is the oldest owner step.
 
 **Needs you** comes directly after the head and appears only when something waits. It lists open requests,
 exceptions near their date, drift and owner actions, one row each with an icon for its kind. Each item opens its
@@ -231,6 +237,8 @@ line of the issue the App opens when the policy changed outside the flow, with a
 first policy** (`/owner/first`, with `?pull=<number>` for an onboarding pull request). Status markers are `✅` pass,
 `❌` fail, `⏳` waiting and `⚠️` unknown. The owner approval check says `✅ Owner approved this head (not an engine pass)`
 and keeps the fingerprints in a collapsed block.
+
+The pull request page puts the owner step first as the primary button while one waits, including before any check has reported.
 
 Each page is titled with its action, such as **Approve the first policy**, and names the repository and the pull request
 when there is one. It then shows the status, as `unknown — <why>`, and the files. The GitHub pull request and

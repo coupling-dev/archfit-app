@@ -2,9 +2,11 @@
   import Skeleton from '../components/Skeleton.svelte';
   import StatusLabel from '../components/ui/StatusLabel.svelte';
   import PageHead from '../components/ui/PageHead.svelte';
-  import { explain, type ApiError, type Repos } from '../lib/api';
+  import Icon from '../components/ui/Icon.svelte';
+  import { explain, getJSON, type ApiError, type OwnerActions, type Repos } from '../lib/api';
   import { firstJSON } from '../lib/early';
   import { enforcementLabel, nextStep, repoStateLabel } from '../lib/repos';
+  import { actionTitle, waitingFor } from '../lib/owner-actions';
 
   let { here }: { here: string } = $props();
 
@@ -18,6 +20,15 @@
   let probing = $state(true);
   let probeFailure = $state('');
   let probeRows = false; // the probe's rows are in `body`; the list's rows never replace them, whichever answers first
+
+  // The owner steps that wait are always read fresh: a remembered answer could show a step that is already done.
+  // A failure is said below, not hidden: no list is not the same as no steps.
+  let owner = $state<OwnerActions | null>(null);
+  let ownerFailed = $state(false);
+  getJSON<OwnerActions>('/api/owner-actions').then(
+    (b) => (owner = b),
+    () => (ownerFailed = true),
+  );
 
   firstJSON<Repos>(list).then(
     (b) => {
@@ -54,6 +65,32 @@
 {:else}
   {#if probeFailure}
     <p class="flash error" role="alert">{probeFailure}</p>
+  {/if}
+  {#if owner?.actions.length}
+    <section class="box needs" aria-labelledby="repos-needs">
+      <div class="box-head"><h2 class="title-box" id="repos-needs">Needs you</h2></div>
+      {#each owner.actions as row (row.href)}
+        {@const age = waitingFor(row.since)}
+        <div class="box-row need">
+          <span class="need-icon"><Icon name="clock" /></span>
+          <div class="need-body">
+            <a href={row.href}>{actionTitle(row)}</a>
+            <a class="muted need-repo" href={`/r/${row.repo}`}>{row.repo}</a>
+          </div>
+          {#if age}<span class="muted need-age">{age}</span>{/if}
+        </div>
+      {/each}
+    </section>
+  {/if}
+  {#if ownerFailed}
+    <p class="muted small" role="status">The App could not read the steps that wait for an owner.</p>
+  {:else if owner?.unread}
+    <p class="muted small" role="status">
+      The App could not read the owner steps of {owner.unread} {owner.unread === 1 ? 'repository' : 'repositories'}.
+    </p>
+  {/if}
+  {#if owner?.truncated}
+    <p class="muted small" role="status">Owner steps are shown for the first repositories by name only.</p>
   {/if}
   <div class="box repo-list" aria-busy={probing}>
     <table class="data">
@@ -107,6 +144,12 @@
   /* The name sits in a table cell next to labels; underline it so it reads as a link in both schemes. */
   td a { text-decoration: underline; text-underline-offset: 2px; }
   .mobile-label { display: none; }
+  .needs { margin-bottom: 16px; }
+  .need { display: flex; align-items: flex-start; gap: 10px; overflow-wrap: anywhere; }
+  .need-icon { display: inline-flex; padding-top: 2px; color: var(--fg-muted); }
+  .need-body { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 2px 12px; }
+  .need-repo { text-decoration: none; }
+  .need-age { white-space: nowrap; }
 
   @media (max-width: 640px) {
     .repo-list { border: 0; background: transparent; }

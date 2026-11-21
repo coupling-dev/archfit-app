@@ -18,7 +18,7 @@ export type Reply = [status: number, body: object];
 // Handlers answer "METHOD /api/path" (no query). The body is the JSON the page sent, the URL the whole request URL.
 export type Handlers = Record<string, (body: Record<string, unknown>, url: URL) => Reply | Promise<Reply>>;
 
-// open answers /api from handlers (a session by default, "Not found." for anything else), opens path, and returns the
+// open answers /api from handlers (a session and no owner steps by default, "Not found." for anything else), opens path, and returns the
 // writes the page sent, in order.
 export async function open(page: Page, path: string, handlers: Handlers, readOnly = false): Promise<Request[]> {
   const writes: Request[] = [];
@@ -29,7 +29,11 @@ export async function open(page: Page, path: string, handlers: Handlers, readOnl
     if (post) writes.push(req);
     if (post) expect(req.headers()['x-csrf-token']).toBe(session.csrf);
     const key = `${req.method()} ${url.pathname}`;
-    const handle = handlers[key] ?? (key === 'GET /api/session' ? () => [200, session] as Reply : undefined);
+    const defaults: Handlers = {
+      'GET /api/session': () => [200, session],
+      'GET /api/owner-actions': () => [200, { actions: [], unread: 0, truncated: false }],
+    };
+    const handle = handlers[key] ?? defaults[key];
     const [status, json] = handle ? await handle(post ? req.postDataJSON() : {}, url) : [404, { error: 'Not found.' }];
     await route.fulfill({ status, json });
   });

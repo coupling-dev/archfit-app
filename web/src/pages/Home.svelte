@@ -9,6 +9,7 @@
   import { firstJSON } from '../lib/early';
   import { homeAction, homeHref, homeStateLabel, isExternalHref, needIcon, readHome, type Home } from '../lib/home';
   import { repoPage, type Repo } from '../lib/route';
+  import { waitingFor } from '../lib/owner-actions';
 
   let { route, here }: { route: Repo; here: string } = $props();
   let body = $state<Home | null>(null);
@@ -55,6 +56,7 @@
           {#if href}
             <a {href}>{need.text}{#if isExternalHref(href)}<Icon name="link-external" size={12} /><span class="sr-only"> (opens GitHub)</span>{/if}</a>
           {:else}<p>{need.text}</p>{/if}
+          {#if waitingFor(need.since)}<p class="muted">Waiting {waitingFor(need.since)}</p>{/if}
           {#if need.record}<details><summary>Show the record</summary><pre>{need.record}</pre></details>{/if}
         </div>
       </div>

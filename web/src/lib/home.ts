@@ -6,6 +6,7 @@ export interface HomeNeed {
   text: string;
   href: string;
   record?: string;
+  since?: string; // RFC 3339: when an owner step last changed
 }
 export interface OwnerReview {
   label: string;
@@ -215,6 +216,7 @@ export function readHome(value: unknown): Home {
         text: string(need.text),
         href: string(need.href),
         ...(need.record === undefined ? {} : { record: string(need.record) }),
+        ...(need.since === undefined ? {} : { since: string(need.since) }),
       };
     }),
   };
