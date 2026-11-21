@@ -703,6 +703,7 @@ func TestMergeSurface(t *testing.T) {
 	bare := &records.Surface{Public: []string{"a"}, Model: []string{}}
 	retry := &records.Surface{Public: []string{"a"}, Model: []string{}, Package: "a/retry"}
 	backoff := &records.Surface{Public: []string{"a"}, Model: []string{}, Package: "a/backoff"}
+	contested := &records.Surface{Public: []string{"a"}, Model: []string{}, Contested: true}
 	for _, tc := range []struct {
 		name        string
 		kept, s     *records.Surface
@@ -718,7 +719,9 @@ func TestMergeSurface(t *testing.T) {
 		{"the same package again", retry, retry, true, retry, false},
 		{"a reported package is replaced by the verified one", retry, backoff, false, backoff, true},
 		{"a reported package is dropped by a verified result without a surface", retry, nil, false, bare, true},
-		{"two verified packages leave none", retry, backoff, true, bare, true},
+		{"two verified packages leave none", retry, backoff, true, contested, true},
+		{"a contested request never takes a package again", contested, retry, true, contested, false},
+		{"a contested request keeps its mark against a bare surface", contested, bare, true, contested, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, changed := mergeSurface(tc.kept, tc.s, tc.verified)

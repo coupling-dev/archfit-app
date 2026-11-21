@@ -134,6 +134,9 @@ type Surface struct {
 	Public  []string `json:"public"`
 	Model   []string `json:"model"`
 	Package string   `json:"package,omitempty"`
+	// Contested is set once two verified results named different packages for the request; it then never has a
+	// package again, so no declaration is offered.
+	Contested bool `json:"contested,omitempty"`
 }
 
 // Numbers are a request's figures: verified from a stored result, or "as reported" by the CLI.

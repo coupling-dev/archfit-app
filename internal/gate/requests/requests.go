@@ -577,28 +577,31 @@ func boundedSurface(public, model []string, pkg string) *records.Surface {
 // approved as such. The package it declares is only ever one a verified result names:
 //   - a verified surface replaces one the CLI reported, package included;
 //   - a verified result without a surface keeps the reported one's globs but drops its unverified package;
-//   - two verified results that name different packages under one request leave it without a package, so no
-//     declaration is offered (the request key is the module pair, and one declaration covers one package).
+//   - two verified results that name different packages under one request make it contested: it has no package from
+//     then on, so no declaration is offered (the request key is the module pair, and one declaration covers one
+//     package).
 func mergeSurface(kept, s *records.Surface, verified bool) (*records.Surface, bool) {
-	unnamed := func(k *records.Surface) (*records.Surface, bool) {
-		if k.Package == "" {
+	unnamed := func(k *records.Surface, contested bool) (*records.Surface, bool) {
+		if k.Package == "" && k.Contested == contested {
 			return k, false
 		}
 		c := *k
-		c.Package = ""
+		c.Package, c.Contested = "", contested
 		return &c, true
 	}
 	switch {
 	case kept == nil && s == nil:
 		return nil, false
+	case kept != nil && kept.Contested:
+		return kept, false
 	case s == nil && verified:
 		return kept, false
 	case s == nil:
-		return unnamed(kept)
+		return unnamed(kept, false)
 	case kept == nil, !verified, kept.Package == "" && s.Package != "":
 		return s, true
 	case s.Package != "" && kept.Package != s.Package:
-		return unnamed(kept)
+		return unnamed(kept, true)
 	}
 	return kept, false
 }
