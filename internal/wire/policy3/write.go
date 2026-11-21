@@ -76,8 +76,6 @@ const (
 //
 //   - a module that declares neither public nor model: its whole paths are its public part,
 //     so a first glob would narrow the surface, not widen it;
-//   - the model role in a version 3 policy, which the v4.0.0 engine reads and which has no
-//     model key (task 6.5 removes this case);
 //   - a glob the other role lists, as the engine's policy check refuses it. The engine also refuses a file that
 //     both parts cover by different globs; a surface request names a package in neither part (else the use would not
 //     be past the surface), so its declaration cannot cause that.
@@ -102,9 +100,6 @@ func AddSurface(file []byte, module string, role Role, glob, note string) ([]byt
 	case RolePublic:
 		list, other = mod.Public, mod.Model
 	case RoleModel:
-		if old.Version != Version1 {
-			return nil, fmt.Errorf("a model part needs policy version 1; this policy is version %d", old.Version)
-		}
 		list, other = mod.Model, mod.Public
 	default:
 		return nil, fmt.Errorf("unknown surface role %q", role)

@@ -146,7 +146,7 @@ type Numbers struct {
 }
 
 // Balance is "balance: score/max (min min)" of the record. Engine 0.9.0 adds the inputs the balance was computed with;
-// they are absent for engine v4.0.0 (until task 6.5) and in records written before.
+// they are absent in records written before.
 type Balance struct {
 	Score      int    `json:"score"`
 	Max        int    `json:"max"`

@@ -14,7 +14,7 @@ import (
 
 func TestRealEditPreviewValidatesBeforeDigestOrWrites(t *testing.T) {
 	w := newWorld(t)
-	in := EditInput{File: []byte("version: 3\nowners: []\nmodules: {}\n"), Base: policy3.Digest([]byte(testPolicy)), Owner: olivia}
+	in := EditInput{File: []byte("version: 1\nowners: []\nmodules: {}\n"), Base: policy3.Digest([]byte(testPolicy)), Owner: olivia}
 	got, err := w.svc.EditPreview(context.Background(), testRepo, in)
 	if err != nil || len(got.Errors) != 2 || got.Digest != "" || got.Target != "" || len(w.hub.writes()) > 0 || len(w.redeemed) > 0 {
 		t.Fatalf("invalid preview %+v %v writes=%v", got, err, w.hub.writes())
@@ -89,9 +89,8 @@ func TestEditCleansClosedProposalsAfterValidRedemption(t *testing.T) {
 	}
 }
 
-// The editor reads the policy versions the App reads: version 1 with a model part, and version 3 until task 6.5,
-// which has no model part.
-func TestEditPreviewReadsVersion1AndRefusesAModelInVersion3(t *testing.T) {
+// The editor reads version 1, with a model part, and refuses version 3, which engine v4.0.0 wrote.
+func TestEditPreviewReadsVersion1AndRefusesVersion3(t *testing.T) {
 	const modules = "owners: [olivia]\nmodules:\n  app:\n    paths: [app/**]\n    model: [app/model]\n"
 	w := newWorld(t)
 	v1 := EditInput{File: []byte("version: 1\n" + modules), Base: policy3.Digest([]byte(testPolicy)), Owner: olivia}
@@ -101,7 +100,7 @@ func TestEditPreviewReadsVersion1AndRefusesAModelInVersion3(t *testing.T) {
 	}
 	v3 := EditInput{File: []byte("version: 3\n" + modules), Base: policy3.Digest([]byte(testPolicy)), Owner: olivia}
 	got, err = w.svc.EditPreview(context.Background(), testRepo, v3)
-	if err != nil || len(got.Errors) != 1 || !strings.Contains(got.Errors[0], "modules.app.model: needs policy version 1") || got.Digest != "" {
+	if err != nil || len(got.Errors) != 1 || !strings.Contains(got.Errors[0], "version 3 is not supported") || got.Digest != "" {
 		t.Fatalf("version 3 preview %+v %v", got, err)
 	}
 }

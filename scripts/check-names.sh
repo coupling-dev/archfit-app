@@ -2,24 +2,15 @@
 # Reject old project homes, not personal logins.
 # docs/archive, docs/plans and docs/reviews record history.
 # This script contains the rule itself.
-# Listed vendored paths come from the pinned engine/Action. The engine v4.0.0
-# result corpus, the version 3 policy corpus and the tests that pin them name
-# the old home until task 6.5 deletes them (internal/wire/result/module.md).
-# engine_manifest.go names the Action's old home, which the App accepts beside
-# the new one until task 6.5 (internal/wire/result/module.md).
-# Workflow parser tests retain the v4 Action contract.
+# Listed vendored paths come from the pinned engine/Action. Tests that prove the
+# old Action home is refused name it. Workflow parser tests retain the v4 Action contract.
 set -eu
 pattern='alexei-led/(archfit|homebrew-tap|tap/archfit)|ghcr\.io/alexei-led|archfit(-app)?/v[0-9]+\b'
 if git grep -n -I -E "$pattern" -- \
   ':!docs/archive/**' ':!docs/plans/**' ':!docs/reviews/**' ':!scripts/check-names.sh' \
-  ':!internal/wire/manifest/engine_manifest.go' \
   ':!internal/wire/workflow/workflow_test.go' \
-  ':!internal/wire/result/vendor_test.go' \
-  ':!internal/wire/policy3/source_test.go' \
-  ':!internal/wire/policy3/testdata/v3/SCHEMA_SOURCE' \
-  ':!internal/wire/result/testdata/v4.0.0/SCHEMA_SOURCE' \
-  ':!internal/wire/policy3/testdata/v3/archfit.schema.json' \
-  ':!internal/wire/result/testdata/v4.0.0/archfit.result.schema.json' \
+  ':!internal/gate/upload_result_test.go' \
+  ':!internal/control/onboarding/setup_test.go' \
   ':!internal/wire/testdata/envelope-v2/invalid-bare-policy-digest.expect.json' \
   ':!internal/wire/testdata/envelope-v2/invalid-bare-policy-digest.json' \
   ':!internal/wire/testdata/envelope-v2/invalid-baseline-digest.expect.json' \

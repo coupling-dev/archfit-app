@@ -19,7 +19,7 @@ const root = '/api/repos/acme/app';
 const baseDigest = 'sha256:' + 'b'.repeat(64);
 const newDigest = 'sha256:' + 'd'.repeat(64);
 const target = 'e'.repeat(40);
-const proposalYAML = 'version: 3\nowners: [alice]\nmodules:\n  app:\n    paths: [app/**]\n# earlier answer\n';
+const proposalYAML = 'version: 1\nowners: [alice]\nmodules:\n  app:\n    paths: [app/**]\n# earlier answer\n';
 const editedYAML = proposalYAML + '# owner edit <img src=x onerror=alert(1)>\n';
 const diff = '--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -6,0 +7 @@\n+# owner edit <img src=x onerror=alert(1)>\n';
 const typical = JSON.parse(
@@ -197,7 +197,7 @@ test('policy edit: line errors appear before any passkey step', async ({ page })
     },
   ];
   const writes = await open(page, path + '?edit=1', handlers);
-  await page.getByLabel('Policy YAML').fill('version: 3\nowners: []\nmodules: {}\n');
+  await page.getByLabel('Policy YAML').fill('version: 1\nowners: []\nmodules: {}\n');
   await page.getByRole('button', { name: 'Preview the edit' }).click();
   await expect(page.getByRole('alert')).toContainText('Fix the policy');
   await expect(page.getByRole('alert')).toContainText('Line 2: owners: required');

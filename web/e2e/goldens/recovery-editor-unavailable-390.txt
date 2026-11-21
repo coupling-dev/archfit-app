@@ -100,6 +100,6 @@ Show graph All 3 modules
 Policy file
 Copy digest
 
-Digest: sha256:1cf7e56b7dc701c6f69fd8bacee1be2b8b1d241e2aea04bf6545b3ba3bcc05f7
+Digest: sha256:b97b969edbaaa63b92487dc438fae62ae65307d713013ed6fe24bd09c0a143c2
 
 Show raw YAML

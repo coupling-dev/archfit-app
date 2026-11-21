@@ -55,7 +55,7 @@ type Error struct {
 	Why        string     `json:"why,omitempty"`
 	Instead    string     `json:"instead,omitempty"`
 	Balance    *Balance   `json:"balance,omitempty"`
-	Surface    *Surface   `json:"surface,omitempty"` // the target's declared surface; only with a balance that has inputs
+	Surface    *Surface   `json:"surface,omitempty"` // the target's declared surface; only with a balance
 	Package    string     `json:"package,omitempty"` // the package past the surface; only with a surface; "" names none
 	Next       Next       `json:"next"`
 	From       string     `json:"from,omitempty"`
@@ -65,23 +65,19 @@ type Error struct {
 	Exception  *Exception `json:"exception,omitempty"` // set only when Rule is "exception"
 }
 
-// Balance is the coupling number of a dependency, printed as "Value/10 (min Min)". The 0.9.0 engine names the two
-// inputs it was computed with; the v4.0.0 engine does not. Strength and Volatility come together or not at all, and
-// a result holds one shape (see Decode).
+// Balance is the coupling number of a dependency, printed as "Value/10 (min Min)", with the two inputs it was
+// computed with.
 type Balance struct {
 	Value      int        `json:"value" rule:"scale"`
 	Min        int        `json:"min" rule:"scale"`
-	Strength   Strength   `json:"strength,omitempty" rule:"strength"`
-	Volatility Volatility `json:"volatility,omitempty" rule:"volatility"`
+	Strength   Strength   `json:"strength" rule:"strength"`
+	Volatility Volatility `json:"volatility" rule:"volatility"`
 }
-
-// HasInputs reports whether the balance carries the 0.9.0 inputs.
-func (b Balance) HasInputs() bool { return b.Strength != "" }
 
 // Strength is the strength of a dependency that a balance is computed with.
 type Strength string
 
-// The strengths of a 0.9.0 balance.
+// The strengths of a balance.
 const (
 	StrengthContract  Strength = "contract"  // a use of the target's public part
 	StrengthModel     Strength = "model"     // a use of the target's model part

@@ -14,7 +14,7 @@ import (
 )
 
 // mallorysPolicy is what a direct push wrote: it names its author as the owner.
-const mallorysPolicy = "version: 3\nowners: [mallory]\nmodules:\n  pkg_tc:\n    paths: [pkg/tc/**]\n"
+const mallorysPolicy = "version: 1\nowners: [mallory]\nmodules:\n  pkg_tc:\n    paths: [pkg/tc/**]\n"
 
 var mallory = Owner{ID: 666, Login: "mallory"}
 

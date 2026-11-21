@@ -33,30 +33,12 @@ type definition struct {
 
 const defsPrefix = "#/$defs/"
 
-// schemaDifference is what the Go types say beyond one engine's schema. The App reads both engines with one set of types
-// until task 6.5 (module.md), so these are the only keys allowed to differ.
-type schemaDifference struct {
-	optional map[string]bool // required in the schema, optional in Go: Decode's shape check requires them together
-	absent   map[string]bool // in the Go types, not in this schema: the 0.9.0 keys a v4.0.0 result never has
-}
-
-var schemaDifferences = map[string]schemaDifference{
-	"testdata/v0.9.0": {optional: map[string]bool{"Balance.strength": true, "Balance.volatility": true}},
-	"testdata/v4.0.0": {absent: map[string]bool{"Balance.strength": true, "Balance.volatility": true, "Error.surface": true, "Error.package": true}},
-}
-
 // TestTypesFollowTheVendoredSchema ties the Go types and the decoder's rules to each vendored schema: for every
 // object Result reaches, the same keys, the same required keys, the same JSON types, the same enums, patterns,
-// minLength and maximum, and minimum 1 on every integer, except the differences listed above. A re-vendored schema
-// that changes the result fails here until the types follow.
+// minLength and maximum, and minimum 1 on every integer. A re-vendored schema that changes the result fails here until
+// the types follow.
 func TestTypesFollowTheVendoredSchema(t *testing.T) {
-	for dir, diff := range schemaDifferences {
-		t.Run(dir, func(t *testing.T) { typesFollow(t, dir+"/archfit.result.schema.json", diff) })
-	}
-}
-
-func typesFollow(t *testing.T, path string, diff schemaDifference) {
-	raw, err := os.ReadFile(path) //nolint:gosec // fixed test data paths
+	raw, err := os.ReadFile("testdata/v0.9.0/archfit.result.schema.json") //nolint:gosec // fixed test data paths
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,17 +75,12 @@ func typesFollow(t *testing.T, path string, diff schemaDifference) {
 		if def.AdditionalProperties == nil || *def.AdditionalProperties {
 			t.Errorf("%s: the schema allows other keys", name)
 		}
-		var keys []key
-		for _, k := range keysOf(typ) {
-			if !diff.absent[name+"."+k.name] {
-				keys = append(keys, k)
-			}
-		}
+		keys := keysOf(typ)
 		names := make([]string, 0, len(keys))
 		var required []string
 		for _, k := range keys {
 			names = append(names, k.name)
-			if k.required || diff.optional[name+"."+k.name] {
+			if k.required {
 				required = append(required, k.name)
 			}
 		}

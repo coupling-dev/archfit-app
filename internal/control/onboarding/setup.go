@@ -240,7 +240,7 @@ func (s *setups) acceptWorkflow(ctx context.Context, raw []byte, err error) (boo
 	}
 	found := false
 	for _, use := range workflow.UsesRefs(raw) {
-		repo, ref, ok := actionRef(use)
+		ref, ok := workflow.ActionRef(use, manifest.ActionRepository)
 		if !ok {
 			continue
 		}
@@ -252,7 +252,7 @@ func (s *setups) acceptWorkflow(ctx context.Context, raw []byte, err error) (boo
 		if len(ref) == 40 && strings.Trim(strings.ToLower(ref), "0123456789abcdef") == "" {
 			return false, nil
 		}
-		commit, err := s.gh.PublicTagCommit(ctx, repo, ref)
+		commit, err := s.gh.PublicTagCommit(ctx, manifest.ActionRepository, ref)
 		if err != nil {
 			if errors.Is(err, api.ErrNotFound) {
 				return false, nil
@@ -264,16 +264,6 @@ func (s *setups) acceptWorkflow(ctx context.Context, raw []byte, err error) (boo
 		}
 	}
 	return found, nil
-}
-
-// actionRef is the repository and ref of a `uses:` value of the Action, from either of its repositories until task 6.5.
-func actionRef(use string) (repo, ref string, ok bool) {
-	for _, repo := range manifest.ActionRepositories() {
-		if ref, ok := workflow.ActionRef(use, repo); ok {
-			return repo, ref, true
-		}
-	}
-	return "", "", false
 }
 
 const (

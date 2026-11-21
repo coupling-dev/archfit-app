@@ -1,4 +1,4 @@
-# The Policy File (versions 1 and 3)
+# The Policy File (version 1)
 
 **Path**: internal/wire/policy3/
 **Parent**: internal/wire/ (Wire Contracts)
@@ -6,36 +6,33 @@
 
 ## Purpose
 
-The policy `.archfit.yaml` belongs to the engine. The App reads version 1 (engine 0.9.0) and version 3 (engine
-v4.0.0) side by side until task 6.5; the two differ only by the key `modules.<name>.model`, which version 1 has. The App reads it to check an owner's edit and to know
+The policy `.archfit.yaml` belongs to the engine. The App reads version 1 (engine 0.9.0) alone. The App reads it to check an owner's edit and to know
 which policy a result was judged by, and it writes an owner's answer into it. This module owns exactly that: a strict
 decoder that accepts and rejects the same files as the engine, the digest that ties an answer to the bytes it was
 written against, and four writers that add an answer to a policy without changing any other byte (design 6.1, 6.3,
 6.4, 9.1, 9.2, 10.4; M2 plan task 3, D10, D11). Without it the App would re-derive the digest and would rewrite owners'
 files, losing their comments and order.
 
-A version 2 file (Archfit 3) is refused with `ErrVersion2`.
+A version 2 file (Archfit 3) is refused with `ErrVersion2`; a version 3 file (engine v4.0.0) and any other version are
+refused with `version N is not supported: the App reads policy version 1`.
 
 ## Functional Responsibilities
 
-- `Decode`: read a version 1 or version 3 file into `File`, strictly, by the version the file states. `model` in a
-  version 3 file is an error: the v4.0.0 engine rejects that key. Unknown keys, wrong kinds, a `null`, an empty string, values outside
+- `Decode`: read a version 1 file into `File`, strictly. Unknown keys, wrong kinds, a `null`, an empty string, values outside
   their list or range, bad dates, missing required keys and a rule without exactly one form are errors. The value
   checks list every problem, one per line, with its key path.
 - `Digest`: `sha256:` and the lowercase hex SHA-256 of the exact file bytes. The engine's `policy.digest` is the same.
-- `AddDependsOn`, `AddException`, `AddDenyRule`, `AddSurface`: the edits of an answer. They work on both versions. Each inserts text and nothing else,
+- `AddDependsOn`, `AddException`, `AddDenyRule`, `AddSurface`: the edits of an answer. Each inserts text and nothing else,
   except that a module list (`depends_on`, `public`, `model`) written as a flow list becomes a block list the first
   time an answer adds to it. Each takes a note,
   the line comment (`# request #431`) that ends the first line of the entry it adds (milestone 3 D8).
 - `AddSurface`: the answer to a surface request (the surfaces design 6.9): declare a glob as part of the target's
   `public` or `model` list. It refuses a module that declares neither key (its whole paths are public, so a first glob
-  would narrow the surface), `model` in a version 3 policy, and a glob the other list already holds (the engine
+  would narrow the surface), and a glob the other list already holds (the engine
   refuses a path in both parts).
 - `Loosens`: whether an answer loosens the policy, by its kind alone (D10).
-- Vendor the engine's `archfit.schema.json` and its valid and invalid policy fixtures, one corpus per version:
-  `testdata/v1/` (`coupling-dev/archfit`) and `testdata/v3/` (the old engine repository, at v4.0.0's commit), each pinned by
-  its own `SCHEMA_SOURCE`. Task 6.5 deletes `testdata/v3/`, `Version3` and the version 3 cases (see
-  `wire/result/module.md`).
+- Vendor the engine's `archfit.schema.json` and its valid and invalid policy fixtures, in `testdata/v1/`
+  (`coupling-dev/archfit`), pinned by its `SCHEMA_SOURCE`.
 - Nothing else: no I/O, no GitHub, no storage, no passkey, no check that a module's paths match a file, no engine
   policy model (defaults, balance, comparison of two policies; those are milestone 3).
 
@@ -49,7 +46,7 @@ the pin to a tag; moderate after.
 - The decode rules of the engine's `internal/config/policyfile`: the closed values, the one form
   of a rule, `to` required except for `unowned` and a custom `only` rule (which names its library itself, so a `to`
   there is an error), `expires` as `YYYY-MM-DD`. The unknown-key and duplicate-key messages
-  are those of `go.yaml.in/yaml/v3`; the version messages are the App's, because it reads two versions; every other
+  are those of `go.yaml.in/yaml/v3`; the version messages are the App's; every other
   message is the engine's. A date written without quotes is a string.
   The kind checks follow `yaml.v3`'s scalars with two rules of the engine's library added: a mapping key is its text
   whatever its kind (a module may be named `123`), and a bare number with an exponent and no decimal point (`1e3`) is
@@ -145,6 +142,5 @@ Unknown/type errors and semantic problems are collected together; `Decode` refus
   result, a `to` on an exception of an only rule).
 - `TestFlowListBecomesABlockList` (a quoted entry with a comma, a trailing comma, an empty list with a comment),
   `TestWriterKeepsANameWithACommaWhole`.
-- `TestLoosens`, `TestSourcePinsEveryVendoredFile`, `TestTypesHaveTheKeysOfTheSchema` (each corpus; version 3 without
-  `model`), `TestDecodeModelNeedsVersion1`, `TestAddSurfaceRefuses`, `TestAddSurfaceKeepsADeclaredGlob`. The writer
+- `TestLoosens`, `TestSourcePinsEveryVendoredFile`, `TestTypesHaveTheKeysOfTheSchema` (the version 1 corpus), `TestDecodeRefusesOtherVersions`, `TestAddSurfaceRefuses`, `TestAddSurfaceKeepsADeclaredGlob`. The writer
   goldens `surface-*` and `version-1-*` cover the surface answers and the request note in a version 1 file.

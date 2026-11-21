@@ -23,7 +23,7 @@ const (
 	workerLogin = "worker-1"
 	// policyAsk is a required policy with two owners and a deny rule an owner wrote when rejecting a request. Its
 	// instead holds a mention and a link, which must never take effect where the App shows them.
-	policyAsk = "version: 3\ngate: required\nowners: [olivia, oscar]\nmodules:\n  app:\n    paths: [cmd/**, pkg/**]\n" +
+	policyAsk = "version: 1\ngate: required\nowners: [olivia, oscar]\nmodules:\n  app:\n    paths: [cmd/**, pkg/**]\n" +
 		"rules:\n  - id: no-tc-to-net\n    deny:\n      from: [pkg_tc]\n      to: [pkg_net]\n" +
 		"    why: tc stays offline\n    instead: \"ask @team, see [docs](https://example.com)\"\n"
 	firstRequest = firstIssue // the number of the first issue the fake opens
@@ -456,7 +456,7 @@ func TestAnUploadDecidedBeforeARequestIsStale(t *testing.T) {
 
 func TestACLIIssueIsARequestAsReported(t *testing.T) {
 	const cli = "/archfit request tc needs the retry helper\n\n```text\npkg_tc -> pkg_util: graph: not an allowed dependency\n" +
-		"  why: a new dependency between modules needs an owner\n  balance: 8/10 (min 7)\n  next: archfit request -m \"<why>\"\n```\n"
+		"  why: a new dependency between modules needs an owner\n  balance: 8/10 (min 7): contract, pkg_util is low\n  next: archfit request -m \"<why>\"\n```\n"
 	w := newAskWorld(t)
 	w.gh.permissions[shopName+"|"+workerLogin] = "write"
 	number := w.cliIssue(cli)

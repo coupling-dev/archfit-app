@@ -17,7 +17,7 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
-const workflowsTestPolicy = "version: 3\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n"
+const workflowsTestPolicy = "version: 1\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n"
 
 // timedHomeGitHub answers every read after latency of virtual time and counts the reads.
 type timedHomeGitHub struct {

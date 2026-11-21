@@ -74,14 +74,11 @@ func writeDetails(b *strings.Builder, why, instead string, balance *Balance, to 
 	b.WriteString("\n")
 }
 
-// BalanceText is the balance as the record prints it after "balance: ": "9/10 (min 7)" for a v4.0.0 balance, and
-// "2/10 (min 7): intrusive, assessment-repair is high" for a 0.9.0 balance, whose subject is the target module to.
+// BalanceText is the balance as the record prints it after "balance: ": "2/10 (min 7): intrusive, assessment-repair is
+// high", whose subject is the target module to.
 func BalanceText(b Balance, to string) string {
-	text := strconv.Itoa(b.Value) + "/10 (min " + strconv.Itoa(b.Min) + ")"
-	if b.HasInputs() {
-		text += ": " + string(b.Strength) + ", " + to + " is " + string(b.Volatility)
-	}
-	return text
+	return strconv.Itoa(b.Value) + "/10 (min " + strconv.Itoa(b.Min) + "): " + string(b.Strength) + ", " + to + " is " +
+		string(b.Volatility)
 }
 
 // noSurface is the surface line of a module that declares no part another module may use.

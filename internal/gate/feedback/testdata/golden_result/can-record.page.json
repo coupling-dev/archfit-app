@@ -8,8 +8,11 @@
       "what": "not an allowed dependency",
       "balance": {
         "value": 9,
-        "min": 7
+        "min": 7,
+        "strength": "contract",
+        "volatility": "low"
       },
+      "subject": "pkg_util",
       "next": {
         "kind": "command",
         "text": "archfit request -m \"\u003cwhy you need it\u003e\""

@@ -33,15 +33,10 @@ const (
 )
 
 // engineResult reads a vendored engine result golden of wire/result.
-// engineResult is a vendored result of engine 0.9.0; engineResultOf reads another engine's corpus.
+// engineResult is a vendored result of engine 0.9.0.
 func engineResult(t *testing.T, name string) result.Result {
 	t.Helper()
-	return engineResultOf(t, "v0.9.0", name)
-}
-
-func engineResultOf(t *testing.T, engine, name string) result.Result {
-	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "wire", "result", "testdata", engine, "result", name+".json")) //nolint:gosec // fixed test data paths
+	raw, err := os.ReadFile(filepath.Join("..", "..", "wire", "result", "testdata", "v0.9.0", "result", name+".json")) //nolint:gosec // fixed test data paths
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,8 +104,6 @@ func viewFixtures(t *testing.T) []viewFixture {
 		{"fail-fix", engineResult(t, "deny"), false},
 		{"fail-advisory", engineResult(t, "deny"), true},
 		{"fail-ask", engineResult(t, "graph"), false},
-		// Until task 6.5 the onboarded repositories upload engine v4.0.0 results: a balance without inputs.
-		{"fail-ask-v4.0.0", engineResultOf(t, "v4.0.0", "graph"), false},
 		// Engine 0.9.0: a use past the surface names it and can be asked.
 		{"fail-surface", engineResult(t, "coupling"), false},
 		{"fail-copy", engineResult(t, "duplication"), false},
@@ -130,8 +123,8 @@ func viewFixtures(t *testing.T) []viewFixture {
 	// A can answer is not an uploadable check result. Carry its record text
 	// into a fail fixture without broadening the result wire contract.
 	can := result.Result{Status: result.StatusFail, Summary: "archfit: fail, 1 error", Errors: []result.Error{{
-		Path: "pkg_tc -> pkg_util", Rule: "graph", What: "not an allowed dependency",
-		Balance: &result.Balance{Value: 9, Min: 7},
+		Path: "pkg_tc -> pkg_util", Rule: "graph", What: "not an allowed dependency", To: "pkg_util",
+		Balance: &result.Balance{Value: 9, Min: 7, Strength: result.StrengthContract, Volatility: result.VolatilityLow},
 		Next:    result.Next{Kind: nextCommand, Text: `archfit request -m "<why you need it>"`},
 	}}}
 	fixtures = append(fixtures, viewFixture{"can-record", can, false})

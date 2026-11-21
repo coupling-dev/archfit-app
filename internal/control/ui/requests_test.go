@@ -164,7 +164,6 @@ func TestRequestAPIGoldens(t *testing.T) {
 			v.Rule, v.Record = "coupling", "app.go:3 coupling: app -> util/retry is past the surface\n  balance: 2/10 (min 7): intrusive, util is high\n  surface: util/api (public)\n"
 			v.Numbers = gate.RequestNumbers{Verified: true, Balance: &gate.RequestBalance{Score: 2, Max: 10, Min: 7, Strength: "intrusive", Volatility: "high"}}
 			v.Surface = &records.Surface{Public: []string{"util/api"}, Model: []string{}, Package: "util/retry"}
-			v.PolicyVersion = 1
 			return v
 		}()},
 		{"answered", func() gate.RequestView {
@@ -208,14 +207,13 @@ func TestRequestAPIGoldens(t *testing.T) {
 	}
 }
 
-// The request page gets the 0.9.0 balance inputs, the surface of a surface request and the policy version that says
-// whether a model part can be declared.
+// The request page gets the 0.9.0 balance inputs, and the surface of a surface request.
 func TestRequestAPICarriesTheInputsAndTheSurface(t *testing.T) {
 	e := newEnv(t)
 	e.requests.view = gate.RequestView{Number: 431, State: "open", Rule: "coupling", From: "app", To: "util",
-		Numbers:       gate.RequestNumbers{Verified: true, Balance: &gate.RequestBalance{Score: 2, Max: 10, Min: 7, Strength: "intrusive", Volatility: "high"}},
-		Surface:       &records.Surface{Public: []string{"util/api"}, Model: []string{}, Package: "util/retry"},
-		PolicyVersion: 1, Policy: true}
+		Numbers: gate.RequestNumbers{Verified: true, Balance: &gate.RequestBalance{Score: 2, Max: 10, Min: 7, Strength: "intrusive", Volatility: "high"}},
+		Surface: &records.Surface{Public: []string{"util/api"}, Model: []string{}, Package: "util/retry"},
+		Policy:  true}
 	res := e.as("alice", permRead).get(requestAPI)
 	wantStatus(t, res, http.StatusOK)
 	var body requestJSON
@@ -226,7 +224,7 @@ func TestRequestAPICarriesTheInputsAndTheSurface(t *testing.T) {
 	if body.Balance == nil || *body.Balance != want {
 		t.Errorf("balance = %+v, want %+v", body.Balance, want)
 	}
-	if s := body.Surface; s == nil || !slices.Equal(s.Public, []string{"util/api"}) || s.Model == nil || s.Package != "util/retry" || body.PolicyVersion != 1 {
-		t.Errorf("surface = %+v, policy version %d", body.Surface, body.PolicyVersion)
+	if s := body.Surface; s == nil || !slices.Equal(s.Public, []string{"util/api"}) || s.Model == nil || s.Package != "util/retry" {
+		t.Errorf("surface = %+v", body.Surface)
 	}
 }

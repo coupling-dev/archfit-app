@@ -17,8 +17,8 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/wire/wording"
 )
 
-const ownerPolicy = "version: 3\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n"
-const firstDiff = "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -0,0 +1,5 @@\n+version: 3\n+owners: [alice]\n+modules:\n+  app:\n+    paths: [cmd/**]\n"
+const ownerPolicy = "version: 1\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n"
+const firstDiff = "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -0,0 +1,5 @@\n+version: 1\n+owners: [alice]\n+modules:\n+  app:\n+    paths: [cmd/**]\n"
 const changedDiff = "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -3,3 +3,3 @@\n modules:\n   app:\n-    paths: [cmd/**]\n+    paths: [cmd/**, pkg/**]\n"
 
 func ownerFixture(kind string, pull int, open bool) gate.OwnerView {

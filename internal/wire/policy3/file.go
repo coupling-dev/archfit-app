@@ -1,6 +1,5 @@
 // Package policy3 is the App's reader and writer of the Archfit policy `.archfit.yaml`:
-// version 1 (engine 0.9.0) and version 3 (engine v4.0.0, read until task 6.5). It holds a
-// strict decoder that accepts and rejects the same files as the engine, the digest that
+// version 1 (engine 0.9.0). It holds a strict decoder that accepts and rejects the same files as the engine, the digest that
 // binds an answer to the bytes it was written against, and a writer that adds an answer
 // to a policy without changing any other byte.
 //
@@ -38,7 +37,7 @@ type File struct {
 }
 
 // Module is a named set of paths with a public part, a model part, a volatility and the
-// modules it may depend on. Model exists in version 1 only.
+// modules it may depend on.
 type Module struct {
 	Paths      []string `yaml:"paths"`
 	Public     []string `yaml:"public"`

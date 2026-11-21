@@ -21,7 +21,7 @@ var testRepo = api.Repo{RepoRef: api.RepoRef{InstallationID: 7, FullName: "acme/
 
 // policyV is a schema 3 policy; n makes each version's bytes, and so its digest, distinct.
 func policyV(n int) string {
-	return "version: 3\nowners: [olivia, \"@oscar\", acme/arch]\nmodules:\n  app:\n    paths: [cmd/**]\n# v" + strconv.Itoa(n) + "\n"
+	return "version: 1\nowners: [olivia, \"@oscar\", acme/arch]\nmodules:\n  app:\n    paths: [cmd/**]\n# v" + strconv.Itoa(n) + "\n"
 }
 
 func digestV(n int) string { return policy3.Digest([]byte(policyV(n))) }

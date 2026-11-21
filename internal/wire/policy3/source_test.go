@@ -20,11 +20,9 @@ const (
 	sourceFile = "SCHEMA_SOURCE"
 )
 
-// sources names the repository of each corpus. The version 3 corpus is pinned to engine v4.0.0's commit and is
-// never re-vendored; task 6.5 deletes it.
+// sources names the repository of each corpus.
 var sources = map[string]struct{ repository, revision string }{
 	v1: {repository: "coupling-dev/archfit"},
-	v3: {repository: "alexei-led/archfit", revision: "37dd38244081ad1159c27515cec94560f3e44e30"},
 }
 
 // readSource reads a corpus's SCHEMA_SOURCE: key: value lines, then one "sha256  path" line per vendored file.
@@ -106,9 +104,6 @@ func TestTypesHaveTheKeysOfTheSchema(t *testing.T) {
 	}
 }
 
-// notInV3 are the keys of the Go types that version 3 does not have.
-var notInV3 = map[string]bool{"Module.model": true}
-
 func typesHaveTheKeys(t *testing.T, version string) {
 	raw, err := os.ReadFile(filepath.Join("testdata", version, schemaFile)) //nolint:gosec // fixed test data paths
 	if err != nil {
@@ -147,9 +142,6 @@ func typesHaveTheKeys(t *testing.T, version string) {
 		var out []string
 		for i := range typ.NumField() {
 			name, _, _ := strings.Cut(typ.Field(i).Tag.Get("yaml"), ",")
-			if version == v3 && notInV3[typ.Name()+"."+name] {
-				continue
-			}
 			out = append(out, name)
 		}
 		slices.Sort(out)

@@ -86,12 +86,12 @@ func TestCover(t *testing.T) {
 func TestCoverMatchesTheWaitingGolden(t *testing.T) {
 	r := result.Result{Status: result.StatusFail, Summary: "archfit: fail, 1 error", Errors: []result.Error{{
 		Path: "pkg/tc/netem.go", Line: 12, Rule: "graph", What: "pkg_tc -> pkg_util is not an allowed dependency",
-		Why: "a new dependency between modules needs an owner", Balance: &result.Balance{Value: 9, Min: 7},
+		Why: "a new dependency between modules needs an owner", Balance: &result.Balance{Value: 9, Min: 7, Strength: result.StrengthContract, Volatility: result.VolatilityLow},
 		Next: result.Next{Kind: nextCommand, Text: `archfit request -m "<why you need it>"`, Note: "do not copy the code"},
 		From: "pkg_tc", To: "pkg_util", Key: "graph pkg_tc pkg_util github.com/alexei-led/pumba/pkg/util"}}}
 	shown, _ := Cover(r, openIndex(t, map[string]int{"graph pkg_tc pkg_util": 431}))
 	want := "pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency\n" +
-		"  why: a new dependency between modules needs an owner\n  balance: 9/10 (min 7)\n" +
+		"  why: a new dependency between modules needs an owner\n  balance: 9/10 (min 7): contract, pkg_util is low\n" +
 		"  next: wait for an owner: #431\narchfit: waiting, request #431\n"
 	if got := result.Record(shown); got != want {
 		t.Errorf("record:\n%s\nwant (wire/result testdata/waiting.txt):\n%s", got, want)

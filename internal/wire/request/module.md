@@ -53,13 +53,12 @@ with an engine release that vendors its goldens.
   verbatim. Before a pull request exists the CLI opens an issue only from a `can` answer (design 10.3; the manager's
   review of task 2 narrowed M2 plan D2 to this), so the answer is read from that record by the engine's grammar: the head `from -> to: rule: what`, then
   indented `why`, `instead`, `balance`, `surface`, `next` lines, optionally followed by the exact line `policy: not protected`. Anything else gives no answer.
-  The `balance` line is the v4.0.0 form `balance: 9/10 (min 7)` or the 0.9.0 form with its inputs,
-  `balance: 2/10 (min 7): intrusive, assessment-repair is high`, whose subject must be the answer's target. A `surface`
-  line (`glob (public), glob (model)`, or `none declared`) comes only after a balance with inputs. For a coupling answer
+  The `balance` line carries its inputs, `balance: 2/10 (min 7): intrusive, assessment-repair is high`, whose subject
+  must be the answer's target; the v4.0.0 form `balance: 9/10 (min 7)` gives no answer. A `surface`
+  line (`glob (public), glob (model)`, or `none declared`) comes only after a balance. For a coupling answer
   with a surface line, a head `<pkg> is past the surface` names the package past the surface (`Answer.Package`); any
   other head leaves it empty, and the App offers no declaration. The CLI's `question:` preview line is never in the
-  body and is not read. `testdata/form/can.md` is the v4.0.0 form and `can-inputs.md` the 0.9.0 form. Both forms are read until task 6.5
-  removes the v4.0.0 one (`wire/result/module.md`). The numbers stay "as reported"
+  body and is not read. `testdata/form/can-inputs.md` and `can-surface.md` are the 0.9.0 forms. The numbers stay "as reported"
   until a pull request confirms them.
 - The key, its parts joined by one space (M2 plan D3, as reviewed):
 

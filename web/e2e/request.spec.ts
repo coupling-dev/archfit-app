@@ -326,7 +326,6 @@ test('request: a surface request declares the package, allows it until a date or
       '  surface: pkg/util (public)\n  next: use the surface, or: archfit request -m "<why retry belongs to the surface>"',
     balance: { value: 2, max: 10, min: 7, strength: 'intrusive', volatility: 'high' },
     surface: { public: ['pkg/util'], model: [], package: 'pkg/util/retry' },
-    policy_version: 1,
   };
   await open(page, path, { [`GET ${req}`]: () => [200, surface], [`GET ${req}/preview`]: (_, url) => preview(url) });
   const answers = page.getByRole('group', { name: 'Choose an answer' });
@@ -344,7 +343,7 @@ test('request: a surface request declares the package, allows it until a date or
 for (const [name, data] of [
   ['open', request],
   ['as-reported', { ...request, verified: false }],
-  // Engine 0.9.0 names the inputs of a balance; engine v4.0.0 (the other states) does not.
+  // A balance names the inputs it was computed with; a request stored from an engine v4.0.0 result has none.
   ['balance-inputs', { ...request, balance: { value: 9, max: 10, min: 7, strength: 'contract', volatility: 'low' } }],
   [
     'joined',

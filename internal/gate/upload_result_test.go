@@ -28,8 +28,8 @@ import (
 )
 
 const (
-	policy4       = "version: 3\nowners: [olivia]\nmodules:\n  app:\n    paths: [cmd/**, pkg/**]\n"
-	engine4       = "v4.0.0"
+	policy4       = "version: 1\nowners: [olivia]\nmodules:\n  app:\n    paths: [cmd/**, pkg/**]\n"
+	engine4       = "v4.0.0" // the engine the vendored 0.9.0 goldens name in "engine"; the test approvals accept it
 	image4        = "sha256:a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
 	actionPinned  = "4c1d2e3f405162738495a6b7c8d9e0f1a2b3c4d5" // the Action commit of the default branch's workflow
 	actionBumped  = "5d2e3f405162738495a6b7c8d9e0f1a2b3c4d5e6" // a newer commit manifest 4 lists
@@ -43,7 +43,7 @@ func workflow4(commit, comment string, extra ...string) []byte {
 		strings.Join(extra, ""))
 }
 
-// world4 is the world with an onboarded Archfit 4 repository: a schema 3 policy and the workflow on the default
+// world4 is the world with an onboarded Archfit 4 repository: a policy and the workflow on the default
 // branch, and manifest 4 approving engine4 and two Action commits.
 type world4 struct {
 	*world
@@ -107,15 +107,10 @@ func (w *world4) spec4(p *pull, golden string) *spec4 {
 	return s
 }
 
-// result reads a vendored engine result golden and binds it to head and the default branch's policy. golden names a
-// result of engine 0.9.0, or "<engine>/<name>" of another engine's corpus, such as "v4.0.0/deny".
+// result reads a vendored result golden of engine 0.9.0 and binds it to head and the default branch's policy.
 func (w *world4) result(golden, head string) map[string]any {
 	w.t.Helper()
-	engine, name, ok := strings.Cut(golden, "/")
-	if !ok {
-		engine, name = "v0.9.0", golden
-	}
-	raw, err := os.ReadFile(filepath.Join("..", "wire", "result", "testdata", engine, "result", name+".json")) //nolint:gosec // fixed test data paths
+	raw, err := os.ReadFile(filepath.Join("..", "wire", "result", "testdata", "v0.9.0", "result", golden+".json")) //nolint:gosec // fixed test data paths
 	if err != nil {
 		w.t.Fatal(err)
 	}
@@ -459,9 +454,12 @@ func TestUpload4WorkflowFile(t *testing.T) {
 	})
 }
 
-// TestUpload4AcceptsBothActionRepositories: until task 6.5 a pin bump needs no owner in the Action's new home and in
-// its old one, where the onboarded repositories still run it; any other repository, or a move between the two, does.
-func TestUpload4AcceptsBothActionRepositories(t *testing.T) {
+// oldActionRepository is the Action's old home, which the App no longer accepts.
+const oldActionRepository = "alexei-led/archfit-action"
+
+// TestUpload4AcceptsOnlyTheActionRepository: a pin bump needs no owner in the Action's repository; a move from its old
+// home or to any other repository does, and so does a pin bump there.
+func TestUpload4AcceptsOnlyTheActionRepository(t *testing.T) {
 	uses := func(repo, commit, comment string) []byte {
 		return []byte("jobs:\n  check:\n    steps:\n      - uses: " + repo + "@" + commit + comment + "\n")
 	}
@@ -475,9 +473,11 @@ func TestUpload4AcceptsBothActionRepositories(t *testing.T) {
 		{"a pin bump in the new repository",
 			uses(manifest.ActionRepository, actionPinned, " # v0.9.0"), uses(manifest.ActionRepository, actionBumped, " # v0.9.1"), "pass", ""},
 		{"a pin bump in the old repository",
-			uses(manifest.LegacyActionRepository, actionPinned, " # v4.0.0"), uses(manifest.LegacyActionRepository, actionBumped, " # v4.0.1"), "pass", ""},
+			uses(oldActionRepository, actionPinned, " # v4.0.0"), uses(oldActionRepository, actionBumped, " # v4.0.1"), "unknown", reasonWorkflowChanged},
 		{"a move from the old repository to the new one",
-			uses(manifest.LegacyActionRepository, actionPinned, " # v4.0.0"), uses(manifest.ActionRepository, actionPinned, " # v0.9.0"), "unknown", reasonWorkflowChanged},
+			uses(oldActionRepository, actionPinned, " # v4.0.0"), uses(manifest.ActionRepository, actionPinned, " # v0.9.0"), "unknown", reasonWorkflowChanged},
+		{"a move from the new repository to the old one",
+			uses(manifest.ActionRepository, actionPinned, " # v0.9.0"), uses(oldActionRepository, actionPinned, " # v4.0.0"), "unknown", reasonWorkflowChanged},
 		{"a move to another repository at a listed commit",
 			uses(manifest.ActionRepository, actionPinned, " # v0.9.0"), uses(other, actionPinned, " # v0.9.0"), "unknown", reasonWorkflowChanged},
 		{"a pin bump in another repository",
@@ -495,7 +495,7 @@ func TestUpload4AcceptsBothActionRepositories(t *testing.T) {
 }
 
 // policy4Required is policy4 with a gate that blocks.
-const policy4Required = "version: 3\ngate: required\nowners: [olivia]\nmodules:\n  app:\n    paths: [cmd/**, pkg/**]\n"
+const policy4Required = "version: 1\ngate: required\nowners: [olivia]\nmodules:\n  app:\n    paths: [cmd/**, pkg/**]\n"
 
 // require makes the default branch's policy required and s a run of it.
 func (w *world4) require(s *spec4) {
@@ -510,7 +510,7 @@ func (w *world4) usePolicy(s *spec4, policy string) {
 	s.result["policy"].(map[string]any)["digest"] = s.env.PolicyDigest
 }
 
-// The version 1 policies of engine 0.9.0, read beside version 3 until task 6.5.
+// The version 1 policies with a model part.
 const (
 	policy1Required = "version: 1\ngate: required\nowners: [olivia]\nmodules:\n  app:\n    paths: [cmd/**, pkg/**]\n    model: [pkg/model]\n"
 	policy1         = "version: 1\nowners: [olivia]\nmodules:\n  app:\n    paths: [cmd/**, pkg/**]\n    model: [pkg/model]\n"
@@ -535,14 +535,12 @@ func (w *world4) latestGate(head string) (api.CheckRun, bool) {
 	return slices.MaxFunc(runs, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) }), true
 }
 
-func TestUpload4ReadsBothEnginesAndBothPolicyVersions(t *testing.T) {
+func TestUpload4ReadsTheBalanceInputs(t *testing.T) {
 	for _, tc := range []struct {
 		name, golden, policy, conclusion, balance string
 	}{
-		{"engine 0.9.0, a required version 1 policy", "graph", policy1Required, "failure", "- balance: 9/10 (min 7): contract, pkg_util is low\n"},
-		{"engine 0.9.0, a version 1 policy without gate", "graph", policy1, "neutral", "- balance: 9/10 (min 7): contract, pkg_util is low\n"},
-		{"engine v4.0.0, a required version 3 policy", "v4.0.0/graph", policy4Required, "failure", "- balance: 9/10 (min 7)\n"},
-		{"engine v4.0.0, a version 3 policy without gate", "v4.0.0/graph", policy4, "neutral", "- balance: 9/10 (min 7)\n"},
+		{"a required policy", "graph", policy1Required, "failure", "- balance: 9/10 (min 7): contract, pkg_util is low\n"},
+		{"a policy without gate", "graph", policy1, "neutral", "- balance: 9/10 (min 7): contract, pkg_util is low\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := newWorld4(t)

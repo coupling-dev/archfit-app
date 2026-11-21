@@ -70,8 +70,8 @@ type Change struct {
 }
 
 // OwnerVerdict reports whether the approval of c is the archfit/gate verdict of its head: a first approval, or a
-// workflow approval of a pull request that also changes the policy, such as the move to engine 0.9.0 and policy
-// version 1 (beta plan task 5.3). Both change what the engine judges with. Any other workflow approval leaves the
+// workflow approval of a pull request that also changes the policy. Both change what the engine judges with, and the
+// engine gives unknown for a policy that differs from the target's. Any other workflow approval leaves the
 // verdict to the engine: a head that merely sits on an older policy, or one whose approved policy moved since, is not a
 // policy change.
 func (c Change) OwnerVerdict() bool {
@@ -124,8 +124,7 @@ func (s *Service) Bind(ctx context.Context, r api.Repo, a Action) (Change, error
 	return Change{}, fmt.Errorf("%w: no action %q", ErrNotApprovable, a.Kind)
 }
 
-// bindPull binds a first or a workflow approval to the open pull request's head: its policy, which must be of version
-// 3, and its workflow file, which it must have. The pull request and the default branch head are read together, then
+// bindPull binds a first or a workflow approval to the open pull request's head: its policy, which must be valid, and its workflow file, which it must have. The pull request and the default branch head are read together, then
 // the files of the head and of the default branch. The refusals are taken in the order the reads used to run.
 func (s *Service) bindPull(ctx context.Context, r api.Repo, a Action) (Change, error) {
 	ref := r.RepoRef

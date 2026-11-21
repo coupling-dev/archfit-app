@@ -21,7 +21,7 @@ const (
 	previewTip = "0123456789abcdef0123456789abcdef01234567"
 	// previewPolicy has the request's two modules, a deny rule and an exception about them (earlier answers), and a
 	// rule and an exception about other modules.
-	previewPolicy = `version: 3
+	previewPolicy = `version: 1
 owners: [olivia]
 modules:
   pkg_tc:
@@ -104,7 +104,7 @@ func newPreviewWorld(t *testing.T) *previewWorld {
 
 func graphError() result.Error {
 	return result.Error{Path: "pkg/tc/netem.go", Line: 12, Rule: "graph", What: "pkg_tc -> pkg_util is not an allowed dependency",
-		Why: "a new dependency between modules needs an owner", Balance: &result.Balance{Value: 9, Min: 7},
+		Why: "a new dependency between modules needs an owner", Balance: &result.Balance{Value: 9, Min: 7, Strength: result.StrengthContract, Volatility: result.VolatilityLow},
 		Next: result.Next{Kind: nextCommand, Text: `archfit request -m "<why you need it>"`, Note: "do not copy the code"},
 		From: "pkg_tc", To: "pkg_util", Key: "graph pkg_tc pkg_util example.com/pkg/util"}
 }
@@ -156,11 +156,11 @@ func TestViewOfAVerifiedRequest(t *testing.T) {
 	if v.Number != 431 || v.State != records.StateOpen || v.Reason != "tc needs the retry helper" || v.Expires != "2026-12-10" {
 		t.Errorf("view = %+v", v)
 	}
-	if !v.Numbers.Verified || *v.Numbers.Balance != (records.Balance{Score: 9, Max: 10, Min: 7}) {
+	if !v.Numbers.Verified || *v.Numbers.Balance != (records.Balance{Score: 9, Max: 10, Min: 7, Strength: "contract", Volatility: "low"}) {
 		t.Errorf("numbers = %+v", v.Numbers)
 	}
 	wantRecord := "pkg/tc/netem.go:12: graph: pkg_tc -> pkg_util is not an allowed dependency\n" +
-		"  why: a new dependency between modules needs an owner\n  balance: 9/10 (min 7)\n" +
+		"  why: a new dependency between modules needs an owner\n  balance: 9/10 (min 7): contract, pkg_util is low\n" +
 		"  next: archfit request -m \"<why you need it>\"     (do not copy the code)\n"
 	if v.Record != wantRecord {
 		t.Errorf("record =\n%s\nwant\n%s", v.Record, wantRecord)
@@ -339,7 +339,7 @@ func TestPreviewRefuses(t *testing.T) {
 			setup: func(w *previewWorld) { w.gh.policy = nil }},
 		{name: "a layout the writer does not edit", number: 431, answer: Answer{Kind: policy3.Approve}, want: ErrByHand,
 			setup: func(w *previewWorld) {
-				w.gh.policy = []byte("version: 3\nowners: [olivia]\nmodules:\n  pkg_tc: {paths: [pkg/tc/**]}\n  pkg_util:\n    paths: [pkg/util/**]\n")
+				w.gh.policy = []byte("version: 1\nowners: [olivia]\nmodules:\n  pkg_tc: {paths: [pkg/tc/**]}\n  pkg_util:\n    paths: [pkg/util/**]\n")
 			}},
 	}
 	for _, tt := range tests {
@@ -433,7 +433,7 @@ func TestEditWritesEachAnswerOfEachRule(t *testing.T) {
 }
 
 // previewPolicyV1 is previewPolicy at version 1 of engine 0.9.0, with a model part.
-var previewPolicyV1 = strings.Replace(strings.Replace(previewPolicy, "version: 3\n", "version: 1\n", 1),
+var previewPolicyV1 = strings.Replace(strings.Replace(previewPolicy, "version: 1\n", "version: 1\n", 1),
 	"    paths: [pkg/util/**]\n", "    paths: [pkg/util/**]\n    model: [pkg/util/model]\n", 1)
 
 func TestEditKeepsTheRequestCommentInAVersion1Policy(t *testing.T) {
@@ -668,7 +668,7 @@ func TestEditDeclaresThePackageInTheSurface(t *testing.T) {
 	}
 	v3 := strings.Replace(v1, "version: 1", "version: 3", 1)
 	if _, err := Edit([]byte(v3), declare(policy3.DeclareModel), "request #7"); !errors.Is(err, ErrByHand) {
-		t.Errorf("a model part in version 3: err = %v, want ErrByHand", err)
+		t.Errorf("a version 3 policy: err = %v, want ErrByHand", err)
 	}
 }
 

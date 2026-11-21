@@ -71,7 +71,7 @@ func TestPolicyGolden(t *testing.T) {
 }
 
 func TestPolicyRequestLinksOnlyFromFirstLineComment(t *testing.T) {
-	const input = `version: 3
+	const input = `version: 1
 owners: [alice]
 modules:
   a: {paths: [a/**]}
@@ -183,7 +183,7 @@ func TestPolicyEditUsesOpenProposalHead(t *testing.T) {
 }
 
 func TestPolicyBuiltinsAndExpiry(t *testing.T) {
-	raw := `version: 3
+	raw := `version: 1
 owners: [alice]
 modules:
   a: {paths: [a/**], public: [a/api], volatility: high, layer: core, depends_on: [b]}

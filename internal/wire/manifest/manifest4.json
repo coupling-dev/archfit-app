@@ -2,16 +2,6 @@
   "version": 2,
   "engines": [
     {
-      "engine_version": "v4.0.0",
-      "images": {
-        "linux/amd64": "sha256:be1eac8f73513c6d0ef4ff17a78255629e4e4bc2d1b3e044b49afcbfdd6aac29",
-        "linux/arm64": "sha256:3ac782cb5acd177ab1225ce5f68d8b77acea71d0a0cf724c8ecd429cc180fbff"
-      },
-      "action_commits": [
-        "9669571b7b25e3f37fd7f1d99d7b89741c6c95d6"
-      ]
-    },
-    {
       "engine_version": "v0.9.0",
       "images": {
         "linux/amd64": "sha256:e841f7b519e5d4a787407887f784f121dff9801c25d0bc892695d783d7805db4",

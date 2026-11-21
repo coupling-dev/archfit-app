@@ -366,7 +366,7 @@ func (s *Service) policy(ctx context.Context, r api.Repo) (policy3.File, bool, e
 }
 
 // policyAt reads the policy at the default branch's tip, decoded and as bytes; found is false when there is no valid
-// one (version 1, or version 3 until task 6.5).
+// one (version 1).
 func (s *Service) policyAt(ctx context.Context, r api.Repo) (pol policy3.File, raw []byte, found bool, err error) {
 	tip, err := s.gh.BranchHead(ctx, r.RepoRef, r.DefaultBranch)
 	if err != nil {

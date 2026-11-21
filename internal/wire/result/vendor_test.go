@@ -14,8 +14,7 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/wire/result"
 )
 
-// corpus is one engine's vendored contract: its schema, its results and their records, pinned by its SCHEMA_SOURCE.
-// The App reads both until task 6.5 removes v4.0.0 (module.md).
+// corpus is the engine's vendored contract: its schema, its results and their records, pinned by its SCHEMA_SOURCE.
 type corpus struct {
 	dir        string // testdata/<engine version>
 	repository string // the repository SCHEMA_SOURCE names
@@ -23,8 +22,7 @@ type corpus struct {
 
 var (
 	v090    = corpus{dir: "testdata/v0.9.0", repository: "github.com/coupling-dev/archfit"}
-	v400    = corpus{dir: "testdata/v4.0.0", repository: "github.com/alexei-led/archfit"}
-	corpora = []corpus{v090, v400}
+	corpora = []corpus{v090}
 )
 
 // resultDir is the corpus of the current engine, the one the refusal tables mutate.
@@ -38,7 +36,7 @@ var sameRecordAs = map[string]string{
 	"repository_expired": "expired_exception",
 }
 
-// waitingGolden is the App's own golden in each corpus, not vendored: the engine never emits a waiting result.
+// waitingGolden is the App's own golden in the corpus, not vendored: the engine never emits a waiting result.
 const waitingGolden = "waiting.txt"
 
 var commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)

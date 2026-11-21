@@ -16,16 +16,6 @@ import (
 // `uses: coupling-dev/archfit-action@<commit> # v0.9.0`.
 const ActionRepository = "coupling-dev/archfit-action"
 
-// LegacyActionRepository is the Action's old home. The onboarded repositories run it until each moves to
-// ActionRepository in epic 6; task 6.5 removes it. The two share their history, so a listed commit names the same
-// Action in both.
-const LegacyActionRepository = "alexei-led/archfit-action"
-
-// ActionRepositories are the repositories whose `uses:` line the App accepts: ActionRepository first.
-func ActionRepositories() []string {
-	return []string{ActionRepository, LegacyActionRepository}
-}
-
 // manifest4.json lists the engines the App approves: per release, the image digest of each platform and
 // the archfit-action commits that run it. It has no measurement profile.
 //
@@ -43,12 +33,11 @@ type engineTable struct {
 const engineFileVersion = 2
 
 var (
-	// v4 until task 6.5 removes engine v4.0.0; v0 from the 0.9.0 release.
-	engineVersionPattern = regexp.MustCompile(`^v(0|4)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?$`)
+	engineVersionPattern = regexp.MustCompile(`^v0\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?$`)
 
 	errEngineFileVersion = errors.New("version must be 2")
 	errNoEngineList      = errors.New("engines is required")
-	errEngineVersion     = errors.New("engine_version must be v0 or v4: vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-rc.N")
+	errEngineVersion     = errors.New("engine_version must be v0: vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-rc.N")
 	errDuplicateVersion  = errors.New("two engines share the same engine_version")
 	errNoImages          = errors.New("images must name at least one platform")
 	errPlaceholder       = errors.New("must not be one hex character repeated")

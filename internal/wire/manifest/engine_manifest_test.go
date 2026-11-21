@@ -16,7 +16,7 @@ const (
 
 func validEngines() []row {
 	return []row{{
-		"engine_version": "v4.0.0-rc.1",
+		"engine_version": "v0.9.0-rc.1",
 		"images":         map[string]any{platformAMD64: testEngine4AMD, platformARM64: testEngine4ARM},
 		"action_commits": []any{testActionCommit4},
 	}}
@@ -31,9 +31,8 @@ func engineDoc(t *testing.T, version int, engines []row) []byte {
 	return data
 }
 
-// TestEmbeddedManifest4PinsRelease: until task 6.5 the App approves engine v4.0.0, which the onboarded repositories run,
-// and engine 0.9.0 beside it. Each was read from its source: the image index's per-platform manifests and the Action's
-// release tag.
+// TestEmbeddedManifest4PinsRelease: the App approves engine 0.9.0 alone. It was read from its source: the image index's
+// per-platform manifests and the Action's release tag. The older engine v4.0.0 is no longer approved.
 func TestEmbeddedManifest4PinsRelease(t *testing.T) {
 	table, err := parseEngines(manifest4JSON)
 	if err != nil {
@@ -42,11 +41,6 @@ func TestEmbeddedManifest4PinsRelease(t *testing.T) {
 	releases := []struct {
 		version, amd64, arm64, index, action string
 	}{
-		{"v4.0.0",
-			"sha256:be1eac8f73513c6d0ef4ff17a78255629e4e4bc2d1b3e044b49afcbfdd6aac29",
-			"sha256:3ac782cb5acd177ab1225ce5f68d8b77acea71d0a0cf724c8ecd429cc180fbff",
-			"sha256:8ad49e766ce3e486104077df213f2badc6ed0f66d7fe88ae377efaf6a918ccd2",
-			"9669571b7b25e3f37fd7f1d99d7b89741c6c95d6"},
 		{"v0.9.0",
 			"sha256:e841f7b519e5d4a787407887f784f121dff9801c25d0bc892695d783d7805db4",
 			"sha256:3e8739e40375e711f3cecd2d44f2dad60b05b94602479d0aff5a598e1adeed9f",
@@ -70,13 +64,19 @@ func TestEmbeddedManifest4PinsRelease(t *testing.T) {
 			if index := (Identity{EngineVersion: r.version, Platform: platformAMD64, ImageDigest: r.index}); EngineApproved(index) {
 				t.Error("image index digest must not be approved as a platform digest")
 			}
-			// One release's digest under the other release's version is no identity the manifest lists.
-			for _, other := range releases {
-				if other.version != r.version && EngineApproved(Identity{EngineVersion: other.version, Platform: platformAMD64, ImageDigest: r.amd64}) {
-					t.Errorf("%s's image approved as engine %s", r.version, other.version)
-				}
-			}
 		})
+	}
+	for name, id := range map[string]Identity{
+		"engine v4.0.0 image amd64": {EngineVersion: "v4.0.0", Platform: platformAMD64, ImageDigest: "sha256:be1eac8f73513c6d0ef4ff17a78255629e4e4bc2d1b3e044b49afcbfdd6aac29"},
+		"engine v4.0.0 image arm64": {EngineVersion: "v4.0.0", Platform: platformARM64, ImageDigest: "sha256:3ac782cb5acd177ab1225ce5f68d8b77acea71d0a0cf724c8ecd429cc180fbff"},
+		"engine v4.0.0 as 0.9.0":    {EngineVersion: "v0.9.0", Platform: platformAMD64, ImageDigest: "sha256:be1eac8f73513c6d0ef4ff17a78255629e4e4bc2d1b3e044b49afcbfdd6aac29"},
+	} {
+		if EngineApproved(id) {
+			t.Errorf("%s is approved", name)
+		}
+	}
+	if ActionApproved("9669571b7b25e3f37fd7f1d99d7b89741c6c95d6") {
+		t.Error("the Action commit of v4.0.0 is approved")
 	}
 }
 
@@ -104,14 +104,13 @@ func TestManifest4ValidationRules(t *testing.T) {
 	}{
 		{"version 1", 1, func(rows []row) []row { return rows }, errEngineFileVersion},
 		{"engine 3", 2, edit("engine_version", "v3.4.0"), errEngineVersion},
-		{"version without the v", 2, edit("engine_version", "4.0.0"), errEngineVersion},
-		{"beta prerelease", 2, edit("engine_version", "v4.0.0-beta.1"), errEngineVersion},
-		{"rc 0", 2, edit("engine_version", "v4.0.0-rc.0"), errEngineVersion},
-		{"leading zero", 2, edit("engine_version", "v4.01.0"), errEngineVersion},
+		{"engine 4", 2, edit("engine_version", "v4.0.0"), errEngineVersion},
+		{"version without the v", 2, edit("engine_version", "0.9.0"), errEngineVersion},
+		{"beta prerelease", 2, edit("engine_version", "v0.9.0-beta.1"), errEngineVersion},
+		{"rc 0", 2, edit("engine_version", "v0.9.0-rc.0"), errEngineVersion},
+		{"leading zero", 2, edit("engine_version", "v0.09.0"), errEngineVersion},
 		{"engine 5", 2, edit("engine_version", "v5.0.0"), errEngineVersion},
 		{"engine 1", 2, edit("engine_version", "v1.0.0"), errEngineVersion},
-		{"0.x leading zero", 2, edit("engine_version", "v0.09.0"), errEngineVersion},
-		{"0.x rc 0", 2, edit("engine_version", "v0.9.0-rc.0"), errEngineVersion},
 		{"no images", 2, edit("images", map[string]any{}), errNoImages},
 		{"platform darwin/arm64", 2, image("darwin/arm64", testEngine4AMD), errPlatform},
 		{"digest with 63 hex characters", 2, image(platformAMD64, "sha256:"+strings.Repeat("a", 63)), errDigest},
@@ -145,7 +144,7 @@ func TestManifest4ValidationRules(t *testing.T) {
 
 	// Errors name the field and the rule, never the defective value.
 	for name, mutate := range map[string]func([]row) []row{
-		"engine_version": edit("engine_version", "v4.0.0-LEAK"),
+		"engine_version": edit("engine_version", "v0.9.0-LEAK"),
 		"images":         image("LEAK/arm64", testEngine4AMD),
 		"action_commits": edit("action_commits", []any{"LEAK"}),
 	} {
@@ -158,22 +157,22 @@ func TestManifest4ValidationRules(t *testing.T) {
 
 func TestEngineApprovedExactMatch(t *testing.T) {
 	withEngines(t, engineDoc(t, 2, validEngines()))
-	approved := Identity{EngineVersion: "v4.0.0-rc.1", ImageDigest: testEngine4AMD, Platform: platformAMD64}
+	approved := Identity{EngineVersion: "v0.9.0-rc.1", ImageDigest: testEngine4AMD, Platform: platformAMD64}
 	tests := []struct {
 		name string
 		id   Identity
 		want bool
 	}{
 		{"exact amd64", approved, true},
-		{"exact arm64", Identity{EngineVersion: "v4.0.0-rc.1", ImageDigest: testEngine4ARM, Platform: platformARM64}, true},
-		{"amd64 digest on arm64", Identity{EngineVersion: "v4.0.0-rc.1", ImageDigest: testEngine4AMD, Platform: platformARM64}, false},
-		{"digest upper case", Identity{EngineVersion: "v4.0.0-rc.1", ImageDigest: strings.ToUpper(testEngine4AMD), Platform: platformAMD64}, false},
-		{"version without the v", Identity{EngineVersion: "4.0.0-rc.1", ImageDigest: testEngine4AMD, Platform: platformAMD64}, false},
-		{"final release of the rc", Identity{EngineVersion: "v4.0.0", ImageDigest: testEngine4AMD, Platform: platformAMD64}, false},
-		{"leading space", Identity{EngineVersion: " v4.0.0-rc.1", ImageDigest: testEngine4AMD, Platform: platformAMD64}, false},
+		{"exact arm64", Identity{EngineVersion: "v0.9.0-rc.1", ImageDigest: testEngine4ARM, Platform: platformARM64}, true},
+		{"amd64 digest on arm64", Identity{EngineVersion: "v0.9.0-rc.1", ImageDigest: testEngine4AMD, Platform: platformARM64}, false},
+		{"digest upper case", Identity{EngineVersion: "v0.9.0-rc.1", ImageDigest: strings.ToUpper(testEngine4AMD), Platform: platformAMD64}, false},
+		{"version without the v", Identity{EngineVersion: "0.9.0-rc.1", ImageDigest: testEngine4AMD, Platform: platformAMD64}, false},
+		{"final release of the rc", Identity{EngineVersion: "v0.9.0", ImageDigest: testEngine4AMD, Platform: platformAMD64}, false},
+		{"leading space", Identity{EngineVersion: " v0.9.0-rc.1", ImageDigest: testEngine4AMD, Platform: platformAMD64}, false},
 		{"no version", Identity{ImageDigest: testEngine4AMD, Platform: platformAMD64}, false},
-		{"no digest", Identity{EngineVersion: "v4.0.0-rc.1", Platform: platformAMD64}, false},
-		{"no platform", Identity{EngineVersion: "v4.0.0-rc.1", ImageDigest: testEngine4AMD}, false},
+		{"no digest", Identity{EngineVersion: "v0.9.0-rc.1", Platform: platformAMD64}, false},
+		{"no platform", Identity{EngineVersion: "v0.9.0-rc.1", ImageDigest: testEngine4AMD}, false},
 		{"zero", Identity{}, false},
 		{"an engine 3 row", Identity{EngineVersion: "v3.4.0", ImageDigest: testEngine4AMD, Platform: platformAMD64}, false},
 	}
@@ -181,36 +180,6 @@ func TestEngineApprovedExactMatch(t *testing.T) {
 		if got := EngineApproved(tt.id); got != tt.want {
 			t.Errorf("%s: EngineApproved = %v, want %v", tt.name, got, tt.want)
 		}
-	}
-}
-
-// TestManifestApprovesEngine090BesideV4 uses a fake 0.9.0 row: part b of task 5.3 adds the real one.
-func TestManifestApprovesEngine090BesideV4(t *testing.T) {
-	for _, version := range []string{"v0.9.0", "v0.9.0-rc.1", "v0.10.2"} {
-		t.Run(version, func(t *testing.T) {
-			rows := validEngines()
-			rows = append(rows, row{
-				"engine_version": version,
-				"images":         map[string]any{platformAMD64: testEngine4ARM},
-				"action_commits": []any{testActionCommit5},
-			})
-			withEngines(t, engineDoc(t, 2, rows))
-			for _, tc := range []struct {
-				id   Identity
-				want bool
-			}{
-				{Identity{EngineVersion: version, ImageDigest: testEngine4ARM, Platform: platformAMD64}, true},
-				{Identity{EngineVersion: "v4.0.0-rc.1", ImageDigest: testEngine4AMD, Platform: platformAMD64}, true},
-				{Identity{EngineVersion: version, ImageDigest: testEngine4AMD, Platform: platformAMD64}, false},
-			} {
-				if got := EngineApproved(tc.id); got != tc.want {
-					t.Errorf("EngineApproved(%+v) = %v, want %v", tc.id, got, tc.want)
-				}
-			}
-			if !ActionApproved(testActionCommit4) || !ActionApproved(testActionCommit5) {
-				t.Error("the Action commits of both rows are not approved")
-			}
-		})
 	}
 }
 
@@ -237,7 +206,7 @@ func TestManifest4HasNoRuntimeOverride(t *testing.T) {
 	rows := engineDoc(t, 2, validEngines())
 	t.Setenv("ARCHFIT_MANIFEST4", string(rows))
 	t.Setenv("ARCHFIT_ACTION_COMMIT", testActionCommit4)
-	if EngineApproved(Identity{EngineVersion: "v4.0.0-rc.1", ImageDigest: testEngine4AMD, Platform: platformAMD64}) {
+	if EngineApproved(Identity{EngineVersion: "v0.9.0-rc.1", ImageDigest: testEngine4AMD, Platform: platformAMD64}) {
 		t.Error("an engine approved from the environment")
 	}
 	if ActionApproved(testActionCommit4) {

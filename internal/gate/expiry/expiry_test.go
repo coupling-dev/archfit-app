@@ -29,7 +29,7 @@ var repo = api.Repo{RepoRef: api.RepoRef{InstallationID: installation, FullName:
 
 // policyWith is a valid schema 3 policy with one dated duplication exception and an undated graph exception.
 func policyWith(expires string) string {
-	return `version: 3
+	return `version: 1
 owners: ["@alice", bob, "@acme/architects"]
 gate: required
 modules:
@@ -50,7 +50,7 @@ exceptions:
 `
 }
 
-const noDated = `version: 3
+const noDated = `version: 1
 owners: [alice]
 modules:
   pkg_tc:

@@ -84,7 +84,7 @@ func TestTheIssueBodyStaysUnderGitHubsLimit(t *testing.T) {
 }
 
 func TestDeniedMatchesModulesOnly(t *testing.T) {
-	pol := mustPolicy(t, "version: 3\nowners: [o]\nmodules:\n  a:\n    paths: [a/**]\nrules:\n"+
+	pol := mustPolicy(t, "version: 1\nowners: [o]\nmodules:\n  a:\n    paths: [a/**]\nrules:\n"+
 		"  - id: no-a-to-b\n    deny:\n      from: [a, x]\n      to: [b]\n    why: w\n    instead: use c\n"+
 		"  - id: no-globs\n    deny:\n      from: [\"pkg/a/**\"]\n      to: [\"pkg/d/**\"]\n    why: w\n    instead: i\n")
 	tests := []struct {

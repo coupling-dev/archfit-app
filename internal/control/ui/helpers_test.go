@@ -37,7 +37,7 @@ const (
 	operatorLogin = "ops"
 	operatorID    = int64(9001)
 
-	policyText = "version: 3\nowners: [alice]\nmodules:\n  a:\n    layer: core\n    paths: [\"pkg/a/**\"]\n  b:\n    layer: edge\n    paths: [\"pkg/b/**\"]\n"
+	policyText = "version: 1\nowners: [alice]\nmodules:\n  a:\n    layer: core\n    paths: [\"pkg/a/**\"]\n  b:\n    layer: edge\n    paths: [\"pkg/b/**\"]\n"
 )
 
 var cookieKey = bytes.Repeat([]byte{7}, 32)

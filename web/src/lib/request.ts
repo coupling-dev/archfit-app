@@ -5,10 +5,9 @@ import type { MapModel } from '../components/map/model';
 import type { AnswerKind, Preview, PullEffect, RequestEarlier, RequestModule, RequestView } from './api';
 
 // answerKinds are the answers a request offers, in order. A surface request (a use past the declared parts of the
-// module it reaches) is never approved as such: it offers declaring the package public or a model part (a model part
-// needs policy version 1), allowing it until a date, or rejecting it. Without a named package it offers no
-// declaration.
-export function answerKinds(r: Pick<RequestView, 'surface' | 'policy_version'> | null): { kind: AnswerKind; title: string }[] {
+// module it reaches) is never approved as such: it offers declaring the package public or a model part, allowing it
+// until a date, or rejecting it. Without a named package it offers no declaration.
+export function answerKinds(r: Pick<RequestView, 'surface'> | null): { kind: AnswerKind; title: string }[] {
   if (!r?.surface) {
     return [
       { kind: 'approve', title: 'Approve and merge' },
@@ -19,7 +18,7 @@ export function answerKinds(r: Pick<RequestView, 'surface' | 'policy_version'> |
   const out: { kind: AnswerKind; title: string }[] = [];
   if (r.surface.package) {
     out.push({ kind: 'declare-public', title: 'Declare as public' });
-    if (r.policy_version === 1) out.push({ kind: 'declare-model', title: 'Declare as model' });
+    out.push({ kind: 'declare-model', title: 'Declare as model' });
   }
   out.push({ kind: 'approve-until', title: 'Allow until a date' }, { kind: 'reject', title: 'Reject' });
   return out;
@@ -73,8 +72,8 @@ export function decisionState(kind: AnswerKind, preview: Preview | undefined, la
   };
 }
 
-// Balance is a coupling number as the record prints it. Engine 0.9.0 names the inputs it was computed with; a
-// balance of engine v4.0.0 has none (until task 6.5).
+// Balance is a coupling number as the record prints it. It names the inputs it was computed with; a balance stored from
+// an engine v4.0.0 result has none.
 export interface Balance {
   value: number;
   max?: number;

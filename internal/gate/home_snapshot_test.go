@@ -25,7 +25,7 @@ func (g *snapshotFiles) File(context.Context, api.RepoRef, string, string) ([]by
 }
 
 func TestHomeSnapshotIsRequestAndRepositoryScoped(t *testing.T) {
-	gh := &snapshotFiles{raw: "version: 3\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n"}
+	gh := &snapshotFiles{raw: "version: 1\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n"}
 	r := api.Repo{RepoRef: api.RepoRef{InstallationID: 1, FullName: "acme/app"}, DefaultBranch: "main"}
 	ctx, _ := WithHomeSnapshot(t.Context(), r)
 	first, err := ReadHomeSnapshot(ctx, gh, r)

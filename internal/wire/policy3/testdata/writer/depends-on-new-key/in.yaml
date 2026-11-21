@@ -1,5 +1,5 @@
 # Policy of the chaos tool. Owners answer requests in the App.
-version: 3
+version: 1
 owners: [alexei-led]   # the people who answer requests
 gate: required
 

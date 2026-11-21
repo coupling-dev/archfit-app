@@ -76,7 +76,7 @@ func TestEditRefusesBeforeRedemptionOrWrites(t *testing.T) {
 			want := ErrEditChanged
 			switch name {
 			case "decode":
-				in.File = []byte("version: 3\nowners: []\nmodules: {}\n")
+				in.File = []byte("version: 1\nowners: []\nmodules: {}\n")
 				want = ErrEditPolicy
 			case "no passkey":
 				in.Redeem = nil

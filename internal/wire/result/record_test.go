@@ -30,11 +30,12 @@ func TestRecordLines(t *testing.T) {
 				"archfit: unknown, no verdict\n",
 		},
 		{
-			name: "a v4.0.0 balance, then a 0.9.0 balance with its inputs and the surface of the target",
+			name: "a balance with its inputs, and one with the surface of the target",
 			r: result.Result{
 				Summary: "archfit: fail, 2 errors",
 				Errors: []result.Error{
-					{Path: "a.go", Line: 1, Rule: "graph", What: "a -> b is not an allowed dependency", Balance: &result.Balance{Value: 9, Min: 7}, To: "b", Next: fix},
+					{Path: "a.go", Line: 1, Rule: "graph", What: "a -> b is not an allowed dependency", To: "b", Next: fix,
+						Balance: &result.Balance{Value: 9, Min: 7, Strength: result.StrengthContract, Volatility: result.VolatilityLow}},
 					{
 						Path: "c.go", Line: 2, Rule: "coupling", What: "internal/assessment/score is past the surface", To: "assessment-repair",
 						Balance: &result.Balance{Value: 2, Min: 7, Strength: result.StrengthIntrusive, Volatility: result.VolatilityHigh},
@@ -43,7 +44,7 @@ func TestRecordLines(t *testing.T) {
 					},
 				},
 			},
-			want: "a.go:1: graph: a -> b is not an allowed dependency\n  balance: 9/10 (min 7)\n  next: fix the code\n" +
+			want: "a.go:1: graph: a -> b is not an allowed dependency\n  balance: 9/10 (min 7): contract, b is low\n  next: fix the code\n" +
 				"c.go:2: coupling: internal/assessment/score is past the surface\n" +
 				"  balance: 2/10 (min 7): intrusive, assessment-repair is high\n" +
 				"  surface: internal/assessment/finding (public), internal/assessment/result (model)\n" +

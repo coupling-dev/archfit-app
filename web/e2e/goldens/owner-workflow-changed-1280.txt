@@ -42,7 +42,7 @@ Compared with this pull request's base at 2222222. These policy bytes are includ
 
 @@ -1,2 +1,3 @@
 
- version: 3
+ version: 1
 
  owners: [alice]
 
