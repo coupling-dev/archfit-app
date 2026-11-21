@@ -151,6 +151,39 @@ func TestSetupAdmissionFromImmutableDefaultBranchFiles(t *testing.T) {
 	}
 }
 
+// TestSetupAcceptsBothActionRepositories: until task 6.5 the workflow may run the Action from its new home or from
+// its old one, and a tag is looked up in the repository the line names. Any other repository is not the Action.
+func TestSetupAcceptsBothActionRepositories(t *testing.T) {
+	for _, tc := range []struct {
+		name, repo, ref string
+		admitted        bool
+		tagReads        []string
+	}{
+		{"new repository, listed commit", manifest.ActionRepository, setupCommit, true, nil},
+		{"new repository, tag", manifest.ActionRepository, "v0.9.0", true, []string{manifest.ActionRepository + "@v0.9.0"}},
+		{"old repository, listed commit", manifest.LegacyActionRepository, setupCommit, true, nil},
+		{"old repository, tag", manifest.LegacyActionRepository, "v0.9.0", true, []string{manifest.LegacyActionRepository + "@v0.9.0"}},
+		{"another repository, listed commit", "someone/archfit-action", setupCommit, false, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newSetupHub()
+			h.tags = map[string]string{"v0.9.0": setupCommit}
+			h.files["tip"] = map[string]string{
+				".archfit.yaml": setupPolicy,
+				workflowPath:    "jobs:\n  check:\n    steps:\n      - uses: " + tc.repo + "@" + tc.ref + " # v0.9.0\n",
+			}
+			s := &setups{gh: h, gate: setupView{}, actionApproved: func(ref string) bool { return ref == setupCommit }}
+			out, err := s.Setup(context.Background(), setupRepo)
+			if err != nil || out.Admitted != tc.admitted || out.Workflow != tc.admitted {
+				t.Fatalf("Setup = %+v, %v; want admitted %v", out, err, tc.admitted)
+			}
+			if !slices.Equal(h.tagReads, tc.tagReads) {
+				t.Errorf("tag reads %v, want %v", h.tagReads, tc.tagReads)
+			}
+		})
+	}
+}
+
 func TestSetupFindsAcceptedWorkflowPullOnConvertedRepository(t *testing.T) {
 	h := newSetupHub()
 	h.files["tip"] = map[string]string{".archfit.yaml": setupPolicy}

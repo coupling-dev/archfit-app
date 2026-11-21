@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/coupling-dev/archfit-app/internal/gate/feedback"
@@ -63,12 +64,22 @@ const (
 
 var commitSHA = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
-// actionUse is one whole `uses:` line of the Action: its ref (group 2) and a version comment such as `# v4.0.1`, which
-// Dependabot rewrites with the ref. Only these two parts are ignored when files are compared. A ref, a comment or a
-// line end outside these narrow forms (any other character, a quote that does not close, a CR, NEL or U+2028) does
-// not match, so its line stays in the comparison as written.
-var actionUse = regexp.MustCompile(`(?m)^([ \t]*(?:-[ \t]+)?uses:[ \t]*(["']?)` + regexp.QuoteMeta(manifest.ActionRepository+"@") +
-	`)([0-9A-Za-z._/-]+)(["']?)(?:[ \t]+#[ \t]*[0-9A-Za-z._+-]*)?[ \t]*$`)
+// actionUse is one whole `uses:` line of the Action, from either of its repositories until task 6.5: its ref (group 3)
+// and a version comment such as `# v0.9.0`, which Dependabot rewrites with the ref. Only these two parts are ignored
+// when files are compared; the repository stays in the compared text, so a move to the other repository is not a pin
+// bump and needs an owner. A ref, a comment or a line end outside these narrow forms (any other character, a quote
+// that does not close, a CR, NEL or U+2028) does not match, so its line stays in the comparison as written.
+var actionUse = regexp.MustCompile(`(?m)^([ \t]*(?:-[ \t]+)?uses:[ \t]*(["']?)(?:` + actionRepositories() + `)@)` +
+	`([0-9A-Za-z._/-]+)(["']?)(?:[ \t]+#[ \t]*[0-9A-Za-z._+-]*)?[ \t]*$`)
+
+// actionRepositories is the alternation of the Action's repositories for actionUse.
+func actionRepositories() string {
+	repos := manifest.ActionRepositories()
+	for i, r := range repos {
+		repos[i] = regexp.QuoteMeta(r)
+	}
+	return strings.Join(repos, "|")
+}
 
 // upload4 is the envelope 2 path of POST /v1/reports: the trusted inputs, the status the App gives the result, the
 // pull record of M2 D6, and the check and comment that show it (M2 task 15).
