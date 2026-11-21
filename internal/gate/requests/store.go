@@ -71,14 +71,14 @@ func join(ctx context.Context, s store.Store, r api.Repo, id, pull int, c *confi
 			if !slices.Contains(req.Waiting, pull) {
 				req.Waiting, joined, changed = append(req.Waiting, pull), true, true
 			}
-			if c != nil && !req.Numbers.Verified {
-				req.Numbers, req.Record, changed = records.Numbers{Verified: true, Balance: c.balance}, c.record, true
-			}
 			if c != nil {
 				var surfaced bool
-				if req.Surface, surfaced = mergeSurface(req.Surface, c.surface); surfaced {
+				if req.Surface, surfaced = mergeSurface(req.Surface, c.surface, req.Numbers.Verified); surfaced {
 					changed = true
 				}
+			}
+			if c != nil && !req.Numbers.Verified {
+				req.Numbers, req.Record, changed = records.Numbers{Verified: true, Balance: c.balance}, c.record, true
 			}
 			if !changed {
 				return cur, nil

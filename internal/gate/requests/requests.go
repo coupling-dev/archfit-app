@@ -572,15 +572,33 @@ func boundedSurface(public, model []string, pkg string) *records.Surface {
 	return &records.Surface{Public: globs(public), Model: globs(model), Package: pkg}
 }
 
-// mergeSurface is what a request keeps when a verified result brings surface s: a request that was not a surface
-// request becomes one, and one without a package takes s's. A request never stops being a surface request, so a use
-// past the surface is never approved as such.
-func mergeSurface(kept, s *records.Surface) (*records.Surface, bool) {
+// mergeSurface is what a request keeps when a verified result brings surface s; verified says whether the request's
+// numbers were verified before. A request never stops being a surface request, so a use past the surface is never
+// approved as such. The package it declares is only ever one a verified result names:
+//   - a verified surface replaces one the CLI reported, package included;
+//   - a verified result without a surface keeps the reported one's globs but drops its unverified package;
+//   - two verified results that name different packages under one request leave it without a package, so no
+//     declaration is offered (the request key is the module pair, and one declaration covers one package).
+func mergeSurface(kept, s *records.Surface, verified bool) (*records.Surface, bool) {
+	unnamed := func(k *records.Surface) (*records.Surface, bool) {
+		if k.Package == "" {
+			return k, false
+		}
+		c := *k
+		c.Package = ""
+		return &c, true
+	}
 	switch {
-	case s == nil:
+	case kept == nil && s == nil:
+		return nil, false
+	case s == nil && verified:
 		return kept, false
-	case kept == nil, kept.Package == "" && s.Package != "":
+	case s == nil:
+		return unnamed(kept)
+	case kept == nil, !verified, kept.Package == "" && s.Package != "":
 		return s, true
+	case s.Package != "" && kept.Package != s.Package:
+		return unnamed(kept)
 	}
 	return kept, false
 }

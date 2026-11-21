@@ -697,25 +697,32 @@ func TestGroupSurfaceTakesTheFirstErrorWithASurface(t *testing.T) {
 	}
 }
 
-// A verified result can make a request a surface request, or give it the package; it never makes it stop being one.
+// A verified result can make a request a surface request, or give it the package; it never makes it stop being one,
+// and the package a request keeps is only ever one a verified result names.
 func TestMergeSurface(t *testing.T) {
 	bare := &records.Surface{Public: []string{"a"}, Model: []string{}}
-	named := &records.Surface{Public: []string{"a"}, Model: []string{}, Package: "a/b"}
+	retry := &records.Surface{Public: []string{"a"}, Model: []string{}, Package: "a/retry"}
+	backoff := &records.Surface{Public: []string{"a"}, Model: []string{}, Package: "a/backoff"}
 	for _, tc := range []struct {
 		name        string
 		kept, s     *records.Surface
+		verified    bool
 		want        *records.Surface
 		wantChanged bool
 	}{
-		{"no surface either side", nil, nil, nil, false},
-		{"a verified result past the surface", nil, bare, bare, true},
-		{"a verified result names the package", bare, named, named, true},
-		{"a verified result without a surface keeps it", named, nil, named, false},
-		{"a package is never dropped", named, bare, named, false},
+		{"no surface either side", nil, nil, true, nil, false},
+		{"a verified result past the surface", nil, bare, true, bare, true},
+		{"a verified result names the package", bare, retry, true, retry, true},
+		{"a verified result without a surface keeps it", retry, nil, true, retry, false},
+		{"a package is never dropped for none", retry, bare, true, retry, false},
+		{"the same package again", retry, retry, true, retry, false},
+		{"a reported package is replaced by the verified one", retry, backoff, false, backoff, true},
+		{"a reported package is dropped by a verified result without a surface", retry, nil, false, bare, true},
+		{"two verified packages leave none", retry, backoff, true, bare, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, changed := mergeSurface(tc.kept, tc.s)
-			if got != tc.want || changed != tc.wantChanged {
+			got, changed := mergeSurface(tc.kept, tc.s, tc.verified)
+			if !reflect.DeepEqual(got, tc.want) || changed != tc.wantChanged {
 				t.Errorf("mergeSurface = %+v, %v; want %+v, %v", got, changed, tc.want, tc.wantChanged)
 			}
 		})
