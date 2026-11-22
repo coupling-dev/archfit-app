@@ -116,6 +116,8 @@ export interface RequestView {
   // A surface request (engine 0.9.0): the declared parts of `to` and the package past them a declaration adds.
   surface?: { public: string[]; model: string[]; package?: string };
   waiting?: number[]; // pull requests waiting on this request
+  asked_by?: string; // the login that filed the request; absent for an older record
+  asked_at?: string; // when, RFC 3339
 }
 
 export interface PullEffect {

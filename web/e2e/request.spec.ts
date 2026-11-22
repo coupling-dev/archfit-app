@@ -39,6 +39,8 @@ const request = {
   ],
   allowed: false,
   waiting: [12],
+  asked_by: 'dev',
+  asked_at: '2026-11-13T11:48:00Z',
   earlier: [
     {
       kind: 'exception',
@@ -170,7 +172,7 @@ test('request: the question, the evidence and the answers, with each effect read
   const writes = await open(page, path, handlers);
   await expect(page.getByRole('heading', { name: 'May pkg_tc depend on pkg_util?', level: 1 })).toBeVisible();
   await expect(page.locator('.lede')).toHaveText(
-    `Request #431. The author says: “${request.reason}” Pull request #12 waits for your answer.`,
+    `Request #431. Asked by @dev 12 minutes ago: “${request.reason}” Pull request #12 waits for your answer.`,
   );
   await expect(page.locator('.page-head .small')).toHaveCount(0);
   const evidence = page.locator('dl.evidence');
@@ -244,6 +246,7 @@ test('request: the story row names the six steps and marks "ask #431" as now', a
 
 test('request: Allow takes the digest, a passkey step-up for it, then the answer with its token', async ({ page }) => {
   const { id } = await authenticator(page, true);
+  await docsClock(page);
   const writes = await open(page, path, owner(approved, id).handlers);
   await choose(page, 'Allow');
   await expect(answerBox(page).getByText('Your passkey confirms this one answer.')).toBeVisible();
@@ -264,7 +267,7 @@ test('request: Allow takes the digest, a passkey step-up for it, then the answer
   expect(writes[1].postDataJSON()).toEqual({ action: 'approve', request: 431, digest });
   expect(writes[3].postDataJSON()).toEqual({ answer: 'approve', token: 'step-up-token' });
   // The page reads the request again: answered, so no answer is offered, and the owner's own answer is not "while you looked".
-  await expect(page.locator('.lede')).toHaveText(`answered Request #431. The author says: “${request.reason}”`);
+  await expect(page.locator('.lede')).toHaveText(`answered Request #431. Asked by @dev 12 minutes ago: “${request.reason}”`);
   await expect(page.locator('.page-head .small')).toHaveText('An owner answered this request.');
   await expect(answerBox(page).getByRole('radio')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Answer/ })).toHaveCount(0);
@@ -375,6 +378,7 @@ test('request: a refused step-up is the server sentence, nothing is answered, an
 });
 
 test('request: numbers as reported say so; a closed request offers no answer', async ({ page }) => {
+  await docsClock(page);
   await open(page, path, { [`GET ${req}`]: () => [200, { ...request, verified: false }] });
   await expect(page.locator('.page-head .small')).toContainText('Its numbers are as reported: no pull request confirmed them yet.');
   await expect(page.locator('dl.evidence')).toContainText('9/10 (min 7), as reported');
@@ -382,7 +386,7 @@ test('request: numbers as reported say so; a closed request offers no answer', a
 
   await page.unrouteAll();
   await open(page, path, { [`GET ${req}`]: () => [200, { ...request, state: 'closed' }] });
-  await expect(page.locator('.lede')).toHaveText(`closed Request #431. The author says: “${request.reason}”`);
+  await expect(page.locator('.lede')).toHaveText(`closed Request #431. Asked by @dev 12 minutes ago: “${request.reason}”`);
   await expect(page.locator('.page-head .small')).toHaveText('Request #431 is closed.');
   await expect(answerBox(page)).toContainText('No answer is open.');
   await expect(answerBox(page).getByRole('radio')).toHaveCount(0);
