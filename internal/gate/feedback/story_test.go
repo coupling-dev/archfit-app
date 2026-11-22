@@ -167,3 +167,16 @@ func TestAPushCheckHasNoStoryLine(t *testing.T) {
 		t.Fatalf("push check text %q", text)
 	}
 }
+
+func TestCommentTopLineFollowsTheStory(t *testing.T) {
+	r := result.Result{Status: result.StatusWaiting, Errors: []result.Error{{Path: "a.go", Line: 1, Rule: "graph", What: "x", Next: result.Next{Kind: nextWait, Text: "wait for an owner: #40"}}}}
+	v := newView(r)
+	s := storyOf(v, &StoryFacts{State: records.StateOpen, Owner: "alexei-led"})
+	v.story = &s
+	v.requestURL = "https://example.com/r/acme/repo/requests/40"
+	got := v.comment(65536)
+	want := "✓ change → ✗ check → ● **ask #40** → ○ answer → ○ policy → ○ re-check\n\n**Next: @alexei-led answers request #40** (1 minute, passkey): https://example.com/r/acme/repo/requests/40\nAfter the answer, the App updates the policy and this check runs again. Nothing for the author to do."
+	if !strings.HasPrefix(got, want) {
+		t.Errorf("comment starts with %q, want %q", got, want)
+	}
+}
