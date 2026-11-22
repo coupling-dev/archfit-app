@@ -417,16 +417,8 @@ func (s *Service) readCurrent(ctx context.Context, r api.Repo, cleanup bool) (*p
 			if !cleanup {
 				continue
 			}
-			// The approvals first: while the proposal is in the index, a later answer repeats a cleanup that stopped.
-			if err := s.voidAndNote(ctx, r, p.rec.PullRequest, append(p.approvals, p.stale...), true); err != nil {
+			if err := s.dropClosed(ctx, r, p); err != nil {
 				return nil, err
-			}
-			// The head's verdict first: a failure is returned and the next answer repeats the cleanup (Retire repeats).
-			if err := Retire(ctx, s.gh, r, p.rec.HeadSHA, p.rec.PullRequest, p.id, RetiredVoid, s.now()); err != nil {
-				return nil, err
-			}
-			if err := records.VoidProposal(ctx, s.store, t, r.FullName, p.id); err != nil {
-				return nil, fmt.Errorf("proposals: void proposal %s: %w", p.id, err)
 			}
 			continue
 		case open != nil:
@@ -435,6 +427,23 @@ func (s *Service) readCurrent(ctx context.Context, r api.Repo, cleanup bool) (*p
 		open = p
 	}
 	return open, nil
+}
+
+// dropClosed voids proposal p, whose pull request was closed without a merge: its approvals, then its head's verdict,
+// then the proposal itself.
+func (s *Service) dropClosed(ctx context.Context, r api.Repo, p *proposal) error {
+	// The approvals first: while the proposal is in the index, a later answer repeats a cleanup that stopped.
+	if err := s.voidAndNote(ctx, r, p.rec.PullRequest, append(p.approvals, p.stale...), true); err != nil {
+		return err
+	}
+	// The head's verdict first: a failure is returned and the next answer repeats the cleanup (Retire repeats).
+	if err := Retire(ctx, s.gh, r, p.rec.HeadSHA, p.rec.PullRequest, p.id, RetiredVoid, s.now()); err != nil {
+		return err
+	}
+	if err := records.VoidProposal(ctx, s.store, tenant(r), r.FullName, p.id); err != nil {
+		return fmt.Errorf("proposals: void proposal %s: %w", p.id, err)
+	}
+	return nil
 }
 
 // loadApprovals reads the open approvals of p. A revert applies only while the state it was made in holds

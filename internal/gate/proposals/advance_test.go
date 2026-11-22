@@ -240,7 +240,7 @@ func TestAPullRequestClosedThenReopenedNeverMergesOnItsOldApprovals(t *testing.T
 	w.request(431, "graph", "pkg_tc", "pkg_util")
 	out := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, false)
 	w.hub.pulls[out.PullRequest].State = "closed"
-	if err := w.svc.Closed(context.Background(), testRepo); err != nil {
+	if err := w.svc.Closed(context.Background(), testRepo, out.PullRequest); err != nil {
 		t.Fatal(err)
 	}
 	w.hub.pulls[out.PullRequest].State = "open"
@@ -261,5 +261,24 @@ func TestAdvanceRechecksThePullRequestBeforeMergingOnAnEarlierSuccess(t *testing
 	w.advance()
 	if len(w.hub.merges) != 1 {
 		t.Fatalf("merged a pull request into another base: %v", w.hub.merges)
+	}
+}
+
+func TestACloseHandledAfterTheReopenStillVoidsTheOldApprovals(t *testing.T) {
+	w := newWorld(t)
+	w.hub.requireCI = true
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	out := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, false)
+	// closed and reopened on GitHub before the queued close event runs
+	if err := w.svc.Closed(context.Background(), testRepo, out.PullRequest); err != nil {
+		t.Fatal(err)
+	}
+	w.ciPasses()
+	w.advance()
+	if len(w.hub.merges) != 1 {
+		t.Fatalf("a late close left the old approvals to merge: %v", w.hub.merges)
+	}
+	if a := load[records.Approval](t, w.store, records.ApprovalKey(testRepo.FullName, out.Approval)); a.State != records.StateVoid {
+		t.Errorf("approval %s", a.State)
 	}
 }

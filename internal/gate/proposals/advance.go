@@ -91,9 +91,10 @@ func (s *Service) Advance(ctx context.Context, r api.Repo) error {
 	return s.mergeWhenReady(ctx, r, cur.tip, pin, listed)
 }
 
-// Closed voids the open proposal when its pull request was closed without a merge (the pull_request closed event), so
-// it never merges on its old approvals after a reopen.
-func (s *Service) Closed(ctx context.Context, r api.Repo) error {
+// Closed voids the open proposal of pull request pull, which the pull_request closed event says closed without a merge,
+// so it never merges on its old approvals after a reopen. The event decides, not the pull request's state now: a
+// reopen may already have happened before the event is handled.
+func (s *Service) Closed(ctx context.Context, r api.Repo, pull int) error {
 	release, err := s.hold(ctx, r)
 	if err != nil {
 		return err
@@ -101,8 +102,11 @@ func (s *Service) Closed(ctx context.Context, r api.Repo) error {
 	defer release()
 	ctx, cancel := context.WithTimeout(ctx, recordTimeout)
 	defer cancel()
-	_, err = s.current(ctx, r)
-	return err
+	cur, err := s.current(ctx, r)
+	if err != nil || cur == nil || cur.rec.PullRequest != pull {
+		return err
+	}
+	return s.dropClosed(ctx, r, cur)
 }
 
 // passedOn reports whether the latest archfit/gate run on the pinned head is this proposal's success.

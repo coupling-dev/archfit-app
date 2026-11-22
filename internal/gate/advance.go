@@ -20,7 +20,7 @@ func (g *Gate) proposalClosed(ctx context.Context, e webhook.Event) error {
 	if err != nil || !own {
 		return err
 	}
-	return g.proposals.Closed(ctx, r)
+	return g.proposals.Closed(ctx, r, e.PullRequest)
 }
 
 // advance moves the App's open policy pull request on: up to date with the default branch, then merged when GitHub
