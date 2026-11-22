@@ -103,7 +103,7 @@ func compose(gh github, v oidc.Verifier, s store.Store, adm admitter, audience s
 	g := &Gate{repos: gh, pulls: gh, admissions: adm, now: now}
 	// One Archfit 4 publisher, so an upload and a request line take the same head lease.
 	g.approvals = approvals.New(gh, s).WithAppURL(audience)
-	publisher4 := feedback.New4(gh, gh, gh, s, audience, now, g.approvals.OwnerCheck)
+	publisher4 := feedback.New4(gh, gh, gh, s, audience, now, g.approvals.OwnerCheck, storyReader(gh, s))
 	g.v4 = newUpload4(ingest.NewV2(gh, gh, gh, gh, gh, v, audience, adm), gh, gh, s, publisher4)
 	g.asks = asks.New(gh, s, publisher4)
 	g.proposals = proposals.New(gh, s, now)

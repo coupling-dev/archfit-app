@@ -25,6 +25,14 @@ owner approval), the check title says who the check waits for, the check summary
 `details_url` is that page; otherwise it is the pull page. Status markers (pass, fail, waiting, unknown) head the
 title and the comment heading. None of this changes a status or a conclusion.
 
+On a pull request, the check's `output.text` is one hidden line, `<!-- archfit-story v1 {json} -->` (task 8.22), which
+`archfit status` reads: the six steps of the story (`change`, `check`, `ask`, `answer`, `policy`, `recheck`, each
+`done`, `current`, `failed`, `later` or `not-needed`), the request, the person it waits for (`waiting_for`) and the
+`next` text. The view decides the steps; `StoryReader` (the gate's) adds the request's state, the App's policy pull
+request that carries the answer, and the policy's first owner who is a person (never a team or a placeholder). A failed
+read leaves those out and the check is written anyway. The line stays under 1 KiB (`next` is cut at 600 bytes on a rune
+boundary) and JSON escaping keeps `-->` out of it. A push or merge group check has no story line.
+
 Every publication holds the installation/head Store lease. `Current` rechecks live authority
 inside that lease; false returns `ErrStaleInputs` without writing. `Withdraw4` accepts only unknown
 and can take the live check receipt when the caller lacks a matching pull record.

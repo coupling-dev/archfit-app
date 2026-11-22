@@ -176,6 +176,7 @@ type CheckRun struct {
 	Conclusion string // "" unless completed; then "success" | "failure" | "neutral" | "action_required"
 	Title      string
 	Summary    string // markdown, max 65535 bytes
+	Text       string // output.text: details below the summary, max 65535 bytes; the App's story line lives here
 	// Annotations go in one request: at most 50, and only with a Title and a Summary. GitHub appends the annotations
 	// of each request, so more go in further updates of the same run.
 	Annotations []Annotation

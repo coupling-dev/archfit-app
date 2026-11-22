@@ -68,7 +68,7 @@ func newHarness(prHead string) *harness {
 		clock:    &clock{t: t0},
 		store:    store.NewMemory(),
 	}
-	h.pub = New4(h.checks, h.comments, h.pulls, h.store, appURL, h.clock.now, nil)
+	h.pub = New4(h.checks, h.comments, h.pulls, h.store, appURL, h.clock.now, nil, nil)
 	return h
 }
 

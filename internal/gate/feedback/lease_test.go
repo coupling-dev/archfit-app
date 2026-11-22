@@ -137,7 +137,7 @@ func TestLeaseFailsClosed(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newHarness(headB)
-			pub := New4(h.checks, h.comments, h.pulls, tt.store(h.store), "", h.clock.now, nil)
+			pub := New4(h.checks, h.comments, h.pulls, tt.store(h.store), "", h.clock.now, nil, nil)
 			p := pub4(prTarget(headB), 7, 1, engineResult(t, "graph"))
 			p.Target = tt.target
 			ctx := context.Background()

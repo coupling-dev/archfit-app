@@ -26,6 +26,7 @@ type publisher struct {
 	pulls    api.Pulls
 	appURL   string
 	now      func() time.Time
+	story    StoryReader // the facts of the story line's request; nil leaves the story to the result
 }
 
 // pullLink is the App's page of the target's pull request; "" without an App URL.
