@@ -8,7 +8,7 @@
  let token = $state('');
  let busy = $state(false);
  let error = $state('');
- let confirmed = $state(false);
+ let prompting = $state(false);
  async function request() {
   busy=true;error='';
   try { const v=await postJSON<{attempt:string;installation:number}>(api('passkeys/confirmation'),session.csrf,{});attempt=v.attempt;installation=v.installation; }
@@ -18,11 +18,11 @@
  async function register() {
   busy=true;error='';
   const submitted=token; token='';
-  try { await addPasskey(api,session.csrf,false,{attempt,confirmation:submitted}); confirmed=true;done(); }
+  try { await addPasskey(api,session.csrf,false,{attempt,confirmation:submitted},()=>prompting=true); done(); }
   catch(e){const detail=passkeyFailure(e) ? 'The browser did not finish registration.' : explain(e as ApiError,window.location.pathname);
    attempt='';installation=0;
    error=detail+' Confirmation may have been consumed. Request confirmation again and ask the operator to issue a token for the new attempt.';}
-  finally{busy=false;}
+  finally{busy=false;prompting=false;}
  }
 </script>
 <section class="box" aria-labelledby="confirm-owner">
@@ -37,8 +37,7 @@
  <button class="btn primary" disabled={busy || !token} onclick={register}>Confirm and register a passkey</button>
  {/if}
  <p class="muted">Do not paste the token into a GitHub issue, a pull request, a shared document, or a screenshot. If you lose it or someone else sees it, ask the operator to revoke it and issue a new one.</p>
- {#if busy}<p role="status">Confirming and registering your passkey…</p>{/if}
- {#if confirmed}<p role="status">Confirmed. Now register your passkey.</p>{/if}
+ {#if busy}<p role="status">{prompting ? 'Confirmed. Now register your passkey.' : 'Confirming and registering your passkey…'}</p>{/if}
  {#if error}<p class="flash error" role="alert">{error}</p>{/if}
  </div>
 </section>

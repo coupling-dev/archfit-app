@@ -196,7 +196,8 @@ for (const width of [390, 1280]) {
     });
     await expect(page.getByText('Managed by configuration', { exact: true })).toBeVisible();
     await expect(page.getByText('No installation is waiting to be admitted.')).toBeVisible();
-    await expect(page.getByRole('main').getByRole('button')).toHaveCount(0);
+    await expect(page.getByRole('main').getByRole('button')).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Find confirmation' })).toBeDisabled();
     await expect(page.getByRole('main')).not.toContainText('Revoke');
     const link = page.getByRole('link', { name: 'ccgram', exact: true });
     await expect(link).toHaveAttribute('href', '/r/alexei-led/ccgram');

@@ -43,7 +43,7 @@ const cases: { name: string; path: string; ready: string; mock?: Mock; keyboard:
     path: '/r/acme/app/passkeys',
     ready: 'Passkeys',
     mock: { passkeys: { passkeys: [] } },
-    keyboard: 'Add a passkey',
+    keyboard: 'Request confirmation',
   },
   {
     name: 'passkeys',
@@ -82,7 +82,7 @@ for (const width of [1280, 390]) {
       await expectClean(page);
 
       const target = page
-        .getByRole(c.keyboard.startsWith('Admit') || c.keyboard.startsWith('Approve') || c.keyboard === 'Add a passkey' ? 'button' : 'link', {
+        .getByRole(c.keyboard.startsWith('Admit') || c.keyboard.startsWith('Approve') || (c.keyboard === 'Add a passkey' || c.keyboard === 'Request confirmation') ? 'button' : 'link', {
           name: c.keyboard,
           exact: true,
         })

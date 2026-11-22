@@ -34,9 +34,10 @@ export async function confirm(api: RepoAPI, csrf: string, purpose: Purpose): Pro
 }
 
 // addPasskey registers a passkey. A user who has one confirms with it first (hasOne), so a second needs the first.
-export async function addPasskey(api: RepoAPI, csrf: string, hasOne: boolean, confirmation?: { attempt: string; confirmation: string }): Promise<Registered> {
+export async function addPasskey(api: RepoAPI, csrf: string, hasOne: boolean, confirmation?: { attempt: string; confirmation: string }, onConfirmed?: () => void): Promise<Registered> {
   const token = hasOne ? await confirm(api, csrf, { action: 'register' }) : '';
   const { options } = await postJSON<{ options: unknown }>(api('passkeys/register'), csrf, token ? { token } : (confirmation ?? {}));
+  onConfirmed?.();
   const cred = await credential(navigator.credentials.create(creationOptions(options)));
   return postJSON<Registered>(api('passkeys/register/finish'), csrf, { credential: cred });
 }
