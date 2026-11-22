@@ -38,5 +38,28 @@
     "analysis",
     "insight"
   ],
-  "gateNames": "(?i)archfit/gate|\\bgate:"
+  "gateNames": "(?i)archfit/gate|\\bgate:",
+  "storyOnlyWords": [
+    "proposal",
+    "void",
+    "voided",
+    "outside the flow",
+    "YAML edit",
+    "edit the YAML",
+    "envelope",
+    "digest",
+    "hash",
+    "sha",
+    "reload",
+    "refresh the page",
+    "behind",
+    "update branch",
+    "admin merge",
+    "squash",
+    "rebase",
+    "stale",
+    "rung",
+    "surface",
+    "PR"
+  ]
 }

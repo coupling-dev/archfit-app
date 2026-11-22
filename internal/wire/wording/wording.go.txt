@@ -21,11 +21,19 @@ var notUsedWords = []string{
 	"architect", "approver", "rating", "score", "analysis", "insight",
 }
 
+var storyOnlyWords = []string{
+	"proposal", "void", "voided", "outside the flow", "YAML edit", "edit the YAML",
+	"envelope", "digest", "hash", "sha", "reload", "refresh the page",
+	"behind", "update branch", "admin merge", "squash", "rebase", "stale",
+	"rung", "surface", "PR",
+}
+
 // gateNames are the two uses of "gate" that are names, not words: the check
 // name and the policy key.
 var gateNames = regexp.MustCompile(`(?i)archfit/gate|\bgate:`)
 
 var notUsedPatterns = compileNotUsed(notUsedWords)
+var storyOnlyPatterns = compileNotUsed(storyOnlyWords)
 
 func compileNotUsed(words []string) []*regexp.Regexp {
 	patterns := make([]*regexp.Regexp, len(words))
@@ -40,11 +48,20 @@ func compileNotUsed(words []string) []*regexp.Regexp {
 // whole words and in any case, in list order. A phrase matches across any
 // whitespace.
 func NotUsedIn(text string) []string {
+	return notUsedIn(text, notUsedWords, notUsedPatterns)
+}
+
+// StoryNotUsedIn applies the extended story vocabulary.
+func StoryNotUsedIn(text string) []string {
+	return append(notUsedIn(text, notUsedWords, notUsedPatterns), notUsedIn(text, storyOnlyWords, storyOnlyPatterns)...)
+}
+
+func notUsedIn(text string, words []string, patterns []*regexp.Regexp) []string {
 	text = gateNames.ReplaceAllString(text, " ")
 	var found []string
-	for i, pattern := range notUsedPatterns {
+	for i, pattern := range patterns {
 		if pattern.MatchString(text) {
-			found = append(found, notUsedWords[i])
+			found = append(found, words[i])
 		}
 	}
 	return found
