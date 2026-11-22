@@ -15,6 +15,9 @@ type pullJSON struct {
 	User   *struct {
 		Login string `json:"login"`
 	} `json:"user"`
+	MergedBy *struct {
+		Login string `json:"login"`
+	} `json:"merged_by"`
 	NodeID       string    `json:"node_id"`
 	State        string    `json:"state"`
 	Draft        bool      `json:"draft"`
@@ -45,6 +48,9 @@ func (j pullJSON) pull() Pull {
 		Merged:  j.MergedAt != nil && *j.MergedAt != "",
 		HeadSHA: j.Head.SHA, HeadRef: j.Head.Ref, BaseRef: j.Base.Ref, BaseSHA: j.Base.SHA,
 		UpdatedAt: j.UpdatedAt, MergeCommitSHA: j.MergeCommit, Mergeable: j.Mergeable,
+	}
+	if j.MergedBy != nil {
+		p.MergedBy = j.MergedBy.Login
 	}
 	if j.Head.Repo != nil {
 		p.HeadRepo = j.Head.Repo.FullName
@@ -118,6 +124,28 @@ func (c *Client) OpenPulls(ctx context.Context, r RepoRef) ([]Pull, error) {
 	}
 	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/pulls",
 		url: pagedURL(base+"/pulls", url.Values{"state": {"open"}})}
+	all, err := listAll[pullJSON](ctx, c, k, "")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Pull, len(all))
+	for i, j := range all {
+		out[i] = j.pull()
+	}
+	return out, nil
+}
+
+// CommitPulls lists the pull requests associated with a commit.
+func (c *Client) CommitPulls(ctx context.Context, repo RepoRef, sha string) ([]Pull, error) {
+	cr, base, err := repo.target()
+	if err != nil {
+		return nil, err
+	}
+	sha, err = escapeSegment(sha)
+	if err != nil {
+		return nil, err
+	}
+	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/commits/{sha}/pulls", url: pagedURL(base+"/commits/"+sha+"/pulls", nil)}
 	all, err := listAll[pullJSON](ctx, c, k, "")
 	if err != nil {
 		return nil, err

@@ -1107,3 +1107,30 @@ func TestSuspendedInstallationIsNotInstalled(t *testing.T) {
 		t.Errorf("InstallationID = %d, %v; want 9", id, err)
 	}
 }
+
+func TestCommitPulls(t *testing.T) {
+	env := muxEnv(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /repos/o/r/commits/{sha}/pulls", func(w http.ResponseWriter, r *http.Request) {
+			switch r.PathValue("sha") {
+			case "merged":
+				p := pullFixture(3, "closed", "done", "o/r", "2026-08-30T09:00:00Z")
+				p["merged_by"] = map[string]any{"login": "merger"}
+				writeJSON(w, http.StatusOK, []any{p})
+			case "empty":
+				writeJSON(w, http.StatusOK, []any{})
+			default:
+				w.WriteHeader(http.StatusNotFound)
+			}
+		})
+	})
+	got, err := env.c.CommitPulls(context.Background(), repoA, "merged")
+	if err != nil || len(got) != 1 || got[0].Number != 3 || !got[0].Merged || got[0].MergedBy != "merger" {
+		t.Fatalf("merged: %+v, %v", got, err)
+	}
+	got, err = env.c.CommitPulls(context.Background(), repoA, "empty")
+	if err != nil || len(got) != 0 {
+		t.Fatalf("empty: %+v, %v", got, err)
+	}
+	_, err = env.c.CommitPulls(context.Background(), repoA, "missing")
+	wantErrIs(t, "missing", err, ErrNotFound)
+}

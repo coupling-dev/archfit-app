@@ -115,6 +115,7 @@ type Pull struct {
 	Number       int
 	Title        string
 	Author       string // the login of the user who opened it
+	MergedBy     string // the login GitHub reports for the merger
 	State        string // "open" | "closed"
 	Merged       bool
 	Draft        bool
