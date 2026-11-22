@@ -8,7 +8,18 @@ import (
 	"strings"
 )
 
-// ActionsSuite finds the GitHub Actions suite for the head commit.
+type setupCheckRun struct {
+	Name string `json:"name"`
+	URL  string `json:"html_url"`
+	App  struct {
+		ID int64 `json:"id"`
+	} `json:"app"`
+	Suite struct {
+		ID int64 `json:"id"`
+	} `json:"check_suite"`
+}
+
+// ActionsSuite finds the archfit job's GitHub Actions suite for the head commit.
 func (c *Client) ActionsSuite(ctx context.Context, repo Repo, head string) (int64, bool, error) {
 	cr, base, err := repo.target()
 	if err != nil {
@@ -17,19 +28,17 @@ func (c *Client) ActionsSuite(ctx context.Context, repo Repo, head string) (int6
 	if !commitSHARE.MatchString(head) {
 		return 0, false, errNotCommitSHA
 	}
-	var data struct {
-		Suites []struct {
-			ID int64 `json:"id"`
-		} `json:"check_suites"`
-	}
-	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/commits/{sha}/check-suites", url: apiURL(base+"/commits/"+head+"/check-suites", url.Values{"app_id": {"15368"}, "per_page": {"1"}})}
-	if err := c.send(ctx, k, &data); err != nil {
+	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/commits/{sha}/check-runs", url: pagedURL(base+"/commits/"+head+"/check-runs", url.Values{"app_id": {"15368"}, "check_name": {"archfit"}})}
+	runs, err := listAll[setupCheckRun](ctx, c, k, "check_runs")
+	if err != nil {
 		return 0, false, err
 	}
-	if len(data.Suites) == 0 {
-		return 0, false, nil
+	for _, r := range runs {
+		if r.Name == "archfit" && r.App.ID == 15368 && r.Suite.ID > 0 {
+			return r.Suite.ID, true, nil
+		}
 	}
-	return data.Suites[0].ID, data.Suites[0].ID > 0, nil
+	return 0, false, nil
 }
 
 // RerequestSuite requests a suite rerun and reports GitHub's status.
@@ -45,6 +54,9 @@ func (c *Client) RerequestSuite(ctx context.Context, repo Repo, id int64) (int, 
 	res, err := c.do(ctx, k)
 	if err != nil {
 		var status *statusError
+		if errors.Is(err, ErrNotFound) {
+			return http.StatusNotFound, err
+		}
 		if errors.As(err, &status) {
 			return status.status, err
 		}
@@ -53,7 +65,7 @@ func (c *Client) RerequestSuite(ctx context.Context, repo Repo, id int64) (int, 
 	return res.status, nil
 }
 
-// RunURL reads the first check run's URL in the Actions suite.
+// RunURL reads the archfit check run's URL in the Actions suite.
 func (c *Client) RunURL(ctx context.Context, repo Repo, id int64) (string, error) {
 	cr, base, err := repo.target()
 	if err != nil {
@@ -62,19 +74,17 @@ func (c *Client) RunURL(ctx context.Context, repo Repo, id int64) (string, error
 	if id <= 0 {
 		return "", errors.New("github: invalid suite ID")
 	}
-	var data struct {
-		Runs []struct {
-			URL string `json:"html_url"`
-		} `json:"check_runs"`
-	}
-	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/check-suites/{id}/check-runs", url: apiURL(base+"/check-suites/"+itoa(id)+"/check-runs", url.Values{"per_page": {"1"}})}
-	if err := c.send(ctx, k, &data); err != nil {
+	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/check-suites/{id}/check-runs", url: pagedURL(base+"/check-suites/"+itoa(id)+"/check-runs", url.Values{"check_name": {"archfit"}})}
+	runs, err := listAll[setupCheckRun](ctx, c, k, "check_runs")
+	if err != nil {
 		return "", err
 	}
-	if len(data.Runs) == 0 || data.Runs[0].URL == "" {
-		return "", ErrNotFound
+	for _, r := range runs {
+		if r.Name == "archfit" && r.App.ID == 15368 && r.URL != "" {
+			return r.URL, nil
+		}
 	}
-	return data.Runs[0].URL, nil
+	return "", ErrNotFound
 }
 
 // HasMarkerComment checks comments authored by this App.

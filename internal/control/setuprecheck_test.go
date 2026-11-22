@@ -3,6 +3,8 @@ package control
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,25 +14,26 @@ import (
 )
 
 type fakeSetupGitHub struct {
-	calls, comments int
-	runCalls        int
-	body            string
-	suite, marker   bool
-	status          int
+	calls, comments              int
+	runCalls                     int
+	body                         string
+	suite, marker                bool
+	status                       int
+	suiteErr, requestErr, runErr error
 }
 
 func (f *fakeSetupGitHub) ActionsSuite(context.Context, api.Repo, string) (int64, bool, error) {
 	f.calls++
-	return 1, f.suite, nil
+	return 1, f.suite, f.suiteErr
 }
 func (f *fakeSetupGitHub) RerequestSuite(context.Context, api.Repo, int64) (int, error) {
 	f.calls++
-	return f.status, nil
+	return f.status, f.requestErr
 }
 func (f *fakeSetupGitHub) RunURL(context.Context, api.Repo, int64) (string, error) {
 	f.calls++
 	f.runCalls++
-	return "https://github.com/o/r/actions/runs/1/job/2", nil
+	return "https://github.com/o/r/actions/runs/1/job/2", f.runErr
 }
 func (f *fakeSetupGitHub) HasMarkerComment(context.Context, api.Repo, int) (bool, error) {
 	f.calls++
@@ -73,7 +76,7 @@ func TestSetupRecheck(t *testing.T) {
 				}
 			}
 			got, err := s.Run(ctx, repo, 7, "head")
-			if err != nil || got != tt.want {
+			if (err != nil && tt.want != "busy") || (err == nil && tt.want == "busy") || got != tt.want {
 				t.Fatalf("Run = %q, %v; want %q", got, err, tt.want)
 			}
 			if !tt.suite && gh.runCalls != 0 {
@@ -164,5 +167,47 @@ func TestSetupRecheckInstallationEvent(t *testing.T) {
 				t.Fatalf("calls = %d, want %d", gh.calls, tt.want*2)
 			}
 		})
+	}
+}
+
+func TestSetupRecheckFailures(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		gh       fakeSetupGitHub
+		wantErr  bool
+		fallback bool
+	}{
+		{"suite network", fakeSetupGitHub{suiteErr: errors.New("network")}, true, false},
+		{"request network", fakeSetupGitHub{suite: true, requestErr: errors.New("network")}, true, false},
+		{"request 500", fakeSetupGitHub{suite: true, status: 500, requestErr: errors.New("server")}, true, false},
+		{"empty runs", fakeSetupGitHub{suite: true, status: 403, requestErr: errors.New("forbidden"), runErr: api.ErrNotFound}, false, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			gh := tt.gh
+			s := setupRecheck{store: store.NewMemory(), gh: &gh, now: time.Now}
+			repo := api.Repo{RepoRef: api.RepoRef{InstallationID: 1, FullName: "o/r"}, ID: 1}
+			_, err := s.Run(context.Background(), repo, 1, "head")
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v", err)
+			}
+			if tt.fallback && !strings.Contains(gh.body, "/actions/workflows/archfit.yaml") {
+				t.Fatalf("body = %q", gh.body)
+			}
+			if tt.wantErr && gh.comments != 0 {
+				t.Fatal("comment on transient error")
+			}
+		})
+	}
+}
+
+func TestSetupRecheckCreatedWithoutRepositories(t *testing.T) {
+	h := newHarness(t)
+	h.gh.install(7, ghr(70, "org7/app", true))
+	gh := &fakeSetupGitHub{suite: true, status: 201}
+	h.c.setup = &setupRecheck{store: store.NewMemory(), gh: gh, now: time.Now}
+	h.c.setupPulls = fakeSetupPulls{"org7/app": {{Number: 7, HeadSHA: "head", HeadRef: "archfit/setup", HeadRepoID: 70}}}
+	err := h.c.HandleEvent(context.Background(), webhook.Event{Kind: webhook.InstallationAdded, InstallationID: 7, Account: "org7", InstallationCreated: true, RepositoriesOmitted: true})
+	if err != nil || gh.calls != 2 {
+		t.Fatalf("calls %d, err %v", gh.calls, err)
 	}
 }

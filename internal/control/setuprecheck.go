@@ -58,7 +58,7 @@ func (s setupRecheck) Run(ctx context.Context, repo api.Repo, pr int, head strin
 				return "done", nil
 			}
 			if s.now().Before(old.Expires) {
-				return "busy", nil
+				return "busy", errors.New("setup recheck: lease busy")
 			}
 		}
 		mine, err = json.Marshal(setupLease{Token: rand.Text(), Expires: s.now().Add(setupLeaseTTL)})
@@ -96,11 +96,17 @@ func (s setupRecheck) Run(ctx context.Context, repo api.Repo, pr int, head strin
 
 func (s setupRecheck) check(ctx context.Context, repo api.Repo, pr int, head string) (string, error) {
 	id, found, err := s.gh.ActionsSuite(ctx, repo, head)
-	if err == nil && found {
+	if err != nil {
+		return "failed", fmt.Errorf("setup recheck: suite lookup: %v", err)
+	}
+	if found {
 		status, callErr := s.gh.RerequestSuite(ctx, repo, id)
 		slog.InfoContext(ctx, "setup suite rerequest", "repository", repo.FullName, "pr", pr, "status", status)
 		if callErr == nil && status == 201 {
 			return "rerequested", nil
+		}
+		if status < 400 || status >= 500 {
+			return "failed", fmt.Errorf("setup recheck: rerequest status %d: %v", status, callErr)
 		}
 	}
 	marked, err := s.gh.HasMarkerComment(ctx, repo, pr)
@@ -113,11 +119,16 @@ func (s setupRecheck) check(ctx context.Context, repo api.Repo, pr int, head str
 	var body string
 	if found {
 		url, err := s.gh.RunURL(ctx, repo, id)
-		if err != nil {
+		if errors.Is(err, api.ErrNotFound) {
+			found = false
+		} else if err != nil {
 			return "failed", err
 		}
-		body = setupMarker + "\n## Archfit is installed. The check has not started.\n\nGitHub did not let the App start the check on this pull request. Re-run it: " + url + "\nAfter it runs, the check shows \"merge to start\"."
-	} else {
+		if found {
+			body = setupMarker + "\n## Archfit is installed. The check has not started.\n\nGitHub did not let the App start the check on this pull request. Re-run it: " + url + "\nAfter it runs, the check shows \"merge to start\"."
+		}
+	}
+	if !found {
 		body = setupMarker + "\n## Archfit is installed. The check has not started.\n\nRe-run the archfit workflow, or push a new commit: https://github.com/" + repo.FullName + "/actions/workflows/archfit.yaml"
 	}
 	if err := s.gh.Comment(ctx, repo, pr, body); err != nil {

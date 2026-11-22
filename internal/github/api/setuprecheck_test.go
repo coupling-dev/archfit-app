@@ -15,21 +15,21 @@ func TestSetupRecheckAdapter(t *testing.T) {
 		status int
 		marker bool
 	}{
-		{"accepted", `{"check_suites":[{"id":12}]}`, 201, true},
-		{"refused", `{"check_suites":[{"id":12}]}`, 403, false},
-		{"no suite", `{"check_suites":[]}`, 201, false},
+		{"accepted", `{"check_runs":[{"id":2,"name":"archfit","app":{"id":15368},"check_suite":{"id":12}}]}`, 201, true},
+		{"refused", `{"check_runs":[{"id":2,"name":"archfit","app":{"id":15368},"check_suite":{"id":12}}]}`, 403, false},
+		{"no suite", `{"check_runs":[]}`, 201, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			env := muxEnv(t, func(mux *http.ServeMux) {
-				mux.HandleFunc("GET /repos/o/r/commits/{sha}/check-suites", func(w http.ResponseWriter, r *http.Request) {
-					if r.URL.Query().Get("app_id") != "15368" {
+				mux.HandleFunc("GET /repos/o/r/commits/{sha}/check-runs", func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Query().Get("app_id") != "15368" || r.URL.Query().Get("check_name") != "archfit" {
 						t.Error("wrong app_id")
 					}
 					_, _ = fmt.Fprint(w, tt.suites)
 				})
 				mux.HandleFunc("POST /repos/o/r/check-suites/12/rerequest", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(tt.status) })
 				mux.HandleFunc("GET /repos/o/r/check-suites/12/check-runs", func(w http.ResponseWriter, _ *http.Request) {
-					_, _ = fmt.Fprint(w, `{"check_runs":[{"html_url":"https://github.com/o/r/actions/runs/1/job/2"}]}`)
+					_, _ = fmt.Fprint(w, `{"check_runs":[{"name":"ci","html_url":"https://github.com/o/r/actions/runs/1/job/1"},{"name":"archfit","app":{"id":15368},"html_url":"https://github.com/o/r/actions/runs/1/job/2"}]}`)
 				})
 				mux.HandleFunc("GET /app", func(w http.ResponseWriter, _ *http.Request) { _, _ = fmt.Fprint(w, `{"id":10,"slug":"archfit"}`) })
 				mux.HandleFunc("GET /repos/o/r/issues/7/comments", func(w http.ResponseWriter, _ *http.Request) {

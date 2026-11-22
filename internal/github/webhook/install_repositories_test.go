@@ -29,3 +29,10 @@ func TestInstallationAddedRepositories(t *testing.T) {
 		})
 	}
 }
+
+func TestInstallationCreatedWithoutRepositoryList(t *testing.T) {
+	ev, err := Parse("installation", "d", []byte(`{"action":"created","installation":{"id":1}}`))
+	if err != nil || !ev.InstallationCreated || len(ev.AddedRepositories) != 0 {
+		t.Fatalf("event = %+v, %v", ev, err)
+	}
+}

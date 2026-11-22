@@ -20,14 +20,14 @@ func (c *Control) HandleEvent(ctx context.Context, e webhook.Event) error {
 	if e.InstallationID <= 0 {
 		return errors.New("control: event without an installation ID")
 	}
-	ctx, cancel := context.WithTimeout(ctx, eventTimeout)
-	defer cancel()
 	switch e.Kind {
 	case webhook.InstallationAdded, webhook.ReposRemoved:
+		discovery, cancel := context.WithTimeout(ctx, eventTimeout)
+		defer cancel()
 		// An account waiting for approval costs no GitHub call and gets no entitlement record, so its trial starts when
 		// it is approved: the first sweep after the approval observes it. An event without an account is judged by
 		// the installation's record alone: only a configured login admits without one.
-		admitted, err := c.admit.Admitted(ctx, e.InstallationID, e.Account)
+		admitted, err := c.admit.Admitted(discovery, e.InstallationID, e.Account)
 		if err != nil {
 			return fmt.Errorf("control: read admission of installation %d: %w", e.InstallationID, err)
 		}
@@ -35,11 +35,11 @@ func (c *Control) HandleEvent(ctx context.Context, e webhook.Event) error {
 			return nil
 		}
 		// hasPrivate is read from GitHub: installation events carry no repository.
-		repos, err := c.repos.ListRepos(ctx, e.InstallationID)
+		repos, err := c.repos.ListRepos(discovery, e.InstallationID)
 		if err != nil {
 			return fmt.Errorf("control: list repositories of installation %d: %w", e.InstallationID, err)
 		}
-		if err := c.account.Observe(ctx, e.InstallationID, hasPrivate(repos), c.now()); err != nil {
+		if err := c.account.Observe(discovery, e.InstallationID, hasPrivate(repos), c.now()); err != nil {
 			return fmt.Errorf("control: observe installation %d: %w", e.InstallationID, err)
 		}
 		if e.Kind == webhook.InstallationAdded && c.setup != nil {
@@ -147,22 +147,32 @@ type setupPullLister interface {
 
 func (c *Control) recheckAdded(ctx context.Context, e webhook.Event, repos []api.Repo) error {
 	for _, repo := range repos {
-		if !slices.Contains(e.AddedRepositories, repo.FullName) {
+		if (!e.InstallationCreated || !e.RepositoriesOmitted) && !slices.Contains(e.AddedRepositories, repo.FullName) {
 			continue
 		}
-		pulls, err := c.setupPulls.SetupPulls(ctx, repo.RepoRef)
+		repoCtx, cancel := context.WithTimeout(ctx, eventTimeout)
+		err := c.recheckRepo(repoCtx, repo)
+		cancel()
 		if err != nil {
 			return err
 		}
-		for _, p := range pulls {
-			if p.HeadRepoID != repo.ID || p.HeadRef != "archfit/setup" {
-				continue
-			}
-			outcome, err := c.setup.Run(ctx, repo, p.Number, p.HeadSHA)
-			slog.InfoContext(ctx, "setup recheck", "repository", repo.FullName, "pr", p.Number, "outcome", outcome)
-			if err != nil {
-				return err
-			}
+	}
+	return nil
+}
+
+func (c *Control) recheckRepo(ctx context.Context, repo api.Repo) error {
+	pulls, err := c.setupPulls.SetupPulls(ctx, repo.RepoRef)
+	if err != nil {
+		return err
+	}
+	for _, p := range pulls {
+		if p.HeadRepoID != repo.ID || p.HeadRef != "archfit/setup" {
+			continue
+		}
+		outcome, err := c.setup.Run(ctx, repo, p.Number, p.HeadSHA)
+		slog.InfoContext(ctx, "setup recheck", "repository", repo.FullName, "pr", p.Number, "outcome", outcome)
+		if err != nil {
+			return err
 		}
 	}
 	return nil
