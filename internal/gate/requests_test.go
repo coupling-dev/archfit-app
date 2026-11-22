@@ -170,7 +170,7 @@ func TestARequestLineOpensAnIssueAndSetsWaiting(t *testing.T) {
 	}
 	clean(t, reply)
 	comment := w.gh.comments[pullKey(shopName, 7)][0].Body
-	if !strings.Contains(comment, "## ⏳ Archfit: waiting, request #1000") || !strings.Contains(comment, "**Owner:** answer #1000.") {
+	if !strings.Contains(comment, "## ⏳ Archfit: waiting, request #1000") || !strings.Contains(comment, "**Next: an owner answers request #1000**") {
 		t.Errorf("check comment:\n%s", comment)
 	}
 	if rec, _ := w.pullRecord(p); rec.Status != "waiting" {

@@ -1,0 +1,23 @@
+{
+  "state": "not_set_up",
+  "status": "Merge the setup pull request to start the checks.",
+  "setup": {
+    "approval": {
+      "status": "needed",
+      "kind": "first",
+      "pull_request": 12,
+      "href": "https://github.com/acme/app/pull/12"
+    },
+    "passkey_known": true,
+    "admitted": false,
+    "policy": false,
+    "workflow": false,
+    "passkey": true,
+    "open_pull": 0,
+    "state": "first_approval",
+    "missing": [],
+    "first_pull": 12,
+    "setup_pull": 12,
+    "rules": []
+  }
+}

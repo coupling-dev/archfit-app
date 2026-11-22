@@ -141,6 +141,10 @@ func TestThePullRequestCheckCarriesTheStoryLine(t *testing.T) {
 	if err := h.pub.Publish4(context.Background(), pub4(prTarget(headB), 7, 1, waiting)); err != nil {
 		t.Fatal(err)
 	}
+	body := h.comments.all()[0].Body
+	if !strings.Contains(body, "✓ change → ✗ check → ● **ask #40**") || !strings.Contains(body, "@alexei-led answers request #40") {
+		t.Fatalf("comment missing story: %s", body)
+	}
 	s := parseStory(t, h.checks.latest(t, headB, gateCheck).Text)
 	if s.Request != 40 || s.WaitingFor != "alexei-led" || s.Steps.Ask != stepCurrent || !slices.Equal(asked, []int{40}) {
 		t.Fatalf("story %+v, asked %v", s, asked)
@@ -165,5 +169,140 @@ func TestAPushCheckHasNoStoryLine(t *testing.T) {
 	}
 	if text := h.checks.latest(t, headA, gateCheck).Text; text != "" {
 		t.Fatalf("push check text %q", text)
+	}
+}
+
+func TestCommentTopLineFollowsTheStory(t *testing.T) {
+	r := result.Result{Status: result.StatusWaiting, Errors: []result.Error{{Path: "a.go", Line: 1, Rule: "graph", What: "x", Next: result.Next{Kind: nextWait, Text: "wait for an owner: #40"}}}}
+	v := newView(r)
+	s := storyOf(v, &StoryFacts{State: records.StateOpen, Owner: "alexei-led"})
+	v.story = &s
+	v.requestURL = "https://example.com/r/acme/repo/requests/40"
+	got := v.comment(65536)
+	want := "✓ change → ✗ check → ● **ask #40** → ○ answer → ○ policy → ○ re-check\n\n**Next: @alexei-led answers request #40** (1 minute, passkey): https://example.com/r/acme/repo/requests/40\nAfter the answer, the App updates the policy and this check runs again. Nothing for the author to do."
+	if !strings.HasPrefix(got, want) {
+		t.Errorf("comment starts with %q, want %q", got, want)
+	}
+}
+
+func TestCommentOtherStoryRows(t *testing.T) {
+	wait := result.Next{Kind: nextWait, Text: "wait for an owner: #40"}
+	for _, tc := range []struct {
+		name          string
+		status        result.Status
+		next          result.Next
+		facts         *StoryFacts
+		page          bool
+		row, nextText string
+	}{
+		{"no owner", result.StatusWaiting, wait, &StoryFacts{State: records.StateOpen}, false, "● **ask #40**", "an owner answers request #40"},
+		{"ask", result.StatusFail, result.Next{Kind: nextCommand, Text: "archfit request -m why"}, nil, false, "● **ask**", "the author asks an owner"},
+		{"fix", result.StatusFail, result.Next{Kind: nextFix, Text: "fix the code"}, nil, false, "✗ check", "the author fixes the code"},
+		{"policy", result.StatusWaiting, wait, &StoryFacts{State: records.StateAnswered, PolicyPull: 44}, false, "● **policy**", "policy pull request #44"},
+		{"recheck", result.StatusWaiting, wait, &StoryFacts{State: records.StateAnswered, PolicyMerged: true}, false, "● **re-check**", "updated policy"},
+		{"pass", result.StatusPass, result.Next{}, nil, false, "✓ check", ""},
+		{"unknown", result.StatusUnknown, result.Next{}, nil, false, "● **check**", ""},
+		{"owner page", result.StatusWaiting, wait, &StoryFacts{State: records.StateOpen}, true, "● **ask #40**", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := result.Result{Status: tc.status}
+			if tc.next.Kind != "" {
+				r.Errors = []result.Error{{Next: tc.next}}
+			}
+			v := newView(r)
+			s := storyOf(v, tc.facts)
+			v.story = &s
+			if tc.facts != nil {
+				v.policyPull = tc.facts.PolicyPull
+			}
+			if tc.page {
+				v.next = &nextLink{label: "answer", role: "owner", url: "https://example.com"}
+			}
+			body := v.comment(maxBody)
+			if !strings.Contains(body, tc.row) || (tc.nextText != "" && !strings.Contains(body, tc.nextText)) {
+				t.Errorf("unexpected comment: %s", body)
+			}
+			if strings.Count(body, "**Next:") > 1 {
+				t.Errorf("multiple next lines: %s", body)
+			}
+		})
+	}
+}
+
+func TestCommentHeaderMentionsAtMostOnePerson(t *testing.T) {
+	r := result.Result{Status: result.StatusWaiting, Summary: "waiting for @oscar", Errors: []result.Error{{
+		What: "Ask @oscar", Why: "Ask @acme/team, &#64;oscar, &#x040;oscar or &commat;oscar", Next: result.Next{Kind: nextWait, Text: "wait for an owner: #40"},
+	}}}
+	v := newView(r)
+	s := storyOf(v, &StoryFacts{State: records.StateOpen, Owner: "alexei-led"})
+	v.story = &s
+	body := v.comment(maxBody)
+	if strings.Count(body, "@alexei-led") != 1 || strings.Contains(body, "@oscar") || strings.Contains(body, "@acme/team") {
+		t.Errorf("unexpected mentions: %s", body)
+	}
+	if !strings.Contains(body, "Ask @\u200boscar") || !strings.Contains(body, "&#64;\u200boscar") ||
+		!strings.Contains(body, "&#x040;\u200boscar") || !strings.Contains(body, "&commat;\u200boscar") {
+		t.Errorf("producer prose was not preserved: %s", body)
+	}
+}
+
+func TestCommentKeepsTheOtherRequestsActionable(t *testing.T) {
+	r := result.Result{Status: result.StatusWaiting, Errors: []result.Error{
+		{Rule: "first", Next: result.Next{Kind: nextWait, Text: "wait for an owner: #40"}},
+		{Rule: "second", Next: result.Next{Kind: nextWait, Text: "wait for an owner: #41"}},
+	}}
+	v := newView(r)
+	s := storyOf(v, &StoryFacts{State: records.StateOpen, Owner: "alexei-led"})
+	v.story = &s
+	body := v.comment(maxBody)
+	if !strings.Contains(body, "**second**\n- next: wait for an owner: #41") ||
+		strings.Contains(body, "- next: wait for an owner: #40") || strings.Count(body, "**Next:") != 1 ||
+		strings.Count(body, "@alexei-led") != 1 {
+		t.Errorf("comment does not distinguish primary and secondary requests: %s", body)
+	}
+}
+
+func TestStoryMentionOnRepublishAndNewRun(t *testing.T) {
+	h := newHarness(headB)
+	h.pub = New4(h.checks, h.comments, h.pulls, h.store, appURL, h.clock.now, nil, func(context.Context, api.Repo, int) (StoryFacts, error) {
+		return StoryFacts{State: records.StateOpen, Owner: "alexei-led"}, nil
+	})
+	r := result.Result{Status: result.StatusWaiting, Errors: []result.Error{{Next: result.Next{Kind: nextWait, Text: "wait for an owner: #40"}}}}
+	p := pub4(prTarget(headB), 7, 1, r)
+	if err := h.pub.Publish4(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.pub.Publish4(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if n := h.comments.count("UpdateComment"); n != 0 {
+		t.Fatalf("identical publication updated comment %d times", n)
+	}
+	p.RunID = 8
+	if err := h.pub.Publish4(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if n := h.comments.count("UpdateComment"); n != 1 {
+		t.Fatalf("new run updated comment %d times", n)
+	}
+	if comments := h.comments.all(); len(comments) != 1 || strings.Count(comments[0].Body, "@alexei-led") != 1 {
+		t.Fatalf("comments: %+v", comments)
+	}
+}
+
+func TestStoryCommentPreservesCopyableLiterals(t *testing.T) {
+	r := result.Result{Status: result.StatusWaiting, Errors: []result.Error{
+		{Path: "src/@shared/widget.ts", Next: result.Next{Kind: nextWait, Text: "wait for an owner: #40"}},
+		{Next: result.Next{Kind: nextCommand, Text: "npm install @acme/lib"}},
+	}}
+	v := newView(r)
+	s := storyOf(v, nil)
+	v.story = &s
+	v.next = &nextLink{label: "answer", url: "https://app.example/requests/@owner", role: "owner"}
+	body := v.comment(maxBody)
+	for _, literal := range []string{"`src/@shared/widget.ts`", "`npm install @acme/lib`", "](https://app.example/requests/@owner)"} {
+		if !strings.Contains(body, literal) {
+			t.Errorf("comment lost %q: %s", literal, body)
+		}
 	}
 }
