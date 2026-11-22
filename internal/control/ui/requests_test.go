@@ -64,7 +64,7 @@ func TestRequestAPIShowsTheRequest(t *testing.T) {
 			map[string]any{"name": "pkg_tc", "layer": "adapters", "depends_on": []any{"pkg_net"}},
 			map[string]any{"name": "pkg_util", "depends_on": []any{}},
 		},
-		"layers": []any{}, "allowed": false,
+		"layers": []any{}, "allowed": false, "waiting": []any{},
 		"earlier": []any{map[string]any{"kind": "deny", "rule": "no-util-to-tc", "from": "pkg_util", "to": "pkg_tc",
 			"why": "Util stays at the bottom.", "instead": "Pass a value in."}},
 	}
@@ -146,7 +146,8 @@ func TestRequestAPIGoldens(t *testing.T) {
 	base := gate.RequestView{IssueHref: "https://github.com/" + repoName + "/issues/431", Number: 431, State: "open", Reason: "Need the helper.", Rule: "graph", From: "app", To: "util",
 		Record: "app.go:3 graph app -> util\n  balance: 9/10 (min 7)\n", Numbers: gate.RequestNumbers{Verified: true, Balance: &gate.RequestBalance{Score: 9, Max: 10, Min: 7}},
 		Dependencies: []gate.RequestDependency{{Kind: gate.EarlierDeny, Rule: "no-util-to-app", From: "util", To: "app"}},
-		Policy:       true, Layers: []string{"outer", "core"}, Modules: []gate.RequestModule{{Name: "app", Layer: "outer", Volatility: "high"}, {Name: "util", Layer: "core", Volatility: "low"}}}
+		Policy:       true, Layers: []string{"outer", "core"}, Modules: []gate.RequestModule{{Name: "app", Layer: "outer", Volatility: "high"}, {Name: "util", Layer: "core", Volatility: "low"}},
+		Waiting: []int{12}}
 	for _, tc := range []struct {
 		name string
 		view gate.RequestView

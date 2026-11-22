@@ -215,6 +215,12 @@ export function effectLines(
   return out;
 }
 
+// effectLead splits an effect line into its lead, shown strong, and the rest: "Adds 1 line" | " to the policy: …".
+export function effectLead(line: string): [string, string] {
+  const m = /^(Adds (?:\d+ lines?|an exception|a rule)|Changes nothing)/.exec(line);
+  return m ? [m[1], line.slice(m[1].length)] : ['', line];
+}
+
 // defaultUntil is the date an "allow until a date" answer offers first: 90 days from today, in UTC.
 export function defaultUntil(today: Date): string {
   return new Date(today.getTime() + 90 * 86_400_000).toISOString().slice(0, 10);

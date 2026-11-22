@@ -10,7 +10,12 @@
 
 <ol class="story" aria-label="Story of the change">
   {#each labels as label, i (label)}
-    <li class={steps[i]} aria-current={steps[i] === 'current' ? 'step' : undefined}>
+    <li
+      class:done={steps[i] === 'done'}
+      class:failed={steps[i] === 'failed'}
+      class:current={steps[i] === 'current'}
+      class:skipped={steps[i] === 'skipped'}
+      aria-current={steps[i] === 'current' ? 'step' : undefined}>
       <span class="mark" aria-hidden="true">{marks[steps[i]]}</span>{label}{i === 2 && ask && steps[i] !== 'skipped' ? ` ${ask}` : ''}<span
         class="sr-only">: {words[steps[i]]}</span
       >

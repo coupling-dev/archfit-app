@@ -37,7 +37,7 @@ var sentinels = []struct {
 	{session.ErrForbidden, http.StatusNotFound, "not_found", "Not found."},
 	{api.ErrNotFound, http.StatusNotFound, "not_found", "Not found."},
 	{gate.ErrNoRequest, http.StatusNotFound, "not_found", "Not found."},
-	{gate.ErrClosedRequest, http.StatusConflict, "request_closed", "This request is answered or closed. Reload the page."},
+	{gate.ErrClosedRequest, http.StatusConflict, "request_closed", "This request was answered or closed while you looked. The page now shows its answer."},
 	{gate.ErrAnswer, http.StatusUnprocessableEntity, "answer",
 		"Choose an answer: approve, approve until a date (YYYY-MM-DD), or reject with what to do instead."},
 	{gate.ErrNoPolicy, http.StatusConflict, "no_policy",

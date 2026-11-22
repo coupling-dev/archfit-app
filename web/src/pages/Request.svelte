@@ -29,6 +29,7 @@
     defaultUntil,
     dependency,
     earlierLine,
+    effectLead,
     effectLines,
     loosens,
     moduleLine,
@@ -71,14 +72,15 @@
   const reads: Record<AnswerKind, number> = { approve: 0, 'approve-until': 0, reject: 0, 'declare-public': 0, 'declare-model': 0 };
   let decision = $derived(selected ? decisionState(selected, previews[selected].preview) : null);
 
-  function load(first = false) {
+  // own is true when the owner's answer caused the read: the page then shows no "answered while you looked" for it.
+  function load(first = false, own = false) {
     const path = api(`requests/${route.number}`);
     (first ? firstJSON<RequestView>(path) : getJSON<RequestView>(path)).then(
       (b) => {
         const before = body;
         body = b;
         if (b.state === 'open' && b.policy) void previewAll(before);
-        else if (before) changed = changedWhileOpen(before, b, false);
+        else if (before && !own) changed = changedWhileOpen(before, b, false);
       },
       (e: ApiError) => {
         if (!body) failure = explainLoad(e, here);
@@ -136,7 +138,7 @@
       }
       answered = await postJSON<Answered>(api(`requests/${route.number}/answer`), session.csrf, token ? { ...sent, token } : sent);
       changed = '';
-      load();
+      load(false, true);
     } catch (e) {
       answerError = passkeyFailure(e) ?? explain(e as ApiError, here);
       // An answer refused because the request or the policy moved is shown with the new state, not as a dead end.
@@ -154,7 +156,7 @@
     if (a.kind === 'approve-until') return `Allowed until ${a.until}.` + owner;
     if (a.kind === 'declare-public') return 'Made public.' + owner;
     if (a.kind === 'declare-model') return 'Declared as shared model.' + owner;
-    return `Rejected. What to do instead: ${a.instead}.` + owner;
+    return `Rejected. What to do instead: ${(a.instead ?? '').replace(/\.$/, '')}.` + owner;
   }
 </script>
 
@@ -171,10 +173,12 @@
     <div class="stack-sm">
       <h1>{question(body)}</h1>
       <p class="lede">
-        <span class="status {status.tone}">{status.word}</span>
-        Request #{body.number}. {status.line}
+        {#if body.state !== 'open'}<span class="status {status.tone}">{status.word}</span>{/if}
+        Request #{body.number}. The author says: “{body.reason}”{#if body.state === 'open' && body.waiting?.length}
+          {' '}Pull request {body.waiting.map((n) => `#${n}`).join(', ')}
+          {body.waiting.length === 1 ? 'waits' : 'wait'} for your answer.{/if}
       </p>
-      <p class="small">The author says: “{body.reason}”</p>
+      {#if body.state !== 'open' || status.line !== 'Waiting for an owner to answer.'}<p class="small">{status.line}</p>{/if}
     </div>
   </div>
 
@@ -182,15 +186,14 @@
 
   {#if changed}<Banner role="status">{changed}</Banner>{/if}
 
-  <section class="box" aria-labelledby="evidence">
-    <div class="box-head"><h2 class="title-box" id="evidence">Evidence</h2></div>
+  <section class="box" aria-label="Evidence">
     <dl class="evidence">
       <dt>Where</dt>
       <dd><code class="codeline">{where}</code></dd>
       <dt>The rule</dt>
       <dd>
         {#if body.surface?.package}<code>{body.surface.package}</code> is past the public part of <code>{body.to}</code>.
-        {:else}The policy does not allow <code>{dependency(body)}</code> (rule <code>{body.rule}</code>).{/if}
+        {:else}The policy does not allow <code>{dependency(body).replace(' -> ', ' → ')}</code> (rule <code>{body.rule}</code>).{/if}
         {#if body.allowed}The policy already allows this dependency.{/if}
       </dd>
       {#if balance}<dt>Balance</dt><dd>{balance}</dd>{/if}
@@ -212,18 +215,20 @@
             <label class="answer" class:selected={selected === kind}>
               <input type="radio" name="answer" value={kind} bind:group={selected} disabled={busy} />
               <span class="stack-sm">
-                <span class="name">{title}</span>
                 {#if kind === 'approve-until'}
-                  <span class="field">
-                    Ends on
+                  <span class="name field">
+                    Allow until
                     <input class="form-control date" type="text" aria-label="The exception ends on (yyyy-mm-dd)" placeholder="yyyy-mm-dd"
                       bind:value={until} disabled={busy} oninput={() => preview('approve-until')} />
                   </span>
-                {/if}
+                {:else}<span class="name">{title}</span>{/if}
                 <span class="effects">
-                  {#each effectLines(kind, body, shown.preview, until) as line (line)}<span>{line}</span>{/each}
+                  {#each effectLines(kind, body, shown.preview, until) as line (line)}
+                    {@const [lead, rest] = effectLead(line)}
+                    <span>{#if lead}<strong>{lead}</strong>{/if}{rest}</span>
+                  {/each}
                 </span>
-                {#if kind === 'reject' && selected === 'reject'}
+                {#if kind === 'reject'}
                   <textarea class="form-control" rows="2" maxlength="500" aria-label="What to do instead" placeholder="Instead: …"
                     bind:value={instead} disabled={busy} oninput={() => preview('reject')}></textarea>
                 {/if}
@@ -239,38 +244,36 @@
           </label>
         {/each}
 
-        {#if selected && decision}
-          {@const p = previews[selected].preview}
-          {#if decision.ready && p}
-            <Disclosure summary="Show the change to the policy and the pull requests">
-              <div class="stack-sm small">
-                {#if p.diff}<Diff text={p.diff} label="The change to .archfit.yaml" />{:else}<p>It writes no line in <code>.archfit.yaml</code>.</p>{/if}
-                {#if p.pulls.length}
-                  <ul class="plain stack-sm" aria-label="Open pull requests">
-                    {#each p.pulls as e (e.number)}
-                      <li>
-                        {pullLine(e)} · <a href={repoPage(route.fullName, `/pull/${e.number}`)}>in Archfit</a> · <a href={`${github}/pull/${e.number}`}
-                          >on GitHub</a
-                        >
-                      </li>
-                    {/each}
-                  </ul>
-                {/if}
-              </div>
-            </Disclosure>
-          {/if}
-          <div class="confirm">
-            <button class="btn primary" type="button" disabled={busy || !decision.ready || !!answerProblem(selected, until, instead)}
-              onclick={() => selected && answer(selected)}>{decision.confirm}</button>
-            <span class="small muted">
-              {#if answerProblem(selected, until, instead)}{answerProblem(selected, until, instead)}
-              {:else if loosens(selected)}Your passkey confirms this one answer. <a class="inline" href={repoPage(route.fullName, '/passkeys?return=' + encodeURIComponent(here))}>Your passkeys</a>
-              {:else}No passkey: a reject does not loosen the policy.{/if}
-            </span>
-          </div>
-        {:else}
-          <p class="small muted">Choose an answer. Nothing changes until you confirm it.</p>
+        {@const p = selected && decision?.ready ? previews[selected].preview : undefined}
+        {#if p}
+          <Disclosure summary="Show the change to the policy and the pull requests">
+            <div class="stack-sm small">
+              {#if p.diff}<Diff text={p.diff} label="The change to .archfit.yaml" />{:else}<p>It writes no line in <code>.archfit.yaml</code>.</p>{/if}
+              {#if p.pulls.length}
+                <ul class="plain stack-sm" aria-label="Open pull requests">
+                  {#each p.pulls as e (e.number)}
+                    <li>
+                      {pullLine(e)} · <a class="inline" href={repoPage(route.fullName, `/pull/${e.number}`)}>in Archfit</a> · <a class="inline"
+                        href={`${github}/pull/${e.number}`}>on GitHub</a
+                      >
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+          </Disclosure>
         {/if}
+        {@const problem = selected ? answerProblem(selected, until, instead) : ''}
+        <div class="confirm">
+          <button class="btn primary" type="button" disabled={busy || !selected || !decision?.ready || !!problem}
+            onclick={() => selected && answer(selected)}>{decision?.confirm ?? 'Answer with passkey'}</button>
+          <span class="small muted">
+            {#if !selected}Choose an answer. Nothing changes until you confirm it.
+            {:else if problem}{problem}
+            {:else if loosens(selected)}Your passkey confirms this one answer. <a class="inline" href={repoPage(route.fullName, '/passkeys?return=' + encodeURIComponent(here))}>Your passkeys</a>
+            {:else}No passkey: a reject does not loosen the policy.{/if}
+          </span>
+        </div>
         <p class="small muted">
           Need to change something that is not a request? <a class="inline" href={repoPage(route.fullName, '/policy')}>Advanced: edit the policy file</a>
         </p>
@@ -348,7 +351,8 @@
   }
   .answer:hover { border-color: var(--fg-muted); }
   .answer.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-border); background: var(--accent-subtle); }
-  .answer input[type='radio'] { margin-top: 3px; accent-color: var(--accent); }
+  .answer input[type='radio'] { margin-top: 3px; align-self: start; accent-color: var(--accent); }
+  .effects :global(strong) { color: var(--fg); font-weight: 600; }
   .name { font-weight: 600; font-size: 15px; }
   .effects { display: flex; flex-direction: column; gap: 2px; color: var(--fg-muted); font-size: 13px; }
   .field { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }

@@ -35,6 +35,8 @@ type requestJSON struct {
 	// Surface is set for a surface request (engine 0.9.0): the declared parts of to, and the package past them that a
 	// declaration adds; without a package the page offers no declaration.
 	Surface *requestSurfaceJSON `json:"surface,omitempty"`
+	// Waiting are the pull requests waiting on this request: the answer page names them under its question.
+	Waiting []int `json:"waiting"`
 }
 
 type requestSurfaceJSON struct {
@@ -114,7 +116,7 @@ func (s *server) apiRequest(r *http.Request, sc scope) (any, error) {
 	}
 	body := requestJSON{IssueHref: v.IssueHref, Number: v.Number, State: v.State, Reason: v.Reason, Rule: v.Rule, Path: v.Path, From: v.From,
 		To: v.To, Expires: v.Expires, Record: v.Record, Verified: v.Numbers.Verified, Policy: v.Policy, Allowed: v.Allowed,
-		Dependencies: []requestDependencyJSON{}, Layers: append([]string{}, v.Layers...), Modules: []moduleJSON{}, Earlier: []earlierJSON{}}
+		Dependencies: []requestDependencyJSON{}, Layers: append([]string{}, v.Layers...), Modules: []moduleJSON{}, Earlier: []earlierJSON{}, Waiting: append([]int{}, v.Waiting...)}
 	for _, d := range v.Dependencies {
 		body.Dependencies = append(body.Dependencies, requestDependencyJSON{Kind: d.Kind, Rule: d.Rule, From: d.From, To: d.To, Expires: d.Expires})
 	}

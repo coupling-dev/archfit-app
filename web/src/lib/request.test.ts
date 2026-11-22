@@ -21,6 +21,7 @@ import {
   effectLines,
   defaultUntil,
   changedWhileOpen,
+  effectLead,
 } from './request';
 
 const open: RequestView = {
@@ -307,6 +308,19 @@ describe('effectLines', () => {
     ['reject', p('reject', ''), ['Changes nothing in the policy. The author sees what you say to do instead.']],
   ] as const)('%s', (kind, preview, want) => {
     expect(effectLines(kind, r, preview, '2027-02-20')).toEqual(want);
+  });
+});
+
+describe('effectLead', () => {
+  it.each([
+    ['Adds 1 line to the policy: a may depend on b.', ['Adds 1 line', ' to the policy: a may depend on b.']],
+    ['Adds 2 lines: x.', ['Adds 2 lines', ': x.']],
+    ['Adds an exception for this one place.', ['Adds an exception', ' for this one place.']],
+    ['Adds a rule: a may not depend on b.', ['Adds a rule', ': a may not depend on b.']],
+    ['Changes nothing in the policy.', ['Changes nothing', ' in the policy.']],
+    ['Pull request #12 passes.', ['', 'Pull request #12 passes.']],
+  ])('%s', (line, want) => {
+    expect(effectLead(line)).toEqual(want);
   });
 });
 

@@ -115,6 +115,7 @@ export interface RequestView {
   earlier: RequestEarlier[];
   // A surface request (engine 0.9.0): the declared parts of `to` and the package past them a declaration adds.
   surface?: { public: string[]; model: string[]; package?: string };
+  waiting?: number[]; // pull requests waiting on this request
 }
 
 export interface PullEffect {
