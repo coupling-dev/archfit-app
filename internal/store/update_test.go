@@ -160,15 +160,15 @@ func TestUpdateGivesUpWithErrConflict(t *testing.T) {
 
 func TestUpdateRefusesInvalidKeySetsAndWritesNothing(t *testing.T) {
 	ctx := context.Background()
-	eleven := make([]string, 11)
-	for i := range eleven {
-		eleven[i] = "k" + strconv.Itoa(i)
+	tooMany := make([]string, 45)
+	for i := range tooMany {
+		tooMany[i] = "k" + strconv.Itoa(i)
 	}
 	tests := []struct {
 		name string
 		keys []string
 	}{
-		{"eleven keys", eleven},
+		{"more than 44 keys", tooMany},
 		{"a key twice", []string{"a", "b", "a"}},
 		{"an empty key", []string{"a", ""}},
 	}
