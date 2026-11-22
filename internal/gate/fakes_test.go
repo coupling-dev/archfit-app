@@ -25,7 +25,8 @@ const (
 
 // fakeGitHub is an in-memory GitHub behind every role interface the gate path uses.
 type fakeGitHub struct {
-	mu sync.Mutex
+	failPath map[string]error // a File read of this path fails, whatever the ref
+	mu       sync.Mutex
 
 	installations []api.Installation
 	repos         map[string]api.Repo         // by full name
@@ -154,6 +155,9 @@ func (f *fakeGitHub) File(_ context.Context, r api.RepoRef, ref, path string) ([
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.enter("File", r); err != nil {
+		return nil, "", err
+	}
+	if err := f.failPath[path]; err != nil {
 		return nil, "", err
 	}
 	raw, ok := f.files[fileKey(r.FullName, ref, path)]

@@ -6,6 +6,7 @@ import (
 
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
 func TestOutsideIssueFailureNeverKeepsAnUnapprovedSuccess(t *testing.T) {
@@ -32,12 +33,20 @@ func TestForcePushedBackHeadLosesItsOldSuccessWithoutAMatchingRecord(t *testing.
 	for _, mode := range []string{"first approval", "outside", "ambiguous"} {
 		t.Run(mode, func(t *testing.T) {
 			w := newWorld4(t)
-			w.guarded4(policy4)
+			// An advisory policy needs no first approval, so that mode runs a required one.
+			policy := map[bool]string{true: policy4Required, false: policy4}[mode == "first approval"]
+			w.guarded4(policy)
 			p := w.openPull(w.shop, 7)
-			w.wantStatus(w.send4(w.spec4(p, "pass")), "pass", "")
+			spec := func() *spec4 {
+				s := w.spec4(p, "pass")
+				s.env.PolicyDigest = policy3.Digest([]byte(policy))
+				s.result["policy"].(map[string]any)["digest"] = s.env.PolicyDigest
+				return s
+			}
+			w.wantStatus(w.send4(spec()), "pass", "")
 			first := p.head
 			w.push(p)
-			w.wantStatus(w.send4(w.spec4(p, "pass")), "pass", "")
+			w.wantStatus(w.send4(spec()), "pass", "")
 			w.editPull(p, func(pl *api.Pull) { pl.HeadSHA = first })
 			p.head = first
 			switch mode {

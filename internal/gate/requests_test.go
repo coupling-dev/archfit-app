@@ -616,8 +616,7 @@ func (w *world4) uploadCoupling(p *pull, surface bool, status string) {
 	w.wantStatus(w.send4(s), status, "")
 }
 
-// A request keeps the 0.9.0 balance inputs, and becomes a surface request when a pull request that joins it later
-// reports the use past the surface: from then on it is never approved as such.
+// A surface request is distinct from an edge-only coupling request.
 func TestARequestKeepsTheInputsAndTheSurfaceOfALaterPullRequest(t *testing.T) {
 	w := newAskWorld(t)
 	first, second := w.pullBy(7), w.pullBy(8)
@@ -627,9 +626,42 @@ func TestARequestKeepsTheInputsAndTheSurfaceOfALaterPullRequest(t *testing.T) {
 	if b := r.Numbers.Balance; b == nil || b.Score != 2 || b.Strength != "intrusive" || b.Volatility != "high" || r.Surface != nil {
 		t.Fatalf("stored request = %+v, balance %+v", r, b)
 	}
-	w.uploadCoupling(second, true, "waiting") // covered by #1000 before it asks
+	w.uploadCoupling(second, true, "fail")
 	w.ask(second, workerLogin, "/archfit request the same need")
-	if r := w.storedRequest(firstRequest); r.Surface == nil || !slices.Equal(r.Surface.Public, []string{"pkg/util"}) || r.Surface.Package != "pkg/util/retry" {
+	if r := w.storedRequest(firstRequest + 1); r.Surface == nil || !slices.Equal(r.Surface.Public, []string{"pkg/util"}) || r.Surface.Package != "pkg/util/retry" {
 		t.Errorf("after the join, surface = %+v", r.Surface)
+	}
+}
+
+func TestRequestDeduplicationBySurfaceAndState(t *testing.T) {
+	surface := func(pkg string) string {
+		return "/archfit request why\n\n```text\npkg_tc -> pkg_util: coupling: " + pkg + " is past the surface\n  balance: 2/10 (min 7): intrusive, pkg_util is high\n  surface: pkg/util (public)\n  next: request\n```\n"
+	}
+	graph := "/archfit request why\n\n```text\npkg_tc -> pkg_util: graph: not an allowed dependency\n```\n"
+	for _, tc := range []struct {
+		name, first, second string
+		answered, joined    bool
+	}{
+		{"same surface", surface("pkg/util/setup"), surface("pkg/util/setup"), false, true},
+		{"different surface", surface("pkg/util/setup"), surface("pkg/util/replay"), false, false},
+		{"answered surface", surface("pkg/util/setup"), surface("pkg/util/setup"), true, true},
+		{"same graph", graph, graph, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newAskWorld(t)
+			w.gh.permissions[shopName+"|"+workerLogin] = "write"
+			first := w.cliIssue(tc.first)
+			if tc.answered {
+				a := records.Approval{Kind: records.KindApprove, Request: first, Owner: 3, Login: "olivia"}
+				pin := &records.Pin{Proposal: "p1", PullRequest: 30, HeadSHA: w.sha(), Digest: policy3.Digest([]byte(policyAsk))}
+				if err := records.Answer(context.Background(), w.mem, store.Tenant(shopInstallation), shopName, "a1", a, pin); err != nil {
+					t.Fatal(err)
+				}
+			}
+			second := w.cliIssue(tc.second)
+			if got := !w.issue(second).Open; got != tc.joined {
+				t.Errorf("joined = %v, want %v; reply: %s", got, tc.joined, w.lastReply(second))
+			}
+		})
 	}
 }

@@ -68,6 +68,24 @@ and `control/onboarding`; Home does not implement onboarding again.
 
 A missing or invalid target policy with recorded outside-flow state is returned without a map, so the owner can revert it. Proposed policy files are read at pull head only for workflow-action eligibility.
 
+## Advisory first
+
+`upload4.decide` gives each upload one status. Under an advisory policy (no `gate`, or `gate: advisory`) on the default
+branch's tip an upload needs no approval: `first_approval` is not added, so a pass is success and a fail is neutral. A
+required policy keeps `first_approval` until the first approval, and advisory history is never an approval. The
+decision's `NeutralUnknown` makes an `unknown` neutral only when the report is verified and has no verdict yet: the
+engine's own unknown, `first_policy` or `policy_changed` (`waitingReasons`), under an advisory policy on the tip. Every
+other reason, and every `unknown` of a required policy or of a default branch with no valid policy, stays
+`action_required`. A pull request into a default branch with no valid policy, no approval and no protected state is the
+unguarded setup pull request: its one record says "No verdict yet: merge this setup pull request to start advisory
+checks.", its check is neutral and nothing is read from its head files (`AGENTS.md`, "Fail closed").
+
+The sweep keeps the advisory verdict of a policy no owner approved: it compares a stored result with the digest of the
+policy on the tip, and a neutral unknown it finds under a required policy is replaced and run again.
+**Stated limits** (advisory results never block a merge, and an approval removes both): while no owner approved the
+policy, the sweep does not withdraw an earlier verdict when the default branch's policy is removed or becomes invalid,
+and it does not run a result again when a dated exception expires.
+
 ## Pull read façade
 
 `NewPullViews` reads a pull record, live request index and check state for the authorized repository. A current

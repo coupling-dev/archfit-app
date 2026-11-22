@@ -27,9 +27,10 @@ const (
 const receiptV2 = "v2"
 
 // checkState is the check run status and conclusion of a status (design 11.6, appendix D.2): pass is a success; fail
-// a failure, or neutral in advisory mode; waiting is in_progress, which shows as pending and blocks a merge; unknown,
-// and any status the App does not know, asks for action, which also blocks.
-func checkState(s result.Status, advisory bool) (status, conclusion string) {
+// a failure, or neutral in advisory mode; waiting is in_progress, which shows as pending and blocks a merge; unknown is
+// neutral only where neutralUnknown says so (an advisory policy, the setup pull request), else it, and any status the
+// App does not know, asks for action, which also blocks.
+func checkState(s result.Status, advisory, neutralUnknown bool) (status, conclusion string) {
 	switch s {
 	case result.StatusPass:
 		return statusCompleted, conclusionSuccess
@@ -40,8 +41,28 @@ func checkState(s result.Status, advisory bool) (status, conclusion string) {
 		return statusCompleted, conclusionFailure
 	case result.StatusWaiting:
 		return statusInProgress, ""
+	case result.StatusUnknown:
+		if neutralUnknown {
+			return statusCompleted, conclusionNeutral
+		}
 	}
 	return statusCompleted, conclusionActionRequired
+}
+
+// advisoryLine is the line a check shows when its conclusion cannot block a merge: a pass or fail of an advisory
+// policy, or an unknown that is neutral. A fail also says how to make the check required. A required policy shows none.
+func (p Publication4) advisoryLine(appURL string) string {
+	const line = "Advisory: this check does not block the merge."
+	switch {
+	case p.Result.Status == result.StatusFail && p.Advisory:
+		if page := OwnerLink(appURL, p.Target.Repo.FullName, ""); page != "" {
+			return line + " To make it required, open the setup page: " + page
+		}
+		return line
+	case p.Result.Status == result.StatusPass && p.Advisory, p.Result.Status == result.StatusUnknown && p.NeutralUnknown:
+		return line
+	}
+	return ""
 }
 
 func externalID4(p Publication4) string {
@@ -150,7 +171,7 @@ func (s *serialized) current4(ctx context.Context, p Publication4, withdraw bool
 func (s *publisher) publish4(ctx context.Context, p Publication4) (written, superseded bool, err error) {
 	start := s.now()
 	gate, comment := actionNone, actionNone
-	status, conclusion := checkState(p.Result.Status, p.Advisory)
+	status, conclusion := checkState(p.Result.Status, p.Advisory, p.NeutralUnknown)
 	if p.ownerCheck != nil {
 		status, conclusion = p.ownerCheck.Status, p.ownerCheck.Conclusion
 	}
@@ -163,6 +184,7 @@ func (s *publisher) publish4(ctx context.Context, p Publication4) (written, supe
 	}()
 
 	v := newView(p.Result)
+	v.advisory = p.advisoryLine(s.appURL)
 	if p.ownerCheck == nil { // an approved head waits for nobody
 		v = v.withNext(p.OwnerPage, s.appURL, p.Target.Repo.FullName, p.Target.HeadSHA)
 	}

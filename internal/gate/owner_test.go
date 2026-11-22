@@ -160,7 +160,7 @@ func TestAnOnboardingPullRequestClosedWithoutAMerge(t *testing.T) {
 		t.Fatalf("repository %+v, %v; want no approved policy", repo, err)
 	}
 	other := w.openPull(w.shop, 8)
-	w.wantStatus(w.send4(w.spec4(other, "pass")), "unknown", reasonFirstApproval)
+	w.wantStatus(w.send4(w.unapprovedRequired(other, "pass")), "unknown", reasonFirstApproval)
 
 	x := records.Index{Schema: records.SchemaRepos}
 	if err := records.Load(context.Background(), w.mem, store.Tenant(w.shop.InstallationID), records.ReposKey, &x); err != nil {
@@ -176,11 +176,8 @@ func TestAnOnboardingPullRequestClosedWithoutAMerge(t *testing.T) {
 
 func TestTheFirstApprovalOfAnAlreadyConvertedRepositoryGivesItsPullRequestsAVerdict(t *testing.T) {
 	w := newWorld4(t)
-	if err := w.mem.Delete(context.Background(), store.Tenant(w.shop.InstallationID), records.RepoKey(w.shop.FullName)); err != nil {
-		t.Fatal(err)
-	}
 	p := w.openPull(w.shop, 7)
-	s := w.spec4(p, "pass")
+	s := w.unapprovedRequired(p, "pass")
 	w.wantStatus(w.send4(s), "unknown", reasonFirstApproval)
 
 	out, err := w.act(oliviaAdmin, OwnerAction{Kind: OwnerFirst})
@@ -354,9 +351,8 @@ func TestAFirstApprovalWhoseRunCannotRunAgainNamesTheCondition(t *testing.T) {
 // pull request whose run cannot run again keeps its own check: its unknown may have a reason of its own.
 func TestAConfirmLeavesTheCheckOfAPullRequestItCannotRerun(t *testing.T) {
 	w := newWorld4(t)
-	w.unrecorded()
 	p := w.openPull(w.shop, 7)
-	w.wantStatus(w.send4(w.spec4(p, "pass")), "unknown", reasonFirstApproval)
+	w.wantStatus(w.send4(w.unapprovedRequired(p, "pass")), "unknown", reasonFirstApproval)
 	before, _ := w.latestGate(p.head)
 	delete(w.gh.runs, p.runID)
 

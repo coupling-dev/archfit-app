@@ -38,22 +38,19 @@ func TestACodePullRequestThatEditsThePolicyIsUnknown(t *testing.T) {
 	p := w.openPull(w.shop, 7)
 	w.setFile(w.shop, p.head, policyPath, []byte(policy4+"  extra:\n    paths: [x/**]\n"))
 	w.wantStatus(w.send4(w.spec4(p, "policy_differs")), "unknown", "")
-	w.wantGate(p, "completed", "action_required")
+	w.wantGate(p, "completed", "neutral")
 	if c := w.comment(p); !strings.Contains(c, "## ⚠️ Archfit: unknown") || !strings.Contains(c, "differs from origin/main") ||
 		!strings.Contains(c, "git checkout origin/main -- .archfit.yaml") {
 		t.Errorf("comment:\n%s", c)
 	}
 }
 
-// TestAPolicyNoOwnerApprovedGivesNoVerdict: a schema 3 policy with no approval recorded is not change control yet, so
-// no upload passes until an administrator approves it (task 23).
-func TestAPolicyNoOwnerApprovedGivesNoVerdict(t *testing.T) {
+// TestARequiredPolicyNoOwnerApprovedGivesNoVerdict: a required schema 3 policy with no approval recorded is not change
+// control yet, so no upload passes until an administrator approves it (task 23). An advisory policy needs no approval.
+func TestARequiredPolicyNoOwnerApprovedGivesNoVerdict(t *testing.T) {
 	w := newWorld4(t)
-	if err := w.mem.Delete(context.Background(), store.Tenant(shopInstallation), records.RepoKey(shopName)); err != nil {
-		t.Fatal(err)
-	}
 	p := w.openPull(w.shop, 7)
-	w.wantStatus(w.send4(w.spec4(p, "pass")), "unknown", reasonFirstApproval)
+	w.wantStatus(w.send4(w.unapprovedRequired(p, "pass")), "unknown", reasonFirstApproval)
 	w.wantGate(p, "completed", "action_required")
 	if c := w.comment(p); !strings.Contains(c, "has no recorded approval on main") ||
 		!strings.Contains(c, "an administrator approves the policy in the App") {
