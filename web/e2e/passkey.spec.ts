@@ -1,10 +1,20 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { assertion, authenticator, ceremony, creation, expectClean, expectNoNotUsedWord, open, origin, type Handlers } from './support';
 
 const page = '/r/acme/app/passkeys';
 const api = '/api/repos/acme/app/passkeys';
 const created = '2026-11-10T09:00:00Z';
 
+const confirmationToken = 'test-token-128bit-value';
+async function addInBrowser(p: Page) {
+ const request=p.getByRole('button',{name:'Request confirmation'});
+ await request.or(p.getByRole('button',{name:'Add a passkey'})).waitFor();
+ if(await request.count()) {
+  await request.click();
+  await p.getByLabel('Token from the operator').fill(confirmationToken);
+  await p.getByRole('button',{name:'Confirm and register a passkey'}).click();
+ } else await p.getByRole('button',{name:'Add a passkey'}).click();
+}
 interface Listed {
   id: string;
   created: string;
@@ -19,7 +29,9 @@ function registry(list: Listed[]) {
   const issued = new Map<string, object>();
   const handlers: Handlers = {
     [`GET ${api}`]: () => [200, { passkeys: list }],
+    [`POST ${api}/confirmation`]: () => [200, { attempt: 'attempt-one', installation: 1 }],
     [`POST ${api}/register`]: (body) => {
+      if (!list.length) expect(body).toEqual({attempt:'attempt-one', confirmation:confirmationToken});
       if (list.length && !issued.has(String(body.token)))
         return [
           409,
@@ -65,11 +77,11 @@ test('passkeys: the first passkey registers with no step-up, and the list shows 
   await expect(p.getByText('No passkeys yet. Add one to approve policy changes.', { exact: true })).toBeVisible();
   await expectClean(p);
 
-  await p.getByRole('button', { name: 'Add a passkey' }).click();
+  await addInBrowser(p);
   await expect(p.getByRole('status')).toHaveText('Passkey registered. An issue tells you and the owners.');
   await expect(p.locator('.counter')).toHaveText('1');
   await expect(p.getByRole('listitem')).toContainText([/^Added 2026-11-10\s+Not used yet/]);
-  expect(writes.map((w) => new URL(w.url()).pathname)).toEqual([`${api}/register`, `${api}/register/finish`]);
+  expect(writes.map((w) => new URL(w.url()).pathname)).toEqual([`${api}/confirmation`, `${api}/register`, `${api}/register/finish`]);
   expect(writes[0].postDataJSON()).toEqual({});
   await expectClean(p);
 });
@@ -97,7 +109,7 @@ test('passkeys: a second passkey and a removal are each confirmed with a passkey
   const writes = await open(p, page, handlers);
   await expect(p.getByRole('listitem')).toContainText([/^Added 2026-11-10\s+Last used 2026-11-11/]);
 
-  await p.getByRole('button', { name: 'Add a passkey' }).click();
+  await addInBrowser(p);
   await expect(p.getByRole('status')).toHaveText('Passkey registered. An issue tells you and the owners.');
   await expect(p.locator('.counter')).toHaveText('2');
   await expectNoNotUsedWord(p);
@@ -126,10 +138,11 @@ test('passkeys: a refused registration is the server sentence, and nothing is ad
     'Only an owner named in the policy, or a repository administrator before the first policy, can register a passkey here.';
   const writes = await open(p, page, {
     [`GET ${api}`]: () => [200, { passkeys: [] }],
+    [`POST ${api}/confirmation`]: () => [403, { error: sentence }],
     [`POST ${api}/register`]: () => [403, { error: sentence }],
   });
-  await p.getByRole('button', { name: 'Add a passkey' }).click();
-  await expect(p.getByRole('alert')).toHaveText(sentence);
+  await p.getByRole('button',{name:'Request confirmation'}).click();
+  await expect(p.getByRole('alert')).toContainText(sentence);
   await expect(p.getByText('No passkeys yet. Add one to approve policy changes.', { exact: true })).toBeVisible();
   expect(writes).toHaveLength(1);
   await expectClean(p);
@@ -139,7 +152,7 @@ test('passkeys: a device that already holds a passkey of the user does not make 
   const { id: first } = await authenticator(p, true);
   const list: Listed[] = [{ id: first, created }];
   const writes = await open(p, page, registry(list).handlers);
-  await p.getByRole('button', { name: 'Add a passkey' }).click();
+  await addInBrowser(p);
   await expect(p.getByRole('alert')).toHaveText(
     'This device already holds one of your passkeys. Use another device or another passkey.',
   );
@@ -179,11 +192,9 @@ for (const width of [390, 1280]) {
       const writes = await open(p, page + '?return=' + encodeURIComponent(destination), registry(list).handlers);
       const back = p.getByRole('link', { name: /^Back to / });
       await expect(back).toHaveAttribute('href', destination);
-      const add = p.getByRole('button', { name: 'Add a passkey' });
-      await add.focus();
-      await p.keyboard.press('Enter');
+      await addInBrowser(p);
       await expect(p).toHaveURL(origin + destination);
-      expect(writes.map((w) => new URL(w.url()).pathname)).toEqual([`${api}/register`, `${api}/register/finish`]);
+      expect(writes.map((w) => new URL(w.url()).pathname)).toEqual([`${api}/confirmation`, `${api}/register`, `${api}/register/finish`]);
     });
   }
 
@@ -194,7 +205,7 @@ for (const width of [390, 1280]) {
     const { handlers } = registry([]);
     handlers[`POST ${api}/register/finish`] = () => [503, { error: 'The App did not answer. Try again in a minute.' }];
     await open(p, path, handlers);
-    await p.getByRole('button', { name: 'Add a passkey' }).click();
+    await addInBrowser(p);
     await expect(p.getByRole('alert')).toContainText('The App did not answer.');
     await expect(p).toHaveURL(origin + path);
     await expect(p.getByRole('link', { name: 'Back to request' })).toBeVisible();
@@ -209,7 +220,7 @@ for (const destination of ['https://evil.test', '//evil.test', '/r/acme/other/re
     await open(p, path, registry([]).handlers);
     await expect(p.getByRole('heading', { name: 'Passkeys', exact: true })).toBeVisible();
     await expect(p.getByRole('link', { name: /^Back to / })).toHaveCount(0);
-    await p.getByRole('button', { name: 'Add a passkey' }).click();
+    await addInBrowser(p);
     await expect(p.getByRole('status')).toContainText('Passkey registered.');
     await expect(p).toHaveURL(origin + path);
   });

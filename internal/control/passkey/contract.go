@@ -32,9 +32,12 @@ type Config struct {
 
 // User is the signed-in GitHub user, as the caller authorized them for one repository.
 type User struct {
-	ID    int64
-	Login string
-	Admin bool // a repository administrator, from session.Authorize(…, "admin")
+	ID                  int64
+	Login               string
+	Admin               bool   // a repository administrator, from session.Authorize(…, "admin")
+	SessionBinding      string // server-derived from the authenticated session
+	ConfirmationAttempt string
+	ConfirmationToken   string
 }
 
 // Purpose is what one step-up token allows. A token is redeemed only for an equal Purpose. Repo is always set from

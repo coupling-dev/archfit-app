@@ -18,7 +18,9 @@ import (
 // names a user or a repository.
 
 type passkeyTokenJSON struct {
-	Token string `json:"token,omitempty"` // a step-up token: register (a second passkey) and remove
+	Attempt      string `json:"attempt,omitempty"`
+	Confirmation string `json:"confirmation,omitempty"`
+	Token        string `json:"token,omitempty"` // a step-up token: register (a second passkey) and remove
 }
 
 type passkeyCredentialJSON struct {
@@ -65,7 +67,7 @@ func passkeyOf(p passkey.Passkey) passkeyJSON {
 // passkeyUser is the signed-in user for the passkey rules: administrator or not on the path's repository. The
 // administrator check reuses the permission the read authorization just cached, so it makes no GitHub call.
 func (s *server) passkeyUser(r *http.Request, sc scope) (passkey.User, error) {
-	u := passkey.User{ID: sc.user.UserID, Login: sc.user.Login}
+	u := passkey.User{ID: sc.user.UserID, Login: sc.user.Login, SessionBinding: sessionBinding(r)}
 	_, err := s.sessions.Authorize(r.Context(), sc.user, r.PathValue("o")+"/"+r.PathValue("n"), permAdmin)
 	switch {
 	case err == nil:
@@ -97,6 +99,7 @@ func (s *server) apiPasskeyRegister(r *http.Request, sc scope) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	u.ConfirmationAttempt, u.ConfirmationToken = in.Attempt, in.Confirmation
 	options, err := s.passkeys.BeginRegistration(r.Context(), sc.repo, u, in.Token)
 	if err != nil {
 		return nil, err

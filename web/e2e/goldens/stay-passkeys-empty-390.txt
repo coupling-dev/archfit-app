@@ -20,8 +20,15 @@ acme/app
 
 Your passkeys work in every repository of this account where the policy names you as owner.
 
+Confirm it is you
+
+Before you register your first passkey, ask an Archfit operator to confirm that you are alice. Use the private channel you used to join the beta. The operator sends a one-time token in that channel. It is valid for 10 minutes.
+
+Request confirmation
+
+Do not paste the token into a GitHub issue, a pull request, a shared document, or a screenshot. If you lose it or someone else sees it, ask the operator to revoke it and issue a new one.
+
 Your passkeys 0
-Add a passkey
 
 Only an owner named in the policy can add one, or a repository administrator before the first policy.
 

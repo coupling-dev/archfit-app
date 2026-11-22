@@ -18,23 +18,24 @@ import (
 )
 
 type Deps struct {
-	OAuth        auth.OAuth // ui builds its own session child from OAuth, CookieKey and BaseURL
-	CookieKey    []byte
-	BaseURL      string
-	GitHub       *api.Client
-	Account      account.Account
-	Admissions   *gate.Admissions // which installations the App serves; the others see the Waiting page
-	Passkeys     passkey.Passkeys // the signed-in user's passkeys and the step-up of an answer
-	RepoStates   gate.RepoStates  // repositories read their stored state through the gate façade
-	HomeViews    gate.HomeViews   // Home reads gate data through its read-only façade
-	PullViews    gate.PullViews
-	PolicyViews  gate.PolicyViews  // policy page change-control state
-	RequestViews gate.RequestViews // the request page: a request and the preview of each answer, read only
-	Setups       onboarding.Setups
-	Owners       answers.Owners
-	Answers      answers.Answers // the request page: an owner's answer, with the passkey
-	Operators    []int64         // GitHub user IDs that approve installations on /admin
-	Now          func() time.Time
+	OAuth         auth.OAuth // ui builds its own session child from OAuth, CookieKey and BaseURL
+	CookieKey     []byte
+	BaseURL       string
+	GitHub        *api.Client
+	Account       account.Account
+	Admissions    *gate.Admissions // which installations the App serves; the others see the Waiting page
+	Confirmations *passkey.OperatorConfirmations
+	Passkeys      passkey.Passkeys // the signed-in user's passkeys and the step-up of an answer
+	RepoStates    gate.RepoStates  // repositories read their stored state through the gate façade
+	HomeViews     gate.HomeViews   // Home reads gate data through its read-only façade
+	PullViews     gate.PullViews
+	PolicyViews   gate.PolicyViews  // policy page change-control state
+	RequestViews  gate.RequestViews // the request page: a request and the preview of each answer, read only
+	Setups        onboarding.Setups
+	Owners        answers.Owners
+	Answers       answers.Answers // the request page: an owner's answer, with the passkey
+	Operators     []int64         // GitHub user IDs that approve installations on /admin
+	Now           func() time.Time
 }
 
 // The parts of github/api ui calls: role-interface methods and the *Client readers kept for the UI.
@@ -65,23 +66,24 @@ type github struct {
 }
 
 type server struct {
-	gh         github
-	sessions   session.Sessions
-	account    account.Account
-	admissions *gate.Admissions
-	passkeys   passkey.Passkeys
-	repoStates gate.RepoStates
-	home       gate.HomeViews
-	pullViews  gate.PullViews
-	policy     gate.PolicyViews
-	requests   gate.RequestViews
-	setups     onboarding.Setups
-	owners     answers.Owners
-	answers    answers.Answers
-	operators  []int64
-	now        func() time.Time
-	baseURL    string
-	shell      shellPage
+	gh            github
+	sessions      session.Sessions
+	account       account.Account
+	admissions    *gate.Admissions
+	confirmations *passkey.OperatorConfirmations
+	passkeys      passkey.Passkeys
+	repoStates    gate.RepoStates
+	home          gate.HomeViews
+	pullViews     gate.PullViews
+	policy        gate.PolicyViews
+	requests      gate.RequestViews
+	setups        onboarding.Setups
+	owners        answers.Owners
+	answers       answers.Answers
+	operators     []int64
+	now           func() time.Time
+	baseURL       string
+	shell         shellPage
 }
 
 // New returns the UI mounted at "/". It serves the web app's build from the binary.
@@ -97,17 +99,18 @@ func New(d Deps) (http.Handler, error) {
 // newHandler mounts every route. web is the build of the web app; tests hand in a small one.
 func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Handler {
 	s := &server{
-		gh:         gh,
-		sessions:   sessions,
-		account:    d.Account,
-		admissions: d.Admissions,
-		passkeys:   d.Passkeys,
-		repoStates: d.RepoStates,
-		home:       d.HomeViews,
-		pullViews:  d.PullViews,
-		policy:     d.PolicyViews,
-		requests:   d.RequestViews,
-		answers:    d.Answers, setups: d.Setups, owners: d.Owners,
+		gh:            gh,
+		sessions:      sessions,
+		account:       d.Account,
+		admissions:    d.Admissions,
+		passkeys:      d.Passkeys,
+		confirmations: d.Confirmations,
+		repoStates:    d.RepoStates,
+		home:          d.HomeViews,
+		pullViews:     d.PullViews,
+		policy:        d.PolicyViews,
+		requests:      d.RequestViews,
+		answers:       d.Answers, setups: d.Setups, owners: d.Owners,
 		operators: d.Operators,
 		now:       d.Now,
 		baseURL:   d.BaseURL,
@@ -165,6 +168,9 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	}))
 
 	mux.Handle("GET /api/session", s.apiSignedIn(s.apiSession))
+	mux.Handle("POST /api/admin/confirmations/lookup", s.apiOperator(s.apiConfirmationLookup))
+	mux.Handle("POST /api/admin/confirmations/issue", s.apiOperator(s.apiConfirmationIssue))
+	mux.Handle("POST /api/admin/confirmations/revoke", s.apiOperator(s.apiConfirmationRevoke))
 	mux.Handle("GET /api/admin/installations", s.apiOperator(s.apiAdmin))
 	mux.Handle("GET /api/admin/waiting", s.apiOperator(s.apiWaiting))
 	mux.Handle("POST /api/admin/installations/{id}/approve", s.apiOperator(s.apiApprove))
@@ -189,6 +195,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("POST /api/repos/{o}/{n}/requests/{number}/answer", s.apiRepo(permRead, s.apiAnswer))
 	// The passkey routes need read: who registers is the passkey rule (an owner, or an administrator before the first
 	// policy), and a step-up or a removal is the user's own passkey.
+	mux.Handle("POST /api/repos/{o}/{n}/passkeys/confirmation", s.apiRepo(permRead, s.apiConfirmationRequest))
 	mux.Handle("GET /api/repos/{o}/{n}/passkeys", s.apiRepo(permRead, s.apiPasskeys))
 	mux.Handle("POST /api/repos/{o}/{n}/passkeys/register", s.apiRepo(permRead, s.apiPasskeyRegister))
 	mux.Handle("POST /api/repos/{o}/{n}/passkeys/register/finish", s.apiRepo(permRead, s.apiPasskeyRegisterFinish))

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/coupling-dev/archfit-app/internal/control/passkey"
 	"github.com/coupling-dev/archfit-app/internal/control/ui/session"
@@ -107,6 +108,19 @@ func explain(err error) (status int, outcome, sentence string) {
 	}
 	if _, waiting := errorsAsWaiting(err); waiting {
 		return http.StatusForbidden, "not_admitted", waitingSentence
+	}
+	var locked *passkey.ConfirmationLocked
+	if errors.As(err, &locked) {
+		return http.StatusTooManyRequests, "confirmation_locked", "Too many wrong tokens. Try again after " + locked.Until.UTC().Format(time.RFC3339) + "."
+	}
+	if errors.Is(err, passkey.ErrConfirmationWrong) {
+		return http.StatusUnprocessableEntity, "confirmation_wrong", "That token cannot be used. Check the latest token from the operator and try again."
+	}
+	if errors.Is(err, passkey.ErrConfirmationExpired) {
+		return http.StatusForbidden, "confirmation_expired", "The token expired. Ask the operator for a new one."
+	}
+	if errors.Is(err, passkey.ErrConfirmation) {
+		return http.StatusForbidden, "confirmation", "That token cannot be used. Check the latest token from the operator and try again."
 	}
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) {

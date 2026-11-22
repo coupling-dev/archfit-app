@@ -2,6 +2,14 @@ Installations
 
 Accounts that may run Archfit. Admit an account below, or set admission in the App settings, by pull request.
 
+First-passkey confirmations
+
+Verify the owner through the existing trusted private channel used for beta admission. Never send a token through a GitHub issue, pull request, shared document, or a contact supplied by the request.
+
+Installation ID 
+Attempt ID 
+Find confirmation
+
 No installation is waiting to be admitted.
 
 Admitted 1
