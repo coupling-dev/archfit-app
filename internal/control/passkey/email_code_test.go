@@ -1,8 +1,11 @@
 package passkey
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -66,5 +69,99 @@ func TestEmailCodeBoundaries(t *testing.T) {
 			}
 			tc.run(t, svc, EmailCodeScope{UserID: 101, InstallationID: 7, RepositoryID: 70, SessionBinding: "binding"}, sink, &now)
 		})
+	}
+}
+
+func TestEmailCodeConcurrentUse(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	sink := &safeCodeSink{}
+	svc, err := NewEmailCodes(store.NewMemory(), sink, []byte("01234567890123456789012345678901"), func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := EmailCodeScope{UserID: 101, InstallationID: 7, RepositoryID: 70, SessionBinding: "binding"}
+	const n = 20
+	var wg sync.WaitGroup
+	results := make(chan error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); _, err := svc.Send(ctx, scope, "owner@example.invalid"); results <- err }()
+	}
+	wg.Wait()
+	close(results)
+	successes := 0
+	for err := range results {
+		if err == nil {
+			successes++
+		}
+	}
+	if successes != 1 || sink.count != 1 {
+		t.Fatalf("sends %d emails %d", successes, sink.count)
+	}
+	results = make(chan error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); results <- svc.Verify(ctx, scope, sink.code) }()
+	}
+	wg.Wait()
+	close(results)
+	successes = 0
+	for err := range results {
+		if err == nil {
+			successes++
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("verifications %d", successes)
+	}
+}
+
+type safeCodeSink struct {
+	mu    sync.Mutex
+	code  string
+	count int
+}
+
+func (s *safeCodeSink) SendCode(_ context.Context, _, code string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.code = code
+	s.count++
+	return nil
+}
+
+type failingCodeSink struct{ code string }
+
+func (s *failingCodeSink) SendCode(_ context.Context, _, code string) error {
+	s.code = code
+	return errors.New("private provider error")
+}
+func TestEmailCodeFailedSendAndPrivacy(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	sink := &failingCodeSink{}
+	db := store.NewMemory()
+	svc, err := NewEmailCodes(db, sink, []byte("01234567890123456789012345678901"), func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := EmailCodeScope{UserID: 101, InstallationID: 7, RepositoryID: 70, SessionBinding: "private-session"}
+	_, err = svc.Send(ctx, scope, "owner@example.invalid")
+	if !errors.Is(err, ErrCodeSend) || strings.Contains(err.Error(), "private provider") {
+		t.Fatalf("send error: %v", err)
+	}
+	if err = svc.Verify(ctx, scope, sink.code); err == nil {
+		t.Fatal("failed send code accepted")
+	}
+	raw, err := db.Get(ctx, store.SystemTenant, codeKey(scope.UserID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"owner@example.invalid", sink.code, scope.SessionBinding} {
+		if bytes.Contains(raw, []byte(secret)) {
+			t.Fatalf("stored private value")
+		}
+	}
+	if _, err = svc.Send(ctx, scope, "owner@example.invalid"); !errors.Is(err, ErrCodeCooldown) {
+		t.Fatalf("cooldown: %v", err)
 	}
 }
