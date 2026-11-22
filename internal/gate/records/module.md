@@ -236,7 +236,7 @@ merge parent to equal every remaining edit's target. Request 0 never opens, reop
 - **Volatility**: Low (the store side)
 - **Balanced?**: Yes
 - **Shared knowledge**: `Tenant`, `Get`, `ErrNotFound`, `Update`, `ErrConflict`, and the limits of
-  `CompareAndSwapAll` (10 keys, 64 KiB values). The Firestore driver makes each swap atomic across App instances.
+  `CompareAndSwapAll` (44 keys, 64 KiB values). The Firestore driver makes each swap atomic across App instances.
 
 `gate/requests` (M2 task 16) writes the requests and the request index: a request is stored with its index entry
 in one `Indexed` swap, and the pull request joins it in another. Later milestone 2 modules (answers, approvals, the

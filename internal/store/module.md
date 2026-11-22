@@ -52,7 +52,7 @@ interface absorbs that choice; consumers never see it.
   it is for tests and local runs only.
 - Byte ownership: `Put` stores a copy, `Get` returns a copy. Callers can never alias stored bytes.
 - Input limits **[default]**: key is non-empty, at most 512 bytes, has no NUL byte; value at most 64 KiB;
-  tenant is never negative; `CompareAndSwapAll` takes 1 to 10 swaps, each key at most once.
+  tenant is never negative; `CompareAndSwapAll` takes 1 to 44 swaps, each key at most once.
 
 Known keys are informative only; their owners define them.
 
@@ -158,7 +158,7 @@ with `errors.Is`. `NewMemory` is the only constructor in this package.
   key. There is no partial result: no other operation ever sees some keys of one call written and others not. A swap
   whose `Value` equals its `Old` only checks the key: the key keeps its bytes, and the call still fails when the key
   changed. A swap with a `nil` `Old` and a `nil` `Value` checks that the key is missing. An empty list, more than
-  10 swaps, a key twice, an invalid key or a value over the limit is an error and changes nothing. A `false` result
+  44 swaps, a key twice, an invalid key or a value over the limit is an error and changes nothing. A `false` result
   is a definite conflict; an error means the outcome is unknown or nothing was tried. A caller that retries reads
   again first; it never treats an error as `false` or as `true`.
 - `Add`: a missing key counts as 0. Atomic against concurrent `Add` on the same key. `delta` may be negative
@@ -173,7 +173,7 @@ with `errors.Is`. `NewMemory` is the only constructor in this package.
   `change` with the bytes in the order of `keys`, and swaps every key from the bytes it read in one `CompareAndSwapAll`.
   `change` returns one value per key: `nil` deletes, the current bytes only check. A `false` swap reads again and calls
   `change` again, at most 5 times **[default]**, then returns `ErrConflict`. An error from `change` or from the Store
-  ends `Update` with that error. A wrong number of values, more than 10 keys or a key twice is an error and changes
+  ends `Update` with that error. A wrong number of values, more than 44 keys or a key twice is an error and changes
   nothing. `change` gets copies of the bytes read, so editing them never changes what the swap compares against.
   `change` sees keys read one by one, not a snapshot; it decides again on every attempt.
 - `DeleteTenant`: removes every key of `t` and nothing of any other tenant. A second call → `nil`.
@@ -254,7 +254,7 @@ knowledge of every entry below; nothing is restated because this file is the nor
 - **Volatility**: High (the gate side)
 - **Balanced?**: Yes
 - **Shared knowledge**: `Tenant`, `Get`, `ErrNotFound`, `Update`, `ErrConflict` and the `CompareAndSwapAll` limits
-  (10 keys, 64 KiB values). It owns every key under `v4/` under `Tenant(installationID)` except the passkey and
+  (44 keys, 64 KiB values). It owns every key under `v4/` under `Tenant(installationID)` except the passkey and
   challenge keys of `control/passkey`, never touches another key, and writes a record with its index in one `Update`. `store` knows nothing about its records or indexes.
 
 ### app
@@ -389,7 +389,7 @@ All cases live in `storetest.Run` and run against `NewMemory` and every driver.
 - **Test name**: `TestConformance/InvalidInput`
   **Scenario**: table: empty key; 513-byte key; key with NUL; negative tenant; 64 KiB + 1 value (`Put`, `CompareAndSwap`
   and `CompareAndSwapAll`); applied to every operation that takes the input; in `CompareAndSwapAll` after a valid swap.
-  For `CompareAndSwapAll` also: no swaps; an empty list; a key twice; 11 swaps. Then 10 swaps with a 64 KiB value.
+  For `CompareAndSwapAll` also: no swaps; an empty list; a key twice; 45 swaps. Then 44 swaps with a 64 KiB value.
   **Expected behavior**: an error for each; no key is created or changed, also not the valid swap's key. The last
   call, at the limits, succeeds.
 - **Test name**: `TestConformance/AddRejectsNonCounterAndOverflow`

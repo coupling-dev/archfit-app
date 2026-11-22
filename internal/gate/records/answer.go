@@ -28,13 +28,6 @@ type Pin struct {
 	MergeNow bool
 }
 
-// Answer records an owner's answer in one CompareAndSwapAll, so nothing of it can be written without the rest: the new
-// approval a at approvalID, its request moved from open to answered, and, when pin is set, the approval joining that
-// proposal pinned to its head and digest, as Join does. Without pin the request leaves the request index at once; with
-// pin it stays there until the proposal is consumed (Consume) or the approval is voided (Void). A proposal that does not exist yet is
-// created open on pin.PullRequest with its index entry. A request that is not open is ErrAnswered; an approval id in
-// use is ErrExists; a proposal that is not open is ErrMoved, and a full one ErrFull. The repository record is in the
-// swap unchanged: one outside the flow is ErrOutsideFlow.
 // BatchAnswer describes one approval and whether it joins the shared proposal.
 type BatchAnswer struct {
 	ApprovalID string
@@ -42,6 +35,13 @@ type BatchAnswer struct {
 	Join       bool
 }
 
+// Answer records an owner's answer in one CompareAndSwapAll, so nothing of it can be written without the rest: the new
+// approval a at approvalID, its request moved from open to answered, and, when pin is set, the approval joining that
+// proposal pinned to its head and digest, as Join does. Without pin the request leaves the request index at once; with
+// pin it stays there until the proposal is consumed (Consume) or the approval is voided (Void). A proposal that does not exist yet is
+// created open on pin.PullRequest with its index entry. A request that is not open is ErrAnswered; an approval id in
+// use is ErrExists; a proposal that is not open is ErrMoved, and a full one ErrFull. The repository record is in the
+// swap unchanged: one outside the flow is ErrOutsideFlow.
 func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approvalID string, a Approval, pin *Pin) error {
 	return AnswerBatch(ctx, s, t, fullName, []BatchAnswer{{ApprovalID: approvalID, Approval: a, Join: pin != nil}}, pin)
 }
@@ -81,7 +81,7 @@ func AnswerBatch(ctx context.Context, s store.Store, t store.Tenant, fullName st
 		next := slices.Clone(cur)
 		// Preserve the single-answer validation order before checking the repository.
 		reqs := make([]Request, len(items))
-		for i, item := range items {
+		for i := range items {
 			if cur[2*i] != nil {
 				return nil, ErrExists
 			}
@@ -94,7 +94,6 @@ func AnswerBatch(ctx context.Context, s store.Store, t store.Tenant, fullName st
 			if reqs[i].State != StateOpen {
 				return nil, ErrAnswered
 			}
-			_ = item
 		}
 		if raw := cur[len(cur)-1]; raw != nil {
 			var r Repo

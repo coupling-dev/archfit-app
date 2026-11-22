@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -143,5 +144,43 @@ func TestAnswerBatchConcurrentSharedRequest(t *testing.T) {
 	wg.Wait()
 	if (errs[0] == nil) == (errs[1] == nil) {
 		t.Fatalf("results %v", errs)
+	}
+	for i, err := range errs {
+		req := load[records.Request](t, s, records.RequestKey(repoName, 432+i))
+		if err == nil && req.State != records.StateAnswered || err != nil && (!errors.Is(err, records.ErrAnswered) || req.State != records.StateOpen) {
+			t.Errorf("batch %d: error %v, unshared request state %q", i, err, req.State)
+		}
+	}
+
+}
+
+func TestAnswerBatchSizeLimit(t *testing.T) {
+	ctx := t.Context()
+	s := store.NewMemory()
+	items := make([]records.BatchAnswer, 21)
+	for i := range items {
+		issue := 431 + i
+		id := strconv.Itoa(issue)
+		if err := openRequest(ctx, s, issue, id); err != nil {
+			t.Fatal(err)
+		}
+		a := *approval("")
+		a.Request = issue
+		items[i] = records.BatchAnswer{ApprovalID: id, Approval: a, Join: i < 2}
+	}
+	pin := &records.Pin{Proposal: "p", PullRequest: 12, HeadSHA: "h", Digest: "d"}
+	for _, batch := range [][]records.BatchAnswer{nil, items} {
+		if err := records.AnswerBatch(ctx, s, tenant, repoName, batch, pin); err == nil {
+			t.Fatalf("accepted %d answers", len(batch))
+		}
+	}
+	if err := records.AnswerBatch(ctx, s, tenant, repoName, items[:20], pin); err != nil {
+		t.Fatal(err)
+	}
+	for i, item := range items {
+		req := load[records.Request](t, s, records.RequestKey(repoName, item.Approval.Request))
+		if i < 20 && req.Approval != item.ApprovalID || i == 20 && req.State != records.StateOpen {
+			t.Errorf("request %d: state %q, approval %q", item.Approval.Request, req.State, req.Approval)
+		}
 	}
 }

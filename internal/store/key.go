@@ -9,7 +9,7 @@ import (
 const (
 	maxKeyLen   = 512
 	maxValueLen = 64 << 10
-	maxSwaps    = 10
+	maxSwaps    = 44 // 20 answers: two keys each, two indexes, proposal and repo.
 	tenantSep   = "/"
 )
 

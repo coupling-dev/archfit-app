@@ -37,7 +37,10 @@ const (
 	// The input limits of internal/store/module.md.
 	maxKeyLen   = 512
 	maxValueLen = 64 << 10
-	maxSwaps    = 10
+	// 20 answers: two keys each, two indexes, proposal and repo. At 64 KiB
+	// per value, base64 inflates 44 values to under 4 MiB before metadata,
+	// within Firestore's 10 MiB API request limit.
+	maxSwaps = 44
 
 	maxResponseBytes = 8 << 20
 	// deleteBatch is the number of documents DeleteTenant reads and deletes in one commit. The deleted documents

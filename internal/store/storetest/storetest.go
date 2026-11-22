@@ -19,7 +19,7 @@ import (
 const (
 	maxKeyLen   = 512
 	maxValueLen = 64 << 10
-	maxSwaps    = 10
+	maxSwaps    = 44 // 20 answers: two keys each, two indexes, proposal and repo.
 )
 
 // Run runs every conformance case against a fresh store per case.
@@ -582,9 +582,14 @@ func testInvalidInput(t *testing.T, s store.Store) {
 		t.Errorf("Put with a 512-byte key and a 64 KiB value: %v", err)
 	}
 	atLimit := tooMany[:maxSwaps]
-	atLimit[0].Value = big[:maxValueLen]
+	for i := range atLimit {
+		atLimit[i].Value = big[:maxValueLen]
+	}
 	if ok, err := s.CompareAndSwapAll(ctx, tn, atLimit); err != nil || !ok {
-		t.Errorf("CompareAndSwapAll with %d swaps and a 64 KiB value = %v, %v, want true, nil", maxSwaps, ok, err)
+		t.Errorf("CompareAndSwapAll with %d swaps with 64 KiB values = %v, %v, want true, nil", maxSwaps, ok, err)
+	}
+	for _, swap := range atLimit {
+		wantValue(t, s, tn, swap.Key, string(swap.Value))
 	}
 }
 
