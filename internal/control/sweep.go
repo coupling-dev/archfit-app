@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/coupling-dev/archfit-app/internal/github/api"
@@ -142,36 +143,46 @@ func hasPrivate(repos []api.Repo) bool {
 }
 
 type setupPullLister interface {
-	SetupPulls(context.Context, api.RepoRef) ([]api.Pull, error)
+	SearchSetupPulls(context.Context, int64, string) ([]api.SetupCandidate, error)
 }
 
 func (c *Control) recheckAdded(ctx context.Context, e webhook.Event, repos []api.Repo) error {
-	for _, repo := range repos {
-		if (!e.InstallationCreated || !e.RepositoriesOmitted) && !slices.Contains(e.AddedRepositories, repo.FullName) {
-			continue
-		}
-		repoCtx, cancel := context.WithTimeout(ctx, eventTimeout)
-		err := c.recheckRepo(repoCtx, repo)
-		cancel()
-		if err != nil {
-			return err
+	selected := make(map[string]api.Repo)
+	for _, r := range repos {
+		if (e.InstallationCreated && e.RepositoriesOmitted) || slices.Contains(e.AddedRepositories, r.FullName) {
+			selected[strings.ToLower(r.FullName)] = r
 		}
 	}
-	return nil
-}
-
-func (c *Control) recheckRepo(ctx context.Context, repo api.Repo) error {
-	pulls, err := c.setupPulls.SetupPulls(ctx, repo.RepoRef)
+	if len(selected) == 0 {
+		return nil
+	}
+	account := e.Account
+	if account == "" {
+		for _, repo := range selected {
+			account, _, _ = strings.Cut(repo.FullName, "/")
+			break
+		}
+	}
+	searchCtx, cancel := context.WithTimeout(ctx, eventTimeout)
+	candidates, err := c.setupPulls.SearchSetupPulls(searchCtx, e.InstallationID, account)
+	cancel()
 	if err != nil {
 		return err
 	}
-	for _, p := range pulls {
-		if p.HeadRepoID != repo.ID || p.HeadRef != "archfit/setup" {
+	for _, candidate := range candidates {
+		repo, ok := selected[strings.ToLower(candidate.Repo)]
+		if !ok {
 			continue
 		}
-		outcome, err := c.setup.Run(ctx, repo, p.Number, p.HeadSHA)
-		slog.InfoContext(ctx, "setup recheck", "repository", repo.FullName, "pr", p.Number, "outcome", outcome)
+		prCtx, done := context.WithTimeout(ctx, eventTimeout)
+		outcome, err := c.setup.run(prCtx, repo, candidate.Number, "", true)
+		done()
+		slog.InfoContext(ctx, "setup recheck", "repository", repo.FullName, "pr", candidate.Number, "outcome", outcome)
 		if err != nil {
+			if api.Permanent(err) {
+				slog.WarnContext(ctx, "setup recheck skipped pull", "repository", repo.FullName, "pr", candidate.Number, "error", err.Error())
+				continue
+			}
 			return err
 		}
 	}

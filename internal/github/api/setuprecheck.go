@@ -106,3 +106,44 @@ func (c *Client) Comment(ctx context.Context, repo Repo, pr int, body string) er
 	_, err := c.CreateComment(ctx, repo.RepoRef, pr, body)
 	return err
 }
+
+// SetupCandidate identifies a search result; the pull is read under its lease.
+type SetupCandidate struct {
+	Repo   string
+	Number int
+}
+
+// SearchSetupPulls searches the account once using the installation token.
+func (c *Client) SearchSetupPulls(ctx context.Context, installationID int64, account string) ([]SetupCandidate, error) {
+	cr, err := instCred(installationID)
+	if err != nil {
+		return nil, err
+	}
+	if !fullNameRE.MatchString(account + "/x") {
+		return nil, errors.New("github: invalid account")
+	}
+	var data struct {
+		Total      int  `json:"total_count"`
+		Incomplete bool `json:"incomplete_results"`
+		Items      []struct {
+			Number        int    `json:"number"`
+			RepositoryURL string `json:"repository_url"`
+		} `json:"items"`
+	}
+	k := call{cred: cr, method: http.MethodGet, route: "/search/issues", url: apiURL("/search/issues", url.Values{"q": {"is:pr is:open head:archfit/setup user:" + account}, "per_page": {"100"}})}
+	if err := c.send(ctx, k, &data); err != nil {
+		return nil, err
+	}
+	if data.Incomplete || data.Total > len(data.Items) {
+		return nil, errors.New("github: incomplete setup search")
+	}
+	out := make([]SetupCandidate, 0, len(data.Items))
+	for _, v := range data.Items {
+		name, ok := strings.CutPrefix(v.RepositoryURL, "https://api.github.com/repos/")
+		if !ok || !fullNameRE.MatchString(name) || v.Number <= 0 {
+			return nil, errors.New("github: invalid setup search result")
+		}
+		out = append(out, SetupCandidate{Repo: name, Number: v.Number})
+	}
+	return out, nil
+}

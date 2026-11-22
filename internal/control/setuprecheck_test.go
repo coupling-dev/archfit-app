@@ -20,14 +20,35 @@ type fakeSetupGitHub struct {
 	suite, marker                bool
 	status                       int
 	suiteErr, requestErr, runErr error
+	commentErr                   error
+	pulls                        fakeSetupPulls
+	onRequest                    func()
+	pullErrors                   map[int]error
+	pullCalls                    int
 }
 
+func (f *fakeSetupGitHub) PullSummary(_ context.Context, r api.RepoRef, pr int) (api.Pull, error) {
+	f.pullCalls++
+	if err := f.pullErrors[pr]; err != nil {
+		return api.Pull{}, err
+	}
+	for _, p := range f.pulls[r.FullName] {
+		if p.Number == pr {
+			p.State = "open"
+			return p, nil
+		}
+	}
+	return api.Pull{}, api.ErrNotFound
+}
 func (f *fakeSetupGitHub) ActionsSuite(context.Context, api.Repo, string) (int64, bool, error) {
 	f.calls++
 	return 1, f.suite, f.suiteErr
 }
 func (f *fakeSetupGitHub) RerequestSuite(context.Context, api.Repo, int64) (int, error) {
 	f.calls++
+	if f.onRequest != nil {
+		f.onRequest()
+	}
 	return f.status, f.requestErr
 }
 func (f *fakeSetupGitHub) RunURL(context.Context, api.Repo, int64) (string, error) {
@@ -43,7 +64,7 @@ func (f *fakeSetupGitHub) Comment(_ context.Context, _ api.Repo, _ int, body str
 	f.body = body
 	f.calls++
 	f.comments++
-	return nil
+	return f.commentErr
 }
 
 func TestSetupRecheck(t *testing.T) {
@@ -102,8 +123,14 @@ func TestSetupRecheck(t *testing.T) {
 
 type fakeSetupPulls map[string][]api.Pull
 
-func (f fakeSetupPulls) SetupPulls(_ context.Context, r api.RepoRef) ([]api.Pull, error) {
-	return f[r.FullName], nil
+func (f fakeSetupPulls) SearchSetupPulls(_ context.Context, _ int64, _ string) ([]api.SetupCandidate, error) {
+	var out []api.SetupCandidate
+	for repo, pulls := range f {
+		for _, p := range pulls {
+			out = append(out, api.SetupCandidate{Repo: repo, Number: p.Number})
+		}
+	}
+	return out, nil
 }
 
 func TestSetupRecheckAddedRepositories(t *testing.T) {
@@ -124,10 +151,10 @@ func TestSetupRecheckAddedRepositories(t *testing.T) {
 		{"none", []string{"o/r"}, fakeSetupPulls{}, 0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			gh := &fakeSetupGitHub{suite: true, status: 201}
+			gh := &fakeSetupGitHub{suite: true, status: 201, pulls: tt.pulls}
 			st := store.NewMemory()
 			c := Control{setup: &setupRecheck{store: st, gh: gh, now: time.Now}, setupPulls: tt.pulls}
-			if err := c.recheckAdded(context.Background(), webhook.Event{AddedRepositories: tt.added}, []api.Repo{repo, other}); err != nil {
+			if err := c.recheckAdded(context.Background(), webhook.Event{InstallationID: 1, Account: "o", AddedRepositories: tt.added}, []api.Repo{repo, other}); err != nil {
 				t.Fatal(err)
 			}
 			if gh.calls != tt.want*2 {
@@ -159,6 +186,7 @@ func TestSetupRecheckInstallationEvent(t *testing.T) {
 			gh := &fakeSetupGitHub{suite: true, status: 201}
 			h.c.setup = &setupRecheck{store: store.NewMemory(), gh: gh, now: time.Now}
 			h.c.setupPulls = fakeSetupPulls{"org7/app": {{Number: 7, HeadSHA: "head", HeadRef: "archfit/setup", HeadRepoID: headID}}}
+			gh.pulls = h.c.setupPulls.(fakeSetupPulls)
 			err := h.c.HandleEvent(context.Background(), webhook.Event{Kind: webhook.InstallationAdded, InstallationID: 7, Account: "org7", AddedRepositories: tt.added})
 			if err != nil {
 				t.Fatal(err)
@@ -206,8 +234,66 @@ func TestSetupRecheckCreatedWithoutRepositories(t *testing.T) {
 	gh := &fakeSetupGitHub{suite: true, status: 201}
 	h.c.setup = &setupRecheck{store: store.NewMemory(), gh: gh, now: time.Now}
 	h.c.setupPulls = fakeSetupPulls{"org7/app": {{Number: 7, HeadSHA: "head", HeadRef: "archfit/setup", HeadRepoID: 70}}}
+	gh.pulls = h.c.setupPulls.(fakeSetupPulls)
 	err := h.c.HandleEvent(context.Background(), webhook.Event{Kind: webhook.InstallationAdded, InstallationID: 7, Account: "org7", InstallationCreated: true, RepositoriesOmitted: true})
 	if err != nil || gh.calls != 2 {
 		t.Fatalf("calls %d, err %v", gh.calls, err)
+	}
+}
+
+func TestSetupSearchSkipsUnselected(t *testing.T) {
+	pulls := fakeSetupPulls{"o/other": {{Number: 1, HeadRef: "archfit/setup", HeadRepoID: 2, HeadSHA: "head"}}}
+	gh := &fakeSetupGitHub{pulls: pulls, suite: true, status: 201}
+	c := Control{setupPulls: pulls, setup: &setupRecheck{store: store.NewMemory(), gh: gh, now: time.Now}}
+	err := c.recheckAdded(context.Background(), webhook.Event{InstallationID: 1, Account: "o", AddedRepositories: []string{"o/r"}}, []api.Repo{{RepoRef: api.RepoRef{InstallationID: 1, FullName: "o/r"}, ID: 1}})
+	if err != nil || gh.calls != 0 {
+		t.Fatalf("err %v calls %d", err, gh.calls)
+	}
+}
+
+func TestSetupRecheckFinalRecordSurvivesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	st := store.NewMemory()
+	gh := &fakeSetupGitHub{suite: true, status: 201, onRequest: cancel}
+	s := setupRecheck{store: st, gh: gh, now: time.Now}
+	repo := api.Repo{RepoRef: api.RepoRef{InstallationID: 1, FullName: "o/r"}, ID: 1}
+	outcome, err := s.Run(ctx, repo, 1, "head")
+	if err != nil || outcome != "rerequested" {
+		t.Fatalf("outcome %q err %v", outcome, err)
+	}
+	outcome, err = s.Run(context.Background(), repo, 1, "head")
+	if err != nil || outcome != "done" {
+		t.Fatalf("repeat %q err %v", outcome, err)
+	}
+}
+
+func TestSetupRecheckPreservesGitHubError(t *testing.T) {
+	for _, gh := range []*fakeSetupGitHub{{suiteErr: api.ErrNotFound}, {suite: true, requestErr: api.ErrNotFound}} {
+		s := setupRecheck{store: store.NewMemory(), gh: gh, now: time.Now}
+		repo := api.Repo{RepoRef: api.RepoRef{InstallationID: 1, FullName: "o/r"}, ID: 1}
+		_, err := s.Run(context.Background(), repo, 1, "head")
+		if !errors.Is(err, api.ErrNotFound) {
+			t.Fatalf("lost cause: %v", err)
+		}
+	}
+}
+
+type orderedSetupSearch struct {
+	calls   int
+	results []api.SetupCandidate
+}
+
+func (f *orderedSetupSearch) SearchSetupPulls(context.Context, int64, string) ([]api.SetupCandidate, error) {
+	f.calls++
+	return f.results, nil
+}
+
+func TestSetupSearchContinuesAfterPermanentPull(t *testing.T) {
+	search := &orderedSetupSearch{results: []api.SetupCandidate{{Repo: "o/r", Number: 1}, {Repo: "o/r", Number: 2}}}
+	gh := &fakeSetupGitHub{suite: true, status: 201, pullErrors: map[int]error{1: api.ErrNotFound}, pulls: fakeSetupPulls{"o/r": {{Number: 2, HeadSHA: "head", HeadRef: "archfit/setup", HeadRepoID: 42}}}}
+	c := Control{setupPulls: search, setup: &setupRecheck{store: store.NewMemory(), gh: gh, now: time.Now}}
+	err := c.recheckAdded(context.Background(), webhook.Event{InstallationID: 1, Account: "o", AddedRepositories: []string{"o/r"}}, []api.Repo{{RepoRef: api.RepoRef{InstallationID: 1, FullName: "o/r"}, ID: 42}})
+	if err != nil || search.calls != 1 || gh.pullCalls != 2 || gh.calls != 2 {
+		t.Fatalf("err %v searches %d pulls %d calls %d", err, search.calls, gh.pullCalls, gh.calls)
 	}
 }

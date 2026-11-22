@@ -68,3 +68,18 @@ func TestSetupRecheckAdapter(t *testing.T) {
 		})
 	}
 }
+
+func TestSearchSetupPulls(t *testing.T) {
+	env := muxEnv(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /search/issues", func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("q") != "is:pr is:open head:archfit/setup user:acme" {
+				t.Errorf("query %q", r.URL.Query().Get("q"))
+			}
+			_, _ = fmt.Fprint(w, `{"total_count":2,"incomplete_results":false,"items":[{"number":2,"repository_url":"https://api.github.com/repos/acme/a"},{"number":3,"repository_url":"https://api.github.com/repos/acme/b"}]}`)
+		})
+	})
+	got, err := env.c.SearchSetupPulls(context.Background(), 1, "acme")
+	if err != nil || len(got) != 2 || got[0].Repo != "acme/a" || got[0].Number != 2 {
+		t.Fatalf("got %+v err %v", got, err)
+	}
+}

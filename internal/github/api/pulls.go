@@ -208,21 +208,3 @@ func uniquePaths(files []fileJSON) []string {
 	}
 	return paths
 }
-
-// SetupPulls lists open setup-branch pull requests.
-func (c *Client) SetupPulls(ctx context.Context, r RepoRef) ([]Pull, error) {
-	cr, base, err := r.target()
-	if err != nil {
-		return nil, err
-	}
-	k := call{cred: cr, method: http.MethodGet, route: "/repos/{r}/pulls", url: pagedURL(base+"/pulls", url.Values{"state": {"open"}, "head": {r.owner() + ":archfit/setup"}})}
-	all, err := listAll[pullJSON](ctx, c, k, "")
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Pull, 0, len(all))
-	for _, p := range all {
-		out = append(out, p.pull())
-	}
-	return out, nil
-}

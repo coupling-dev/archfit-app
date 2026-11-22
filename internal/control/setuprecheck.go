@@ -14,6 +14,7 @@ import (
 )
 
 type setupGitHub interface {
+	PullSummary(context.Context, api.RepoRef, int) (api.Pull, error)
 	ActionsSuite(context.Context, api.Repo, string) (int64, bool, error)
 	RerequestSuite(context.Context, api.Repo, int64) (int, error)
 	RunURL(context.Context, api.Repo, int64) (string, error)
@@ -36,7 +37,10 @@ const setupMarker = "<!-- archfit:setup-recheck -->"
 const setupLeaseTTL = 10 * time.Minute
 
 func (s setupRecheck) Run(ctx context.Context, repo api.Repo, pr int, head string) (string, error) {
-	if repo.InstallationID <= 0 || repo.ID <= 0 || pr <= 0 || head == "" {
+	return s.run(ctx, repo, pr, head, false)
+}
+func (s setupRecheck) run(ctx context.Context, repo api.Repo, pr int, head string, resolve bool) (string, error) {
+	if repo.InstallationID <= 0 || repo.ID <= 0 || pr <= 0 || (!resolve && head == "") {
 		return "failed", errors.New("setup recheck: invalid target")
 	}
 	tenant := store.Tenant(repo.InstallationID)
@@ -75,7 +79,22 @@ func (s setupRecheck) Run(ctx context.Context, repo api.Repo, pr int, head strin
 	}
 	work, cancel := context.WithTimeout(ctx, setupLeaseTTL-10*time.Second)
 	defer cancel()
-	outcome, err := s.check(work, repo, pr, head)
+	outcome := "done"
+	if resolve {
+		p, err := s.gh.PullSummary(work, repo.RepoRef, pr)
+		if err != nil {
+			return "failed", err
+		}
+		if p.State == "open" && p.HeadRef == "archfit/setup" && p.HeadRepoID == repo.ID && p.HeadSHA != "" {
+			head = p.HeadSHA
+		} else {
+			head = ""
+		}
+	}
+	var err error
+	if head != "" {
+		outcome, err = s.check(work, repo, pr, head)
+	}
 	// An uncertain write holds the lease until expiry; a retry checks the marker first.
 	if err != nil {
 		return "failed", err
@@ -84,7 +103,9 @@ func (s setupRecheck) Run(ctx context.Context, repo api.Repo, pr int, head strin
 	if err != nil {
 		return "failed", err
 	}
-	ok, err := s.store.CompareAndSwap(work, tenant, key, mine, final)
+	finish, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer finishCancel()
+	ok, err := s.store.CompareAndSwap(finish, tenant, key, mine, final)
 	if err != nil {
 		return "failed", err
 	}
@@ -97,7 +118,7 @@ func (s setupRecheck) Run(ctx context.Context, repo api.Repo, pr int, head strin
 func (s setupRecheck) check(ctx context.Context, repo api.Repo, pr int, head string) (string, error) {
 	id, found, err := s.gh.ActionsSuite(ctx, repo, head)
 	if err != nil {
-		return "failed", fmt.Errorf("setup recheck: suite lookup: %v", err)
+		return "failed", fmt.Errorf("setup recheck: suite lookup: %w", err)
 	}
 	if found {
 		status, callErr := s.gh.RerequestSuite(ctx, repo, id)
@@ -106,7 +127,7 @@ func (s setupRecheck) check(ctx context.Context, repo api.Repo, pr int, head str
 			return "rerequested", nil
 		}
 		if status < 400 || status >= 500 {
-			return "failed", fmt.Errorf("setup recheck: rerequest status %d: %v", status, callErr)
+			return "failed", fmt.Errorf("setup recheck: rerequest status %d: %w", status, callErr)
 		}
 	}
 	marked, err := s.gh.HasMarkerComment(ctx, repo, pr)
