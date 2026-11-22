@@ -2,6 +2,7 @@ package gate
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -93,12 +94,19 @@ func TestRequiredPolicyWithoutApprovalStillWaitsForTheFirstApproval(t *testing.T
 func TestAdvisoryHistoryIsNeverAnApproval(t *testing.T) {
 	w, _, s := advisoryWorld(t, policy4)
 	w.wantStatus(w.send4(s), "pass", "")
-	// The policy becomes required on the default branch: the advisory checks that ran are no approval.
+	var repo records.Repo
+	err := records.Load(context.Background(), w.mem, store.Tenant(w.shop.InstallationID), records.RepoKey(w.shop.FullName), &repo)
+	if err != nil && !errors.Is(err, records.ErrNoRecord) || repo.ApprovedDigest != "" || repo.ApprovedCommit != "" {
+		t.Fatalf("an advisory verdict recorded an approval: %+v, %v", repo, err)
+	}
+	// An owner's change makes the policy required on the default branch: the advisory checks that ran are no approval.
+	w.setFile(w.shop, testBranch, policyPath, []byte(policy4Required))
 	p2 := w.openPull(w.shop, 8)
 	s2 := w.spec4(p2, "pass")
-	w.usePolicy(s2, policy4Required)
-	w.unrecorded()
+	s2.env.PolicyDigest = policy3.Digest([]byte(policy4Required))
+	s2.result["policy"].(map[string]any)["digest"] = s2.env.PolicyDigest
 	w.wantStatus(w.send4(s2), "unknown", reasonFirstApproval)
+	w.wantGate(p2, "completed", "action_required")
 }
 
 func TestUnguardedSetupPullRequestGetsNoVerdictYet(t *testing.T) {
@@ -245,5 +253,44 @@ func TestSweepKeepsTheAdvisoryVerdictOfAPolicyNoOwnerApproved(t *testing.T) {
 			w.sweep4()
 			w.wantSweepGate(p, "completed", conclusion)
 		})
+	}
+}
+
+func TestTheSetupPullRequestKeepsItsCheckWhenTheWorkflowCannotBeRead(t *testing.T) {
+	w := newWorld4(t)
+	w.unrecorded()
+	w.removeFile(w.shop, testBranch, policyPath)
+	p := w.openPull(w.shop, 7)
+	s := w.spec4(p, "pass")
+	w.gh.failPath = map[string]error{ingest.WorkflowPath: errors.New("fake: GitHub is down")}
+	w.wantStatus(w.send4(s), "unknown", reasonFirstPolicy)
+	w.wantGate(p, "completed", "neutral")
+}
+
+func TestSweepReplacesANeutralUnknownWhenThePolicyBecomesRequired(t *testing.T) {
+	w := newWorld4(t)
+	p := w.openPull(w.shop, 7)
+	s := w.spec4(p, "policy_differs")
+	w.unrecorded()
+	w.wantStatus(w.send4(s), "unknown", "")
+	w.wantGate(p, "completed", "neutral")
+
+	w.guarded4(policy4Required)
+	w.sweep4()
+	if c, _ := w.latestGate(p.head); c.Conclusion == "neutral" {
+		t.Errorf("the neutral unknown of an advisory policy survived a required policy: %+v", c)
+	}
+}
+
+func TestSweepKeepsAnAdvisoryUnknownNeutralWhileTheCheckRunsAgain(t *testing.T) {
+	w := newWorld4(t)
+	p := w.openPull(w.shop, 7)
+	s := w.spec4(p, "pass")
+	w.unrecorded()
+	w.wantStatus(w.send4(s), "pass", "")
+	w.setFile(w.shop, testBranch, policyPath, []byte(policy4+"# changed\n"))
+	w.sweep4()
+	if c, _ := w.latestGate(p.head); c.Conclusion != "neutral" || !strings.Contains(c.Title, "unknown, no verdict") {
+		t.Errorf("check %+v, want the neutral unknown of a policy that changed since the run", c)
 	}
 }

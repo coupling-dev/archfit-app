@@ -37,7 +37,8 @@ func TestSweepWithdrawsExpiredOrStaleSuccessBeforeRerunErrors(t *testing.T) {
 				if err != nil || sum.Errors != 1 {
 					t.Fatalf("sweep = %+v,%v", sum, err)
 				}
-				w.wantSweepGate(p, "completed", "action_required")
+				// A policy that changed since the run waits for a check; it is neutral in advisory mode only.
+				w.wantSweepGate(p, "completed", map[bool]string{true: "neutral", false: "action_required"}[policyChanged])
 			})
 		}
 	}

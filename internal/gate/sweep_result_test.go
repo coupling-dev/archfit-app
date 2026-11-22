@@ -241,7 +241,7 @@ func TestSweepStalePolicyRerunsOnlyUnderTheGuard(t *testing.T) {
 			if (len(w.gh.reruns) == 1) != allowed {
 				t.Fatalf("reruns = %v", w.gh.reruns)
 			}
-			w.wantSweepGate(p, "completed", "action_required")
+			w.wantSweepGate(p, "completed", "neutral") // an advisory policy: the check waits for a run of the current policy
 			w.wantPublication(p, "sweep", result.StatusUnknown)
 			if !strings.Contains(w.comment(p), "the policy changed since this run") {
 				t.Error(w.comment(p))

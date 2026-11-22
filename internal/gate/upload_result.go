@@ -254,11 +254,14 @@ func (v *upload4) decide(ctx context.Context, u ingest.Upload4) (decision4, erro
 				Next: result.Next{Kind: "wait", Text: "the check runs again"}})
 		}
 	}
-	if err := v.checkWorkflow(ctx, ref, branch, tip, b, env.MergeBaseSHA, approval, add); err != nil {
-		return decision4{}, err
+	// The setup pull request reads nothing from its run: not even a failed read of its workflow may stop its check.
+	if !setup {
+		if err := v.checkWorkflow(ctx, ref, branch, tip, b, env.MergeBaseSHA, approval, add); err != nil {
+			return decision4{}, err
+		}
 	}
 
-	// The setup pull request shows its one record: the App adjudicates nothing from head files, workflow included.
+	// The setup pull request shows its one record: the App adjudicates nothing from head files.
 	// Only the two reasons that stop the App from judging the run for the default branch at all stay.
 	if setup {
 		reasons = slices.DeleteFunc(reasons, func(r reason4) bool {
