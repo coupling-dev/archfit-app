@@ -5,6 +5,7 @@ export interface HomeNeed {
   kind: string;
   text: string;
   href: string;
+  request?: number;
   record?: string;
   since?: string; // RFC 3339: when an owner step last changed
 }
@@ -216,6 +217,7 @@ export function readHome(value: unknown): Home {
         kind: string(need.kind),
         text: string(need.text),
         href: string(need.href),
+        ...(need.request === undefined ? {} : { request: number(need.request) }),
         ...(need.record === undefined ? {} : { record: string(need.record) }),
         ...(need.since === undefined ? {} : { since: string(need.since) }),
       };
