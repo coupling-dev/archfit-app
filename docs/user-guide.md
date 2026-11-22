@@ -20,6 +20,8 @@ The public algorithm is standard: exactly 16 random bytes from Go crypto/rand.Re
 
 ## Install and set up
 
+For the end-to-end route, see [Try it on your pull request](https://github.com/coupling-dev/archfit/blob/main/docs/try-it-on-your-pull-request.md).
+
 1. Install the GitHub App for the repository. If the account is not admitted, [ask for beta access](https://github.com/coupling-dev/archfit/issues/new?template=beta-access.yml). If you are not an organization administrator, GitHub sends your request to its administrators; send one of them the [install link](https://github.com/apps/archfit-review/installations/new) and ask them to install Archfit on the repository.
 2. Put a version 1 `.archfit.yaml` (the App reads no other version) and `.github/workflows/archfit.yaml` in the repository. Read them before the first approval. The App does not generate these files.
 3. Sign in to the App and register a passkey as a repository administrator. See [Register a passkey](#register-a-passkey).
