@@ -23,10 +23,11 @@ type editJSON struct {
 }
 
 type editPreviewJSON struct {
-	Digest string   `json:"digest,omitempty"`
-	Target string   `json:"target,omitempty"`
-	Diff   string   `json:"diff"`
-	Errors []string `json:"errors"`
+	Digest  string   `json:"digest,omitempty"`
+	Target  string   `json:"target,omitempty"`
+	Diff    string   `json:"diff"`
+	Against string   `json:"against,omitempty"` // what the diff compares the YAML with, in words
+	Errors  []string `json:"errors"`
 }
 
 func readEdit(r *http.Request) (answers.EditAnswer, error) {
@@ -63,7 +64,7 @@ func (s *server) apiEditPreview(r *http.Request, sc scope) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return editPreviewJSON{Digest: v.Digest, Target: v.Target, Diff: v.Diff, Errors: editProblems(v.Errors)}, nil
+	return editPreviewJSON{Digest: v.Digest, Target: v.Target, Diff: v.Diff, Against: v.Against, Errors: editProblems(v.Errors)}, nil
 }
 
 var (
