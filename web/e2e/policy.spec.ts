@@ -254,12 +254,13 @@ test('policy edit: a moved target refuses the confirmed edit with the reload sen
   await expectClean(page);
 });
 
-test('policy edit: explicit reload restores the recorded proposal before preview', async ({ page }) => {
+const proposalDiff = '--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -5,0 +6,2 @@\n+# earlier answer\n+# setup\n';
+const lostDiff = '--- a/.archfit.yaml\n+++ b/.archfit.yaml\n@@ -7 +6,0 @@\n-# setup\n';
+
+test('policy edit: restoring a proposal changed outside Archfit says what it removes', async ({ page }) => {
   const handlers = editor();
-  handlers[api] = () => [
-    200,
-    { ...typical, edit: { available: true, reason: '', file: proposalYAML, digest: baseDigest, recovery: true } },
-  ];
+  handlers[api] = () => [200, { ...typical, edit: { available: true, reason: '', file: proposalYAML, digest: baseDigest,
+    recovery: true, foreign: true, pull_request: 44, target, diff: proposalDiff, lost: lostDiff } }];
   handlers['POST ' + root + '/policy/edit/reload'] = () => [
     200,
     { available: true, reason: '', file: proposalYAML, digest: baseDigest },
@@ -267,7 +268,9 @@ test('policy edit: explicit reload restores the recorded proposal before preview
   const writes = await open(page, path + '?edit=1', handlers);
   await expect(page.getByLabel('Policy YAML')).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Preview the edit' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Reload the policy' }).click();
+  await expect(page.getByText('#44 changed outside Archfit')).toBeVisible();
+  await expect(page.getByLabel('Lines that restoring removes')).toHaveText(lostDiff);
+  await page.getByRole('button', { name: 'Restore #44' }).click();
   await expect(page.getByLabel('Policy YAML')).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Preview the edit' })).toBeVisible();
   expect(writes.map((r) => new URL(r.url()).pathname)).toEqual([root + '/policy/edit/reload']);
@@ -293,4 +296,57 @@ test('policy edit: an unchanged preview offers nothing to approve', async ({ pag
   await expect(page.getByRole('button', { name: 'Approve and merge with passkey' })).toHaveCount(0);
   expect(writes.map((r) => new URL(r.url()).pathname)).toEqual([root + '/policy/edit/preview']);
   await expectClean(page);
+});
+
+function voided(passkey = '', outcome: object = { pull_request: 44, state: 'merged', notice: 'Answered. The policy change merged in #44.' }): Handlers {
+  let challenge = '';
+  return {
+    [api]: () => [200, { ...typical, edit: { available: true, reason: '', file: proposalYAML, digest: baseDigest,
+      recovery: true, voided: true, pull_request: 44, target, diff: proposalDiff, lost: lostDiff } }],
+    ['POST ' + root + '/passkeys/step-up']: (body) => {
+      expect(body).toEqual({ action: 'edit', digest: baseDigest, target, base_digest: baseDigest, yaml: proposalYAML });
+      const options = assertion([passkey]);
+      challenge = options.publicKey.challenge;
+      return [200, { options }];
+    },
+    ['POST ' + root + '/passkeys/step-up/finish']: (body) => {
+      expect(ceremony(body.credential).client).toMatchObject({ type: 'webauthn.get', challenge, origin });
+      return [200, { token: 'edit-token' }];
+    },
+    ['POST ' + root + '/policy/edit']: (body) => {
+      expect(body).toEqual({ answer: 'edit', yaml: proposalYAML, base_digest: baseDigest, target, as_is: true,
+        token: 'edit-token' });
+      return [200, outcome];
+    },
+  };
+}
+
+test('policy: a cancelled approval shows the open change and one action to approve it again', async ({ page }) => {
+  const device = await authenticator(page, true);
+  const writes = await open(page, path, voided(device.id));
+  await expect(page.getByText('Your approval was cancelled')).toBeVisible();
+  await expect(page.getByLabel('The change in #44')).toHaveText(proposalDiff);
+  await expect(page.getByLabel('Lines that discarding removes')).toBeHidden();
+  await page.getByText('Discard the change instead').click();
+  await expect(page.getByLabel('Lines that discarding removes')).toHaveText(lostDiff);
+  await page.getByRole('button', { name: 'Approve and merge #44 (2 lines) with passkey' }).click();
+  const box = page.getByRole('region', { name: 'Policy pull request #44' });
+  await expect(box.getByRole('status')).toHaveText('Answered. The policy change merged in #44.');
+  expect(writes.map((r) => new URL(r.url()).pathname)).toEqual([
+    root + '/passkeys/step-up',
+    root + '/passkeys/step-up/finish',
+    root + '/policy/edit',
+  ]);
+  await expectClean(page);
+});
+
+test('policy: a merge GitHub refused is a warning with its reason, not a success', async ({ page }) => {
+  const device = await authenticator(page, true);
+  const notice = 'Answered. The policy change is in #44, but GitHub did not merge it: the branch is behind the default branch. It stays open until it merges.';
+  await open(page, path, voided(device.id, { pull_request: 44, state: 'refused', notice }));
+  await page.getByRole('button', { name: 'Approve and merge #44 (2 lines) with passkey' }).click();
+  const box = page.getByRole('region', { name: 'Policy pull request #44' });
+  await expect(box.getByRole('alert')).toHaveText(notice);
+  await expect(box.getByRole('alert')).toHaveClass(/warn/);
+  await expect(box.getByRole('status')).toHaveCount(0);
 });

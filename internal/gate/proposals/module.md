@@ -66,10 +66,16 @@ notes the answer on the request issue. Without it an answer is a record nobody a
   voided because its pull request closed or none of its answers applies any more (retired before the void; a failure
   is returned and the next answer repeats it). `Retire` is safe to repeat: a head whose latest run already is this
   proposal's retirement is left alone. `ExternalID` names the run `check` sets, and `ProposalOf` reads it.
+- Up to date first (`upToDate`): when the head does not contain the tip (`Compare(tip, head)` is not `ahead` or
+  `identical`), the same policy bytes become one App commit on the tip (force), pinned again with `records.Join` in the
+  proposal's edit epoch; the old head is retired as superseded, and `check` then reads the digest at the new head.
+  GitHub's `update-branch` is not used: its merge commit is not the App's, so D13 would refuse it. Any failure keeps
+  the old pin, and the merge is refused as before.
 - The merge: wait at most 10 s for the pull request to show the head (GitHub moves it after the ref), then
   `MergePull(number, head)` (squash, expected head, no bypass actor: design appendix D.2). On any refusal (405, 409,
   422) read the pull request: merged anyway (an owner, an earlier attempt; unmeasured) is `merged`, else it stays open
-  for the sweep (task 22) or an owner's merge on GitHub. A failed check is never followed by a merge.
+  for the sweep (task 22) or an owner's merge on GitHub; its `mergeable_state` gives the refusal's reason
+  (`Outcome.Reason`). A failed check is never followed by a merge.
 
 - `Revert` (M2 task 23), under the same lease and deadlines: the policy changed outside the flow is replaced on
   `archfit/policy` by the last approved policy (read at `Repo.ApprovedCommit` and checked against `ApprovedDigest`), with
@@ -163,8 +169,11 @@ proposal and target after acquisition, so an in-flight publisher cannot restore 
 Target checks before publishing and merging void it and retire its old success;
 push/sweep handling also voids observed stale edits, and consumption requires proof of the exact merge parent.
 The owner can explicitly edit the proposal again with a fresh preview and passkey binding.
-`Editor` loads the recorded head, ignoring unrecorded pulls. If the live branch differs, `ReloadEditor` restores only
-recorded approvals under the lease, without approving or merging new bytes. Preview stays read-only.
+`Editor` loads the recorded head, ignoring unrecorded pulls, with the proposal's diff against the tip, `Voided` (an
+edit approval voided or stale), `Foreign` (the live branch differs) and `Lost` (what `ReloadEditor` removes). If the
+live branch differs, `ReloadEditor` restores only recorded approvals under the lease, without approving or merging new
+bytes. Preview stays read-only and diffs against the open proposal's file. An edit equal to that file is
+`ErrEditUnchanged`; `EditInput.AsIs` instead approves exactly that file again (a voided approval, a refused merge).
 Submission cleans closed proposals after valid redemption, reopening their requests as ordinary answers do.
 
 ## Integrations

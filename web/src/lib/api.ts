@@ -303,5 +303,9 @@ export interface Policy {
   }[];
   yaml: string;
   digest: string;
-  edit: { available: boolean; reason: string; file?: string; digest?: string; recovery?: boolean };
+  edit: {
+    available: boolean; reason: string; file?: string; digest?: string; recovery?: boolean;
+    // The open policy pull request: its change against the default branch, and what Reload removes from it.
+    pull_request?: number; target?: string; diff?: string; lost?: string; voided?: boolean; foreign?: boolean;
+  };
 }
