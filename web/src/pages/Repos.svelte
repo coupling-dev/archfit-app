@@ -10,6 +10,7 @@
 
   let { here }: { here: string } = $props();
 
+  const installURL = 'https://github.com/apps/archfit-review/installations/new';
   const list = '/api/repos';
   const probed = '/api/repos?probe=1';
 
@@ -61,6 +62,8 @@
   <div class="box blankslate">
     <h2>No repository yet</h2>
     <p>No repository is available to you through an Archfit installation yet.</p>
+    <p>If you asked to install Archfit on an organization and you are not its administrator, GitHub sent your request to the organization's administrators. Send one of them this link and one sentence:</p>
+    <p><a href={installURL}>{installURL}</a></p>
   </div>
 {:else}
   {#if probeFailure}

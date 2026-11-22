@@ -66,3 +66,14 @@ func TestOwner(t *testing.T) {
 		}
 	}
 }
+
+func TestConfiguredAccountAdmittedBeforeInstallation(t *testing.T) {
+	a := NewAdmissions(&stubStore{get: func(context.Context) ([]byte, error) {
+		t.Fatal("configured account must not read the store")
+		return nil, nil
+	}}, []string{" Acme "})
+	got, err := a.Admitted(context.Background(), 0, "ACME")
+	if err != nil || !got {
+		t.Fatalf("Admitted before installation = %t, %v; want true, nil", got, err)
+	}
+}
