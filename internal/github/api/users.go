@@ -124,3 +124,28 @@ func (c *Client) AccountType(ctx context.Context, r RepoRef, login string) (stri
 	}
 	return j.Type, nil
 }
+
+// VerifiedPrimaryEmail returns the user's verified primary email, or an empty string when none is usable.
+func (c *Client) VerifiedPrimaryEmail(ctx context.Context, userToken string) (string, error) {
+	cr, err := userCred(userToken)
+	if err != nil {
+		return "", err
+	}
+	const route = "/user/emails"
+	k := call{cred: cr, method: http.MethodGet, route: route, url: pagedURL(route, nil)}
+	type emailJSON struct {
+		Email    string `json:"email"`
+		Primary  bool   `json:"primary"`
+		Verified bool   `json:"verified"`
+	}
+	emails, err := listAll[emailJSON](ctx, c, k, "")
+	if err != nil {
+		return "", err
+	}
+	for _, email := range emails {
+		if email.Primary && email.Verified {
+			return email.Email, nil
+		}
+	}
+	return "", nil
+}
