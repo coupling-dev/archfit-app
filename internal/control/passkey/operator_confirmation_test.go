@@ -12,14 +12,19 @@ import (
 func TestOperatorConfirmationOneUse(t *testing.T) {
 	ctx := context.Background()
 	s := NewOperatorConfirmations(store.NewMemory(), time.Now)
-	scope := ConfirmationScope{InstallationID: 1, RepositoryID: 2, UserID: 3, SessionBinding: "session-binding", AttemptID: "attempt-1"}
-	if err := s.Request(ctx, scope); err != nil {
+	scope := ConfirmationScope{InstallationID: 1, RepositoryID: 2, UserID: 3, SessionBinding: "session-binding"}
+	attemptID, err := s.Request(ctx, scope)
+	if err != nil {
 		t.Fatal(err)
 	}
+	if attemptID == "" {
+		t.Fatal("request returned an empty attempt ID")
+	}
+	scope.AttemptID = attemptID
 	if err := s.Verify(ctx, scope, ""); err == nil {
 		t.Fatal("pending request accepted without an issued token")
 	}
-	token, err := s.Issue(ctx, 1, scope.AttemptID, 4)
+	token, err := s.Issue(ctx, 1, attemptID, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
