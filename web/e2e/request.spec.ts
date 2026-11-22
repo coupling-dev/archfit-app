@@ -751,3 +751,94 @@ test('request: the page never asks the owner to reload', async ({ page }) => {
   await expect(answerBox(page)).toContainText('No answer is open.');
   expect(await bodyText(page)).not.toMatch(/reload/i);
 });
+
+for (const [name, title, edit, until, instead] of [
+  ['date', 'Allow until', 'date', '2027-01-15', ''],
+  ['reject text', 'Reject, and say what to do instead', 'instead', '', 'Second alternative'],
+] as const) {
+  test(`request: editing the ${name} disables the answer until its new preview lands`, async ({ page }) => {
+    await docsClock(page);
+    const { handlers } = owner({});
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started = false;
+    handlers[`GET ${req}/preview`] = async (_, url) => {
+      const target = edit === 'date' ? url.searchParams.get('until') === until : url.searchParams.get('instead') === instead;
+      if (target) {
+        started = true;
+        await held;
+      }
+      return preview(url);
+    };
+    await open(page, path, handlers);
+    await choose(page, title);
+    if (edit === 'instead') {
+      await insteadField(page).fill('First alternative');
+      await expect(confirmButton(page, 'Answer')).toBeEnabled();
+      await insteadField(page).fill(instead);
+      await expect.poll(() => started).toBe(true);
+      await expect(confirmButton(page, 'Answer')).toBeDisabled();
+      await expect(changeDisclosure(page)).toHaveCount(0);
+      release();
+      await expect(confirmButton(page, 'Answer')).toBeEnabled();
+      await changeDisclosure(page).click();
+      await expect(page.getByLabel('The change to .archfit.yaml')).toContainText('instead: Second alternative');
+    } else {
+      await expect(confirmButton(page, 'Answer with passkey')).toBeEnabled();
+      await dateField(page).fill(until);
+      await expect.poll(() => started).toBe(true);
+      await expect(confirmButton(page, 'Answer with passkey')).toBeDisabled();
+      await expect(changeDisclosure(page)).toHaveCount(0);
+      release();
+      await expect(confirmButton(page, 'Answer with passkey')).toBeEnabled();
+      await changeDisclosure(page).click();
+      await expect(page.getByLabel('The change to .archfit.yaml')).toContainText(`expires: ${until}`);
+    }
+  });
+}
+
+test('request: a refresh read held across the owner\'s answer cannot bring back the open request or its banner', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-13T12:00:00Z') });
+  const { handlers } = owner({ notice: 'Answered. The policy change merged in #77.', pull_request: 77, state: 'merged' });
+  const answerHandler = handlers[`POST ${req}/answer`];
+  let answeredNow = false;
+  let holdNext = false;
+  let heldStarted = false;
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  handlers[`POST ${req}/answer`] = async (body, url) => {
+    answeredNow = true;
+    return answerHandler(body, url);
+  };
+  handlers[`GET ${req}`] = async () => {
+    if (holdNext) {
+      holdNext = false;
+      heldStarted = true;
+      await held;
+      return [200, { ...request, state: 'open' }];
+    }
+    return [200, { ...request, state: answeredNow ? 'answered' : 'open', answer: answeredNow ? { kind: 'reject', instead: 'Use a port.' } : undefined }];
+  };
+  const writes = await open(page, path, handlers);
+  await choose(page, 'Reject, and say what to do instead');
+  await insteadField(page).fill('Use a port.');
+  await expect(confirmButton(page, 'Answer')).toBeEnabled();
+  holdNext = true;
+  await page.clock.runFor(20_000);
+  await expect.poll(() => heldStarted).toBe(true);
+  await confirmButton(page, 'Answer').click();
+  await expect(answerBox(page).locator('.banner')).toContainText('Answered. The policy is updated.');
+  await expect(page.locator('.page-head .small')).toHaveText('An owner rejected this request.');
+  expect(paths(writes)).toEqual([`${req}/answer`]);
+  const completed = page.waitForResponse((r) => new URL(r.url()).pathname === req);
+  release();
+  await (await completed).finished();
+  await expect(page.getByText('was answered while you looked')).toHaveCount(0);
+  await expect(answerBox(page).getByRole('radio')).toHaveCount(0);
+  await expect(page.locator('.page-head .small')).toHaveText('An owner rejected this request.');
+  await expect(answerBox(page).locator('.banner')).toHaveCount(1);
+});

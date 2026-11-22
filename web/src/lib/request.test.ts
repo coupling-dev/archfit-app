@@ -307,6 +307,11 @@ describe('effectLines', () => {
       ['Adds an exception for this one place that ends on 2027-02-20. After it, the check fails again and asks for a new answer.', 'Pull request #15 still has 2 errors.'],
     ],
     ['declare-public', p('declare-public', '+a', passes), ['Adds 1 line: reports/totals joins the public part of reports. Every module may then use it.', 'Pull request #412 passes when the policy is updated.']],
+    [
+      'approve',
+      p('approve', '+a', [{ number: 20, status: 'unknown', waits: true, clears: 0, left: 0 }]),
+      ['Adds 1 line to the policy: billing may depend on reports.', 'Pull request #20 needs a new check result before it can pass.'],
+    ],
     ['reject', undefined, ['The author sees what you say to do instead.']],
     ['reject', p('reject', '+deny', passes), ['Adds a rule: billing may not depend on reports, with what you say to do instead. The author sees your text.']],
     ['reject', p('reject', ''), ['Changes nothing in the policy. The author sees what you say to do instead.']],

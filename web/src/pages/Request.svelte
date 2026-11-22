@@ -73,13 +73,19 @@
   let decision = $derived(selected ? decisionState(selected, previews[selected].preview) : null);
 
   // own is true when the owner's answer caused the read: the page then shows no "answered while you looked" for it.
+  // loads numbers the request reads: only the newest one may change the page, so a refresh that started before an
+  // answer cannot bring back the open state or report the owner's own answer as a change.
+  let loads = 0;
+
   function load(first = false, own = false) {
+    const n = ++loads;
     const path = api(`requests/${route.number}`);
     (first ? firstJSON<RequestView>(path) : getJSON<RequestView>(path)).then(
       (b) => {
+        if (n !== loads) return;
         const before = body;
         body = b;
-        if (b.state === 'open' && b.policy) void previewAll(before);
+        if (b.state === 'open' && b.policy) void previewAll(before, n);
         else if (before && !own) changed = changedWhileOpen(before, b, false);
       },
       (e: ApiError) => {
@@ -98,19 +104,19 @@
 
   // previewAll reads the effect of every answer that can be previewed now. When the policy moved since the last read,
   // the page says so above the answers.
-  async function previewAll(before: RequestView | null) {
+  async function previewAll(before: RequestView | null, n: number) {
     const old = Object.values(previews).find((s) => s.preview)?.preview?.policy_digest;
-    await Promise.all(kinds.map(({ kind }) => preview(kind)));
+    await Promise.all(kinds.map(({ kind }) => preview(kind, true)));
     const now = Object.values(previews).find((s) => s.preview)?.preview?.policy_digest;
-    if (before && body) changed = changedWhileOpen(before, body, !!old && !!now && old !== now);
+    if (n === loads && !busy && before && body) changed = changedWhileOpen(before, body, !!old && !!now && old !== now);
   }
 
-  async function preview(kind: AnswerKind) {
+  // preview reads the effect of one answer. An edit of its date or text drops the old effect at once, so it cannot be
+  // confirmed while the new one is read; a refresh with the same inputs keeps it on the page until the new one lands.
+  async function preview(kind: AnswerKind, refresh = false) {
     const n = ++reads[kind];
-    if (answerProblem(kind, until, instead)) {
-      previews[kind] = {};
-      return;
-    }
+    if (!refresh || answerProblem(kind, until, instead)) previews[kind] = {};
+    if (answerProblem(kind, until, instead)) return;
     try {
       const p = await getJSON<Preview>(api(previewPath(route.number, kind, until, instead.trim())));
       if (n === reads[kind]) previews[kind] = { preview: p };
@@ -123,6 +129,7 @@
     const d = decisionState(kind, previews[kind].preview);
     if (busy || !body || body.state !== 'open' || !d.ready || answerProblem(kind, until, instead)) return;
     busy = true;
+    ++loads;
     answered = null;
     answerError = '';
     const sent = {
@@ -146,6 +153,15 @@
     } finally {
       busy = false;
     }
+  }
+
+  // ledeLine is the line under the question: the request, the author's reason, and the pull requests that wait on it.
+  function ledeLine(r: RequestView): string {
+    const pulls = r.state === 'open' ? (r.waiting ?? []) : [];
+    const waits = pulls.length
+      ? ` Pull request ${pulls.map((n) => `#${n}`).join(', ')} ${pulls.length === 1 ? 'waits' : 'wait'} for your answer.`
+      : '';
+    return `Request #${r.number}. The author says: “${r.reason}”${waits}`;
   }
 
   function answeredLine(r: RequestView): string {
@@ -177,9 +193,7 @@
       <h1>{question(body)}</h1>
       <p class="lede">
         {#if body.state !== 'open'}<span class="status {status.tone}">{status.word}</span>{/if}
-        Request #{body.number}. The author says: “{body.reason}”{#if body.state === 'open' && body.waiting?.length}
-          {' '}Pull request {body.waiting.map((n) => `#${n}`).join(', ')}
-          {body.waiting.length === 1 ? 'waits' : 'wait'} for your answer.{/if}
+        {ledeLine(body)}
       </p>
       {#if body.state !== 'open' || status.line !== 'Waiting for an owner to answer.'}<p class="small">{status.line}</p>{/if}
     </div>

@@ -207,11 +207,14 @@ export function effectLines(
   else if (p.diff) out.push(`Adds a rule: ${r.from} may not depend on ${r.to}, with what you say to do instead. The author sees your text.`);
   else out.push('Changes nothing in the policy. The author sees what you say to do instead.');
   if (!p || kind === 'reject') return out;
-  const passing = p.pulls.filter((e) => e.left === 0).map((e) => `#${e.number}`);
-  const failing = p.pulls.filter((e) => e.left > 0);
+  // An unknown result has no stored errors, so it clears nothing: it needs a new check result before it can pass.
+  const unknown = p.pulls.filter((e) => e.status === 'unknown');
+  const passing = p.pulls.filter((e) => e.status !== 'unknown' && e.left === 0).map((e) => `#${e.number}`);
+  const failing = p.pulls.filter((e) => e.status !== 'unknown' && e.left > 0);
   if (passing.length)
     out.push(`Pull request ${passing.join(', ')} ${passing.length === 1 ? 'passes' : 'pass'} when the policy is updated.`);
   for (const e of failing) out.push(`Pull request #${e.number} still has ${e.left} ${e.left === 1 ? 'error' : 'errors'}.`);
+  for (const e of unknown) out.push(`Pull request #${e.number} needs a new check result before it can pass.`);
   if (!p.pulls.length) out.push('No open pull request changes.');
   return out;
 }
