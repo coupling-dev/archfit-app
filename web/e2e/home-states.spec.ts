@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { docsClock, open } from './support';
+import { docsClock, expectClean, expectPageText, open } from './support';
 import { stateFixtures } from './state-fixtures';
 
 // The five states an owner meets on Home, from the contract fixtures. home.spec.ts runs the axe, CSP and words checks
@@ -50,5 +50,7 @@ test('setup pull has one primary action @docs', async ({ page }) => {
   await expect(page.getByText('Merge the setup pull request to start the checks.', { exact: true })).toBeVisible();
   await expect(page.locator('a.btn.primary')).toHaveCount(1);
   await expect(page.getByRole('link', { name: /Open pull request #12/ })).toHaveAttribute('href', 'https://github.com/acme/app/pull/12');
+  await expectPageText(page, 'home-setup-open');
+  await expectClean(page);
   if (process.env.ARCHFIT_DOCS_SHOTS) await page.screenshot({ path: new URL('../../docs/images/home/setup-open-1280-light.png', import.meta.url).pathname, animations: 'disabled' });
 });
