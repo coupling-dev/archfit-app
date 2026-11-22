@@ -64,6 +64,7 @@ type challenge struct {
 	// Session is go-webauthn's SessionData, kept whole as the library asks. It lives at most TTL.
 	Session    json.RawMessage `json:"session,omitempty"`
 	Purpose    *Purpose        `json:"purpose,omitempty"`    // assert and token
+	Binding    []byte          `json:"binding,omitempty"`    // required for a first-registration ceremony
 	TokenHash  []byte          `json:"token_hash,omitempty"` // token: SHA-256 of the token
 	Credential []byte          `json:"credential,omitempty"` // token: the passkey that made the assertion
 }

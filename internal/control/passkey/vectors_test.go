@@ -101,11 +101,11 @@ func credentialJSON(t *testing.T, v vector, response map[string]string) []byte {
 
 func (e *env) registerVector(v vector) (Passkey, error) {
 	e.t.Helper()
-	if _, err := e.pk.BeginRegistration(ctx, repo, alice, ""); err != nil {
+	if _, err := e.beginRegistration(ctx, repo, alice, ""); err != nil {
 		e.t.Fatal(err)
 	}
 	e.pinChallenge(alice, v.Challenge)
-	return e.pk.FinishRegistration(ctx, repo, alice, credentialJSON(e.t, v, map[string]string{
+	return e.finishRegistration(ctx, repo, alice, credentialJSON(e.t, v, map[string]string{
 		"clientDataJSON":    b64(unhex(e.t, v.ClientDataJSON)),
 		"attestationObject": b64(unhex(e.t, v.AttestationObject)),
 	}))

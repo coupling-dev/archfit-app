@@ -314,12 +314,38 @@ func newEnvAt(t *testing.T, baseURL string) *env {
 	return e
 }
 
+func (e *env) beginRegistration(c context.Context, r api.Repo, u User, token string) (json.RawMessage, error) {
+	u.SessionBinding = "test-enrolment-session"
+	list, err := e.pk.List(c, r, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(list) == 0 {
+		svc := NewOperatorConfirmations(e.store, func() time.Time { return e.now })
+		scope := ConfirmationScope{InstallationID: r.InstallationID, RepositoryID: r.ID, UserID: u.ID, SessionBinding: u.SessionBinding}
+		id, err := svc.Request(c, scope)
+		if err != nil {
+			return nil, err
+		}
+		issued, err := svc.Issue(c, r.InstallationID, id, 999)
+		if err != nil {
+			return nil, err
+		}
+		u.ConfirmationAttempt = id
+		u.ConfirmationToken = issued
+	}
+	return e.pk.BeginRegistration(c, r, u, token)
+}
+func (e *env) finishRegistration(c context.Context, r api.Repo, u User, credential []byte) (Passkey, error) {
+	u.SessionBinding = "test-enrolment-session"
+	return e.pk.FinishRegistration(c, r, u, credential)
+}
 func (e *env) register(u User, a *authenticator, token string) (Passkey, error) {
-	options, err := e.pk.BeginRegistration(ctx, repo, u, token)
+	options, err := e.beginRegistration(ctx, repo, u, token)
 	if err != nil {
 		return Passkey{}, err
 	}
-	return e.pk.FinishRegistration(ctx, repo, u, a.create(options))
+	return e.finishRegistration(ctx, repo, u, a.create(options))
 }
 
 func (e *env) mustRegister(u User, a *authenticator, token string) Passkey {

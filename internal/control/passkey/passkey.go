@@ -120,11 +120,24 @@ func (s *service) BeginRegistration(ctx context.Context, r api.Repo, u User, tok
 	if err != nil {
 		return nil, err
 	}
+	inventory, err := s.List(ctx, r, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	first := len(inventory) == 0
+	if first {
+		if err := NewOperatorConfirmations(s.store, s.now).Verify(ctx, ConfirmationScope{InstallationID: r.InstallationID, RepositoryID: r.ID, UserID: u.ID, SessionBinding: u.SessionBinding, AttemptID: u.ConfirmationAttempt}, u.ConfirmationToken); err != nil {
+			return nil, err
+		}
+	}
 	var options []byte
 	err = store.Update(ctx, s.store, t, []string{passkeyKey(u.ID), challengeKey(u.ID)}, func(cur [][]byte) ([][]byte, error) {
 		rec, err := readRecord(cur[0])
 		if err != nil {
 			return nil, err
+		}
+		if (rec == nil) != first {
+			return nil, ErrCeremony
 		}
 		if rec != nil {
 			if len(rec.Passkeys) >= MaxPasskeys {
@@ -154,6 +167,15 @@ func (s *service) BeginRegistration(ctx context.Context, r api.Repo, u User, tok
 		next, err := s.ceremony(kindRegister, r, session, nil)
 		if err != nil {
 			return nil, err
+		}
+		if first {
+			c := readChallenge(next)
+			binding := sha256.Sum256([]byte(u.SessionBinding))
+			c.Binding = binding[:]
+			next, err = c.encode()
+			if err != nil {
+				return nil, err
+			}
 		}
 		if options, err = json.Marshal(creation); err != nil {
 			return nil, fmt.Errorf("passkey: encode the creation options: %w", err)
@@ -189,9 +211,15 @@ func (s *service) FinishRegistration(ctx context.Context, r api.Repo, u User, cr
 	if err != nil {
 		return Passkey{}, err
 	}
-	_, session, err := s.open(cur[1], kindRegister, r)
+	c, session, err := s.open(cur[1], kindRegister, r)
 	if err != nil {
 		return Passkey{}, err
+	}
+	if rec == nil {
+		binding := sha256.Sum256([]byte(u.SessionBinding))
+		if u.SessionBinding == "" || subtle.ConstantTimeCompare(c.Binding, binding[:]) != 1 {
+			return Passkey{}, ErrCeremony
+		}
 	}
 	switch {
 	case rec != nil && !bytes.Equal(rec.Handle, session.UserID):

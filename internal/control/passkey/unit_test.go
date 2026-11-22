@@ -121,7 +121,7 @@ func TestSecretsNeverReachALogLine(t *testing.T) {
 
 	e := newEnv(t)
 	a := newAuthenticator(t, webauthncose.AlgES256)
-	options, err := e.pk.BeginRegistration(ctx, repo, alice, "")
+	options, err := e.beginRegistration(ctx, repo, alice, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestSecretsNeverReachALogLine(t *testing.T) {
 	if err := json.Unmarshal(options, &o); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.pk.FinishRegistration(ctx, repo, alice, a.create(options)); err != nil {
+	if _, err := e.finishRegistration(ctx, repo, alice, a.create(options)); err != nil {
 		t.Fatal(err)
 	}
 	token := e.mustStepUp(alice, a, approve)
