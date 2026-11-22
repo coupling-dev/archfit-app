@@ -90,11 +90,11 @@ func storyLine(v view, facts *StoryFacts) string {
 func storyOf(v view, facts *StoryFacts) story {
 	s := story{Steps: storySteps{Change: stepDone, Check: stepDone, Ask: stepNotNeeded, Answer: stepNotNeeded,
 		Policy: stepNotNeeded, Recheck: stepNotNeeded}}
-	switch {
-	case v.result.Status == result.StatusPass:
+	switch v.result.Status {
+	case result.StatusPass:
 		s.Next = "nothing to do: the check passes."
 		return s
-	case v.result.Status == result.StatusUnknown:
+	case result.StatusUnknown:
 		s.Steps.Check = stepCurrent
 		s.Next = "wait: the check could not decide yet."
 		if len(v.result.Unknown) > 0 && v.result.Unknown[0].Next.Text != "" {
