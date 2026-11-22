@@ -31,3 +31,9 @@ variable "image_digests" {
 variable "secret_versions" {
   type = map(string)
 }
+
+variable "paused" {
+  description = "Keep queues and scheduler paused until separately approved activation."
+  type        = bool
+  default     = true
+}
