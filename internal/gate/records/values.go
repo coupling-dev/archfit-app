@@ -21,6 +21,7 @@ const (
 	SchemaPullIndex     = "archfit-app.pull-index.v1"
 	SchemaRepos         = "archfit-app.repos.v1"
 	SchemaPolicyPush    = "archfit-app.policy-push.v1"
+	SchemaPolicyHistory = "archfit-app.policy-history.v1"
 )
 
 // States of requests, approvals and proposals.
@@ -266,6 +267,35 @@ func (*Request) check() error    { return nil }
 func (*Approval) check() error   { return nil }
 func (*Pull) check() error       { return nil }
 func (*PolicyPush) check() error { return nil }
+
+// NoPolicy is the digest a PolicyChange shows for a commit without a policy.
+const NoPolicy = "none"
+
+// PolicyChange is one default-branch push that changed the policy before the first approval, as GitHub reports it.
+// Display only: it approves nothing.
+type PolicyChange struct {
+	OldDigest   string `json:"old_digest"` // NoPolicy when the commit before had none
+	NewDigest   string `json:"new_digest"` // NoPolicy when the push deleted it
+	Commit      string `json:"commit"`     // the head commit of the push
+	PullRequest int    `json:"pull_request,omitempty"`
+	// Merger is the login GitHub reports in the pull request's merged_by; never the commit author.
+	Merger   string `json:"merger,omitempty"`
+	Direct   bool   `json:"direct,omitempty"`   // no pull request merged this commit
+	Requests []int  `json:"requests,omitempty"` // from "# request #N" lines the change added
+}
+
+// PolicyHistoryRecord is the list at PolicyHistoryKey, oldest first.
+type PolicyHistoryRecord struct {
+	Schema  string         `json:"schema"`
+	Changes []PolicyChange `json:"changes"`
+}
+
+func (v *PolicyHistoryRecord) stamp() string {
+	v.Schema = SchemaPolicyHistory
+	return v.Schema
+}
+
+func (*PolicyHistoryRecord) check() error { return nil }
 
 func (v *Proposal) check() error {
 	if len(v.Approvals) > MaxApprovals {

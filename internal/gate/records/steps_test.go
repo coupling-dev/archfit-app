@@ -691,7 +691,7 @@ func TestUnguarded(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
 	push := records.Push{Before: "c0", After: "c1"}
-	if err := records.Unguarded(ctx, s, tenant, repoName, push, "d"); err != nil {
+	if err := records.Unguarded(ctx, s, tenant, repoName, push, "d", records.PolicyChange{Commit: "c1", NewDigest: "d"}); err != nil {
 		t.Fatal(err)
 	}
 	if got := load[records.PolicyPush](t, s, records.PolicyPushKey(repoName, push)); got != (records.PolicyPush{
@@ -699,7 +699,7 @@ func TestUnguarded(t *testing.T) {
 		t.Errorf("policy push = %+v", got)
 	}
 	before := snapshot(t, s, records.PolicyPushKey(repoName, push))
-	if err := records.Unguarded(ctx, s, tenant, repoName, push, "other"); err != nil {
+	if err := records.Unguarded(ctx, s, tenant, repoName, push, "other", records.PolicyChange{Commit: "c1", NewDigest: "other"}); err != nil {
 		t.Errorf("again = %v", err)
 	}
 	if !reflect.DeepEqual(before, snapshot(t, s, records.PolicyPushKey(repoName, push))) {

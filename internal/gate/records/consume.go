@@ -370,18 +370,42 @@ func outside(ctx context.Context, s store.Store, t store.Tenant, fullName string
 
 // Unguarded records that push brought digest to a repository with no approved policy yet: change control had not
 // started (M2 task 23 starts it), so the push is not outside the flow, and a delivery of it again after the first
-// consume is not either. A push already recorded changes nothing.
-func Unguarded(ctx context.Context, s store.Store, t store.Tenant, fullName string, push Push, digest string) error {
+// consume is not either. In the same swap it appends change to the repository's policy history (PolicyHistory), the
+// display-only list the first approval's page shows. A push already recorded changes nothing, so a redelivery adds
+// no second entry.
+func Unguarded(ctx context.Context, s store.Store, t store.Tenant, fullName string, push Push, digest string, change PolicyChange) error {
 	if push.After == "" {
 		return errors.New("records: unguarded: an empty commit")
 	}
-	return store.Update(ctx, s, t, []string{PolicyPushKey(fullName, push)}, func(cur [][]byte) ([][]byte, error) {
+	keys := []string{PolicyPushKey(fullName, push), PolicyHistoryKey(fullName)}
+	return store.Update(ctx, s, t, keys, func(cur [][]byte) ([][]byte, error) {
 		if cur[0] != nil {
 			return cur, nil
 		}
-		raw, err := Encode(&PolicyPush{Digest: digest, Unguarded: true})
-		return [][]byte{raw}, err
+		history := PolicyHistoryRecord{}
+		if cur[1] != nil {
+			if err := Decode(cur[1], &history); err != nil {
+				return nil, err
+			}
+		}
+		if !slices.ContainsFunc(history.Changes, func(c PolicyChange) bool { return c.Commit == change.Commit }) {
+			history.Changes = append(history.Changes, change)
+		}
+		return encodeAll(&PolicyPush{Digest: digest, Unguarded: true}, &history)
 	})
+}
+
+// PolicyHistory returns the policy changes recorded before the first approval, oldest first. It is display only:
+// no entry is an approval, and none counts toward the first approval.
+func PolicyHistory(ctx context.Context, s store.Store, t store.Tenant, fullName string) ([]PolicyChange, error) {
+	var history PolicyHistoryRecord
+	if err := Load(ctx, s, t, PolicyHistoryKey(fullName), &history); err != nil {
+		if errors.Is(err, ErrNoRecord) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return history.Changes, nil
 }
 
 // OutsideIssue records issue as the issue of the policy changed outside the flow, when none is recorded yet, and

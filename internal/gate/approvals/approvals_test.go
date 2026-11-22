@@ -110,6 +110,19 @@ func (h *hub) Pull(_ context.Context, _ api.RepoRef, number int) (api.Pull, erro
 	return p, nil
 }
 
+func (h *hub) CommitPulls(_ context.Context, _ api.RepoRef, sha string) ([]api.Pull, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var pulls []api.Pull
+	for _, p := range h.pulls {
+		if p.MergeCommitSHA == sha || p.HeadSHA == sha {
+			p.MergedBy = "" // GitHub's list leaves merged_by out
+			pulls = append(pulls, p)
+		}
+	}
+	return pulls, nil
+}
+
 func (h *hub) CreateIssue(_ context.Context, _ api.RepoRef, i api.NewIssue) (api.Issue, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -854,4 +867,87 @@ func TestALateBranchCreationFromBeforeTheFirstApprovalIsNotOutsideTheFlow(t *tes
 // PullSummary is the fake's Pull: the fake keeps one count per read either way.
 func (h *hub) PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error) {
 	return h.Pull(ctx, r, number)
+}
+
+func TestUnguardedPolicyHistory(t *testing.T) {
+	changed := policyV(1) + "# request #40\n"
+	for _, tt := range []struct {
+		name                        string
+		absent, same, direct, twice bool
+	}{
+		{name: "merged"},
+		{name: "direct", direct: true},
+		{name: "unchanged", same: true},
+		{name: "duplicate", twice: true},
+		{name: "setup", absent: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newWorld(t)
+			if !tt.absent {
+				w.gh.commit("c0", policyV(0))
+			} else {
+				w.gh.history = append(w.gh.history, "c0")
+			}
+			after := changed
+			if tt.same {
+				after = policyV(0)
+			}
+			w.gh.commit("c1", after)
+			if !tt.direct {
+				w.gh.pulls[12] = api.Pull{Number: 12, State: "closed", Merged: true, MergedBy: "alice", MergeCommitSHA: "c1"}
+			}
+			w.push("c0", "c1")
+			if tt.twice {
+				w.push("c0", "c1")
+			}
+			got, err := records.PolicyHistory(context.Background(), w.mem, w.tenant(), testRepo.FullName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.same {
+				if len(got) != 0 {
+					t.Fatalf("history = %+v, want empty", got)
+				}
+				return
+			}
+			if len(got) != 1 {
+				t.Fatalf("history = %+v, want one entry", got)
+			}
+			old := digestV(0)
+			if tt.absent {
+				old = "none"
+			}
+			want := records.PolicyChange{OldDigest: old, NewDigest: policy3.Digest([]byte(after)), Commit: "c1", PullRequest: 12, Merger: "alice", Requests: []int{40}}
+			if tt.direct {
+				want.PullRequest = 0
+				want.Direct = true
+				want.Merger = ""
+			}
+			entry := got[0]
+			if entry.OldDigest != want.OldDigest || entry.NewDigest != want.NewDigest || entry.Commit != want.Commit || entry.PullRequest != want.PullRequest || entry.Direct != want.Direct || entry.Merger != want.Merger || !slices.Equal(entry.Requests, want.Requests) {
+				t.Errorf("history = %+v, want %+v", entry, want)
+			}
+		})
+	}
+}
+
+func TestPolicyHistoryNamesOnlyTheMergingPullRequestAndAddedMarkers(t *testing.T) {
+	w := newWorld(t)
+	w.gh.commit("c0", policyV(0)+"# request #7\n")
+	w.gh.commit("c1", policyV(0)+"# request #7\n# request #41\n# request #42 and request #41\n")
+	w.gh.pulls[30] = api.Pull{Number: 30, State: "open", HeadSHA: "c1"} // contains the commit, merged nothing
+	w.push("c0", "c1")
+	got, err := records.PolicyHistory(context.Background(), w.mem, w.tenant(), testRepo.FullName)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("history %+v, %v", got, err)
+	}
+	if c := got[0]; !c.Direct || c.PullRequest != 0 || c.Merger != "" || !slices.Equal(c.Requests, []int{41, 42}) {
+		t.Fatalf("entry %+v", c)
+	}
+	if out := w.push("c0", "c1"); out.Judged != JudgedUnguarded {
+		t.Fatalf("again: %+v", out)
+	}
+	if again, _ := records.PolicyHistory(context.Background(), w.mem, w.tenant(), testRepo.FullName); len(again) != 1 {
+		t.Fatalf("a redelivery added an entry: %+v", again)
+	}
 }
