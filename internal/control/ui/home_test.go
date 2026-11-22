@@ -151,6 +151,10 @@ func TestHomeAPIGoldens(t *testing.T) {
 		{"approval-merged", homePolicy, func(_ *testing.T, e *env) {
 			e.setups.out.Approval = gate.ApprovalSummary{Status: gate.ApprovalPending, Kind: gate.OwnerWorkflow, Pull: 203, CurrentHead: sha(3), ApprovedHead: sha(3), Merged: true}
 		}},
+		{"setup-open", homePolicy, func(_ *testing.T, e *env) {
+			e.setups.out = onboarding.Setup{Approval: gate.ApprovalSummary{Status: gate.ApprovalNeeded, Kind: gate.OwnerFirst, Pull: 12}, State: "first_approval", FirstPull: 12, SetupPull: 12, Missing: []string{}}
+			e.owners.review = func(answers.OwnerAction, gate.OwnerUser) error { panic("setup pull must not request owner review") }
+		}},
 		{"not-set-up", homePolicy, func(_ *testing.T, e *env) {
 			e.setups.out = onboarding.Setup{Approval: gate.ApprovalSummary{Status: gate.ApprovalNeeded, Kind: gate.OwnerFirst, Pull: 12}, State: "first_approval", FirstPull: 12, Missing: []string{"Register a passkey and approve the first policy."},
 				Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{

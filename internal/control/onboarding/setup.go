@@ -23,6 +23,7 @@ type Setup struct {
 	State     string // not_admitted, first_approval, approved, outside_flow
 	Missing   []string
 	FirstPull int // onboarding PR needing approval; 0 for an already-converted repository
+	SetupPull int // initial advisory setup pull request; 0 when absent
 	Issue     int
 	Rules     RulesetReport
 }
@@ -128,13 +129,14 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 		if err != nil {
 			return out, err
 		}
+		var advisoryHeads sync.Map
 		p, found, err := s.firstOpenPull(ctx, r, pulls, func(ctx context.Context, p api.Pull) (bool, error) {
 			// The policy and the workflow of one head are read together. A workflow read that fails or is missing counts
 			// only when the policy is there, and a policy error ends the scan, as in the serial order.
-			var policyOK, workflowOK bool
+			var policyOK, workflowOK, advisory bool
 			var policyErr, workflowErr error
 			var both sync.WaitGroup
-			both.Go(func() { _, policyOK, policyErr = s.policyAt(ctx, r, p.HeadSHA) })
+			both.Go(func() { _, policyOK, advisory, policyErr = s.policyAt(ctx, r, p.HeadSHA) })
 			both.Go(func() { workflowOK, workflowErr = s.workflowAt(ctx, r, p.HeadSHA) })
 			both.Wait()
 			if policyErr != nil {
@@ -146,6 +148,9 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 			if workflowErr != nil {
 				return false, workflowErr
 			}
+			if workflowOK && advisory && p.HeadRef == "archfit/setup" {
+				advisoryHeads.Store(p.Number, true)
+			}
 			return workflowOK, nil
 		})
 		if err != nil {
@@ -154,6 +159,9 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 		if found {
 			out.State = "first_approval"
 			out.FirstPull = p.Number
+			if _, ok := advisoryHeads.Load(p.Number); ok {
+				out.SetupPull = p.Number
+			}
 		}
 	}
 	action := gate.OwnerAction{Kind: gate.OwnerFirst, Pull: out.FirstPull}
@@ -169,6 +177,10 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 		done(1, 0)
 	})
 	reads.Wait()
+	// A first approval can exist before its digest is active on the default branch.
+	if out.Approval.Status != gate.ApprovalNeeded {
+		out.SetupPull = 0
+	}
 	ruleReads.Wait()
 	out.Rules = rules
 	if out.State == "approved" && out.Approval.Status == gate.ApprovalNeeded {
@@ -212,18 +224,19 @@ func (s *setups) firstOpenPull(ctx context.Context, r api.Repo, pulls []api.Pull
 	return api.Pull{}, false, nil
 }
 
-func (s *setups) policyAt(ctx context.Context, r api.Repo, ref string) (digest string, ok bool, err error) {
+func (s *setups) policyAt(ctx context.Context, r api.Repo, ref string) (digest string, ok, advisory bool, err error) {
 	raw, _, err := s.gh.File(ctx, r.RepoRef, ref, ".archfit.yaml")
 	if errors.Is(err, api.ErrNotFound) {
-		return "", false, nil
+		return "", false, false, nil
 	}
 	if err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
-	if _, err := policy3.Decode(raw); err != nil {
-		return "", false, nil
+	policy, err := policy3.Decode(raw)
+	if err != nil {
+		return "", false, false, nil
 	}
-	return policy3.Digest(raw), true, nil
+	return policy3.Digest(raw), true, policy.Gate == "" || policy.Gate == "advisory", nil
 }
 
 func (s *setups) workflowAt(ctx context.Context, r api.Repo, ref string) (bool, error) {

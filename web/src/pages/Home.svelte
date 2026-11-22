@@ -27,9 +27,10 @@
   const showMap = $derived(!!body && (!body.setup || body.setup.state === 'approved' || body.setup.state === 'outside_flow'));
 </script>
 
-<PageHead title={route.fullName}>
+<PageHead title={body?.setup?.setup_pull ? `Set up Archfit for ${route.fullName}` : route.fullName}>
   {#snippet status()}
     {#if failure}<p class="flash error" role="alert">{failure}</p>
+    {:else if body?.setup?.setup_pull}<p>{body.status}</p>
     {:else if body}<div class="status-line"><StatusLabel label={homeStateLabel(body.state)} /><p>{body.status}</p></div>{/if}
   {/snippet}
   {#snippet actions()}
@@ -63,7 +64,9 @@
     {/each}
   </section>
 {/if}
-{#if body?.setup}
+{#if body?.setup?.setup_pull}
+  <p>Setup pull request #{body.setup.setup_pull}: open. No merge is stopped before you merge it.</p>
+{:else if body?.setup}
   <Setup setup={body.setup} repo={route} showOwnerAction={!action?.needsPasskey} primaryHref={action?.href} />
 {/if}
 {#if body && showMap}
