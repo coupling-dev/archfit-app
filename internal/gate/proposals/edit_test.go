@@ -186,3 +186,46 @@ func TestMovedTargetVoidsEditNeverReplaysIt(t *testing.T) {
 		t.Error("request 0 reopened")
 	}
 }
+
+func TestEditUnchangedAgainstOpenProposalIsRefused(t *testing.T) {
+	w := newWorld(t)
+	first, err := w.svc.Edit(context.Background(), testRepo, w.editInput(testPolicy, testPolicy+"# first\n", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := w.hub.file(Branch, policyPath)
+	in := w.editInput(head, head, false)
+	before, redeemed, comments := len(w.hub.writes()), len(w.redeemed), len(w.hub.comments[first.PullRequest])
+	_, err = w.svc.Edit(context.Background(), testRepo, in)
+	if !errors.Is(err, ErrEditUnchanged) || err.Error() != "Nothing changed against the open policy pull request." {
+		t.Fatalf("err = %v", err)
+	}
+	if len(w.hub.writes()) != before || len(w.redeemed) != redeemed || len(w.hub.comments[first.PullRequest]) != comments {
+		t.Error("an unchanged edit wrote, redeemed or commented")
+	}
+	if p := w.proposalOf(first); len(p.Approvals) != 1 {
+		t.Errorf("approvals %v", p.Approvals)
+	}
+}
+
+func TestEditPreviewDiffsAgainstOpenProposal(t *testing.T) {
+	w := newWorld(t)
+	v, err := w.svc.EditPreview(context.Background(), testRepo, EditInput{File: []byte(testPolicy + "# a\n"),
+		Base: policy3.Digest([]byte(testPolicy)), Owner: olivia})
+	if err != nil || v.Against != AgainstDefaultBranch || !strings.Contains(v.Diff, "+# a") {
+		t.Fatalf("no proposal: %+v, %v", v, err)
+	}
+	if _, err := w.svc.Edit(context.Background(), testRepo, w.editInput(testPolicy, testPolicy+"# first\n", true)); err != nil {
+		t.Fatal(err)
+	}
+	head := w.hub.file(Branch, policyPath)
+	v, err = w.svc.EditPreview(context.Background(), testRepo, EditInput{File: []byte(head), Base: policy3.Digest([]byte(head)), Owner: olivia})
+	if err != nil || v.Against != AgainstProposal || v.Diff != "" {
+		t.Fatalf("unchanged against the proposal: %+v, %v", v, err)
+	}
+	v, err = w.svc.EditPreview(context.Background(), testRepo, EditInput{File: []byte(head + "# second\n"),
+		Base: policy3.Digest([]byte(head)), Owner: olivia})
+	if err != nil || strings.Contains(v.Diff, "+# first") || !strings.Contains(v.Diff, "+# second") {
+		t.Fatalf("diff against the proposal: %+v, %v", v, err)
+	}
+}

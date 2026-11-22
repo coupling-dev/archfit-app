@@ -1,6 +1,7 @@
 package proposals
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -20,6 +21,15 @@ var (
 	ErrEditChanged = errors.New("the policy changed; reload")
 	ErrEditPolicy  = errors.New("the policy has errors")
 	ErrEditSize    = errors.New("the policy exceeds the 32 KiB edit limit")
+	// ErrEditUnchanged refuses an edit whose file is the open proposal's: it would record an approval and a note
+	// with no commit.
+	ErrEditUnchanged = errors.New("Nothing changed against the open policy pull request.") //nolint:staticcheck // shown as is
+)
+
+// What a preview's diff is against.
+const (
+	AgainstProposal      = "the open policy pull request"
+	AgainstDefaultBranch = "the default branch"
 )
 
 // EditInput is an owner's whole-file answer. Base binds the bytes it started
@@ -35,6 +45,7 @@ type EditInput struct {
 // EditView is a read-only preview; errors prevent the passkey step.
 type EditView struct {
 	Digest, Target, Diff string
+	Against              string // AgainstProposal or AgainstDefaultBranch: what Diff compares the file with
 	Errors               []string
 }
 
@@ -47,15 +58,16 @@ func (s *Service) EditPreview(ctx context.Context, r api.Repo, in EditInput) (Ed
 	if len(problems) > 0 {
 		return EditView{Errors: problems}, nil
 	}
-	tip, _, _, err := s.editBase(ctx, r, in)
+	tip, base, cur, err := s.editBase(ctx, r, in)
 	if err != nil {
 		return EditView{}, err
 	}
-	base, _, err := s.gh.File(ctx, r.RepoRef, tip, policyPath)
-	if err != nil {
-		return EditView{}, err
+	against := AgainstDefaultBranch
+	if cur != nil {
+		against = AgainstProposal
 	}
-	return EditView{Digest: policy3.Digest(in.File), Target: tip, Diff: requests.Diff(policyPath, base, in.File), Errors: []string{}}, nil
+	return EditView{Digest: policy3.Digest(in.File), Target: tip, Diff: requests.Diff(policyPath, base, in.File),
+		Against: against, Errors: []string{}}, nil
 }
 
 // editBase reads only recorded proposal inputs and protected target owners.
@@ -127,8 +139,12 @@ func (s *Service) Edit(ctx context.Context, r api.Repo, in EditInput) (Outcome, 
 	if in.Target == "" {
 		return Outcome{}, ErrEditChanged
 	}
-	if _, _, _, err := s.editBase(ctx, r, in); err != nil {
+	_, base, cur, err := s.editBase(ctx, r, in)
+	if err != nil {
 		return Outcome{}, err
+	}
+	if cur != nil && bytes.Equal(in.File, base) {
+		return Outcome{}, ErrEditUnchanged
 	}
 	if in.Redeem == nil {
 		return Outcome{}, ErrNeedsPasskey
@@ -173,7 +189,7 @@ func (s *Service) Edit(ctx context.Context, r api.Repo, in EditInput) (Outcome, 
 		s.retire(after, r, cur.rec.HeadSHA, cur.rec.PullRequest, cur.id, RetiredSuperseded)
 	}
 	out := Outcome{Approval: id, PullRequest: pin.PullRequest}
-	out.State, out.Merge = s.publish(after, r, tip, *pin, listed, in.Later)
+	out.State, out.Merge, out.Reason = s.publish(after, r, tip, *pin, listed, in.Later)
 	note := editNote(in.Owner.Login, credential)
 	if out.State == records.StateVoid {
 		note += "the policy changed; reload. The edit's approval is void.\n"

@@ -103,7 +103,7 @@ func (s *Service) ReloadEditor(ctx context.Context, r api.Repo, owner Owner) (Ed
 	}
 	pin := s.resync(ctx, r, cur, tip, file, kept)
 	if pin != nil {
-		s.publish(ctx, r, tip, *pin, kept, true)
+		_, _, _ = s.publish(ctx, r, tip, *pin, kept, true)
 	} else if len(kept) > 0 {
 		return EditorBase{}, ErrEditChanged
 	}

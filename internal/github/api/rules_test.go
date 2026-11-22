@@ -104,11 +104,12 @@ func TestPullReportsGitHubsMergeState(t *testing.T) {
 		fields    map[string]any
 		wantSHA   string
 		wantMerge *bool
+		wantState string
 	}{
-		{"1", map[string]any{"merge_commit_sha": "mc1", "mergeable": true}, "mc1", &yes},
-		{"2", map[string]any{"merge_commit_sha": nil, "mergeable": nil}, "", nil},
-		{"3", map[string]any{"merge_commit_sha": nil, "mergeable": false}, "", &no},
-		{"4", map[string]any{}, "", nil},
+		{"1", map[string]any{"merge_commit_sha": "mc1", "mergeable": true, "mergeable_state": "clean"}, "mc1", &yes, "clean"},
+		{"2", map[string]any{"merge_commit_sha": nil, "mergeable": nil}, "", nil, ""},
+		{"3", map[string]any{"merge_commit_sha": nil, "mergeable": false, "mergeable_state": "dirty"}, "", &no, "dirty"},
+		{"4", map[string]any{"mergeable_state": "behind"}, "", nil, "behind"},
 	}
 	env := muxEnv(t, func(mux *http.ServeMux) {
 		mux.HandleFunc("GET /repos/acme/app/installation", func(w http.ResponseWriter, _ *http.Request) {
@@ -134,8 +135,9 @@ func TestPullReportsGitHubsMergeState(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if p.MergeCommitSHA != tt.wantSHA || !reflect.DeepEqual(p.Mergeable, tt.wantMerge) {
-				t.Errorf("MergeCommitSHA = %q, Mergeable = %v; want %q, %v", p.MergeCommitSHA, p.Mergeable, tt.wantSHA, tt.wantMerge)
+			if p.MergeCommitSHA != tt.wantSHA || !reflect.DeepEqual(p.Mergeable, tt.wantMerge) || p.MergeableState != tt.wantState {
+				t.Errorf("MergeCommitSHA = %q, Mergeable = %v, MergeableState = %q; want %q, %v, %q", p.MergeCommitSHA,
+					p.Mergeable, p.MergeableState, tt.wantSHA, tt.wantMerge, tt.wantState)
 			}
 		})
 	}

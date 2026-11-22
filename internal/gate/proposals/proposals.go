@@ -122,6 +122,7 @@ type Outcome struct {
 	PullRequest int    // the policy pull request; 0 when the default branch already says it, or it writes no line
 	State       string // requests.PullMerged, PullLater or PullRefused when PullRequest is set
 	Merge       string // the merge commit, when merged
+	Reason      string // why GitHub refused the merge, when State is PullRefused and GitHub says
 }
 
 // Digest is the change digest of answer a to request number: what the owner's passkey step-up is bound to.
@@ -275,9 +276,9 @@ func (s *Service) answer(ctx context.Context, r api.Repo, in Input) (Outcome, er
 			listed = append(listed, approved{id: id, rec: approval, change: change})
 		}
 		// An answer that joins nothing never merges the proposal: its other answers chose when to merge.
-		state, merge := s.publish(after, r, tip, *pin, listed, in.Later || !joins)
+		state, merge, reason := s.publish(after, r, tip, *pin, listed, in.Later || !joins)
 		if joins {
-			out.PullRequest, out.State, out.Merge = pin.PullRequest, state, merge
+			out.PullRequest, out.State, out.Merge, out.Reason = pin.PullRequest, state, merge, reason
 		}
 	}
 	s.close(after, r, in, change, approval.Credential, out)
@@ -658,51 +659,113 @@ func (s *Service) noteReopened(ctx context.Context, r api.Repo, pull int, reopen
 }
 
 // publish describes the pull request, sets archfit/gate on its head when the D13 conditions hold, and merges it
-// unless the owner chose to merge later.
-func (s *Service) publish(ctx context.Context, r api.Repo, tip string, pin records.Pin, listed []approved, later bool) (state, merge string) {
+// unless the owner chose to merge later. A merge first brings a head that is behind tip up to date.
+func (s *Service) publish(ctx context.Context, r api.Repo, tip string, pin records.Pin, listed []approved, later bool) (state, merge, reason string) {
 	if err := s.gh.UpdatePullBody(ctx, r.RepoRef, pin.PullRequest, pullBody(r.DefaultBranch, listed)); err != nil {
 		logFailure(ctx, r, "describe the policy pull request", err)
+	}
+	if !later {
+		pin = s.upToDate(ctx, r, tip, pin, listed)
 	}
 	err := s.check(ctx, r, tip, pin, listed)
 	if errors.Is(err, ErrEditChanged) {
 		s.voidMovedEdits(ctx, r, pin, listed)
-		return records.StateVoid, ""
+		return records.StateVoid, "", ""
 	}
 	switch {
 	case later:
 		if err != nil {
 			logFailure(ctx, r, "set archfit/gate on the policy pull request", err)
 		}
-		return requests.PullLater, ""
+		return requests.PullLater, "", ""
 	case err != nil:
 		logFailure(ctx, r, "set archfit/gate on the policy pull request", err)
-		return requests.PullRefused, ""
+		return requests.PullRefused, "", ""
 	}
 	return s.merge(ctx, r, tip, pin, listed)
+}
+
+// upToDate rebuilds the proposal as one App commit on tip, with the same policy bytes, when its head does not contain
+// tip: a default branch that requires up-to-date branches refuses to merge it otherwise. The approvals bind the policy
+// bytes, not the commit, so the proposal is pinned again to the new head; check then reads the digest at that head
+// again. GitHub's own branch update is not used: its merge commit is not the App's, and D13 accepts only App commits.
+// Any failure keeps pin, and the merge is refused as before.
+func (s *Service) upToDate(ctx context.Context, r api.Repo, tip string, pin records.Pin, listed []approved) records.Pin {
+	if len(listed) == 0 {
+		return pin
+	}
+	cmp, err := s.gh.Compare(ctx, r.RepoRef, tip, pin.HeadSHA)
+	if err != nil {
+		logFailure(ctx, r, "compare the policy pull request with the default branch", err)
+		return pin
+	}
+	if cmp.Status == "ahead" || cmp.Status == "identical" {
+		return pin
+	}
+	file, _, err := s.gh.File(ctx, r.RepoRef, pin.HeadSHA, policyPath)
+	if err != nil || policy3.Digest(file) != pin.Digest {
+		return pin
+	}
+	var p records.Proposal
+	if err := records.Load(ctx, s.store, tenant(r), records.ProposalKey(r.FullName, pin.Proposal), &p); err != nil {
+		logFailure(ctx, r, "read the proposal", err)
+		return pin
+	}
+	head, err := s.gh.CommitOn(ctx, r.RepoRef, Branch, tip, commitMessage(listed), []api.FileChange{{Path: policyPath, Content: file}}, true)
+	if err != nil {
+		logFailure(ctx, r, "bring the policy pull request up to date", err)
+		return pin
+	}
+	if err := records.Join(ctx, s.store, tenant(r), r.FullName, listed[0].id, pin.Proposal, head, pin.Digest, p.EditEpoch); err != nil {
+		logFailure(ctx, r, "pin the updated proposal", err)
+		return pin
+	}
+	s.retire(ctx, r, pin.HeadSHA, pin.PullRequest, pin.Proposal, RetiredSuperseded)
+	pin.HeadSHA = head
+	return pin
 }
 
 // merge merges the proposal's pull request at its pinned head (design 9.2, appendix D.2: no bypass actor, so a
 // missing or pending check is GitHub's 405). After a refusal it reads the pull request: one that merged anyway (an
 // owner, or an earlier attempt) is merged; any other stays open for the sweep.
-func (s *Service) merge(ctx context.Context, r api.Repo, tip string, pin records.Pin, listed []approved) (state, merge string) {
+func (s *Service) merge(ctx context.Context, r api.Repo, tip string, pin records.Pin, listed []approved) (state, merge, reason string) {
 	s.waitForHead(ctx, r.RepoRef, pin)
 	if err := s.editTarget(ctx, r, tip, listed); err != nil {
 		if errors.Is(err, ErrEditChanged) {
 			s.voidMovedEdits(ctx, r, pin, listed)
-			return records.StateVoid, ""
+			return records.StateVoid, "", ""
 		}
 		logFailure(ctx, r, "read the edit target before merge", err)
-		return requests.PullRefused, ""
+		return requests.PullRefused, "", ""
 	}
 	sha, err := s.gh.MergePull(ctx, r.RepoRef, pin.PullRequest, pin.HeadSHA)
 	if err == nil {
-		return requests.PullMerged, sha
+		return requests.PullMerged, sha, ""
 	}
 	logFailure(ctx, r, "merge the policy pull request", err)
-	if pull, perr := s.gh.Pull(ctx, r.RepoRef, pin.PullRequest); perr == nil && pull.Merged {
-		return requests.PullMerged, pull.MergeCommitSHA
+	pull, perr := s.gh.Pull(ctx, r.RepoRef, pin.PullRequest)
+	if perr == nil && pull.Merged {
+		return requests.PullMerged, pull.MergeCommitSHA, ""
 	}
-	return requests.PullRefused, ""
+	if perr != nil {
+		return requests.PullRefused, "", ""
+	}
+	return requests.PullRefused, "", refusalReason(pull.MergeableState)
+}
+
+// refusalReason says in words why GitHub would not merge, from its mergeable_state; "" when it does not say.
+func refusalReason(state string) string {
+	switch state {
+	case "behind":
+		return "the branch is behind the default branch"
+	case "blocked":
+		return "required checks or reviews have not passed yet"
+	case "dirty":
+		return "the branch conflicts with the default branch"
+	case "draft":
+		return "the pull request is a draft"
+	}
+	return ""
 }
 
 // waitForHead waits, at most headWait, until the pull request shows the head the App wrote.

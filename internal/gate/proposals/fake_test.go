@@ -33,6 +33,7 @@ type fakeHub struct {
 	lagging   map[int]string    // pull → the head it still shows
 	onCommit  func()            // runs inside CommitOn before the branch moves: someone else acts in between
 	moveOnPut bool              // someone else pushes to archfit/policy right before the App's next CommitOn
+	strict    bool              // the base branch requires up-to-date branches: MergePull refuses a head behind it
 }
 
 type fakeCommit struct {
@@ -142,6 +143,9 @@ func (h *fakeHub) Pull(ctx context.Context, _ api.RepoRef, number int) (api.Pull
 		return api.Pull{}, api.ErrNotFound
 	}
 	out := *p
+	if out.State == "open" && !h.upToDate(out) {
+		out.MergeableState = "behind"
+	}
 	if old, ok := h.lagging[number]; ok && h.headLag > 0 {
 		h.headLag--
 		out.HeadSHA = old
@@ -301,6 +305,9 @@ func (h *fakeHub) MergePull(ctx context.Context, _ api.RepoRef, number int, head
 	if p.HeadSHA != headSHA {
 		return "", fmt.Errorf("%w: head moved", api.ErrHeadChanged)
 	}
+	if h.strict && !h.upToDate(*p) {
+		return "", fmt.Errorf("%w: the head branch is not up to date with the base branch", api.ErrNotMergeable)
+	}
 	if !h.passed(headSHA) {
 		return "", fmt.Errorf("%w: archfit/gate is not a success", api.ErrNotMergeable)
 	}
@@ -311,6 +318,11 @@ func (h *fakeHub) MergePull(ctx context.Context, _ api.RepoRef, number int, head
 	h.branches[p.BaseRef] = sha
 	p.State, p.Merged, p.MergeCommitSHA = "closed", true, sha
 	return sha, nil
+}
+
+// upToDate reports whether the pull request's head contains its base branch's tip.
+func (h *fakeHub) upToDate(p api.Pull) bool {
+	return slices.Contains(h.ancestors(p.HeadSHA), h.branches[p.BaseRef])
 }
 
 // passed reports whether the latest archfit/gate run on head is a success.
