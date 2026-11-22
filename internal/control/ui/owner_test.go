@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -206,6 +207,29 @@ func TestOwnerRouteAuthorizationDoesNotRequireGitHubWrite(t *testing.T) {
 			wantStatus(t, e.as("alice", permRead).postJSONWith(ownerAPI+"first"+suffix, map[string]any{}, ""), http.StatusForbidden)
 			if len(e.owners.actions) > 0 {
 				t.Fatal("action without CSRF")
+			}
+		})
+	}
+}
+
+func TestFirstApprovalRefusalNamesFix(t *testing.T) {
+	const want = "Only a repository administrator who is also an owner named in the policy can approve the first policy. If you are a repository administrator, add your GitHub login to owners in .archfit.yaml, push the change, and try approving again."
+	for _, suffix := range []string{"", "/digest"} {
+		t.Run("first"+suffix, func(t *testing.T) {
+			logs := captureLogs(t)
+			e := newEnv(t)
+			e.owners.err = gate.ErrOwnerNotAdmin
+			res := e.as("alice", permAdmin).postJSON(ownerAPI+"first"+suffix, map[string]any{})
+			wantStatus(t, res, http.StatusForbidden)
+			body := decodeAs[errorJSON](t, res)
+			if body.Error != want {
+				t.Errorf("error = %q, want %q", body.Error, want)
+			}
+			if !strings.Contains(logs.String(), `"outcome":"not_administrator"`) {
+				t.Errorf("missing refusal outcome: %s", logs.String())
+			}
+			if len(e.owners.actions) != 1 || e.owners.actions[0].Kind != gate.OwnerFirst {
+				t.Errorf("actions = %+v", e.owners.actions)
 			}
 		})
 	}
