@@ -290,3 +290,38 @@ func TestEmailCodeMaskAndLockDeadline(t *testing.T) {
 		t.Fatalf("send lock: %v", err)
 	}
 }
+
+func TestEmailCodeActivePrivacyAndScope(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	sink := &codeSink{}
+	db := store.NewMemory()
+	svc, err := NewEmailCodes(db, sink, []byte("01234567890123456789012345678901"), func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := EmailCodeScope{UserID: 101, InstallationID: 7, RepositoryID: 70, SessionBinding: "sensitive-session-binding"}
+	if _, err = svc.Send(ctx, scope, "owner@example.invalid"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := db.Get(ctx, store.SystemTenant, codeKey(scope.UserID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"owner@example.invalid", sink.code, scope.SessionBinding} {
+		if bytes.Contains(raw, []byte(secret)) {
+			t.Fatal("active record contains private value")
+		}
+	}
+	for _, other := range []EmailCodeScope{
+		{UserID: 101, InstallationID: 8, RepositoryID: 70, SessionBinding: scope.SessionBinding},
+		{UserID: 101, InstallationID: 7, RepositoryID: 71, SessionBinding: scope.SessionBinding},
+		{UserID: 101, InstallationID: 7, RepositoryID: 70, SessionBinding: "other-session"},
+	} {
+		if err = svc.Verify(ctx, other, sink.code); !errors.Is(err, ErrCodeWrong) {
+			t.Fatalf("other scope accepted: %v", err)
+		}
+	}
+	if err = svc.Verify(ctx, scope, sink.code); err != nil {
+		t.Fatalf("valid scope: %v", err)
+	}
+}
