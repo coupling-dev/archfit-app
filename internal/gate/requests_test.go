@@ -633,3 +633,36 @@ func TestARequestKeepsTheInputsAndTheSurfaceOfALaterPullRequest(t *testing.T) {
 		t.Errorf("after the join, surface = %+v", r.Surface)
 	}
 }
+
+func TestRequestDeduplicationBySurfaceAndState(t *testing.T) {
+	surface := func(pkg string) string {
+		return "/archfit request why\n\n```text\npkg_tc -> pkg_util: coupling: " + pkg + " is past the surface\n  balance: 2/10 (min 7): intrusive, pkg_util is high\n  surface: pkg/util (public)\n  next: request\n```\n"
+	}
+	graph := "/archfit request why\n\n```text\npkg_tc -> pkg_util: graph: not an allowed dependency\n```\n"
+	for _, tc := range []struct {
+		name, first, second string
+		answered, joined    bool
+	}{
+		{"same surface", surface("pkg/util/setup"), surface("pkg/util/setup"), false, true},
+		{"different surface", surface("pkg/util/setup"), surface("pkg/util/replay"), false, false},
+		{"answered surface", surface("pkg/util/setup"), surface("pkg/util/setup"), true, false},
+		{"same graph", graph, graph, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newAskWorld(t)
+			w.gh.permissions[shopName+"|"+workerLogin] = "write"
+			first := w.cliIssue(tc.first)
+			if tc.answered {
+				a := records.Approval{Kind: records.KindApprove, Request: first, Owner: 3, Login: "olivia"}
+				pin := &records.Pin{Proposal: "p1", PullRequest: 30, HeadSHA: w.sha(), Digest: policy3.Digest([]byte(policyAsk))}
+				if err := records.Answer(context.Background(), w.mem, store.Tenant(shopInstallation), shopName, "a1", a, pin); err != nil {
+					t.Fatal(err)
+				}
+			}
+			second := w.cliIssue(tc.second)
+			if got := !w.issue(second).Open; got != tc.joined {
+				t.Errorf("joined = %v, want %v; reply: %s", got, tc.joined, w.lastReply(second))
+			}
+		})
+	}
+}
