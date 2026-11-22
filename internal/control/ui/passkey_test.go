@@ -31,7 +31,10 @@ func TestPasskeyRegistrationGetsTheUserAndWhetherTheyAreAnAdministrator(t *testi
 			if len(calls) != 2 {
 				t.Fatalf("calls = %+v, want begin and finish", calls)
 			}
-			want := passkey.User{ID: e.user("alice").UserID, Login: "alice", Admin: tc.wantAdmin}
+			if calls[0].user.SessionBinding == "" || calls[0].user.SessionBinding != calls[1].user.SessionBinding {
+				t.Fatal("registration session not bound consistently")
+			}
+			want := passkey.User{ID: e.user("alice").UserID, Login: "alice", Admin: tc.wantAdmin, SessionBinding: calls[0].user.SessionBinding}
 			for _, call := range calls {
 				if call.user != want || call.repo.InstallationID != installA || call.repo.FullName != repoName {
 					t.Errorf("%s got user %+v in %s/%d; want %+v in %s/%d", call.method, call.user, call.repo.FullName,

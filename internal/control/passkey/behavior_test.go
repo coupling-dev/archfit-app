@@ -48,12 +48,12 @@ func TestWhoRegisters(t *testing.T) {
 func TestTheRuleIsCheckedAgainAtFinish(t *testing.T) {
 	e := newEnv(t)
 	a := newAuthenticator(t, webauthncose.AlgES256)
-	options, err := e.pk.BeginRegistration(ctx, repo, alice, "")
+	options, err := e.beginRegistration(ctx, repo, alice, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	e.owners.logins = []string{"carol"} // alice left the owners between begin and finish
-	_, err = e.pk.FinishRegistration(ctx, repo, alice, a.create(options))
+	_, err = e.finishRegistration(ctx, repo, alice, a.create(options))
 	wantErr(t, err, ErrNotOwner)
 }
 
@@ -100,13 +100,13 @@ func TestBeforeTheFirstPolicyTheIssueGoesToTheAdministrator(t *testing.T) {
 func TestARegistrationWhoseIssueFailsStoresNothing(t *testing.T) {
 	e := newEnv(t)
 	a := newAuthenticator(t, webauthncose.AlgES256)
-	options, err := e.pk.BeginRegistration(ctx, repo, alice, "")
+	options, err := e.beginRegistration(ctx, repo, alice, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	response := a.create(options)
 	e.issues.err = errors.New("github down")
-	if _, err := e.pk.FinishRegistration(ctx, repo, alice, response); err == nil {
+	if _, err := e.finishRegistration(ctx, repo, alice, response); err == nil {
 		t.Fatal("FinishRegistration succeeded without its issue")
 	}
 	if got := e.list(alice); len(got) != 0 {
@@ -114,7 +114,7 @@ func TestARegistrationWhoseIssueFailsStoresNothing(t *testing.T) {
 	}
 
 	e.issues.err = nil
-	if _, err := e.pk.FinishRegistration(ctx, repo, alice, response); err != nil {
+	if _, err := e.finishRegistration(ctx, repo, alice, response); err != nil {
 		t.Fatalf("the same ceremony, once the issue opens: %v", err)
 	}
 }

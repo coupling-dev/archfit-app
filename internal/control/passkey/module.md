@@ -1,5 +1,12 @@
 # Passkey
 
+## Operator confirmation for first enrolment
+
+`OperatorConfirmations` is a separate state service. The request lifetime is 30 minutes; only an operator-authenticated caller may issue/revoke. Issued tokens contain 16 bytes from crypto/rand.Read encoded as 22 unpadded base64url characters and expire after 10 minutes, even if issued near the request deadline. Only SHA-256(token) and scope/audit state are stored. Reissue revokes the predecessor; consumption is atomic and session/user/repository/attempt/purpose bound. Five wrong tokens lock the attempt for 15 minutes. Issue and Revoke refuse active locks, and Request cannot replace a locked attempt. Operator issuance ends at the request deadline; verify still honors a valid token's own deadline.
+
+HTTP operator authorization, owner eligibility, browser session binding and first-registration WebAuthn enforcement must be wired at the caller; this state service alone does not close G1. No caller may expose hashes or session bindings. The public runbook must describe the trusted private channel and one-time display. Never send tokens in URLs, logs, tickets or screenshots.
+
+
 **Path**: internal/control/passkey/
 **Parent**: internal/control/ (control plane façade)
 **Submodules**: none (leaf)

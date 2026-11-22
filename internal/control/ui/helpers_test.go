@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/coupling-dev/archfit-app/internal/control/account"
+	"github.com/coupling-dev/archfit-app/internal/control/passkey"
 	"github.com/coupling-dev/archfit-app/internal/control/ui/session"
 	"github.com/coupling-dev/archfit-app/internal/gate"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
@@ -95,7 +96,7 @@ func newEnv(t *testing.T) *env {
 	}
 	e.handler = newHandler(Deps{
 		Account: e.acct, RepoStates: gate.NewRepoStates(e.store, e.admit),
-		Admissions: e.admit, PullViews: gate.NewPullViews(gh, mem), PolicyViews: e.policy, RequestViews: e.requests, Answers: e.answers, Owners: e.owners, Setups: e.setups, Passkeys: e.passkeys, Operators: []int64{operatorID}, BaseURL: baseURL, Now: clock,
+		Confirmations: passkey.NewOperatorConfirmations(mem, clock), Admissions: e.admit, PullViews: gate.NewPullViews(gh, mem), PolicyViews: e.policy, RequestViews: e.requests, Answers: e.answers, Owners: e.owners, Setups: e.setups, Passkeys: e.passkeys, Operators: []int64{operatorID}, BaseURL: baseURL, Now: clock,
 	}, github{files: gh, pulls: gh, users: gh, installs: gh}, sessions, testWeb)
 
 	e.answers.editor = gate.EditBase{File: []byte(policyText), Digest: policy3.Digest([]byte(policyText))}

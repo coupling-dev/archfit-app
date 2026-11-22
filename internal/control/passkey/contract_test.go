@@ -41,7 +41,7 @@ func TestRegisterStepUpAndRedeemEachAlgorithm(t *testing.T) {
 
 func TestCreationOptionsFollowThePasskeyParameters(t *testing.T) {
 	e := newEnv(t)
-	raw, err := e.pk.BeginRegistration(ctx, repo, alice, "")
+	raw, err := e.beginRegistration(ctx, repo, alice, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestSecondRegistrationNeedsAnExistingPasskey(t *testing.T) {
 	wantErr(t, err, ErrToken)
 
 	token := e.mustStepUp(alice, first, Purpose{Action: ActionRegister})
-	options, err := e.pk.BeginRegistration(ctx, repo, alice, token)
+	options, err := e.beginRegistration(ctx, repo, alice, token)
 	if err != nil {
 		t.Fatalf("BeginRegistration with a register token: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestSecondRegistrationNeedsAnExistingPasskey(t *testing.T) {
 	if len(o.PublicKey.Exclude) != 1 || o.PublicKey.Exclude[0].ID != b64(first.id) {
 		t.Errorf("excludeCredentials = %+v, want the first passkey", o.PublicKey.Exclude)
 	}
-	if _, err := e.pk.FinishRegistration(ctx, repo, alice, second.create(options)); err != nil {
+	if _, err := e.finishRegistration(ctx, repo, alice, second.create(options)); err != nil {
 		t.Fatalf("FinishRegistration: %v", err)
 	}
 	if !slices.Equal(second.handle, first.handle) {
@@ -156,7 +156,7 @@ func TestSecondRegistrationNeedsAnExistingPasskey(t *testing.T) {
 		t.Errorf("List = %d passkeys, want 2", len(got))
 	}
 
-	_, err = e.pk.BeginRegistration(ctx, repo, alice, token)
+	_, err = e.beginRegistration(ctx, repo, alice, token)
 	wantErr(t, err, ErrToken) // the register token was consumed at begin
 }
 

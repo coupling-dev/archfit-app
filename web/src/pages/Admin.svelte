@@ -1,4 +1,5 @@
 <script lang="ts">
+  import OperatorConfirmation from '../components/OperatorConfirmation.svelte';
   import Skeleton from '../components/Skeleton.svelte';
   import { explain, explainLoad, postJSON, type AdminBody, type ApiError, type Installation, type Notice, type Session, type Repos } from '../lib/api';
   import { firstJSON } from '../lib/early';
@@ -55,6 +56,8 @@
     <p class="lede">Accounts that may run Archfit. Admit an account below, or set admission in the App settings, by pull request.</p>
   </div>
 </div>
+
+<OperatorConfirmation {session} />
 
 {#if notice}<p class="flash success" role="status">{notice}</p>{/if}
 {#if failure}<p class="flash error" role="alert">{failure}</p>{/if}

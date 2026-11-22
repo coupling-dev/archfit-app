@@ -76,15 +76,15 @@ func TestAChallengeIsUsedOnce(t *testing.T) {
 	t.Run("registration", func(t *testing.T) {
 		e := newEnv(t)
 		a := newAuthenticator(t, webauthncose.AlgES256)
-		options, err := e.pk.BeginRegistration(ctx, repo, alice, "")
+		options, err := e.beginRegistration(ctx, repo, alice, "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		response := a.create(options)
-		if _, err := e.pk.FinishRegistration(ctx, repo, alice, response); err != nil {
+		if _, err := e.finishRegistration(ctx, repo, alice, response); err != nil {
 			t.Fatal(err)
 		}
-		_, err = e.pk.FinishRegistration(ctx, repo, alice, response)
+		_, err = e.finishRegistration(ctx, repo, alice, response)
 		wantErr(t, err, ErrCeremony)
 		if n := len(e.issues.all()); n != 1 {
 			t.Errorf("issues = %d, want 1", n)
@@ -117,12 +117,12 @@ func TestAChallengeExpiresAfterFiveMinutes(t *testing.T) {
 		t.Run(tc.after.String(), func(t *testing.T) {
 			e := newEnv(t)
 			a := newAuthenticator(t, webauthncose.AlgES256)
-			options, err := e.pk.BeginRegistration(ctx, repo, alice, "")
+			options, err := e.beginRegistration(ctx, repo, alice, "")
 			if err != nil {
 				t.Fatal(err)
 			}
 			e.now = e.now.Add(tc.after)
-			_, err = e.pk.FinishRegistration(ctx, repo, alice, a.create(options))
+			_, err = e.finishRegistration(ctx, repo, alice, a.create(options))
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("registration after %v: error = %v, want %v", tc.after, err, tc.want)
 			}
@@ -338,7 +338,7 @@ func TestMalformedCredentialsAreRefused(t *testing.T) {
 			}
 			_, err := e.pk.FinishStepUp(ctx, repo, alice, body)
 			wantErr(t, err, ErrCeremony)
-			_, err = e.pk.FinishRegistration(ctx, repo, alice, body)
+			_, err = e.finishRegistration(ctx, repo, alice, body)
 			wantErr(t, err, ErrCeremony)
 		})
 	}
