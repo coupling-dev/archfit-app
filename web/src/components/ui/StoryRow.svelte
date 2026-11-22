@@ -32,8 +32,8 @@
   .story li + li { margin-left: 16px; position: relative; }
   .story li + li::before { content: '→'; position: absolute; left: -15px; color: var(--fg-muted); font-weight: 400; }
   .mark { font-weight: 700; width: 1em; text-align: center; }
-  .done { color: var(--success); border-color: var(--success-border); background: var(--success-subtle); }
-  .failed { color: var(--danger); border-color: var(--danger-border); background: var(--danger-subtle); }
-  .current { color: var(--fg); border-color: var(--accent); background: var(--accent-subtle); font-weight: 600; box-shadow: 0 0 0 2px var(--accent-border); }
-  .skipped { border-style: dashed; }
+  .story li.done { color: var(--success); border-color: var(--success-border); background: var(--success-subtle); }
+  .story li.failed { color: var(--danger); border-color: var(--danger-border); background: var(--danger-subtle); }
+  .story li.current { color: var(--fg); border-color: var(--accent); background: var(--accent-subtle); font-weight: 600; box-shadow: 0 0 0 2px var(--accent-border); }
+  .story li.skipped { border-style: dashed; }
 </style>

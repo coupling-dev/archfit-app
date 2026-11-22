@@ -283,9 +283,13 @@ describe('storySteps', () => {
     [{ state: 'open' }, ['done', 'failed', 'current', 'later', 'later', 'later']],
     [{ state: 'answered', answer: { kind: 'approve' } }, ['done', 'failed', 'done', 'done', 'current', 'later']],
     [{ state: 'answered', answer: { kind: 'reject', instead: 'x' } }, ['done', 'failed', 'done', 'failed', 'skipped', 'skipped']],
+    [{ state: 'answered' }, ['done', 'failed', 'done', 'done', 'current', 'later']],
     [{ state: 'closed' }, ['done', 'failed', 'done', 'skipped', 'skipped', 'skipped']],
   ] as const)('%o', (r, want) => {
     expect(storySteps(r as Pick<RequestView, 'state' | 'answer'>)).toEqual(want);
+  });
+  it('marks the policy done after a merge this page saw', () => {
+    expect(storySteps({ state: 'answered', answer: { kind: 'approve' } }, true)).toEqual(['done', 'failed', 'done', 'done', 'done', 'current']);
   });
 });
 

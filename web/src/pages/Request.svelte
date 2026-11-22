@@ -150,7 +150,10 @@
 
   function answeredLine(r: RequestView): string {
     const a = r.answer;
-    if (!a) return r.state === 'closed' ? 'No answer is open. The request on GitHub names the owner who answered.' : '';
+    if (!a)
+      return r.state === 'closed'
+        ? 'No answer is open. The request on GitHub names the owner who answered.'
+        : 'Answered. The request on GitHub names the owner who answered and the passkey.';
     const owner = ' The request on GitHub names the owner and the passkey.';
     if (a.kind === 'approve') return 'Allowed.' + owner;
     if (a.kind === 'approve-until') return `Allowed until ${a.until}.` + owner;
@@ -182,7 +185,7 @@
     </div>
   </div>
 
-  <StoryRow steps={storySteps(body)} ask={`#${body.number}`} />
+  <StoryRow steps={storySteps(body, answered?.state === 'merged')} ask={`#${body.number}`} />
 
   {#if changed}<Banner role="status">{changed}</Banner>{/if}
 
@@ -355,7 +358,7 @@
   .effects :global(strong) { color: var(--fg); font-weight: 600; }
   .name { font-weight: 600; font-size: 15px; }
   .effects { display: flex; flex-direction: column; gap: 2px; color: var(--fg-muted); font-size: 13px; }
-  .field { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+  .field { display: inline-flex; align-items: center; gap: 8px; }
   .date { width: 9em; }
   .minor { color: var(--fg-muted); align-items: flex-start; }
   .minor strong { color: var(--fg); }

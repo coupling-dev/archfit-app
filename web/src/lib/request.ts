@@ -171,10 +171,11 @@ export type Step = 'done' | 'failed' | 'current' | 'later' | 'skipped';
 
 // storySteps is the story row of a request page: change, check, ask, answer, policy, re-check. A request exists, so the
 // check failed and the ask happened. An approval moves the story to the policy step; a rejection ends it at the answer.
-export function storySteps(r: Pick<RequestView, 'state' | 'answer'>): Step[] {
+// merged is true when this page saw the App merge the policy pull request of its own answer.
+export function storySteps(r: Pick<RequestView, 'state' | 'answer'>, merged = false): Step[] {
   if (r.state === 'open') return ['done', 'failed', 'current', 'later', 'later', 'later'];
   if (r.answer?.kind === 'reject') return ['done', 'failed', 'done', 'failed', 'skipped', 'skipped'];
-  if (r.answer) return ['done', 'failed', 'done', 'done', 'current', 'later'];
+  if (r.state === 'answered') return merged ? ['done', 'failed', 'done', 'done', 'done', 'current'] : ['done', 'failed', 'done', 'done', 'current', 'later'];
   return ['done', 'failed', 'done', 'skipped', 'skipped', 'skipped'];
 }
 
