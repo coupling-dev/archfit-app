@@ -1,39 +1,42 @@
-Request #431
+May app depend on util?
 
-closed Request #431 is closed.
+closed Request #431. The author says: “Need the helper.”
 
-Reason
+Request #431 is closed.
 
-Need the helper.
-
-Rule graph · app -> util
-
-Request #431 on GitHub
-
-Record
+✓
+change
+: done
+✗
+check
+: failed
+✓
+ask #431
+: done
+–
+answer
+: not needed
+–
+policy
+: not needed
+–
+re-check
+: not needed
+Where
 app.go:3 graph app -> util
-  balance: 9/10 (min 7)
+The rule
+The policy does not allow app → util (rule graph).
+Balance
+9/10 (min 7)
+On GitHub
+Request #431
+Answer
+
+No answer is open. The request on GitHub names the owner who answered.
 
 The map
 Show the map as a list
 Show the map as a diagram
-
-Dependencies not allowed by this policy need a request.
-
 Why the balance
-
-Balance: 9/10 (min 7). The balance is the value the policy checks against its minimum.
-
-The policy declares the volatility of each module:
-
-app: Layer outer · Volatility high
-
-util: Layer core · Volatility low
-
-Earlier answers 0
-
-No earlier answer about these modules.
-
-Answer
-
-No answer is open. The request on GitHub names the owner who answered and the passkey used.
+Earlier answers about these modules (0)
+The record

@@ -16,6 +16,12 @@ import {
   previewPath,
   pullLine,
   statusOf,
+  question,
+  storySteps,
+  effectLines,
+  defaultUntil,
+  changedWhileOpen,
+  effectLead,
 } from './request';
 
 const open: RequestView = {
@@ -227,46 +233,121 @@ describe('decisionState', () => {
   });
 
   it.each([
-    ['approve', 'Approve'],
-    ['approve-until', 'Approve until date'],
-    ['reject', 'Reject'],
-  ] as const)('%s describes merge and keep-open outcomes', (kind, verb) => {
-    expect(decisionState(kind, preview(kind), false)).toMatchObject({
-      ready: true,
-      changesPolicy: true,
-      mergeLater: false,
-      confirm: verb + ' and merge policy PR',
-    });
-    expect(decisionState(kind, preview(kind), true)).toMatchObject({
-      ready: true,
-      changesPolicy: true,
-      mergeLater: true,
-      confirm: verb + ' and keep the policy pull request open',
-    });
-    expect(decisionState(kind, preview(kind, ''), true)).toMatchObject({
-      ready: true,
-      changesPolicy: false,
-      mergeLater: false,
-      confirm: verb + (kind === 'reject' ? ' without a passkey' : ' with passkey'),
-    });
+    ['approve', 'Answer with passkey'],
+    ['approve-until', 'Answer with passkey'],
+    ['declare-public', 'Answer with passkey'],
+    ['reject', 'Answer'],
+  ] as const)('%s is confirmed with "%s"', (kind, confirm) => {
+    expect(decisionState(kind, preview(kind))).toEqual({ ready: true, changesPolicy: true, confirm });
+    expect(decisionState(kind, preview(kind, ''))).toMatchObject({ ready: true, changesPolicy: false });
   });
 
   it('does not confirm a missing preview or another answer', () => {
-    expect(decisionState('approve', undefined, true)).toMatchObject({ ready: false, mergeLater: false });
-    expect(decisionState('approve', preview('reject'), true)).toMatchObject({ ready: false, mergeLater: false });
+    expect(decisionState('approve', undefined)).toMatchObject({ ready: false, changesPolicy: false });
+    expect(decisionState('approve', preview('reject'))).toMatchObject({ ready: false, changesPolicy: false });
   });
 });
 
 describe('answerKinds', () => {
-  const kinds = (r: Parameters<typeof answerKinds>[0]) => answerKinds(r).map((k) => k.title);
-  it('offers approve, approve until and reject for a request that is not about the surface', () => {
-    expect(kinds(open)).toEqual(['Approve and merge', 'Approve until a date', 'Reject']);
-    expect(kinds(null)).toEqual(['Approve and merge', 'Approve until a date', 'Reject']);
+  const kinds = (r: Parameters<typeof answerKinds>[0]) => answerKinds(r).map((k) => (k.minor ? `(${k.title})` : k.title));
+  it('offers allow, allow until a date and reject for a request that is not about the public part', () => {
+    expect(kinds(open)).toEqual(['Allow', 'Allow until a date', 'Reject, and say what to do instead']);
+    expect(kinds(null)).toEqual(['Allow', 'Allow until a date', 'Reject, and say what to do instead']);
   });
-  it('never approves a use past the surface: it declares the package, allows it until a date or rejects it', () => {
+  it('never approves a use past the public part: three answers and a smaller shared-model one', () => {
     const surface = { public: ['pkg/util'], model: [], package: 'pkg/util/retry' };
-    expect(kinds({ surface })).toEqual(['Declare as public', 'Declare as model', 'Allow until a date', 'Reject']);
-    expect(kinds({ surface: { ...surface, package: undefined } })).toEqual(['Allow until a date', 'Reject']);
+    expect(kinds({ surface })).toEqual([
+      'Make it public',
+      'Allow until a date',
+      'Reject, and say what to do instead',
+      '(Declare it as shared model)',
+    ]);
+    expect(kinds({ surface: { ...surface, package: undefined } })).toEqual(['Allow until a date', 'Reject, and say what to do instead']);
+  });
+});
+
+describe('question', () => {
+  it.each([
+    [{ from: 'billing', to: 'reports' }, 'May billing depend on reports?'],
+    [{ from: 'pkg_tc', to: 'pkg_util', surface: { public: [], model: [], package: 'pkg/util/retry' } }, 'Should pkg/util/retry be public in pkg_util?'],
+    [{ from: 'billing' }, 'May billing keep this change?'],
+    [{ path: 'scripts/x.go' }, 'May scripts/x.go stay as it is?'],
+    [{}, 'May this change stay as it is?'],
+  ])('%o asks "%s"', (r, want) => {
+    expect(question(r)).toBe(want);
+  });
+});
+
+describe('storySteps', () => {
+  it.each([
+    [{ state: 'open' }, ['done', 'failed', 'current', 'later', 'later', 'later']],
+    [{ state: 'answered', answer: { kind: 'approve' } }, ['done', 'failed', 'done', 'done', 'current', 'later']],
+    [{ state: 'answered', answer: { kind: 'reject', instead: 'x' } }, ['done', 'failed', 'done', 'failed', 'skipped', 'skipped']],
+    [{ state: 'answered' }, ['done', 'failed', 'done', 'done', 'current', 'later']],
+    [{ state: 'closed' }, ['done', 'failed', 'done', 'skipped', 'skipped', 'skipped']],
+  ] as const)('%o', (r, want) => {
+    expect(storySteps(r as Pick<RequestView, 'state' | 'answer'>)).toEqual(want);
+  });
+  it('marks the policy done after a merge this page saw', () => {
+    expect(storySteps({ state: 'answered', answer: { kind: 'approve' } }, true)).toEqual(['done', 'failed', 'done', 'done', 'done', 'current']);
+  });
+});
+
+describe('effectLines', () => {
+  const r = { from: 'billing', to: 'reports', surface: { public: [], model: [], package: 'reports/totals' } };
+  const p = (answer: AnswerKind, diff: string, pulls: Preview['pulls'] = []): Preview => ({ answer, diff, loosens: true, policy_digest: 'd', pulls });
+  const passes = [{ number: 412, status: 'waiting', waits: true, clears: 1, left: 0 }];
+  it.each([
+    ['approve', p('approve', '+a', passes), ['Adds 1 line to the policy: billing may depend on reports.', 'Pull request #412 passes when the policy is updated.']],
+    ['approve', p('approve', '+a\n+b'), ['Adds 2 lines to the policy: billing may depend on reports.', 'No open pull request changes.']],
+    ['approve', undefined, ['Adds 1 line to the policy: billing may depend on reports.']],
+    [
+      'approve-until',
+      p('approve-until', '+a', [{ number: 15, status: 'fail', waits: false, clears: 1, left: 2 }]),
+      ['Adds an exception for this one place that ends on 2027-02-20. After it, the check fails again and asks for a new answer.', 'Pull request #15 still has 2 errors.'],
+    ],
+    ['declare-public', p('declare-public', '+a', passes), ['Adds 1 line: reports/totals joins the public part of reports. Every module may then use it.', 'Pull request #412 passes when the policy is updated.']],
+    [
+      'approve',
+      p('approve', '+a', [{ number: 20, status: 'unknown', waits: true, clears: 0, left: 0 }]),
+      ['Adds 1 line to the policy: billing may depend on reports.', 'Pull request #20 needs a new check result before it can pass.'],
+    ],
+    ['reject', undefined, ['The author sees what you say to do instead.']],
+    ['reject', p('reject', '+deny', passes), ['Adds a rule: billing may not depend on reports, with what you say to do instead. The author sees your text.']],
+    ['reject', p('reject', ''), ['Changes nothing in the policy. The author sees what you say to do instead.']],
+  ] as const)('%s', (kind, preview, want) => {
+    expect(effectLines(kind, r, preview, '2027-02-20')).toEqual(want);
+  });
+});
+
+describe('effectLead', () => {
+  it.each([
+    ['Adds 1 line to the policy: a may depend on b.', ['Adds 1 line', ' to the policy: a may depend on b.']],
+    ['Adds 2 lines: x.', ['Adds 2 lines', ': x.']],
+    ['Adds an exception for this one place.', ['Adds an exception', ' for this one place.']],
+    ['Adds a rule: a may not depend on b.', ['Adds a rule', ': a may not depend on b.']],
+    ['Changes nothing in the policy.', ['Changes nothing', ' in the policy.']],
+    ['Pull request #12 passes.', ['', 'Pull request #12 passes.']],
+  ])('%s', (line, want) => {
+    expect(effectLead(line)).toEqual(want);
+  });
+});
+
+describe('defaultUntil', () => {
+  it('is 90 days later in UTC', () => {
+    expect(defaultUntil(new Date('2026-11-22T23:30:00Z'))).toBe('2027-02-20');
+  });
+});
+
+describe('changedWhileOpen', () => {
+  const answered = { ...open, state: 'answered' as const, answer: { kind: 'approve' as const } };
+  it.each([
+    [open, answered, false, 'Request #431 was answered while you looked. The page shows the answer.'],
+    [open, { ...open, state: 'closed' as const }, false, 'Request #431 was closed while you looked.'],
+    [open, open, true, 'The policy on the default branch changed while you looked. The effects below are the new ones.'],
+    [open, open, false, ''],
+  ])('%#', (before, after, moved, want) => {
+    expect(changedWhileOpen(before, after, moved)).toBe(want);
   });
 });
 

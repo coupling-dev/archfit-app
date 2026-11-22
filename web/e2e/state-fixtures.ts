@@ -79,7 +79,7 @@ export const stateFixtures: StateFixture[] = [
     path: '/r/acme/app/requests/431',
     api: '/api/repos/acme/app/requests/431',
     reply: [200, closed],
-    heading: 'Request #431',
+    heading: 'May app depend on util?',
     text: 'No answer is open.',
   },
   {

@@ -4,24 +4,21 @@ import type { MapModel } from '../components/map/model';
 
 import type { AnswerKind, Preview, PullEffect, RequestEarlier, RequestModule, RequestView } from './api';
 
-// answerKinds are the answers a request offers, in order. A surface request (a use past the declared parts of the
-// module it reaches) is never approved as such: it offers declaring the package public or a model part, allowing it
-// until a date, or rejecting it. Without a named package it offers no declaration.
-export function answerKinds(r: Pick<RequestView, 'surface'> | null): { kind: AnswerKind; title: string }[] {
-  if (!r?.surface) {
-    return [
-      { kind: 'approve', title: 'Approve and merge' },
-      { kind: 'approve-until', title: 'Approve until a date' },
-      { kind: 'reject', title: 'Reject' },
-    ];
-  }
-  const out: { kind: AnswerKind; title: string }[] = [];
-  if (r.surface.package) {
-    out.push({ kind: 'declare-public', title: 'Declare as public' });
-    out.push({ kind: 'declare-model', title: 'Declare as model' });
-  }
-  out.push({ kind: 'approve-until', title: 'Allow until a date' }, { kind: 'reject', title: 'Reject' });
-  return out;
+// answerKinds are the answers a request offers, in order (story spec 8.18, section 5; owner decision 2026-11-22). A
+// surface request (a use past the declared parts of the module it reaches) is never approved as such: it offers making
+// the package public, allowing it until a date, rejecting it, and a smaller fourth answer, declaring it a shared model.
+// Without a named package it offers no declaration.
+export function answerKinds(r: Pick<RequestView, 'surface'> | null): { kind: AnswerKind; title: string; minor?: boolean }[] {
+  const until = { kind: 'approve-until' as const, title: 'Allow until a date' };
+  const reject = { kind: 'reject' as const, title: 'Reject, and say what to do instead' };
+  if (!r?.surface) return [{ kind: 'approve', title: 'Allow' }, until, reject];
+  if (!r.surface.package) return [until, reject];
+  return [
+    { kind: 'declare-public', title: 'Make it public' },
+    until,
+    reject,
+    { kind: 'declare-model', title: 'Declare it as shared model', minor: true },
+  ];
 }
 
 // loosens is true for an answer that loosens the policy: it needs the owner's passkey (design 9.2). A reject does not.
@@ -45,31 +42,11 @@ export function answerProblem(kind: AnswerKind, until: string, instead: string):
   return '';
 }
 
-// Confirmation describes the policy PR, never a promise that the affected code PR passes or merges.
-export function decisionState(kind: AnswerKind, preview: Preview | undefined, later: boolean) {
+// decisionState says whether the chosen answer can be sent: its preview is loaded. The answer always asks the App to
+// merge the policy pull request when its checks pass (8.20); the page never offers to keep it open.
+export function decisionState(kind: AnswerKind, preview: Preview | undefined) {
   const ready = preview?.answer === kind;
-  const changesPolicy = ready && !!preview.diff;
-  const mergeLater = changesPolicy && later;
-  const verbs: Partial<Record<AnswerKind, string>> = {
-    reject: 'Reject',
-    'approve-until': 'Approve until date',
-    'declare-public': 'Declare as public',
-    'declare-model': 'Declare as model',
-  };
-  const verb = verbs[kind] ?? 'Approve';
-  return {
-    ready,
-    changesPolicy,
-    mergeLater,
-    confirm: !changesPolicy
-      ? `${verb} with${kind === 'reject' ? 'out a passkey' : ' passkey'}`
-      : mergeLater ? `${verb} and keep the policy pull request open` : `${verb} and merge policy PR`,
-    effect: !changesPolicy
-      ? 'This records your answer without changing .archfit.yaml.'
-      : mergeLater
-        ? 'This answer records the policy change in a pull request and keeps it open. The change takes effect only when that pull request merges.'
-        : 'This answer records the policy change in a pull request and attempts to merge it. If GitHub refuses, the policy pull request stays open.',
-  };
+  return { ready, changesPolicy: ready && !!preview.diff, confirm: loosens(kind) ? 'Answer with passkey' : 'Answer' };
 }
 
 // Balance is a coupling number as the record prints it. It names the inputs it was computed with; a balance stored from
@@ -180,4 +157,85 @@ export function requestMap(r: RequestView): MapModel {
   if (r.state === 'open' && r.from && r.to && names.has(r.from) && names.has(r.to))
     lines.push({ kind: 'requested', from: r.from, to: r.to, rule: r.rule, request: r.number });
   return { layers: r.layers, modules, lines };
+}
+
+// question is the page title: the request as the owner's question (story spec 8.18, section 2.6).
+export function question(r: Pick<RequestView, 'from' | 'to' | 'path' | 'surface'>): string {
+  if (r.surface?.package && r.to) return `Should ${r.surface.package} be public in ${r.to}?`;
+  if (r.from && r.to) return `May ${r.from} depend on ${r.to}?`;
+  if (r.from) return `May ${r.from} keep this change?`;
+  return r.path ? `May ${r.path} stay as it is?` : 'May this change stay as it is?';
+}
+
+export type Step = 'done' | 'failed' | 'current' | 'later' | 'skipped';
+
+// storySteps is the story row of a request page: change, check, ask, answer, policy, re-check. A request exists, so the
+// check failed and the ask happened. An approval moves the story to the policy step; a rejection ends it at the answer.
+// merged is true when this page saw the App merge the policy pull request of its own answer.
+export function storySteps(r: Pick<RequestView, 'state' | 'answer'>, merged = false): Step[] {
+  if (r.state === 'open') return ['done', 'failed', 'current', 'later', 'later', 'later'];
+  if (r.answer?.kind === 'reject') return ['done', 'failed', 'done', 'failed', 'skipped', 'skipped'];
+  if (r.state === 'answered') return merged ? ['done', 'failed', 'done', 'done', 'done', 'current'] : ['done', 'failed', 'done', 'done', 'current', 'later'];
+  return ['done', 'failed', 'done', 'skipped', 'skipped', 'skipped'];
+}
+
+// addedLines counts the lines an answer adds to .archfit.yaml, from its unified diff.
+export function addedLines(diff: string): number {
+  return diff.split('\n').filter((l) => l.startsWith('+') && !l.startsWith('+++')).length;
+}
+
+const lines = (n: number) => `${n} ${n === 1 ? 'line' : 'lines'}`;
+
+// effectLines is what an answer does, shown before the owner chooses it: the policy change, then the open pull
+// requests. Without a preview yet it says only what the answer kind does.
+export function effectLines(
+  kind: AnswerKind,
+  r: Pick<RequestView, 'from' | 'to' | 'surface'>,
+  p: Preview | undefined,
+  until: string,
+): string[] {
+  const out: string[] = [];
+  const n = p ? addedLines(p.diff) : 1;
+  const pkg = r.surface?.package ?? 'the package';
+  if (kind === 'approve') out.push(`Adds ${lines(n)} to the policy: ${r.from} may depend on ${r.to}.`);
+  else if (kind === 'approve-until')
+    out.push(`Adds an exception for this one place that ends on ${until || 'the date you choose'}. After it, the check fails again and asks for a new answer.`);
+  else if (kind === 'declare-public') out.push(`Adds ${lines(n)}: ${pkg} joins the public part of ${r.to}. Every module may then use it.`);
+  else if (kind === 'declare-model')
+    out.push(`Adds ${lines(n)}: other modules may use ${pkg} as a shared model, a lower balance than a public part.`);
+  else if (!p) out.push('The author sees what you say to do instead.');
+  else if (p.diff) out.push(`Adds a rule: ${r.from} may not depend on ${r.to}, with what you say to do instead. The author sees your text.`);
+  else out.push('Changes nothing in the policy. The author sees what you say to do instead.');
+  if (!p || kind === 'reject') return out;
+  // An unknown result has no stored errors, so it clears nothing: it needs a new check result before it can pass.
+  const unknown = p.pulls.filter((e) => e.status === 'unknown');
+  const passing = p.pulls.filter((e) => e.status !== 'unknown' && e.left === 0).map((e) => `#${e.number}`);
+  const failing = p.pulls.filter((e) => e.status !== 'unknown' && e.left > 0);
+  if (passing.length)
+    out.push(`Pull request ${passing.join(', ')} ${passing.length === 1 ? 'passes' : 'pass'} when the policy is updated.`);
+  for (const e of failing) out.push(`Pull request #${e.number} still has ${e.left} ${e.left === 1 ? 'error' : 'errors'}.`);
+  for (const e of unknown) out.push(`Pull request #${e.number} needs a new check result before it can pass.`);
+  if (!p.pulls.length) out.push('No open pull request changes.');
+  return out;
+}
+
+// effectLead splits an effect line into its lead, shown strong, and the rest: "Adds 1 line" | " to the policy: …".
+export function effectLead(line: string): [string, string] {
+  const m = /^(Adds (?:\d+ lines?|an exception|a rule)|Changes nothing)/.exec(line);
+  return m ? [m[1], line.slice(m[1].length)] : ['', line];
+}
+
+// defaultUntil is the date an "allow until a date" answer offers first: 90 days from today, in UTC.
+export function defaultUntil(today: Date): string {
+  return new Date(today.getTime() + 90 * 86_400_000).toISOString().slice(0, 10);
+}
+
+// changedWhileOpen is the sentence the page shows when a reload of the request finds it changed, '' when nothing did.
+export function changedWhileOpen(before: RequestView, after: RequestView, policyMoved: boolean): string {
+  if (before.state === 'open' && after.state !== 'open')
+    return after.state === 'answered'
+      ? `Request #${after.number} was answered while you looked. The page shows the answer.`
+      : `Request #${after.number} was closed while you looked.`;
+  if (policyMoved) return 'The policy on the default branch changed while you looked. The effects below are the new ones.';
+  return '';
 }

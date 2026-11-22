@@ -45,5 +45,8 @@
   "answer": {
     "kind": "reject",
     "instead": "Use a port."
-  }
+  },
+  "waiting": [
+    12
+  ]
 }
