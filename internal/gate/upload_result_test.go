@@ -576,7 +576,7 @@ func TestUpload4PublishesTheResult(t *testing.T) {
 			t.Errorf("check %q with annotations %+v", c.Title, c.Annotations)
 		}
 		body := w.comments(p)[0].Body
-		if !strings.Contains(body, "\n## ❌ Archfit: fail, 1 error\n") || !strings.HasSuffix(body, "**Author:** fix the code and push.\n") {
+		if !strings.Contains(body, "\n## ❌ Archfit: fail, 1 error\n") || !strings.Contains(body, "**Next: the author fixes the code** and pushes.") {
 			t.Errorf("comment:\n%s", body)
 		}
 		w.noStateCheck()

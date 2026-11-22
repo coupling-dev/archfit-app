@@ -115,3 +115,17 @@ func TestSummaryBoundsTheSurfaceAndTheBalanceSubject(t *testing.T) {
 		t.Error("bounding changed the source")
 	}
 }
+
+func TestCommentStaysInBudget(t *testing.T) {
+	r := engineResult(t, "waiting")
+	for i := 0; i < 100; i++ {
+		r.Errors = append(r.Errors, result.Error{What: strings.Repeat("界", 1000)})
+	}
+	v := newView(r)
+	s := storyOf(v, nil)
+	v.story = &s
+	body := v.comment(maxBody)
+	if len(body) > maxBody || !utf8.ValidString(body) {
+		t.Fatalf("comment length %d, valid UTF-8 %v", len(body), utf8.ValidString(body))
+	}
+}

@@ -47,7 +47,10 @@ func TestPublish4WritesTheGateCheckAndTheComment(t *testing.T) {
 	if len(comments) != 1 {
 		t.Fatalf("%d comments, want 1", len(comments))
 	}
-	want := commentMarker + "\n" + headMarker(headB, Receipt{RunID: 7, RunAttempt: 1}) + "\n" + newView(engineResult(t, "graph")).comment(maxBody)
+	v := newView(engineResult(t, "graph"))
+	st := storyOf(v, nil)
+	v.story = &st
+	want := commentMarker + "\n" + headMarker(headB, Receipt{RunID: 7, RunAttempt: 1}) + "\n" + v.comment(maxBody)
 	if comments[0].Body != want {
 		t.Errorf("comment:\n%s\nwant:\n%s", comments[0].Body, want)
 	}
