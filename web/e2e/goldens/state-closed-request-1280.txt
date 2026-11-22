@@ -1,6 +1,6 @@
 May app depend on util?
 
-closed Request #431. The author says: “Need the helper.”
+closed Request #431. Asked by @dev just now: “Need the helper.”
 
 Request #431 is closed.
 
