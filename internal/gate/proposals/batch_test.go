@@ -262,3 +262,23 @@ func TestBatchRefusesNonOwnerWithValidToken(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestBatchRefusesTipMovedDuringRedeem(t *testing.T) {
+	w := newWorld(t)
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	items := []BatchItem{{Request: 431, Answer: requests.Answer{Kind: policy3.Approve}}}
+	digest, err := w.svc.BatchDigest(context.Background(), testRepo, items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.tokens["batch"] = digest
+	redeem := w.redeem("batch")
+	_, err = w.svc.AnswerBatch(context.Background(), testRepo, BatchInput{Answers: items, Owner: olivia, Redeem: func(ctx context.Context, d string) (string, error) {
+		credential, e := redeem(ctx, d)
+		w.hub.push(fakeBase, "README.md", "moved")
+		return credential, e
+	}})
+	if err == nil || !strings.Contains(err.Error(), "batch changed after review") || w.requestState(431) != records.StateOpen || w.hub.count("CommitOn") != 0 || w.hub.count("MergePull") != 0 {
+		t.Fatalf("error=%v state=%s writes=%v", err, w.requestState(431), w.hub.writes())
+	}
+}
