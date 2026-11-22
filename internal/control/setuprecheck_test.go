@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+
 	"strings"
 	"testing"
 	"time"
@@ -56,7 +58,7 @@ func (f *fakeSetupGitHub) RunURL(context.Context, api.Repo, int64) (string, erro
 	f.runCalls++
 	return "https://github.com/o/r/actions/runs/1/job/2", f.runErr
 }
-func (f *fakeSetupGitHub) HasMarkerComment(context.Context, api.Repo, int) (bool, error) {
+func (f *fakeSetupGitHub) HasMarkerComment(context.Context, api.Repo, int, string) (bool, error) {
 	f.calls++
 	return f.marker, nil
 }
@@ -295,5 +297,51 @@ func TestSetupSearchContinuesAfterPermanentPull(t *testing.T) {
 	err := c.recheckAdded(context.Background(), webhook.Event{InstallationID: 1, Account: "o", AddedRepositories: []string{"o/r"}}, []api.Repo{{RepoRef: api.RepoRef{InstallationID: 1, FullName: "o/r"}, ID: 42}})
 	if err != nil || search.calls != 1 || gh.pullCalls != 2 || gh.calls != 2 {
 		t.Fatalf("err %v searches %d pulls %d calls %d", err, search.calls, gh.pullCalls, gh.calls)
+	}
+}
+
+func TestWelcomePullOpened(t *testing.T) {
+	for _, tt := range []struct {
+		name, action, branch string
+		headID               int64
+		marked               bool
+		want                 int
+	}{
+		{"opened", "opened", "archfit/setup", 70, false, 1},
+		{"reopened", "reopened", "archfit/setup", 70, false, 1},
+		{"fork", "opened", "archfit/setup", 99, false, 0},
+		{"other branch", "opened", "feature", 70, false, 0},
+		{"existing marker", "opened", "archfit/setup", 70, true, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.gh.install(7, ghr(70, "org7/app", true))
+			gh := &fakeSetupGitHub{marker: tt.marked, pulls: fakeSetupPulls{"org7/app": {{Number: 7, HeadRef: tt.branch, HeadRepoID: tt.headID}}}}
+			h.c.setup = &setupRecheck{store: store.NewMemory(), gh: gh, now: time.Now}
+			h.c.admit = admitAll{}
+			body := `{"action":"` + tt.action + `","installation":{"id":7},"repository":{"id":70,"full_name":"org7/app"},"pull_request":{"number":7,"head":{"ref":"` + tt.branch + `","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","repo":{"id":` + fmt.Sprint(tt.headID) + `,"full_name":"org7/app"}}}}`
+			e, err := webhook.Parse("pull_request", "delivery", []byte(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := h.c.HandleEvent(context.Background(), e); err != nil {
+				t.Fatal(err)
+			}
+			if gh.comments != tt.want {
+				t.Fatalf("comments = %d, want %d", gh.comments, tt.want)
+			}
+			if tt.want == 1 {
+				if !strings.Contains(gh.body, "<!-- archfit:welcome -->") {
+					t.Fatalf("missing welcome marker: %q", gh.body)
+				}
+				gh.marker = true
+				if err := h.c.HandleEvent(context.Background(), e); err != nil {
+					t.Fatal(err)
+				}
+				if gh.comments != 1 {
+					t.Fatalf("redelivery comments = %d", gh.comments)
+				}
+			}
+		})
 	}
 }

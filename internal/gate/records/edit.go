@@ -8,8 +8,8 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
-// Edit is a whole-file replacement. Target is the exact protected tip the owner saw;
-// unlike a request answer, an edit never travels to another tip.
+// Edit is a whole-file replacement. Target is the protected tip it is made on. Unlike a request answer, an edit is
+// never written again on another policy: it moves to another tip only with the same policy bytes (Rebase).
 type Edit struct {
 	File   []byte `json:"file"`
 	Base   string `json:"base"`

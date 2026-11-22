@@ -133,7 +133,10 @@ type Pull struct {
 	MergeCommitSHA string
 	// Mergeable is GitHub's answer whether the head merges cleanly; nil while GitHub has not computed it.
 	Mergeable *bool
-	UpdatedAt time.Time
+	// MergeableState is GitHub's mergeable_state, such as "behind", "blocked" or "dirty"; "" or "unknown" while GitHub
+	// has not computed it.
+	MergeableState string
+	UpdatedAt      time.Time
 }
 
 type Pulls interface {

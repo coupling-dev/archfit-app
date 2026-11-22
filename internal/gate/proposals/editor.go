@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/coupling-dev/archfit-app/internal/gate/requests"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
 	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
@@ -15,6 +16,17 @@ type EditorBase struct {
 	File     []byte
 	Digest   string
 	Recovery bool
+	// The open proposal, when there is one: its pull request, its change against the default branch, and why it
+	// waits. Voided: a move of the default branch voided an edit approval of it, so its change has no approval now.
+	// Foreign: its branch or pull request moved away from the head the App recorded. Lost is what ReloadEditor
+	// removes from the proposal, as a diff: the lines no recorded approval writes on the current default branch.
+	PullRequest     int
+	Target          string
+	Diff, Lost      string
+	Voided, Foreign bool
+	// MergeNow: its last answer asked to merge now, so the App merges it by itself (Advance); else it waits for an
+	// owner to merge it now.
+	MergeNow bool
 }
 
 // Editor reads only recorded authority. An unrecorded pull never supplies bytes.
@@ -35,8 +47,9 @@ func (s *Service) Editor(ctx context.Context, r api.Repo) (EditorBase, error) {
 		return EditorBase{}, err
 	}
 	if cur == nil {
-		return EditorBase{File: raw, Digest: policy3.Digest(raw)}, nil
+		return EditorBase{File: raw, Digest: policy3.Digest(raw), Target: tip}, nil
 	}
+	tipFile := raw
 	raw, _, err = s.gh.File(ctx, r.RepoRef, cur.rec.HeadSHA, policyPath)
 	if err != nil {
 		return EditorBase{}, err
@@ -55,8 +68,19 @@ func (s *Service) Editor(ctx context.Context, r api.Repo) (EditorBase, error) {
 	if pull.HeadRef != Branch || !strings.EqualFold(pull.HeadRepo, r.FullName) || pull.BaseRef != r.DefaultBranch {
 		return EditorBase{}, ErrEditChanged
 	}
-	return EditorBase{File: raw, Digest: cur.rec.ExpectedDigest,
-		Recovery: head != cur.rec.HeadSHA || pull.HeadSHA != cur.rec.HeadSHA || cur.rec.EditVoided || len(cur.stale) > 0}, nil
+	v := EditorBase{File: raw, Digest: cur.rec.ExpectedDigest, PullRequest: cur.rec.PullRequest, Target: tip, MergeNow: cur.rec.MergeNow,
+		Diff:    requests.Diff(policyPath, tipFile, raw),
+		Foreign: head != cur.rec.HeadSHA || pull.HeadSHA != cur.rec.HeadSHA,
+		Voided:  cur.rec.EditVoided || len(cur.stale) > 0}
+	v.Recovery = v.Foreign || v.Voided
+	if v.Recovery {
+		reloaded, _, _, err := apply(tipFile, cur)
+		if err != nil {
+			return EditorBase{}, err
+		}
+		v.Lost = requests.Diff(policyPath, raw, reloaded)
+	}
+	return v, nil
 }
 
 // ReloadEditor explicitly restores only recorded approvals under the existing
@@ -103,7 +127,7 @@ func (s *Service) ReloadEditor(ctx context.Context, r api.Repo, owner Owner) (Ed
 	}
 	pin := s.resync(ctx, r, cur, tip, file, kept)
 	if pin != nil {
-		s.publish(ctx, r, tip, *pin, kept, true)
+		_, _, _ = s.publish(ctx, r, tip, *pin, kept, true)
 	} else if len(kept) > 0 {
 		return EditorBase{}, ErrEditChanged
 	}

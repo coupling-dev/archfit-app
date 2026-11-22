@@ -3,6 +3,7 @@ package ui
 import (
 	"cmp"
 	"errors"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
@@ -82,6 +83,24 @@ type policyEditJSON struct {
 	File      string `json:"file,omitempty"`
 	Digest    string `json:"digest,omitempty"`
 	Recovery  bool   `json:"recovery,omitempty"`
+	// The open policy pull request, shown on the page with its one next action.
+	PullRequest int    `json:"pull_request,omitempty"`
+	Target      string `json:"target,omitempty"` // the default branch's head the proposal is shown against
+	Diff        string `json:"diff,omitempty"`   // the proposal against the default branch
+	Lost        string `json:"lost,omitempty"`   // what Reload removes from the proposal
+	Voided      bool   `json:"voided,omitempty"`
+	Foreign     bool   `json:"foreign,omitempty"`
+	MergeNow    bool   `json:"merge_now,omitempty"` // the App merges it by itself when GitHub allows
+}
+
+// editJSONOf is the editor's state for the page: the whole file only while editing or when a proposal is open.
+func editJSONOf(base gate.EditBase, editing bool) policyEditJSON {
+	v := policyEditJSON{Available: true, Recovery: base.Recovery, PullRequest: base.PullRequest, Target: base.Target,
+		Diff: base.Diff, Lost: base.Lost, Voided: base.Voided, Foreign: base.Foreign, MergeNow: base.MergeNow}
+	if editing || base.PullRequest != 0 {
+		v.File, v.Digest = string(base.File), base.Digest
+	}
+	return v
 }
 
 func (s *server) apiPolicy(r *http.Request, sc scope) (any, error) {
@@ -176,12 +195,17 @@ func (s *server) apiPolicy(r *http.Request, sc scope) (any, error) {
 			body.Edit.Reason = ""
 		}
 	}
-	if body.Edit.Available && r.URL.Query().Get("edit") == "1" {
+	if editing := r.URL.Query().Get("edit") == "1"; body.Edit.Available {
 		base, err := s.answers.Editor(ctx, sc.repo)
-		if err != nil {
+		switch {
+		case err != nil && editing:
 			return nil, err
+		case err != nil:
+			// The read-only page never fails on the editor's state: it shows the policy without the pull request.
+			slog.Default().WarnContext(ctx, "ui: read the policy pull request", "repository", sc.repo.FullName, "error", err.Error())
+		default:
+			body.Edit = editJSONOf(base, editing)
 		}
-		body.Edit.File, body.Edit.Digest, body.Edit.Recovery = string(base.File), base.Digest, base.Recovery
 	}
 	return body, nil
 }

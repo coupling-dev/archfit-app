@@ -67,7 +67,9 @@ func TestAnswerAPIPassesTheAnswerTheUserAndTheToken(t *testing.T) {
 		{"merged", gate.AnswerOutcome{PullRequest: 12, State: gate.AnswerMerged, Merge: sha(3)}, "Answered. The policy change merged in #12."},
 		{"later", gate.AnswerOutcome{PullRequest: 12, State: gate.AnswerLater}, "Answered. The policy change is in #12; it takes effect when #12 merges."},
 		{"refused", gate.AnswerOutcome{PullRequest: 12, State: gate.AnswerRefused},
-			"Answered. The policy change is in #12, but GitHub did not merge it. It stays open until it merges."},
+			"Answered. The policy change is in #12. GitHub has not merged it yet. The App merges it by itself when GitHub allows; nothing else is needed from you."},
+		{"refused with reason", gate.AnswerOutcome{PullRequest: 12, State: gate.AnswerRefused, Reason: "the branch is behind the default branch"},
+			"Answered. The policy change is in #12. GitHub has not merged it yet: the branch is behind the default branch. The App merges it by itself when GitHub allows; nothing else is needed from you."},
 		{"edit voided", gate.AnswerOutcome{PullRequest: 12, State: gate.AnswerVoided}, "the policy changed; reload"},
 		{"no line", gate.AnswerOutcome{}, "Answered. The policy needs no new line for it."},
 	}

@@ -3,6 +3,7 @@ package proposals
 import (
 	"context"
 	"errors"
+	"maps"
 	"strings"
 	"testing"
 
@@ -112,14 +113,15 @@ func TestEditRefusesBeforeRedemptionOrWrites(t *testing.T) {
 	}
 }
 
-func TestTargetMovesWhileWritingEdit(t *testing.T) {
+func TestTargetPolicyMovesWhileWritingEdit(t *testing.T) {
 	w := newWorld(t)
 	in := w.editInput(testPolicy, testPolicy+"# edit\n", false)
 	w.hub.onCommit = func() {
 		h := w.hub
 		old := h.branches[fakeBase]
-		c := h.commits[old]
-		h.branches[fakeBase] = h.put(old, "code-only target move", c.files)
+		files := maps.Clone(h.commits[old].files)
+		files[policyPath] = []byte(testPolicy + "# main\n")
+		h.branches[fakeBase] = h.put(old, "policy target move", files)
 	}
 	out, err := w.svc.Edit(context.Background(), testRepo, in)
 	if err != nil || out.State != records.StateVoid || w.hub.count("MergePull") != 0 {
@@ -172,7 +174,8 @@ func TestMovedTargetVoidsEditNeverReplaysIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.hub.push(fakeBase, "README.md", "target moved")
+	w.hub.push(fakeBase, policyPath, testPolicy+"# main\n")
+	w.approveTip()
 	w.request(432, "graph", "pkg_tc", "pkg_util")
 	w.mustAnswer(olivia, 432, requests.Answer{Kind: policy3.Approve}, true)
 	a := load[records.Approval](t, w.store, records.ApprovalKey(testRepo.FullName, out.Approval))
@@ -184,5 +187,116 @@ func TestMovedTargetVoidsEditNeverReplaysIt(t *testing.T) {
 	}
 	if w.hub.issues[0] {
 		t.Error("request 0 reopened")
+	}
+}
+
+func TestEditUnchangedAgainstOpenProposalIsRefused(t *testing.T) {
+	w := newWorld(t)
+	first, err := w.svc.Edit(context.Background(), testRepo, w.editInput(testPolicy, testPolicy+"# first\n", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := w.hub.file(Branch, policyPath)
+	in := w.editInput(head, head, false)
+	before, redeemed, comments := len(w.hub.writes()), len(w.redeemed), len(w.hub.comments[first.PullRequest])
+	_, err = w.svc.Edit(context.Background(), testRepo, in)
+	if !errors.Is(err, ErrEditUnchanged) || err.Error() != "Nothing changed against the open policy pull request." {
+		t.Fatalf("err = %v", err)
+	}
+	if len(w.hub.writes()) != before || len(w.redeemed) != redeemed || len(w.hub.comments[first.PullRequest]) != comments {
+		t.Error("an unchanged edit wrote, redeemed or commented")
+	}
+	if p := w.proposalOf(first); len(p.Approvals) != 1 {
+		t.Errorf("approvals %v", p.Approvals)
+	}
+}
+
+func TestEditPreviewDiffsAgainstOpenProposal(t *testing.T) {
+	w := newWorld(t)
+	v, err := w.svc.EditPreview(context.Background(), testRepo, EditInput{File: []byte(testPolicy + "# a\n"),
+		Base: policy3.Digest([]byte(testPolicy)), Owner: olivia})
+	if err != nil || v.Against != AgainstDefaultBranch || !strings.Contains(v.Diff, "+# a") {
+		t.Fatalf("no proposal: %+v, %v", v, err)
+	}
+	if _, err := w.svc.Edit(context.Background(), testRepo, w.editInput(testPolicy, testPolicy+"# first\n", true)); err != nil {
+		t.Fatal(err)
+	}
+	head := w.hub.file(Branch, policyPath)
+	v, err = w.svc.EditPreview(context.Background(), testRepo, EditInput{File: []byte(head), Base: policy3.Digest([]byte(head)), Owner: olivia})
+	if err != nil || v.Against != AgainstProposal || v.Diff != "" {
+		t.Fatalf("unchanged against the proposal: %+v, %v", v, err)
+	}
+	v, err = w.svc.EditPreview(context.Background(), testRepo, EditInput{File: []byte(head + "# second\n"),
+		Base: policy3.Digest([]byte(head)), Owner: olivia})
+	if err != nil || strings.Contains(v.Diff, "+# first") || !strings.Contains(v.Diff, "+# second") {
+		t.Fatalf("diff against the proposal: %+v, %v", v, err)
+	}
+}
+
+func TestOpenProposalApprovedAsItIsAfterMainMoved(t *testing.T) {
+	w := newWorld(t)
+	w.hub.strict = true
+	first, err := w.svc.Edit(context.Background(), testRepo, w.editInput(testPolicy, testPolicy+"# first\n", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.hub.push(fakeBase, policyPath, testPolicy+"# main\n")
+	w.approveTip()
+	view, err := w.svc.Editor(context.Background(), testRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.PullRequest != first.PullRequest || !view.Voided || view.Foreign || !view.Recovery ||
+		!strings.Contains(view.Diff, "+# first") || !strings.Contains(view.Lost, "-# first") {
+		t.Fatalf("view %+v", view)
+	}
+	head := string(view.File)
+	in := w.editInput(head, head, false)
+	in.AsIs = true
+	out, err := w.svc.Edit(context.Background(), testRepo, in)
+	if err != nil || out.State != requests.PullMerged || out.PullRequest != first.PullRequest {
+		t.Fatalf("approve as it is: %+v, %v", out, err)
+	}
+	if got := w.hub.file(fakeBase, policyPath); got != head {
+		t.Errorf("merged %q", got)
+	}
+	if a := load[records.Approval](t, w.store, records.ApprovalKey(testRepo.FullName, first.Approval)); a.State != records.StateVoid {
+		t.Errorf("the stale edit stays %s", a.State)
+	}
+	if note := w.hub.lastComment(out.PullRequest); !strings.Contains(note, "approved again as it is") {
+		t.Errorf("note %q", note)
+	}
+}
+
+func TestApproveAsItIsNeedsTheOpenProposalsFile(t *testing.T) {
+	w := newWorld(t)
+	in := w.editInput(testPolicy, testPolicy, false)
+	in.AsIs = true
+	if _, err := w.svc.Edit(context.Background(), testRepo, in); !errors.Is(err, ErrEditChanged) {
+		t.Fatalf("no proposal: %v", err)
+	}
+	if _, err := w.svc.Edit(context.Background(), testRepo, w.editInput(testPolicy, testPolicy+"# first\n", true)); err != nil {
+		t.Fatal(err)
+	}
+	head := w.hub.file(Branch, policyPath)
+	in = w.editInput(head, head+"# more\n", false)
+	in.AsIs = true
+	if _, err := w.svc.Edit(context.Background(), testRepo, in); !errors.Is(err, ErrEditChanged) || len(w.redeemed) != 1 {
+		t.Fatalf("another file: %v, redeemed %d", err, len(w.redeemed))
+	}
+}
+
+func TestAnEditIsRefusedWhileTheOpenPullRequestNeedsADecision(t *testing.T) {
+	w := newWorld(t)
+	if _, err := w.svc.Edit(context.Background(), testRepo, w.editInput(testPolicy, testPolicy+"# first\n", true)); err != nil {
+		t.Fatal(err)
+	}
+	w.hub.push(fakeBase, policyPath, testPolicy+"# main\n")
+	w.approveTip() // the first edit's bytes no longer apply: it is stale
+	head := w.hub.file(Branch, policyPath)
+	in := w.editInput(head, head+"# second\n", false)
+	redeemed := len(w.redeemed)
+	if _, err := w.svc.Edit(context.Background(), testRepo, in); !errors.Is(err, ErrEditChanged) || len(w.redeemed) != redeemed {
+		t.Fatalf("an edit over a stale one: %v", err)
 	}
 }

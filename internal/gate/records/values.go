@@ -184,6 +184,9 @@ type Proposal struct {
 	ExpectedDigest string   `json:"expected_digest"`
 	EditEpoch      uint64   `json:"edit_epoch,omitempty"`  // increments when an edit leaves this proposal
 	EditVoided     bool     `json:"edit_voided,omitempty"` // this head still contains a void edit; repin before merging
+	// MergeNow says the last approval that joined asked to merge now: the App merges the pull request by itself when
+	// GitHub can. After a "merge later" answer it waits for a later answer.
+	MergeNow bool `json:"merge_now,omitempty"`
 	// WorkflowDigest is the FileDigest of .github/workflows/archfit.yaml at HeadSHA that the approval admits; "" when it
 	// admits none. Its merge must land that file too.
 	WorkflowDigest string `json:"workflow_digest,omitempty"`

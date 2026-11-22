@@ -33,6 +33,12 @@ type fakeHub struct {
 	lagging   map[int]string    // pull → the head it still shows
 	onCommit  func()            // runs inside CommitOn before the branch moves: someone else acts in between
 	moveOnPut bool              // someone else pushes to archfit/policy right before the App's next CommitOn
+	strict    bool              // the base branch requires up-to-date branches: MergePull refuses a head behind it
+	requireCI bool              // other required checks: MergePull refuses a head until ciDone holds it
+	ciDone    map[string]bool   // heads whose other required checks passed
+	truncated bool              // the next Compare reports a cut file list, as GitHub does past 300 files
+	// truncatedAll: every Compare whose base is the policy branch's head reports a cut list (main moved by many files)
+	truncatedAll bool
 }
 
 type fakeCommit struct {
@@ -46,7 +52,7 @@ const fakeBase = "main"
 func newFakeHub(policy string) *fakeHub {
 	h := &fakeHub{commits: map[string]fakeCommit{}, branches: map[string]string{}, pulls: map[int]*api.Pull{},
 		issues: map[int]bool{}, comments: map[int][]string{}, errs: map[string]error{}, hooks: map[string]func(){},
-		lagging:  map[int]string{},
+		lagging: map[int]string{}, ciDone: map[string]bool{},
 		nextPull: 20}
 	h.branches[fakeBase] = h.put("", "start", map[string][]byte{policyPath: []byte(policy), "README.md": []byte("readme")})
 	return h
@@ -142,6 +148,15 @@ func (h *fakeHub) Pull(ctx context.Context, _ api.RepoRef, number int) (api.Pull
 		return api.Pull{}, api.ErrNotFound
 	}
 	out := *p
+	switch {
+	case out.State != "open":
+	case h.strict && !h.upToDate(out):
+		out.MergeableState = "behind"
+	case h.requireCI && !h.ciDone[out.HeadSHA]:
+		out.MergeableState = "blocked"
+	default:
+		out.MergeableState = "clean"
+	}
 	if old, ok := h.lagging[number]; ok && h.headLag > 0 {
 		h.headLag--
 		out.HeadSHA = old
@@ -204,7 +219,9 @@ func (h *fakeHub) Compare(ctx context.Context, _ api.RepoRef, base, head string)
 	case mergeBase == head:
 		status = "behind"
 	}
-	return api.Comparison{Status: status, Paths: paths}, nil
+	cut := h.truncated || h.truncatedAll && base == h.branches[Branch]
+	h.truncated = false
+	return api.Comparison{Status: status, Paths: paths, Truncated: cut}, nil
 }
 
 func (h *fakeHub) CommitOn(ctx context.Context, _ api.RepoRef, branch, parent, message string, files []api.FileChange, force bool) (string, error) {
@@ -301,6 +318,12 @@ func (h *fakeHub) MergePull(ctx context.Context, _ api.RepoRef, number int, head
 	if p.HeadSHA != headSHA {
 		return "", fmt.Errorf("%w: head moved", api.ErrHeadChanged)
 	}
+	if h.strict && !h.upToDate(*p) {
+		return "", fmt.Errorf("%w: the head branch is not up to date with the base branch", api.ErrNotMergeable)
+	}
+	if h.requireCI && !h.ciDone[headSHA] {
+		return "", fmt.Errorf("%w: required checks are pending", api.ErrNotMergeable)
+	}
 	if !h.passed(headSHA) {
 		return "", fmt.Errorf("%w: archfit/gate is not a success", api.ErrNotMergeable)
 	}
@@ -311,6 +334,11 @@ func (h *fakeHub) MergePull(ctx context.Context, _ api.RepoRef, number int, head
 	h.branches[p.BaseRef] = sha
 	p.State, p.Merged, p.MergeCommitSHA = "closed", true, sha
 	return sha, nil
+}
+
+// upToDate reports whether the pull request's head contains its base branch's tip.
+func (h *fakeHub) upToDate(p api.Pull) bool {
+	return slices.Contains(h.ancestors(p.HeadSHA), h.branches[p.BaseRef])
 }
 
 // passed reports whether the latest archfit/gate run on head is a success.
