@@ -109,3 +109,21 @@ func TestRecoveryRefusesEditWhoseTargetMoved(t *testing.T) {
 		t.Fatalf("recovery %+v, %v", out, err)
 	}
 }
+
+func TestADeletedPolicyVoidsTheEdit(t *testing.T) {
+	w := newWorld(t)
+	w.edited()
+	w.gh.mu.Lock()
+	w.gh.history = append(w.gh.history, "deleted") // a commit with no policy
+	w.gh.mu.Unlock()
+	if err := w.svc.retireMovedEdits(context.Background(), testRepo); err != nil {
+		t.Fatal(err)
+	}
+	var a records.Approval
+	if err := records.Load(context.Background(), w.mem, w.tenant(), records.ApprovalKey(testRepo.FullName, "edit"), &a); err != nil {
+		t.Fatal(err)
+	}
+	if a.State != records.StateVoid {
+		t.Fatalf("the edit stays %s after its policy was deleted", a.State)
+	}
+}

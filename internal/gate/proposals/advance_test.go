@@ -204,3 +204,15 @@ func TestAdvanceMergesARevertOfADeletedPolicyAfterItsChecks(t *testing.T) {
 		t.Fatalf("the revert did not merge after its checks: merges %v", w.hub.merges)
 	}
 }
+
+func TestARevertOfADeletedPolicyWorksWithAnEditOpen(t *testing.T) {
+	w := newWorld(t)
+	if _, err := w.svc.Edit(context.Background(), testRepo, w.editInput(testPolicy, testPolicy+"# edit\n", true)); err != nil {
+		t.Fatal(err)
+	}
+	w.outsideWith("")
+	out, err := w.revert(oscar)
+	if err != nil || out.State != requests.PullMerged || w.hub.file(fakeBase, policyPath) != testPolicy {
+		t.Fatalf("revert %+v, %v", out, err)
+	}
+}

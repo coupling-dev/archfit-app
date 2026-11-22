@@ -118,20 +118,28 @@ func (s *Service) retireMovedEdits(ctx context.Context, r api.Repo) error {
 	return nil
 }
 
-// samePolicy reports whether commits a and b hold the same policy bytes.
+// samePolicy reports whether commits a and b hold the same policy bytes. A missing policy is a policy too: it equals
+// only another missing one.
 func (s *Service) samePolicy(ctx context.Context, ref api.RepoRef, a, b string) (bool, error) {
 	if a == b {
 		return true, nil
 	}
-	x, _, err := s.gh.File(ctx, ref, a, PolicyPath)
+	read := func(at string) ([]byte, bool, error) {
+		raw, _, err := s.gh.File(ctx, ref, at, PolicyPath)
+		if errors.Is(err, api.ErrNotFound) {
+			return nil, false, nil
+		}
+		return raw, err == nil, err
+	}
+	x, xOK, err := read(a)
 	if err != nil {
 		return false, err
 	}
-	y, _, err := s.gh.File(ctx, ref, b, PolicyPath)
+	y, yOK, err := read(b)
 	if err != nil {
 		return false, err
 	}
-	return bytes.Equal(x, y), nil
+	return xOK == yOK && bytes.Equal(x, y), nil
 }
 
 func editConsumeError(err error) error {
