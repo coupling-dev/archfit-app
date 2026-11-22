@@ -15,9 +15,11 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/gate"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
 	"github.com/coupling-dev/archfit-app/internal/github/auth"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 type Deps struct {
+	Store         store.Store
 	OAuth         auth.OAuth // ui builds its own session child from OAuth, CookieKey and BaseURL
 	CookieKey     []byte
 	BaseURL       string
@@ -66,6 +68,7 @@ type github struct {
 }
 
 type server struct {
+	store         store.Store
 	gh            github
 	sessions      session.Sessions
 	account       account.Account
@@ -99,6 +102,7 @@ func New(d Deps) (http.Handler, error) {
 // newHandler mounts every route. web is the build of the web app; tests hand in a small one.
 func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Handler {
 	s := &server{
+		store:         d.Store,
 		gh:            gh,
 		sessions:      sessions,
 		account:       d.Account,

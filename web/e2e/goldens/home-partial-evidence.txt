@@ -4,6 +4,9 @@ unknown
 The last check could not read every file, so the state is unknown. Nothing needs you.
 
 View policy
+
+This week: counts unavailable
+
 The map
 Matrix
 Diagram

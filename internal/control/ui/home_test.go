@@ -19,6 +19,7 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/control/passkey"
 	"github.com/coupling-dev/archfit-app/internal/control/ui/session"
 	"github.com/coupling-dev/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/gate/weekly"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
 	"github.com/coupling-dev/archfit-app/internal/store"
 	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
@@ -54,7 +55,7 @@ func newHomeEnv(t *testing.T, pol string) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.handler = newHandler(Deps{Account: e.acct,
+	e.handler = newHandler(Deps{Account: e.acct, Store: e.store,
 		Admissions: e.admit, Owners: e.owners, HomeViews: gate.NewHome(e.gh, e.store, e.admit), Setups: e.setups, Passkeys: e.passkeys, Now: clock,
 		RepoStates: gate.NewRepoStates(e.store, e.admit), PullViews: gate.NewPullViews(e.gh, e.store),
 	}, github{files: e.gh, pulls: e.gh, users: e.gh, installs: e.gh}, sessions, testWeb)
@@ -103,6 +104,39 @@ func homeRequest(t *testing.T, e *env, state string) {
 
 func homeWithException(date string) string {
 	return homePolicy + "exceptions:\n  - rule: graph\n    from: app\n    to: other\n    expires: " + date + "\n    why: Fix the import before this date.\n"
+}
+
+func TestCompleteHomeWeeklyEvidence(t *testing.T) {
+	for _, state := range []string{"known", "absent", "unreadable"} {
+		t.Run(state, func(t *testing.T) {
+			e := newHomeEnv(t, homePolicy)
+			switch state {
+			case "known":
+				if err := weekly.Record(t.Context(), e.store, store.Tenant(installA), repoName, 1, 1, 1, e.now, "pass"); err != nil {
+					t.Fatal(err)
+				}
+			case "unreadable":
+				homePut(t, e, "weekly", "corrupt summary")
+			}
+			res := e.as("alice", permRead).get(homeAPI)
+			wantStatus(t, res, http.StatusOK)
+			var body homeJSON
+			if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			w := body.Weekly
+			if body.Setup != nil || w == nil || w.Known != (state == "known") {
+				t.Fatalf("unexpected complete Home: %s", res.Body.String())
+			}
+			if w.Known {
+				if w.Checked == nil || *w.Checked != 1 || w.Quiet == nil || *w.Quiet != 1 || w.Asked == nil || *w.Asked != 0 || w.Caveat != weekly.Caveat {
+					t.Fatalf("unexpected counts: %s", res.Body.String())
+				}
+			} else if w.Checked != nil || w.Quiet != nil || w.Asked != nil {
+				t.Fatalf("unknown counts should be omitted: %s", res.Body.String())
+			}
+		})
+	}
 }
 
 func TestHomeAPIGoldens(t *testing.T) {

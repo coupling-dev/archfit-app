@@ -9,6 +9,9 @@ View policy
 Needs you
 Drift on the default branch.
 (opens GitHub)
+
+This week: counts unavailable
+
 The map
 Matrix
 Diagram

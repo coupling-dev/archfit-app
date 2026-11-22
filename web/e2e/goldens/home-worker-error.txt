@@ -26,6 +26,9 @@ policy
 re-check
 : later
 Show the record
+
+This week: counts unavailable
+
 The map
 Matrix
 Diagram

@@ -27,6 +27,7 @@ const (
 )
 
 type homeJSON struct {
+	Weekly   *weeklyJSON    `json:"weekly,omitempty"`
 	State    string         `json:"state"`
 	Status   string         `json:"status"` // the sentence for the state, then one sentence per group that waits
 	NeedsYou []homeNeedJSON `json:"needs_you,omitempty"`
@@ -125,6 +126,9 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 		shown = &state
 	}
 	body := homeBody(view, state, shown, sc.repo.FullName, today)
+	if shown == nil {
+		body.Weekly = &state.Weekly
+	}
 	var workflowNeeds []int
 	for i, need := range body.NeedsYou {
 		if need.Kind == "workflow" {

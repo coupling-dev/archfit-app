@@ -34,5 +34,8 @@ Manage passkeys
 Why a passkey?
 ✓
 4 · Require the archfit/gate check
+
+This week: counts unavailable
+
 done
 Details

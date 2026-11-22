@@ -6,6 +6,9 @@ An exception passed its date and the code still breaks the rule, so every pull r
 View policy
 Needs you
 1 exception expired
+
+This week: counts unavailable
+
 The map
 Matrix
 Diagram

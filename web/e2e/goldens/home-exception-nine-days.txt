@@ -4,6 +4,9 @@ clean
 The default branch follows the policy. 1 exception expires in 9 days. Nothing needs you.
 
 View policy
+
+This week: counts unavailable
+
 The map
 Matrix
 Diagram

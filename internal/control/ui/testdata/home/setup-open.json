@@ -2,6 +2,9 @@
   "state": "not_set_up",
   "status": "Merge the setup pull request to start the checks.",
   "setup": {
+    "weekly": {
+      "known": false
+    },
     "approval": {
       "status": "needed",
       "kind": "first",
