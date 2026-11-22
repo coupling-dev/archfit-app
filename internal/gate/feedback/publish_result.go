@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
@@ -205,7 +206,16 @@ func (s *publisher) publish4(ctx context.Context, p Publication4) (written, supe
 		StartedAt:   start,
 	}
 	if p.Target.PullRequest > 0 {
-		run.Text = storyLine(v, s.storyFacts(ctx, p, v))
+		facts := s.storyFacts(ctx, p, v)
+		st := storyOf(v, facts)
+		v.story = &st
+		if facts != nil {
+			v.policyPull = facts.PolicyPull
+		}
+		if st.Request > 0 {
+			v.requestURL = OwnerLink(s.appURL, p.Target.Repo.FullName, "/requests/"+strconv.Itoa(st.Request))
+		}
+		run.Text = boundedStoryLine(st)
 	}
 	if p.ownerCheck != nil {
 		run = *p.ownerCheck

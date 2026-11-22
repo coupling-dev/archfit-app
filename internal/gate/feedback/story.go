@@ -75,7 +75,10 @@ const (
 // storyLine is the archfit-story v1 line of v, with facts of its first request when there are any. json.Marshal
 // escapes <, > and &, so no text in it can close the comment.
 func storyLine(v view, facts *StoryFacts) string {
-	s := storyOf(v, facts)
+	return boundedStoryLine(storyOf(v, facts))
+}
+
+func boundedStoryLine(s story) string {
 	line := encodeStory(s)
 	// Escaping can grow a byte to six (\u003c), so the bound is measured on the encoded line. Each pass drops the
 	// next text's last rune, which keeps it valid UTF-8; the fixed parts alone are far below the bound.
@@ -147,4 +150,58 @@ func storyOf(v view, facts *StoryFacts) story {
 		}
 	}
 	return s
+}
+
+func (v view) storyHeader() string {
+	if v.story == nil {
+		return ""
+	}
+	s := v.story
+	steps := []struct{ label, state string }{{"change", s.Steps.Change}, {"check", s.Steps.Check}, {"ask", s.Steps.Ask}, {"answer", s.Steps.Answer}, {"policy", s.Steps.Policy}, {"re-check", s.Steps.Recheck}}
+	var row []string
+	for _, step := range steps {
+		if step.state == stepNotNeeded {
+			continue
+		}
+		label := step.label
+		if label == "ask" && s.Request > 0 {
+			label += " #" + strconv.Itoa(s.Request)
+		}
+		mark := "○"
+		switch step.state {
+		case stepDone:
+			mark = "✓"
+		case stepFailed:
+			mark = "✗"
+		case stepCurrent:
+			mark = "●"
+			label = "**" + label + "**"
+		}
+		row = append(row, mark+" "+label)
+	}
+	header := strings.Join(row, " → ") + "\n\n"
+	if v.next != nil || v.result.Status == result.StatusPass || v.result.Status == result.StatusUnknown {
+		return header
+	}
+	switch {
+	case s.Steps.Ask == stepCurrent && s.Request > 0:
+		owner := "an owner"
+		if s.WaitingFor != "" {
+			owner = "@" + s.WaitingFor
+		}
+		header += "**Next: " + owner + " answers request #" + strconv.Itoa(s.Request) + "** (1 minute, passkey)"
+		if v.requestURL != "" {
+			header += ": " + v.requestURL
+		}
+		header += "\nAfter the answer, the App updates the policy and this check runs again. Nothing for the author to do.\n\n"
+	case s.Steps.Ask == stepCurrent:
+		header += "**Next: the author asks an owner:** reply `/archfit request <why you need it>`.\nAn owner then answers in the App, and this check runs again by itself.\n\n"
+	case s.Steps.Policy == stepCurrent:
+		header += "**Next: nothing for you.** The App merges policy pull request #" + strconv.Itoa(v.policyPull) + ".\nThen this check runs again by itself.\n\n"
+	case s.Steps.Recheck == stepCurrent:
+		header += "**Next: nothing for you.** This check runs again with the updated policy.\n\n"
+	case s.Steps.Check == stepFailed && s.Steps.Ask == stepNotNeeded:
+		header += "**Next: the author fixes the code** and pushes.\nThis check runs again on the push.\n\n"
+	}
+	return header
 }

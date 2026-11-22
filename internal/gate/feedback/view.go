@@ -43,14 +43,17 @@ const requestCap = 10
 // line for the author and one for the owner. The comment, the check title, the check summary and the annotations
 // render from it, so they cannot say different things.
 type view struct {
-	result   result.Result // the status line (Summary), the errors and the unknown reasons, shown as given
-	author   string        // "" when the author has nothing to do
-	owner    string        // "" when the owner has nothing to do
-	requests []int         // the requests the wait steps of the errors name, in record order, once each
-	covered  string        // candidate next kind; says checks whether the author line covers each individual step
-	next     *nextLink     // the App page of a pending owner step; nil when none is known
-	head     string        // the commit the check is for, shown with next
-	advisory string        // the line that says the check does not block the merge; "" in required mode (task 8.7)
+	story      *story
+	requestURL string
+	policyPull int
+	result     result.Result // the status line (Summary), the errors and the unknown reasons, shown as given
+	author     string        // "" when the author has nothing to do
+	owner      string        // "" when the owner has nothing to do
+	requests   []int         // the requests the wait steps of the errors name, in record order, once each
+	covered    string        // candidate next kind; says checks whether the author line covers each individual step
+	next       *nextLink     // the App page of a pending owner step; nil when none is known
+	head       string        // the commit the check is for, shown with next
+	advisory   string        // the line that says the check does not block the merge; "" in required mode (task 8.7)
 }
 
 // newView builds the view of r, whose Status is the status the App gave it.
@@ -244,6 +247,10 @@ func (v view) annotations() []api.Annotation {
 // out after a line that counts them.
 func (v view) comment(budget int) string {
 	p := v.page()
+	header := v.storyHeader()
+	if strings.Contains(header, "**Next:") {
+		p.Author, p.Owner = "", ""
+	}
 	head := "## " + v.mark() + " " + p.StatusLine + "\n"
 	closing := ""
 	if v.next != nil {
@@ -268,8 +275,8 @@ func (v view) comment(budget int) string {
 	for _, r := range p.Records {
 		blocks = append(blocks, "\n"+r.markdown())
 	}
-	kept := fit(blocks, budget-len(head)-tail.Len()-len(closing), func(n int) string { return "\n" + moreLine(n) + "\n" })
-	return head + strings.Join(kept, "") + tail.String() + closing
+	kept := fit(blocks, budget-len(header)-len(head)-tail.Len()-len(closing), func(n int) string { return "\n" + moreLine(n) + "\n" })
+	return header + head + strings.Join(kept, "") + tail.String() + closing
 }
 
 // heading is the status line with "Archfit" as the first word of a heading.

@@ -141,6 +141,10 @@ func TestThePullRequestCheckCarriesTheStoryLine(t *testing.T) {
 	if err := h.pub.Publish4(context.Background(), pub4(prTarget(headB), 7, 1, waiting)); err != nil {
 		t.Fatal(err)
 	}
+	body := h.comments.all()[0].Body
+	if !strings.Contains(body, "✓ change → ✗ check → ● **ask #40**") || !strings.Contains(body, "@alexei-led answers request #40") {
+		t.Fatalf("comment missing story: %s", body)
+	}
 	s := parseStory(t, h.checks.latest(t, headB, gateCheck).Text)
 	if s.Request != 40 || s.WaitingFor != "alexei-led" || s.Steps.Ask != stepCurrent || !slices.Equal(asked, []int{40}) {
 		t.Fatalf("story %+v, asked %v", s, asked)
@@ -178,5 +182,58 @@ func TestCommentTopLineFollowsTheStory(t *testing.T) {
 	want := "✓ change → ✗ check → ● **ask #40** → ○ answer → ○ policy → ○ re-check\n\n**Next: @alexei-led answers request #40** (1 minute, passkey): https://example.com/r/acme/repo/requests/40\nAfter the answer, the App updates the policy and this check runs again. Nothing for the author to do."
 	if !strings.HasPrefix(got, want) {
 		t.Errorf("comment starts with %q, want %q", got, want)
+	}
+}
+
+func TestCommentOtherStoryRows(t *testing.T) {
+	wait := result.Next{Kind: nextWait, Text: "wait for an owner: #40"}
+	for _, tc := range []struct {
+		name          string
+		status        result.Status
+		next          result.Next
+		facts         *StoryFacts
+		page          bool
+		row, nextText string
+	}{
+		{"no owner", result.StatusWaiting, wait, &StoryFacts{State: records.StateOpen}, false, "● **ask #40**", "an owner answers request #40"},
+		{"ask", result.StatusFail, result.Next{Kind: nextCommand, Text: "archfit request -m why"}, nil, false, "● **ask**", "the author asks an owner"},
+		{"fix", result.StatusFail, result.Next{Kind: nextFix, Text: "fix the code"}, nil, false, "✗ check", "the author fixes the code"},
+		{"policy", result.StatusWaiting, wait, &StoryFacts{State: records.StateAnswered, PolicyPull: 44}, false, "● **policy**", "policy pull request #44"},
+		{"recheck", result.StatusWaiting, wait, &StoryFacts{State: records.StateAnswered, PolicyMerged: true}, false, "● **re-check**", "updated policy"},
+		{"pass", result.StatusPass, result.Next{}, nil, false, "✓ check", ""},
+		{"unknown", result.StatusUnknown, result.Next{}, nil, false, "● **check**", ""},
+		{"owner page", result.StatusWaiting, wait, &StoryFacts{State: records.StateOpen}, true, "● **ask #40**", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := result.Result{Status: tc.status}
+			if tc.next.Kind != "" {
+				r.Errors = []result.Error{{Next: tc.next}}
+			}
+			v := newView(r)
+			s := storyOf(v, tc.facts)
+			v.story = &s
+			if tc.facts != nil {
+				v.policyPull = tc.facts.PolicyPull
+			}
+			if tc.page {
+				v.next = &nextLink{label: "answer", role: "owner", url: "https://example.com"}
+			}
+			body := v.comment(maxBody)
+			if !strings.Contains(body, tc.row) || (tc.nextText != "" && !strings.Contains(body, tc.nextText)) {
+				t.Errorf("unexpected comment: %s", body)
+			}
+			if strings.Count(body, "**Next:") > 1 {
+				t.Errorf("multiple next lines: %s", body)
+			}
+		})
+	}
+}
+
+func TestCommentHeaderMentionsAtMostOnePerson(t *testing.T) {
+	v := newView(result.Result{Status: result.StatusWaiting, Errors: []result.Error{{Next: result.Next{Kind: nextWait, Text: "wait for an owner: #40"}}}})
+	s := storyOf(v, &StoryFacts{State: records.StateOpen, Owner: "alexei-led"})
+	v.story = &s
+	if body := v.comment(maxBody); strings.Count(body, "@") > 1 {
+		t.Errorf("too many mentions: %s", body)
 	}
 }
