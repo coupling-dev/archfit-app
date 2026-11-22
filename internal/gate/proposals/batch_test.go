@@ -3,6 +3,7 @@ package proposals
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -28,6 +29,18 @@ func TestBatchAnswersShareOneRedeemAndProposal(t *testing.T) {
 	}
 	if len(w.redeemed) != 1 || len(out.Approvals) != 2 || out.PullRequest == 0 {
 		t.Fatalf("out=%+v redeems=%v", out, w.redeemed)
+	}
+	if out.State != requests.PullMerged {
+		t.Fatalf("state = %s", out.State)
+	}
+	policy := w.hub.file(fakeBase, policyPath)
+	if !strings.Contains(policy, "rule: dependency  # request #431") || !strings.Contains(policy, "rule: dependency  # request #432") {
+		t.Fatalf("policy: %s", policy)
+	}
+	a := load[records.Approval](t, w.store, records.ApprovalKey(testRepo.FullName, out.Approvals[0]))
+	proposal := load[records.Proposal](t, w.store, records.ProposalKey(testRepo.FullName, a.Proposal))
+	if !slices.Equal(proposal.Approvals, out.Approvals) {
+		t.Fatalf("approval order: %v", proposal.Approvals)
 	}
 }
 
@@ -211,5 +224,41 @@ func TestBatchRefusesInvalidInputsBeforeWrites(t *testing.T) {
 				t.Fatalf("error=%v writes=%v redeems=%v", err, w.hub.writes(), w.redeemed)
 			}
 		})
+	}
+}
+
+func TestBatchCleansClosedProposal(t *testing.T) {
+	w := newWorld(t)
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	w.request(432, "graph", "pkg_tc", "pkg_db")
+	first := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
+	w.hub.pulls[first.PullRequest].State = "closed"
+	items := []BatchItem{{Request: 432, Answer: requests.Answer{Kind: policy3.Approve}}}
+	digest, err := w.svc.BatchDigest(context.Background(), testRepo, items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.tokens["batch"] = digest
+	_, err = w.svc.AnswerBatch(context.Background(), testRepo, BatchInput{Answers: items, Owner: olivia, Redeem: w.redeem("batch")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.requestState(431) != records.StateOpen {
+		t.Fatalf("old request: %s", w.requestState(431))
+	}
+}
+
+func TestBatchRefusesNonOwnerWithValidToken(t *testing.T) {
+	w := newWorld(t)
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	items := []BatchItem{{Request: 431, Answer: requests.Answer{Kind: policy3.Approve}}}
+	digest, err := w.svc.BatchDigest(context.Background(), testRepo, items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.tokens["batch"] = digest
+	_, err = w.svc.AnswerBatch(context.Background(), testRepo, BatchInput{Answers: items, Owner: Owner{ID: 999, Login: "stranger"}, Redeem: w.redeem("batch")})
+	if !errors.Is(err, ErrNotOwner) || len(w.redeemed) != 0 || len(w.hub.writes()) != 0 {
+		t.Fatalf("err=%v", err)
 	}
 }

@@ -169,6 +169,17 @@ func (s *Service) AnswerBatch(ctx context.Context, r api.Repo, in BatchInput) (B
 			return out, err
 		}
 	}
+	if _, err := s.current(ctx, r); err != nil {
+		return out, err
+	}
+	checked, err := s.prepareBatch(ctx, r, in.Answers)
+	if err != nil {
+		return out, err
+	}
+	if checked.digest != p.digest {
+		return out, errors.New("proposals: batch changed after review")
+	}
+	p = checked
 	items := make([]records.BatchAnswer, 0, len(p.changes))
 	listed := slices.Clone(p.kept)
 	for i, c := range p.changes {
