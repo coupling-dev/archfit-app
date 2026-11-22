@@ -29,7 +29,14 @@ func Asks(e result.Error) bool {
 
 // Key returns the request key of an error (wire/request).
 func Key(e result.Error) (string, error) {
-	return request.Error{Rule: e.Rule, Path: e.Path, From: e.From, To: e.To, Key: e.Key}.RequestKey()
+	key, err := (request.Error{Rule: e.Rule, Path: e.Path, From: e.From, To: e.To, Key: e.Key}).RequestKey()
+	if err != nil {
+		return "", err
+	}
+	if e.Rule == ruleCoupling && e.Surface != nil {
+		key = surfaceKey(key, e.Package)
+	}
+	return key, nil
 }
 
 // Cover derives the status waiting (design 7.1): a fail whose errors all ask an owner, and whose keys are all open
@@ -76,4 +83,11 @@ func requestNames(ids []int) string {
 		return "requests " + strings.Join(names, ", ") + " and " + strconv.Itoa(len(ids)-summaryCap) + " more"
 	}
 	return "requests " + strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
+
+func surfaceKey(key, pkg string) string {
+	if pkg == "" {
+		return key
+	}
+	return key + " " + pkg
 }
