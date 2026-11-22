@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"time"
 )
 
 const (
@@ -106,6 +107,7 @@ type payload struct {
 		} `json:"base"`
 	} `json:"pull_request"`
 	Issue struct {
+		CreatedAt   time.Time `json:"created_at"`
 		Number      int       `json:"number"`
 		Body        string    `json:"body"`
 		PullRequest *struct{} `json:"pull_request"` // present only when the issue is a pull request
@@ -115,9 +117,10 @@ type payload struct {
 		} `json:"user"`
 	} `json:"issue"`
 	Comment struct {
-		ID   int64  `json:"id"`
-		Body string `json:"body"`
-		User struct {
+		CreatedAt time.Time `json:"created_at"`
+		ID        int64     `json:"id"`
+		Body      string    `json:"body"`
+		User      struct {
 			Login string `json:"login"`
 			Type  string `json:"type"`
 		} `json:"user"`
@@ -213,6 +216,7 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 		if p.Comment.ID <= 0 || p.Comment.User.Login == "" {
 			return Event{}, errNoComment
 		}
+		ev.CreatedAt = p.Comment.CreatedAt
 		ev.PullRequest = p.Issue.Number
 		ev.CommentID, ev.Author, ev.AuthorType, ev.Body = p.Comment.ID, p.Comment.User.Login, p.Comment.User.Type, p.Comment.Body
 		return ev, nil
@@ -221,6 +225,7 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 		if p.Issue.Number <= 0 || p.Issue.User.Login == "" {
 			return Event{}, errNoIssue
 		}
+		ev.CreatedAt = p.Issue.CreatedAt
 		ev.Issue, ev.Author, ev.AuthorType, ev.Body = p.Issue.Number, p.Issue.User.Login, p.Issue.User.Type, p.Issue.Body
 		return ev, nil
 	}

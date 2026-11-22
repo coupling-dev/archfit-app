@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"strings"
+	"time"
 )
 
 type EventKind string
@@ -45,16 +46,17 @@ type Event struct {
 	HeadSHA             string
 	HeadRepo            string // differs from Repo for forks
 	BaseRef             string
-	DefaultBranch       string   // the repository's default branch; "" when the payload does not name one
-	Branch              string   // push kinds only: the branch, without "refs/heads/"
-	ChangedPaths        []string // default_branch_push only
-	Before              string   // default_branch_push only: the commit before the push; "" when the push created the branch
-	CommentID           int64    // pull_commented only: the comment's ID
-	Issue               int      // issue_opened only: the issue number
-	Author              string   // pull_commented and issue_opened: the login that wrote the comment or the issue
-	AuthorType          string   // pull_commented and issue_opened: the account type, "User" or "Bot"; "" when absent
-	Body                string   // pull_commented and issue_opened: the comment text or the issue body
-	GroupReason         string   // merge_group_destroyed only: "merged", "dequeued", "invalidated" or what GitHub sends
+	DefaultBranch       string    // the repository's default branch; "" when the payload does not name one
+	Branch              string    // push kinds only: the branch, without "refs/heads/"
+	ChangedPaths        []string  // default_branch_push only
+	Before              string    // default_branch_push only: the commit before the push; "" when the push created the branch
+	CommentID           int64     // pull_commented only: the comment's ID
+	Issue               int       // issue_opened only: the issue number
+	CreatedAt           time.Time // issue or comment creation time from the signed payload
+	Author              string    // pull_commented and issue_opened: the login that wrote the comment or the issue
+	AuthorType          string    // pull_commented and issue_opened: the account type, "User" or "Bot"; "" when absent
+	Body                string    // pull_commented and issue_opened: the comment text or the issue body
+	GroupReason         string    // merge_group_destroyed only: "merged", "dequeued", "invalidated" or what GitHub sends
 }
 
 // Header names of a GitHub webhook delivery. Callers read these headers and pass their values to VerifyAny and Parse.

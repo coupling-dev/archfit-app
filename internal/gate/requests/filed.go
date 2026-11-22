@@ -13,11 +13,12 @@ import (
 
 // Issue is an issue opened in a repository.
 type Issue struct {
-	Repo   api.Repo // RepoRef and DefaultBranch, from the event
-	Number int
-	Author string
-	Body   string
-	Today  time.Time // the App's date
+	Repo      api.Repo // RepoRef and DefaultBranch, from the event
+	Number    int
+	Author    string
+	Body      string
+	Today     time.Time // the App's date
+	CreatedAt time.Time
 }
 
 // Filed takes in an issue the CLI opened from a `can` answer, before a pull request exists (design 10.3). An issue
@@ -63,7 +64,8 @@ func (s *Service) Filed(ctx context.Context, i Issue) (string, error) {
 	}
 
 	req := records.Request{Key: key, Reason: form.Reason, Expires: form.Expires, Rule: form.Answer.Rule,
-		From: form.Answer.From, To: form.Answer.To, Record: capRecord(form.Record), Numbers: records.Numbers{}}
+		From: form.Answer.From, To: form.Answer.To, Record: capRecord(form.Record), Numbers: records.Numbers{},
+		AskedBy: i.Author, AskedAt: asker{i.Author, i.CreatedAt}.at()}
 	if b := form.Answer.Balance; b != nil {
 		req.Numbers.Balance = &records.Balance{Score: b.Value, Max: 10, Min: b.Min, Strength: b.Strength, Volatility: b.Volatility}
 	}

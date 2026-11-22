@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func issuePayload(action string) obj {
@@ -72,6 +73,27 @@ func TestIssuesRejectsIncompleteIdentity(t *testing.T) {
 			}
 			if strings.Contains(err.Error(), "worker-1") {
 				t.Errorf("error echoes payload text: %v", err)
+			}
+		})
+	}
+}
+
+func TestRequestEventCreatedAt(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind, field string
+		payload           obj
+	}{
+		{"issue", "issues", "issue.created_at", issuePayload("opened")},
+		{"comment", "issue_comment", "comment.created_at", commentPayload("created", true)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mustParse(t, tc.kind, tc.payload).CreatedAt; !got.IsZero() {
+				t.Fatalf("missing created_at = %v", got)
+			}
+			set(tc.payload, tc.field, "2026-10-29T09:00:00Z")
+			got := mustParse(t, tc.kind, tc.payload).CreatedAt
+			if got.Format(time.RFC3339) != "2026-10-29T09:00:00Z" {
+				t.Fatalf("created_at = %v", got)
 			}
 		})
 	}

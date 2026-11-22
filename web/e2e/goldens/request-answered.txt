@@ -1,6 +1,6 @@
 May pkg_tc depend on pkg_util?
 
-answered Request #431. The author says: “netem needs the retry helper of pkg_util to apply a rule again after a container restart.”
+answered Request #431. Asked by @dev 12 minutes ago: “netem needs the retry helper of pkg_util to apply a rule again after a container restart.”
 
 An owner rejected this request.
 

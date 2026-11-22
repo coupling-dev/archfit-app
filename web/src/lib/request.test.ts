@@ -22,6 +22,8 @@ import {
   defaultUntil,
   changedWhileOpen,
   effectLead,
+  askedAgo,
+  ledeLine,
 } from './request';
 
 const open: RequestView = {
@@ -330,6 +332,34 @@ describe('effectLead', () => {
     ['Pull request #12 passes.', ['', 'Pull request #12 passes.']],
   ])('%s', (line, want) => {
     expect(effectLead(line)).toEqual(want);
+  });
+});
+
+describe('askedAgo', () => {
+  const now = new Date('2026-11-22T12:00:00Z');
+  it.each([
+    ['2026-11-22T11:59:30Z', 'just now'],
+    ['2026-11-22T11:59:00Z', '1 minute ago'],
+    ['2026-11-22T11:48:00Z', '12 minutes ago'],
+    ['2026-11-22T10:00:00Z', '2 hours ago'],
+    ['2026-11-21T12:00:00Z', '1 day ago'],
+    ['2026-11-22T12:05:00Z', 'just now'],
+    ['not a time', ''],
+  ])('%s is %s', (at, want) => {
+    expect(askedAgo(at, now)).toBe(want);
+  });
+});
+
+describe('ledeLine', () => {
+  const now = new Date('2026-11-22T12:00:00Z');
+  const r = { number: 40, state: 'open' as const, reason: 'invoice needs the totals' };
+  it.each([
+    [{ ...r, asked_by: 'dev', asked_at: '2026-11-22T11:48:00Z', waiting: [412] }, 'Request #40. Asked by @dev 12 minutes ago: “invoice needs the totals” Pull request #412 waits for your answer.'],
+    [{ ...r, asked_by: 'dev' }, 'Request #40. Asked by @dev: “invoice needs the totals”'],
+    [{ ...r, waiting: [412, 415] }, 'Request #40. The author says: “invoice needs the totals” Pull request #412, #415 wait for your answer.'],
+    [{ ...r, state: 'answered' as const, waiting: [412] }, 'Request #40. The author says: “invoice needs the totals”'],
+  ])('%#', (req, want) => {
+    expect(ledeLine(req, now)).toBe(want);
   });
 });
 
