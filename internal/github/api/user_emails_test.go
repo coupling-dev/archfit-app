@@ -31,11 +31,12 @@ func TestVerifiedPrimaryEmail(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newEnv(t, script(tc.replies...))
 			got, err := e.c.VerifiedPrimaryEmail(context.Background(), token)
-			if got != tc.want || errors.Is(err, ErrUserTokenRejected) != tc.rejected || Status(err) != tc.status {
-				t.Fatalf("got %q, err %v", got, err)
-			}
 			if err != nil && (strings.Contains(err.Error(), token) || strings.Contains(err.Error(), primary) || strings.Contains(err.Error(), secondary)) {
 				t.Fatal("sensitive data in error")
+			}
+			wantErr := tc.rejected || tc.status != 0
+			if got != tc.want || (err != nil) != wantErr || errors.Is(err, ErrUserTokenRejected) != tc.rejected || Status(err) != tc.status {
+				t.Fatalf("verified primary email: address matches = %t, error = %v", got == tc.want, err)
 			}
 			for _, r := range e.gh.requests() {
 				if r.Method != http.MethodGet || r.Path != "/user/emails" || r.Auth != bearer(token) {
