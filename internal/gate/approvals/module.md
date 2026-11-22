@@ -46,8 +46,13 @@ direct push to the policy is the new rule with no owner's word.
      consume is not outside the flow. Change control starts with the first approval (task 23) or
      the first consume at the tip; the envelope 2 upload of a required policy says `first_approval` until then (manager,
      2026-11-12). An advisory policy needs no approval, so its uploads give their verdict. This branch is the seam of a
-     policy push in an advisory repository: it must never open the "changed outside the flow" state, and task 8.7b
-     extends its record (`records.Unguarded`) with the history of the push.
+     policy push in an advisory repository: it must never open the "changed outside the flow" state. In the same swap
+     `records.Unguarded` appends one entry to the repository's policy history (`records.PolicyHistory`, task 8.7b): the
+     digests before and after (`none` without a policy), the push's head commit, the pull request whose merge commit
+     it is (`CommitPulls`, then `Pull` for `merged_by`; never the commit author) or a direct push, and the requests of
+     the `# request #N` markers the change added. A redelivery adds nothing. The history is display only, for the
+     first approval's page (8.9): no entry is an approval or counts toward one. One entry per push, for its head
+     commit; the commits inside a push of several are not listed one by one.
   7. Otherwise `outside`: `records.Outside` sets the state and records the push in one swap, then one issue is opened
      to the owners of the policy before the push (the one owners stood behind; the pushed one when there is none), and
      its number recorded (`records.OutsideIssue`). Already outside the flow with an issue: a note names the new commit.

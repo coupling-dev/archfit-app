@@ -115,7 +115,8 @@ func (h *hub) CommitPulls(_ context.Context, _ api.RepoRef, sha string) ([]api.P
 	defer h.mu.Unlock()
 	var pulls []api.Pull
 	for _, p := range h.pulls {
-		if p.MergeCommitSHA == sha {
+		if p.MergeCommitSHA == sha || p.HeadSHA == sha {
+			p.MergedBy = "" // GitHub's list leaves merged_by out
 			pulls = append(pulls, p)
 		}
 	}
@@ -927,5 +928,26 @@ func TestUnguardedPolicyHistory(t *testing.T) {
 				t.Errorf("history = %+v, want %+v", entry, want)
 			}
 		})
+	}
+}
+
+func TestPolicyHistoryNamesOnlyTheMergingPullRequestAndAddedMarkers(t *testing.T) {
+	w := newWorld(t)
+	w.gh.commit("c0", policyV(0)+"# request #7\n")
+	w.gh.commit("c1", policyV(0)+"# request #7\n# request #41\n# request #42 and request #41\n")
+	w.gh.pulls[30] = api.Pull{Number: 30, State: "open", HeadSHA: "c1"} // contains the commit, merged nothing
+	w.push("c0", "c1")
+	got, err := records.PolicyHistory(context.Background(), w.mem, w.tenant(), testRepo.FullName)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("history %+v, %v", got, err)
+	}
+	if c := got[0]; !c.Direct || c.PullRequest != 0 || c.Merger != "" || !slices.Equal(c.Requests, []int{41, 42}) {
+		t.Fatalf("entry %+v", c)
+	}
+	if out := w.push("c0", "c1"); out.Judged != JudgedUnguarded {
+		t.Fatalf("again: %+v", out)
+	}
+	if again, _ := records.PolicyHistory(context.Background(), w.mem, w.tenant(), testRepo.FullName); len(again) != 1 {
+		t.Fatalf("a redelivery added an entry: %+v", again)
 	}
 }

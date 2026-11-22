@@ -87,6 +87,8 @@ type github interface {
 	api.Collaborators
 	api.Changes
 	api.Merges
+	// CommitPulls lists the pull requests of a commit, for the policy history before the first approval.
+	CommitPulls(ctx context.Context, r api.RepoRef, sha string) ([]api.Pull, error)
 }
 
 func New(d Deps) *Gate {

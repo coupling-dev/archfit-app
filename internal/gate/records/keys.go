@@ -51,6 +51,9 @@ type Push struct{ Before, After string }
 // noCommit stands for the commit before a push that created the branch, as GitHub writes it.
 const noCommit = "0000000000000000000000000000000000000000"
 
+// PolicyHistoryKey holds the repository's policy changes before the first approval (PolicyHistoryRecord).
+func PolicyHistoryKey(fullName string) string { return "v4/policy-history/" + repo(fullName) }
+
 // PolicyPushKey holds how the App judged a default-branch push that changed the policy (PolicyPush).
 func PolicyPushKey(fullName string, p Push) string {
 	before := p.Before
