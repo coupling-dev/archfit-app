@@ -1,43 +1,53 @@
-Request #431
+Should pkg/util/retry be public in pkg_util?
 
-waiting Waiting for an owner to answer.
+Request #431. The author says: “netem needs the retry helper of pkg_util to apply a rule again after a container restart.” Pull request #12 waits for your answer.
 
-Reason
-
-netem needs the retry helper of pkg_util to apply a rule again after a container restart.
-
-Rule coupling · pkg_tc -> pkg_util · asked until 2026-12-01
-
-Request #431 on GitHub
-
-Record
+✓
+change
+: done
+✗
+check
+: failed
+●
+ask #431
+: now
+○
+answer
+: later
+○
+policy
+: later
+○
+re-check
+: later
+Where
 pkg/tc/netem.go:12: coupling: pkg_tc -> pkg/util/retry is past the surface
-  balance: 2/10 (min 7): intrusive, pkg_util is high
-  surface: pkg/util (public)
-  next: use the surface, or: archfit request -m "<why retry belongs to the surface>"
+The rule
+pkg/util/retry is past the public part of pkg_util.
+Balance
+2/10 (min 7): intrusive, pkg_util is high
+Asked until
+2026-12-01
+On GitHub
+Request #431
+Your answer
+Make it public
+Adds 1 line: pkg/util/retry joins the public part of pkg_util. Every module may then use it.
+Pull request #12 passes when the policy is updated.
+Pull request #15 still has 2 errors.
+Allow until
+Adds an exception for this one place that ends on 2027-02-11. After it, the check fails again and asks for a new answer.
+Pull request #12 passes when the policy is updated.
+Pull request #15 still has 2 errors.
+Reject, and say what to do instead
+The author sees what you say to do instead.
+Declare it as shared model: Adds 1 line: other modules may use pkg/util/retry as a shared model, a lower balance than a public part. Pull request #12 passes when the policy is updated. Pull request #15 still has 2 errors.
+Answer with passkey
+Choose an answer. Nothing changes until you confirm it.
+
+Need to change something that is not a request? Advanced: edit the policy file
+
 The map
-Show the map as a list
-Show the map as a diagram
-
-Dependencies not allowed by this policy need a request.
-
 Why the balance
-
-Balance: 2/10 (min 7): intrusive, pkg_util is high. The balance is the value the policy checks against its minimum.
-
-The policy declares the volatility of each module:
-
-pkg_tc: Layer adapters · Volatility high
-
-pkg_util: Volatility low · subdomain generic
-
-Earlier answers 1
-Exception to graph for pkg_tc -> pkg_util until 2026-10-01. Why: Until the port lands.
-Answer
-
-Choose an answer and read its policy change before confirming. Previewing or leaving this page changes nothing.
-
-Declare as public
-Declare as model
-Allow until a date
-Reject
+Earlier answers about these modules (1)
+The record

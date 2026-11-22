@@ -25,6 +25,7 @@ type RequestView struct {
 	Answer                                               *RequestAnswer
 	Dependencies                                         []RequestDependency
 	Surface                                              *records.Surface // a surface request (engine 0.9.0)
+	Waiting                                              []int            // pull requests waiting on this request
 }
 
 // RequestView reads a request. Layers, modules and dependencies share one target-policy snapshot.
@@ -38,7 +39,7 @@ func (g *Gate) RequestView(ctx context.Context, t Target, number int) (RequestVi
 	}
 	out := RequestView{Number: v.Number, State: v.State, Reason: v.Reason, Rule: v.Rule, Path: v.Path, From: v.From, To: v.To,
 		Expires: v.Expires, Record: v.Record, Numbers: v.Numbers, Policy: v.Policy, Layers: v.Layers, Modules: v.Modules,
-		Allowed: v.Allowed, Earlier: v.Earlier, Dependencies: v.Dependencies, Surface: v.Surface, IssueHref: fmt.Sprintf("https://github.com/%s/issues/%d", t.Repo.FullName, number)}
+		Allowed: v.Allowed, Earlier: v.Earlier, Dependencies: v.Dependencies, Surface: v.Surface, Waiting: v.Waiting, IssueHref: fmt.Sprintf("https://github.com/%s/issues/%d", t.Repo.FullName, number)}
 	if v.State != records.StateAnswered {
 		return out, nil
 	}

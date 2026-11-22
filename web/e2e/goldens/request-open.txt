@@ -1,102 +1,52 @@
-Request #431
+May pkg_tc depend on pkg_util?
 
-waiting Waiting for an owner to answer.
+Request #431. The author says: “netem needs the retry helper of pkg_util to apply a rule again after a container restart.” Pull request #12 waits for your answer.
 
-Reason
-
-netem needs the retry helper of pkg_util to apply a rule again after a container restart.
-
-Rule graph · pkg_tc -> pkg_util · asked until 2026-12-01
-
-Request #431 on GitHub
-
-Record
+✓
+change
+: done
+✗
+check
+: failed
+●
+ask #431
+: now
+○
+answer
+: later
+○
+policy
+: later
+○
+re-check
+: later
+Where
 pkg/tc/netem.go:12 graph pkg_tc -> pkg_util is not an allowed dependency
-  balance: 9/10 (min 7)
+The rule
+The policy does not allow pkg_tc → pkg_util (rule graph).
+Balance
+9/10 (min 7)
+Asked until
+2026-12-01
+On GitHub
+Request #431
+Your answer
+Allow
+Adds 1 line to the policy: pkg_tc may depend on pkg_util.
+Pull request #12 passes when the policy is updated.
+Pull request #15 still has 2 errors.
+Allow until
+Adds an exception for this one place that ends on 2027-02-11. After it, the check fails again and asks for a new answer.
+Pull request #12 passes when the policy is updated.
+Pull request #15 still has 2 errors.
+Reject, and say what to do instead
+The author sees what you say to do instead.
+Answer with passkey
+Choose an answer. Nothing changes until you confirm it.
+
+Need to change something that is not a request? Advanced: edit the policy file
+
 The map
-Show the map as a list
-Show the map as a diagram
-An allowed dependency
-A requested dependency
-One a rule denies
-An exception (with its date)
-Drift
-
-An arrow points at the module it depends on. Outer layer on top. Allowed dependencies, not observed imports.
-
-Find a module
-+
-−
-Fit
-100%
-Full screen
-adapters
-No layer
-1
-pkg_tc
-Volatility: high
-pkg_util
-Volatility: low
-
-Dependencies not allowed by this policy need a request.
-
 Why the balance
-
-Balance: 9/10 (min 7). The balance is the value the policy checks against its minimum.
-
-The policy declares the volatility of each module:
-
-pkg_tc: Layer adapters · Volatility high
-
-pkg_util: Volatility low · subdomain generic
-
-Preview: Approve and merge
-
-Loosens the policy: it needs your passkey.
-
-+ Added
-- Removed
-
---- a/.archfit.yaml
-
-+++ b/.archfit.yaml
-
-@@ -4,3 +4,4 @@
-
-   pkg_tc:
-
-     depends_on:
-
-       - pkg_container
-
-+      - pkg_util # request #431
-
-Affected pull requests
-
-#12 (waiting), waits on this request: clears 1 error, 0 errors left
-
-PR #12 in Archfit · PR #12 on GitHub
-
-#15 (fail): clears 1 error, 2 errors left
-
-PR #15 in Archfit · PR #15 on GitHub
-
-These code pull requests are not merged by this answer. They still need a fresh check result.
-
-Earlier answers 1
-Exception to graph for pkg_tc -> pkg_util until 2026-10-01. Why: Until the port lands.
-Answer
-
-Choose an answer and read its policy change before confirming. Previewing or leaving this page changes nothing.
-
-Approve and merge
-Approve until a date
-Reject
-Approve and merge
-Merge the policy pull request now
-
-This answer records the policy change in a pull request and attempts to merge it. If GitHub refuses, the policy pull request stays open.
-
-Confirm with your passkey. Your passkeys
-
-Approve and merge policy PR
+Earlier answers about these modules (1)
+The record

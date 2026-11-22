@@ -1,15 +1,43 @@
-Request #415
+May app depend on other?
 
-waiting Waiting for an owner to answer. Its numbers are as reported: no pull request confirmed them yet.
+Request #415. The author says: “Use the helper.”
 
-Reason
+Waiting for an owner to answer. Its numbers are as reported: no pull request confirmed them yet.
 
-Use the helper.
-
-Rule graph · app -> other
-
-Record
+✓
+change
+: done
+✗
+check
+: failed
+●
+ask #415
+: now
+○
+answer
+: later
+○
+policy
+: later
+○
+re-check
+: later
+Where
 app -> util
+The rule
+The policy does not allow app → other (rule graph).
+Your answer
+Allow
+Adds 1 line to the policy: app may depend on other.
+Allow until
+Adds an exception for this one place that ends on 2027-02-11. After it, the check fails again and asks for a new answer.
+Reject, and say what to do instead
+The author sees what you say to do instead.
+Answer with passkey
+Choose an answer. Nothing changes until you confirm it.
+
+Need to change something that is not a request? Advanced: edit the policy file
+
 The map
 Show the map as a list
 Dependencies
@@ -51,25 +79,5 @@ Volatility: high
 Dependencies not allowed by this policy need a request.
 
 Why the balance
-
-The record has no balance.
-
-The policy declares the volatility of each module:
-
-app: Layer cmd · Volatility high
-
-util: Layer core · Volatility low
-
-other: Volatility high
-
-Earlier answers 0
-
-No earlier answer about these modules.
-
-Answer
-
-Choose an answer and read its policy change before confirming. Previewing or leaving this page changes nothing.
-
-Approve and merge
-Approve until a date
-Reject
+Earlier answers about these modules (0)
+The record

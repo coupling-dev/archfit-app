@@ -5,7 +5,7 @@ export const pageRoutes = [
   { kind: 'repo', path: '/r/acme/app', heading: 'acme/app' },
   { kind: 'policy', path: '/r/acme/app/policy', heading: 'Policy' },
   { kind: 'pull', path: '/r/acme/app/pull/4', heading: 'Pull request #4' },
-  { kind: 'request', path: '/r/acme/app/requests/431', heading: 'Request #431' },
+  { kind: 'request', path: '/r/acme/app/requests/431', heading: 'May app depend on util?' },
   { kind: 'owner', path: '/r/acme/app/owner/first', heading: 'Approve the first policy' },
   { kind: 'owner', path: '/r/acme/app/owner/workflow?pull=7', heading: 'Approve the workflow' },
   { kind: 'owner', path: '/r/acme/app/owner/confirm', heading: 'Confirm the policy' },

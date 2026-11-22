@@ -56,6 +56,7 @@ for (const width of [390, 1280]) {
         await page.getByRole('region', { name: 'Modules', exact: true }).locator('td summary').click();
       }
       if (state.name === 'closed-request' && width === 1280) {
+        await page.getByText('The map', { exact: true }).click();
         await expect(page.getByText('Show the map as a diagram', { exact: true })).toBeVisible();
         await expect(page.getByRole('group', { name: 'Modules by layer and their dependencies' })).toHaveCount(0);
       }

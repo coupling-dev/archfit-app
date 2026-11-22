@@ -1,18 +1,41 @@
-Request #431
+May pkg_tc depend on pkg_util?
 
-approved An owner approved this request.
+answered Request #431. The author says: “netem needs the retry helper of pkg_util to apply a rule again after a container restart.”
 
-Reason
+An owner approved this request.
 
-netem needs the retry helper of pkg_util to apply a rule again after a container restart.
-
-Rule graph · pkg_tc -> pkg_util · asked until 2026-12-01
-
-Request #431 on GitHub
-
-As checked when the request was made
+✓
+change
+: done
+✗
+check
+: failed
+✓
+ask #431
+: done
+✓
+answer
+: done
+●
+policy
+: now
+○
+re-check
+: later
+Where
 pkg/tc/netem.go:12 graph pkg_tc -> pkg_util is not an allowed dependency
-  balance: 9/10 (min 7)
+The rule
+The policy does not allow pkg_tc → pkg_util (rule graph).
+Balance
+9/10 (min 7)
+Asked until
+2026-12-01
+On GitHub
+Request #431
+Answer
+
+Allowed until 2027-01-15. The request on GitHub names the owner and the passkey.
+
 The map
 Show the map as a list
 Show the map as a diagram
@@ -38,17 +61,5 @@ Volatility: high
 pkg_util
 Volatility: low
 Why the balance
-
-Balance: 9/10 (min 7). The balance is the value the policy checks against its minimum.
-
-The policy declares the volatility of each module:
-
-pkg_tc: Layer adapters · Volatility high
-
-pkg_util: Volatility low · subdomain generic
-
-Earlier answers 1
-Exception to graph for pkg_tc -> pkg_util until 2026-10-01. Why: Until the port lands.
-Answer
-
-Approved until 2027-01-15. The request on GitHub names the owner and the passkey.
+Earlier answers about these modules (1)
+The record as checked when the request was made

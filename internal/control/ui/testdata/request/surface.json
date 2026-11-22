@@ -50,5 +50,8 @@
     ],
     "model": [],
     "package": "util/retry"
-  }
+  },
+  "waiting": [
+    12
+  ]
 }

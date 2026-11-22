@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { expectClean, expectPageText, open } from './support';
+import { docsClock, expectClean, expectPageText, open } from './support';
 import { readHome } from '../src/lib/home';
 const request = {
   number: 431,
@@ -38,10 +38,12 @@ const mapRequest = {
 for (const width of [390, 1280]) {
   test('request map: list, complete diagram and real request at ' + width, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
+    await docsClock(page);
     await open(page, '/r/acme/app/requests/415', {
       'GET /api/repos/acme/app/requests/415': () => [200, mapRequest],
       'GET /api/repos/acme/app/requests/415/preview': () => [422, { error: 'Choose an answer.' }],
     });
+    await page.getByText('The map', { exact: true }).click();
     const diagram = page.getByRole('group', { name: graphName });
     const listToggle = page.getByText('Show the map as a list', { exact: true });
     const diagramToggle = page.getByText('Show the map as a diagram', { exact: true });
@@ -112,15 +114,15 @@ for (const width of [390, 1280]) {
       'GET /api/repos/acme/app/requests/431/preview': () => [422, { error: 'Choose an answer.' }],
     });
     const date = page.getByLabel('The exception ends on');
-    const text = page.getByLabel('What to do instead');
-    await page.getByRole('button', { name: 'Approve until a date', exact: true }).click();
+    const text = page.getByLabel('What to do instead', { exact: true });
+    await page.getByRole('radio', { name: /^Allow until/ }).check();
     await expect(date).toHaveClass(/form-control/);
     await page.getByRole('radio', { name: 'Dark', exact: true }).click();
     await expect(date).toHaveCSS('background-color', 'rgb(13, 17, 23)');
     await date.fill('2027-01-15');
     await expect(date).toHaveValue('2027-01-15');
     if (width < 720) expect((await date.boundingBox())?.height).toBeGreaterThanOrEqual(44);
-    await page.getByRole('button', { name: 'Reject', exact: true }).click();
+    await page.getByRole('radio', { name: /^Reject, and say what to do instead/ }).check();
     await expect(text).toHaveClass(/form-control/);
     await text.fill('Use the existing port.');
     await expect(text).toHaveValue('Use the existing port.');
