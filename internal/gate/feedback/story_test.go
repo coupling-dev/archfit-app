@@ -230,11 +230,35 @@ func TestCommentOtherStoryRows(t *testing.T) {
 }
 
 func TestCommentHeaderMentionsAtMostOnePerson(t *testing.T) {
-	v := newView(result.Result{Status: result.StatusWaiting, Errors: []result.Error{{Next: result.Next{Kind: nextWait, Text: "wait for an owner: #40"}}}})
+	r := result.Result{Status: result.StatusWaiting, Summary: "waiting for @oscar", Errors: []result.Error{{
+		What: "Ask @oscar", Why: "Ask @acme/team, &#64;oscar, &#x040;oscar or &commat;oscar", Next: result.Next{Kind: nextWait, Text: "wait for an owner: #40"},
+	}}}
+	v := newView(r)
 	s := storyOf(v, &StoryFacts{State: records.StateOpen, Owner: "alexei-led"})
 	v.story = &s
-	if body := v.comment(maxBody); strings.Count(body, "@") > 1 {
-		t.Errorf("too many mentions: %s", body)
+	body := v.comment(maxBody)
+	if strings.Count(body, "@alexei-led") != 1 || strings.Contains(body, "@oscar") || strings.Contains(body, "@acme/team") {
+		t.Errorf("unexpected mentions: %s", body)
+	}
+	if !strings.Contains(body, "Ask @\u200boscar") || !strings.Contains(body, "&#64;\u200boscar") ||
+		!strings.Contains(body, "&#x040;\u200boscar") || !strings.Contains(body, "&commat;\u200boscar") {
+		t.Errorf("producer prose was not preserved: %s", body)
+	}
+}
+
+func TestCommentKeepsTheOtherRequestsActionable(t *testing.T) {
+	r := result.Result{Status: result.StatusWaiting, Errors: []result.Error{
+		{Rule: "first", Next: result.Next{Kind: nextWait, Text: "wait for an owner: #40"}},
+		{Rule: "second", Next: result.Next{Kind: nextWait, Text: "wait for an owner: #41"}},
+	}}
+	v := newView(r)
+	s := storyOf(v, &StoryFacts{State: records.StateOpen, Owner: "alexei-led"})
+	v.story = &s
+	body := v.comment(maxBody)
+	if !strings.Contains(body, "**second**\n- next: wait for an owner: #41") ||
+		strings.Contains(body, "- next: wait for an owner: #40") || strings.Count(body, "**Next:") != 1 ||
+		strings.Count(body, "@alexei-led") != 1 {
+		t.Errorf("comment does not distinguish primary and secondary requests: %s", body)
 	}
 }
 

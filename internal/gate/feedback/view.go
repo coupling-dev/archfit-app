@@ -248,7 +248,8 @@ func (v view) annotations() []api.Annotation {
 func (v view) comment(budget int) string {
 	p := v.page()
 	header := v.storyHeader()
-	if strings.Contains(header, "**Next:") {
+	headerCoversNext := strings.Contains(header, "**Next:")
+	if headerCoversNext {
 		p.Author, p.Owner = "", ""
 	}
 	head := "## " + v.mark() + " " + p.StatusLine + "\n"
@@ -273,10 +274,28 @@ func (v view) comment(budget int) string {
 	}
 	var blocks []string
 	for _, r := range p.Records {
+		if headerCoversNext && r.Request > 0 && r.Request != v.story.Request {
+			r.ShowNext = true
+		}
 		blocks = append(blocks, "\n"+r.markdown())
+	}
+	if v.story != nil {
+		// Only the story header can actively mention an account. Keep the text
+		// readable but break the GitHub mention before budgeting the comment.
+		head = neutralizeMentions(head)
+		for i, block := range blocks {
+			blocks[i] = neutralizeMentions(block)
+		}
 	}
 	kept := fit(blocks, budget-len(header)-len(head)-tail.Len()-len(closing), func(n int) string { return "\n" + moreLine(n) + "\n" })
 	return header + head + strings.Join(kept, "") + tail.String() + closing
+}
+
+// GitHub expands Markdown entities before it looks for mentions.
+var mentionAt = regexp.MustCompile(`(?i)@|&(?:commat|#0*64|#x0*40);`)
+
+func neutralizeMentions(text string) string {
+	return mentionAt.ReplaceAllString(text, "$0\u200b")
 }
 
 // heading is the status line with "Archfit" as the first word of a heading.
