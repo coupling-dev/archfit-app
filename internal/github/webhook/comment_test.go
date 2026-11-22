@@ -26,7 +26,7 @@ func TestIssueCommentFixtures(t *testing.T) {
 		want Event
 	}{
 		{"issue_comment_created_pull.json", Event{
-			Kind: PullCommented, InstallationID: 5001, Repo: "acme/shop", RepoPrivate: true, PullRequest: 46,
+			Kind: PullCommented, InstallationID: 5001, Repo: "acme/shop", RepoID: 101, RepoPrivate: true, PullRequest: 46,
 			DefaultBranch: "main", CommentID: 9001, Author: "agent-bot[bot]", AuthorType: "Bot",
 			Body: "<!-- archfit:decision-request -->\n```json\n{}\n```\n<!-- /archfit:decision-request -->",
 		}},

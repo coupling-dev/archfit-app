@@ -22,6 +22,8 @@ func (c *Control) HandleEvent(ctx context.Context, e webhook.Event) error {
 		return errors.New("control: event without an installation ID")
 	}
 	switch e.Kind {
+	case webhook.PullOpened:
+		return c.welcome(ctx, e)
 	case webhook.InstallationAdded, webhook.ReposRemoved:
 		discovery, cancel := context.WithTimeout(ctx, eventTimeout)
 		defer cancel()

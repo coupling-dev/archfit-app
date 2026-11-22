@@ -39,6 +39,9 @@ type Event struct {
 	Account             string   // installation kinds only: the login of the installation's account; "" when the payload has none
 	RepoPrivate         bool
 	PullRequest         int
+	RepoID              int64
+	HeadRepoID          int64
+	HeadRef             string
 	HeadSHA             string
 	HeadRepo            string // differs from Repo for forks
 	BaseRef             string

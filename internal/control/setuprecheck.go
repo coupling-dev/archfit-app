@@ -18,7 +18,7 @@ type setupGitHub interface {
 	ActionsSuite(context.Context, api.Repo, string) (int64, bool, error)
 	RerequestSuite(context.Context, api.Repo, int64) (int, error)
 	RunURL(context.Context, api.Repo, int64) (string, error)
-	HasMarkerComment(context.Context, api.Repo, int) (bool, error)
+	HasMarkerComment(context.Context, api.Repo, int, string) (bool, error)
 	Comment(context.Context, api.Repo, int, string) error
 }
 
@@ -130,7 +130,7 @@ func (s setupRecheck) check(ctx context.Context, repo api.Repo, pr int, head str
 			return "failed", fmt.Errorf("setup recheck: rerequest status %d: %w", status, callErr)
 		}
 	}
-	marked, err := s.gh.HasMarkerComment(ctx, repo, pr)
+	marked, err := s.gh.HasMarkerComment(ctx, repo, pr, setupMarker)
 	if err != nil {
 		return "failed", err
 	}
