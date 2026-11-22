@@ -204,6 +204,9 @@ func (s *publisher) publish4(ctx context.Context, p Publication4) (written, supe
 		Annotations: v.annotations(),
 		StartedAt:   start,
 	}
+	if p.Target.PullRequest > 0 {
+		run.Text = storyLine(v, s.storyFacts(ctx, p, v))
+	}
 	if p.ownerCheck != nil {
 		run = *p.ownerCheck
 		run.StartedAt, run.DetailsURL = start, s.pullLink(p.Target)

@@ -23,7 +23,7 @@ func TestOwnerVerdictIsResolvedInsideThePublicationLease(t *testing.T) {
 			}
 			return &api.CheckRun{Name: gateCheck, HeadSHA: head, ExternalID: "approval:a1",
 				Status: "completed", Conclusion: "success", Title: "owner approved", Summary: "not an engine pass"}, nil
-		})
+		}, nil)
 	p := pub4(prTarget(headB), 7, 1, engineResult(t, "policy_differs"))
 	if err := h.pub.Publish4(context.Background(), p); err != nil {
 		t.Fatal(err)
@@ -41,7 +41,7 @@ func TestOwnerVerdictReadFailureWritesNothing(t *testing.T) {
 	h := newHarness(headB)
 	failed := errors.New("approval unavailable")
 	h.pub = New4(h.checks, h.comments, h.pulls, h.store, appURL, h.clock.now,
-		func(context.Context, api.Repo, int, string) (*api.CheckRun, error) { return nil, failed })
+		func(context.Context, api.Repo, int, string) (*api.CheckRun, error) { return nil, failed }, nil)
 	err := h.pub.Publish4(context.Background(), pub4(prTarget(headB), 7, 1, engineResult(t, "pass")))
 	if !errors.Is(err, failed) {
 		t.Fatalf("Publish4 = %v", err)

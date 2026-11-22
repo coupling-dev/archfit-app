@@ -1040,7 +1040,7 @@ func TestCheckRunAnnotationBatches(t *testing.T) {
 		all[i] = Annotation{Path: "a.go", Line: i + 1, Level: "failure", Message: fmt.Sprintf("m%d", i)}
 	}
 	run := CheckRun{Name: "archfit/gate", HeadSHA: testSHA1, Status: "completed", Conclusion: "failure",
-		Title: "fail, 120 errors", Summary: "the record", Annotations: all[:50]}
+		Title: "fail, 120 errors", Summary: "the record", Text: "<!-- archfit-story v1 {} -->", Annotations: all[:50]}
 	created, err := env.c.CreateCheckRun(ctx, repoA, run)
 	if err != nil {
 		t.Fatal(err)
@@ -1060,8 +1060,8 @@ func TestCheckRunAnnotationBatches(t *testing.T) {
 			continue
 		}
 		output := decodeBody(t, r)["output"].(map[string]any)
-		if output["title"] != run.Title || output["summary"] != run.Summary {
-			t.Errorf("%s: output %v lacks the title and summary", r, output)
+		if output["title"] != run.Title || output["summary"] != run.Summary || output["text"] != run.Text {
+			t.Errorf("%s: output %v lacks the title, summary and text", r, output)
 		}
 		batch := output["annotations"].([]any)
 		sizes = append(sizes, len(batch))
@@ -1133,4 +1133,21 @@ func TestCommitPulls(t *testing.T) {
 	}
 	_, err = env.c.CommitPulls(context.Background(), repoA, "missing")
 	wantErrIs(t, "missing", err, ErrNotFound)
+}
+
+func TestAccountTypeReadsTheUser(t *testing.T) {
+	env := muxEnv(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /users/{login}", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]any{"login": r.PathValue("login"), "type": map[string]string{"alexei-led": "User", "acme": "Organization"}[r.PathValue("login")]})
+		})
+	})
+	for login, want := range map[string]string{"alexei-led": "User", "acme": "Organization"} {
+		got, err := env.c.AccountType(context.Background(), repoA, login)
+		if err != nil || got != want {
+			t.Errorf("AccountType(%s) = %q, %v; want %q", login, got, err, want)
+		}
+	}
+	if _, err := env.c.AccountType(context.Background(), repoA, "../x"); err == nil {
+		t.Error("a login that changes the route was sent")
+	}
 }
