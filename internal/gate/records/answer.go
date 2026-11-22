@@ -28,6 +28,13 @@ type Pin struct {
 	MergeNow bool
 }
 
+// BatchAnswer describes one approval and whether it joins the shared proposal.
+type BatchAnswer struct {
+	ApprovalID string
+	Approval   Approval
+	Join       bool
+}
+
 // Answer records an owner's answer in one CompareAndSwapAll, so nothing of it can be written without the rest: the new
 // approval a at approvalID, its request moved from open to answered, and, when pin is set, the approval joining that
 // proposal pinned to its head and digest, as Join does. Without pin the request leaves the request index at once; with
@@ -36,100 +43,136 @@ type Pin struct {
 // use is ErrExists; a proposal that is not open is ErrMoved, and a full one ErrFull. The repository record is in the
 // swap unchanged: one outside the flow is ErrOutsideFlow.
 func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approvalID string, a Approval, pin *Pin) error {
-	if approvalID == "" || a.Request <= 0 || pin != nil && (pin.Proposal == "" || pin.HeadSHA == "" || pin.Digest == "") {
+	return AnswerBatch(ctx, s, t, fullName, []BatchAnswer{{ApprovalID: approvalID, Approval: a, Join: pin != nil}}, pin)
+}
+
+// AnswerBatch records 1 to 20 answers with distinct approval IDs and requests in one atomic swap.
+// Items with Join set require the shared pin, join in input order up to MaxApprovals, and keep their requests indexed.
+// Other items remove their request index entry if it still points to them.
+func AnswerBatch(ctx context.Context, s store.Store, t store.Tenant, fullName string, items []BatchAnswer, pin *Pin) error {
+	if len(items) == 0 || len(items) > 20 {
+		return errors.New("records: answer: invalid batch size")
+	}
+	ids := map[string]bool{}
+	requestsSeen := map[int]bool{}
+	joined := 0
+	keys := make([]string, 0, len(items)*2+4)
+	for _, item := range items {
+		if item.ApprovalID == "" || item.Approval.Request <= 0 || item.Join && pin == nil {
+			return errors.New("records: answer: an empty id, request, head or digest")
+		}
+		if ids[item.ApprovalID] || requestsSeen[item.Approval.Request] {
+			return errors.New("records: answer: duplicate id or request")
+		}
+		ids[item.ApprovalID], requestsSeen[item.Approval.Request] = true, true
+		if item.Join {
+			joined++
+		}
+		keys = append(keys, ApprovalKey(fullName, item.ApprovalID), RequestKey(fullName, item.Approval.Request))
+	}
+	if pin != nil && (pin.Proposal == "" || pin.HeadSHA == "" || pin.Digest == "") {
 		return errors.New("records: answer: an empty id, request, head or digest")
 	}
-	keys := []string{ApprovalKey(fullName, approvalID), RequestKey(fullName, a.Request), RequestIndexKey(fullName)}
-	if pin != nil {
+	idx := len(keys)
+	keys = append(keys, RequestIndexKey(fullName))
+	if joined > 0 {
 		keys = append(keys, ProposalKey(fullName, pin.Proposal), ProposalIndexKey(fullName))
 	}
 	keys = append(keys, RepoKey(fullName))
 	return store.Update(ctx, s, t, keys, func(cur [][]byte) ([][]byte, error) {
-		repoBytes := cur[len(cur)-1]
-		if cur[0] != nil {
-			return nil, ErrExists
+		next := slices.Clone(cur)
+		// Preserve the single-answer validation order before checking the repository.
+		reqs := make([]Request, len(items))
+		for i := range items {
+			if cur[2*i] != nil {
+				return nil, ErrExists
+			}
+			if cur[2*i+1] == nil {
+				return nil, ErrNoRecord
+			}
+			if err := Decode(cur[2*i+1], &reqs[i]); err != nil {
+				return nil, err
+			}
+			if reqs[i].State != StateOpen {
+				return nil, ErrAnswered
+			}
 		}
-		var req Request
-		if cur[1] == nil {
-			return nil, ErrNoRecord
-		}
-		if err := Decode(cur[1], &req); err != nil {
-			return nil, err
-		}
-		if req.State != StateOpen {
-			return nil, ErrAnswered
-		}
-		if repoBytes != nil {
+		if raw := cur[len(cur)-1]; raw != nil {
 			var r Repo
-			if err := Decode(repoBytes, &r); err != nil {
+			if err := Decode(raw, &r); err != nil {
 				return nil, err
 			}
 			if r.OutsideFlow != nil {
 				return nil, ErrOutsideFlow
 			}
 		}
-		req.State, req.Approval = StateAnswered, approvalID
-		requests, err := readIndex(cur[2], SchemaRequestIndex)
+		x, err := readIndex(cur[idx], SchemaRequestIndex)
 		if err != nil {
 			return nil, err
 		}
-		before := slices.Clone(requests.Entries)
-		// A request whose approval joins a proposal keeps its index entry: until the proposal is consumed (Consume
-		// removes it) its key still makes a failing pull request wait on it, and no second request opens for it.
-		if id, ok := requests.Lookup(req.Key); ok && id == strconv.Itoa(a.Request) && pin == nil {
-			requests.Remove(req.Key)
-		}
-		requestIndex, err := writeIndex(cur[2], before, requests)
-		if err != nil {
-			return nil, err
-		}
-
-		a.State, a.Proposal = StateOpen, ""
-		if pin == nil {
-			out, err := encodeAll(&a, &req)
+		before := slices.Clone(x.Entries)
+		for i, item := range items {
+			req := &reqs[i]
+			req.State, req.Approval = StateAnswered, item.ApprovalID
+			if id, ok := x.Lookup(req.Key); ok && id == strconv.Itoa(item.Approval.Request) && !item.Join {
+				x.Remove(req.Key)
+			}
+			a := item.Approval
+			a.State, a.Proposal = StateOpen, ""
+			if item.Join {
+				a.Proposal = pin.Proposal
+			}
+			out, err := encodeAll(&a, req)
 			if err != nil {
 				return nil, err
 			}
-			return [][]byte{out[0], out[1], requestIndex, repoBytes}, nil
+			next[2*i], next[2*i+1] = out[0], out[1]
 		}
-
-		a.Proposal = pin.Proposal
-		var p Proposal
-		proposals, err := readIndex(cur[4], SchemaProposalIndex)
+		next[idx], err = writeIndex(cur[idx], before, x)
 		if err != nil {
 			return nil, err
 		}
-		before = slices.Clone(proposals.Entries)
-		switch {
-		case cur[3] == nil && pin.PullRequest <= 0:
-			return nil, ErrNoRecord
-		case cur[3] == nil:
-			p = Proposal{PullRequest: pin.PullRequest, State: StateOpen}
-			if err := proposals.Add(PullEntry(pin.PullRequest), pin.Proposal); err != nil {
+		if joined > 0 {
+			pi := idx + 1
+			proposals, err := readIndex(cur[pi+1], SchemaProposalIndex)
+			if err != nil {
 				return nil, err
 			}
-		default:
-			if err := Decode(cur[3], &p); err != nil {
+			before := slices.Clone(proposals.Entries)
+			var p Proposal
+			if cur[pi] == nil {
+				if pin.PullRequest <= 0 {
+					return nil, ErrNoRecord
+				}
+				p = Proposal{PullRequest: pin.PullRequest, State: StateOpen}
+				if err := proposals.Add(PullEntry(pin.PullRequest), pin.Proposal); err != nil {
+					return nil, err
+				}
+			} else if err := Decode(cur[pi], &p); err != nil {
+				return nil, err
+			}
+			if p.State != StateOpen || p.EditEpoch != pin.EditEpoch {
+				return nil, ErrMoved
+			}
+			if len(p.Approvals)+joined > MaxApprovals {
+				return nil, ErrFull
+			}
+			for _, item := range items {
+				if item.Join {
+					p.Approvals = append(p.Approvals, item.ApprovalID)
+				}
+			}
+			p.HeadSHA, p.ExpectedDigest, p.EditVoided, p.MergeNow = pin.HeadSHA, pin.Digest, false, pin.MergeNow
+			next[pi], err = Encode(&p)
+			if err != nil {
+				return nil, err
+			}
+			next[pi+1], err = writeIndex(cur[pi+1], before, proposals)
+			if err != nil {
 				return nil, err
 			}
 		}
-		switch {
-		case p.State != StateOpen || p.EditEpoch != pin.EditEpoch:
-			return nil, ErrMoved
-		case len(p.Approvals) >= MaxApprovals:
-			return nil, ErrFull
-		}
-		p.Approvals = append(p.Approvals, approvalID)
-		p.HeadSHA, p.ExpectedDigest, p.EditVoided, p.MergeNow = pin.HeadSHA, pin.Digest, false, pin.MergeNow
-		proposalIndex, err := writeIndex(cur[4], before, proposals)
-		if err != nil {
-			return nil, err
-		}
-		out, err := encodeAll(&a, &req, &p)
-		if err != nil {
-			return nil, err
-		}
-		return [][]byte{out[0], out[1], requestIndex, out[2], proposalIndex, repoBytes}, nil
+		return next, nil
 	})
 }
 
