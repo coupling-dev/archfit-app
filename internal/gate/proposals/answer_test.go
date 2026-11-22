@@ -665,6 +665,7 @@ func TestBehindProposalIsRebuiltOnTipBeforeMerge(t *testing.T) {
 func TestRefusedMergeSaysWhy(t *testing.T) {
 	w := newWorld(t)
 	w.request(431, "graph", "pkg_tc", "pkg_util")
+	w.hub.strict = true
 	w.hub.mergeErr = fmt.Errorf("%w: 405", api.ErrNotMergeable)
 	w.hub.hooks["MergePull"] = func() { // main moves as GitHub refuses: the hook runs under the fake's lock
 		h := w.hub

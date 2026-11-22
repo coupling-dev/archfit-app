@@ -43,8 +43,9 @@ func (s *Service) Advance(ctx context.Context, r api.Repo) error {
 		return nil
 	}
 	pin := records.Pin{Proposal: cur.id, PullRequest: cur.rec.PullRequest, HeadSHA: head, Digest: cur.rec.ExpectedDigest}
-	tipFile, _, err := s.policyAt(ctx, r.RepoRef, cur.tip)
-	if err != nil {
+	// The tip's policy is read as bytes: a revert may restore a deleted or unreadable policy.
+	tipFile, _, err := s.gh.File(ctx, r.RepoRef, cur.tip, policyPath)
+	if err != nil && !errors.Is(err, api.ErrNotFound) {
 		return err
 	}
 	file, kept, voided, err := apply(tipFile, cur)
@@ -54,8 +55,12 @@ func (s *Service) Advance(ctx context.Context, r api.Repo) error {
 	listed := kept
 	switch {
 	case len(voided) > 0 || policy3.Digest(file) != pin.Digest:
-		// The default branch's policy changed under the proposal (an owner confirmed a change, or a revert's state
-		// ended): its answers are written again on that policy, as an answer does, never its old file copied over it.
+		// The default branch's policy changed under the proposal. Only once that policy is the approved one (an owner
+		// confirmed it) are its answers written again on it, as an answer does, never its old file copied over it.
+		// While the change is still outside the flow, nothing is voided or rewritten: the owner decides first.
+		if err := s.stateAllows(ctx, r, cur.tip, cur.approvals); err != nil {
+			return nil
+		}
 		if err := s.voidAndNote(ctx, r, pin.PullRequest, voided, false); err != nil {
 			return err
 		}

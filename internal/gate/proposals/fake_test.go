@@ -37,6 +37,8 @@ type fakeHub struct {
 	requireCI bool              // other required checks: MergePull refuses a head until ciDone holds it
 	ciDone    map[string]bool   // heads whose other required checks passed
 	truncated bool              // the next Compare reports a cut file list, as GitHub does past 300 files
+	// truncatedAll: every Compare whose base is the policy branch's head reports a cut list (main moved by many files)
+	truncatedAll bool
 }
 
 type fakeCommit struct {
@@ -148,7 +150,7 @@ func (h *fakeHub) Pull(ctx context.Context, _ api.RepoRef, number int) (api.Pull
 	out := *p
 	switch {
 	case out.State != "open":
-	case !h.upToDate(out):
+	case h.strict && !h.upToDate(out):
 		out.MergeableState = "behind"
 	case h.requireCI && !h.ciDone[out.HeadSHA]:
 		out.MergeableState = "blocked"
@@ -217,7 +219,7 @@ func (h *fakeHub) Compare(ctx context.Context, _ api.RepoRef, base, head string)
 	case mergeBase == head:
 		status = "behind"
 	}
-	cut := h.truncated
+	cut := h.truncated || h.truncatedAll && base == h.branches[Branch]
 	h.truncated = false
 	return api.Comparison{Status: status, Paths: paths, Truncated: cut}, nil
 }

@@ -157,3 +157,50 @@ func TestACurrentHeadStillMovesAnOlderEditsTarget(t *testing.T) {
 		t.Fatalf("the first edit still targets %q, not the tip %q", e.Target, tip)
 	}
 }
+
+func TestAdvanceLeavesAnswersAloneWhileThePolicyIsOutsideTheFlow(t *testing.T) {
+	w := newWorld(t)
+	w.hub.requireCI = true
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	out := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, false)
+	head := w.hub.branches[Branch]
+	w.outsideWith(strings.Replace(testPolicy, "  pkg_util:\n    paths: [pkg/util/**]\n", "", 1))
+	w.advance()
+	if a := load[records.Approval](t, w.store, records.ApprovalKey(testRepo.FullName, out.Approval)); a.State != records.StateOpen {
+		t.Errorf("the answer was voided while outside the flow: %s", a.State)
+	}
+	if w.hub.branches[Branch] != head {
+		t.Error("the pull request was rewritten while outside the flow")
+	}
+}
+
+func TestATruncatedCompareKeepsAnEditWaitingInsteadOfMergingOffItsTarget(t *testing.T) {
+	w := newWorld(t)
+	w.hub.requireCI = true
+	out, err := w.svc.Edit(context.Background(), testRepo, w.editInput(testPolicy, testPolicy+"# edit\n", false))
+	if err != nil || out.State != requests.PullRefused {
+		t.Fatalf("edit %+v, %v", out, err)
+	}
+	w.ciPasses()
+	w.hub.push(fakeBase, "README.md", "main moved")
+	w.hub.truncatedAll = true
+	w.advance()
+	if len(w.hub.merges) != 1 {
+		t.Fatalf("merged off the edit's target: %v", w.hub.merges)
+	}
+}
+
+func TestAdvanceMergesARevertOfADeletedPolicyAfterItsChecks(t *testing.T) {
+	w := newWorld(t)
+	w.hub.requireCI = true
+	w.outsideWith("")
+	out, err := w.revert(oscar)
+	if err != nil || out.State != requests.PullRefused {
+		t.Fatalf("revert %+v, %v", out, err)
+	}
+	w.ciPasses()
+	w.advance()
+	if w.hub.file(fakeBase, policyPath) != testPolicy {
+		t.Fatalf("the revert did not merge after its checks: merges %v", w.hub.merges)
+	}
+}

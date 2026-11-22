@@ -780,6 +780,11 @@ func (s *Service) merge(ctx context.Context, r api.Repo, tip string, pin records
 		logFailure(ctx, r, "read the edit target before merge", err)
 		return requests.PullRefused, "", ""
 	}
+	// An edit is consumed only by a merge whose parent is its target (approvals.editParent): one the rebuild could not
+	// move to the tip waits rather than landing a merge nothing can consume.
+	if slices.ContainsFunc(listed, func(a approved) bool { return a.edit != nil && a.edit.Target != tip }) {
+		return requests.PullRefused, "", ""
+	}
 	// The repository's state is read again right before the merge: a success set earlier on this head does not hold
 	// once the policy changed outside the flow or was confirmed since (D13).
 	if err := s.stateAllows(ctx, r, tip, listed); err != nil {
