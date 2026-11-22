@@ -14,6 +14,12 @@ Security rules for identities, secrets, and incidents are in [Security](security
   It is the only way to test real webhooks, uploads, and the OIDC audience before production.
   See the trigger in [Options](architecture.md#options).
 
+## Admit a beta account before inviting it
+
+1. Add the account login to `ApprovedAccounts` in a configuration pull request. Configured logins are case-insensitive.
+2. Merge and deploy the configuration change.
+3. Send the partner the invitation only after the deployment. No installation record is needed for a configured login.
+
 ## Infrastructure as code
 
 - Terraform (or OpenTofu) owns every cloud resource, IAM binding, and service setting.
@@ -61,6 +67,7 @@ the task ran, so a GitHub redelivery inside that window is a duplicate. The adap
 room below the task-size limit. Public intake returns `503` if either enqueue fails; no inline fallback runs.
 GitHub does not automatically redeliver failures. Inspect the failed delivery before explicit redelivery, or use sweep
 reconciliation. An oversized payload needs investigation, not repeated submission of the same unsupported task.
+Setup rechecks use a 10-minute per-PR lease; `setup suite rerequest` logs the repository, PR and HTTP status, and `setup recheck` logs the outcome. A busy lease returns a retryable error; the webhook queue retries after backoff.
 
 ## Project guardrails
 

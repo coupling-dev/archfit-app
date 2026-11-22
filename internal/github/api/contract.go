@@ -124,6 +124,7 @@ type Pull struct {
 	HeadSHA      string
 	HeadRef      string
 	HeadRepo     string // "owner/name"; differs from the base repository for forks
+	HeadRepoID   int64
 	BaseRef      string
 	BaseSHA      string
 	MergeBaseSHA string

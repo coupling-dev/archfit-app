@@ -50,12 +50,14 @@ type tenantLister interface {
 }
 
 type Control struct {
-	account account.Account
-	repos   api.Repos
-	tenants tenantLister
-	admit   admitter
-	ui      http.Handler
-	now     func() time.Time
+	account    account.Account
+	repos      api.Repos
+	tenants    tenantLister
+	admit      admitter
+	ui         http.Handler
+	now        func() time.Time
+	setup      *setupRecheck
+	setupPulls setupPullLister
 }
 
 func New(d Deps) (*Control, error) {
@@ -85,6 +87,8 @@ func New(d Deps) (*Control, error) {
 		return nil, fmt.Errorf("control: ui: %w", err)
 	}
 	c := newControl(acct, d.GitHub, d.Store, d.Admissions, page, d.Now)
+	c.setup = &setupRecheck{store: d.Store, gh: d.GitHub, now: d.Now}
+	c.setupPulls = d.GitHub
 	return c, nil
 }
 
@@ -112,7 +116,7 @@ func NewWorker(d WorkerDeps) (*Control, error) {
 		d.Now = time.Now
 	}
 	acct := account.New(d.Store)
-	return &Control{account: acct, repos: d.GitHub, tenants: d.Store, admit: d.Admissions, now: d.Now}, nil
+	return &Control{account: acct, repos: d.GitHub, tenants: d.Store, admit: d.Admissions, now: d.Now, setup: &setupRecheck{store: d.Store, gh: d.GitHub, now: d.Now}, setupPulls: d.GitHub}, nil
 }
 
 func (d Deps) validate() error {

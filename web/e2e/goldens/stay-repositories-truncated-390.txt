@@ -62,7 +62,7 @@ not admitted
 archfit/gate
 not confirmed
 Next step
-Ask an operator to admit this installation.
+Archfit is in a closed beta. Ask for access: https://github.com/coupling-dev/archfit/issues/new?template=beta-access.yml
 
 archfit/gate is required when GitHub requires pull requests and this check on the default branch. Not confirmed: the App could not confirm this check. Ask a repository administrator.
 

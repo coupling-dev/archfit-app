@@ -31,7 +31,7 @@ export interface RepoNext {
 // must not bypass them, so a server destination is kept only when it is one of those pages.
 export function nextStep(row: RepoRow): RepoNext | undefined {
   const base = repoPage(row.full_name);
-  if (row.waiting) return { text: 'Ask an operator to admit this installation.' };
+  if (row.waiting) return { text: 'Archfit is in a closed beta. Ask for access: https://github.com/coupling-dev/archfit/issues/new?template=beta-access.yml' };
   if (row.setup_stage === 'policy_approved') {
     return row.enforcement === 'required' ? undefined : { text: 'Turn on the required check' };
   }
