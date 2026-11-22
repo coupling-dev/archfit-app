@@ -20,7 +20,7 @@ An unlisted full commit SHA is rejected without tag lookup: GitHub prefers a com
 `Setup.State` is `not_admitted`, `first_approval`, `approved`, or `outside_flow`. A policy without an approved
 digest remains `first_approval`, not approved, even when the workflow is missing (admission stays false). A same-repository open PR into the default branch can supply
 the policy and workflow for the first approval only when no valid policy is on the default branch; `FirstPull`
-identifies it. Setup also reports whether the policy and accepted workflow are present on the default branch for the Home stepper. A default branch that already has a valid policy uses `FirstPull=0`, regardless of its workflow. The gate owns recorded state through `SetupViews`; the first-approval transactions in
+identifies it. `SetupPull` identifies that same first match as the initial setup pull only when its branch is `archfit/setup` and its valid head policy is advisory; the scan also requires no recorded approval or outside-flow state. The first eligible legacy pull wins, so a later setup pull is not shown. Setup also reports whether the policy and accepted workflow are present on the default branch for the Home stepper. A default branch that already has a valid policy uses `FirstPull=0`, regardless of its workflow. The gate owns recorded state through `SetupViews`; the first-approval transactions in
 `gate/records.First` and `ApproveCurrent` own the `v4/repos` entry. Setup never adds the entry itself.
 
 `Setup.Approval` separates an exact-head signature from activation: `needed`,

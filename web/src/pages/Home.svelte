@@ -4,6 +4,8 @@
   import Skeleton from '../components/Skeleton.svelte';
   import Icon from '../components/ui/Icon.svelte';
   import PageHead from '../components/ui/PageHead.svelte';
+  import StoryRow from '../components/ui/StoryRow.svelte';
+  import { storySteps } from '../lib/request';
   import StatusLabel from '../components/ui/StatusLabel.svelte';
   import { explainLoad, repoAPI, type ApiError } from '../lib/api';
   import { firstJSON } from '../lib/early';
@@ -27,9 +29,10 @@
   const showMap = $derived(!!body && (!body.setup || body.setup.state === 'approved' || body.setup.state === 'outside_flow'));
 </script>
 
-<PageHead title={route.fullName}>
+<PageHead title={body?.setup?.setup_pull ? `Set up Archfit for ${route.fullName}` : route.fullName}>
   {#snippet status()}
     {#if failure}<p class="flash error" role="alert">{failure}</p>
+    {:else if body?.setup?.setup_pull}<p>{body.status}</p>
     {:else if body}<div class="status-line"><StatusLabel label={homeStateLabel(body.state)} /><p>{body.status}</p></div>{/if}
   {/snippet}
   {#snippet actions()}
@@ -56,6 +59,9 @@
           {#if href}
             <a {href}>{need.text}{#if isExternalHref(href)}<Icon name="link-external" size={12} /><span class="sr-only"> (opens GitHub)</span>{/if}</a>
           {:else}<p>{need.text}</p>{/if}
+          {#if need.kind === 'request' && need.request}
+            <StoryRow steps={storySteps({ state: 'open', answer: undefined })} ask={`#${need.request}`} />
+          {/if}
           {#if waitingFor(need.since)}<p class="muted">Waiting {waitingFor(need.since)}</p>{/if}
           {#if need.record}<details><summary>Show the record</summary><pre>{need.record}</pre></details>{/if}
         </div>
@@ -63,7 +69,9 @@
     {/each}
   </section>
 {/if}
-{#if body?.setup}
+{#if body?.setup?.setup_pull}
+  <p>Setup pull request #{body.setup.setup_pull}: open. No merge is stopped before you merge it.</p>
+{:else if body?.setup}
   <Setup setup={body.setup} repo={route} showOwnerAction={!action?.needsPasskey} primaryHref={action?.href} />
 {/if}
 {#if body && showMap}

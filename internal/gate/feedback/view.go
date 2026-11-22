@@ -43,14 +43,17 @@ const requestCap = 10
 // line for the author and one for the owner. The comment, the check title, the check summary and the annotations
 // render from it, so they cannot say different things.
 type view struct {
-	result   result.Result // the status line (Summary), the errors and the unknown reasons, shown as given
-	author   string        // "" when the author has nothing to do
-	owner    string        // "" when the owner has nothing to do
-	requests []int         // the requests the wait steps of the errors name, in record order, once each
-	covered  string        // candidate next kind; says checks whether the author line covers each individual step
-	next     *nextLink     // the App page of a pending owner step; nil when none is known
-	head     string        // the commit the check is for, shown with next
-	advisory string        // the line that says the check does not block the merge; "" in required mode (task 8.7)
+	story      *story
+	requestURL string
+	policyPull int
+	result     result.Result // the status line (Summary), the errors and the unknown reasons, shown as given
+	author     string        // "" when the author has nothing to do
+	owner      string        // "" when the owner has nothing to do
+	requests   []int         // the requests the wait steps of the errors name, in record order, once each
+	covered    string        // candidate next kind; says checks whether the author line covers each individual step
+	next       *nextLink     // the App page of a pending owner step; nil when none is known
+	head       string        // the commit the check is for, shown with next
+	advisory   string        // the line that says the check does not block the merge; "" in required mode (task 8.7)
 }
 
 // newView builds the view of r, whose Status is the status the App gave it.
@@ -244,15 +247,25 @@ func (v view) annotations() []api.Annotation {
 // out after a line that counts them.
 func (v view) comment(budget int) string {
 	p := v.page()
-	head := "## " + v.mark() + " " + p.StatusLine + "\n"
+	header := v.storyHeader()
+	headerCoversNext := strings.Contains(header, "**Next:")
+	if headerCoversNext {
+		p.Author, p.Owner = "", ""
+	}
+	renderProse := prose
+	if v.story != nil {
+		renderProse = func(text string) string { return prose(neutralizeMentions(text)) }
+	}
+	status := renderProse(p.StatusLine)
+	head := "## " + v.mark() + " " + status + "\n"
 	closing := ""
 	if v.next != nil {
 		// A pending owner step is the whole message; the records and the lines for author and owner fold away.
-		head = "## " + v.title() + "\n\n" + v.nextLine() + "\n" + v.facts() + "\n<details><summary>Details</summary>\n\n**" + prose(p.StatusLine) + "**\n"
+		head = "## " + v.title() + "\n\n" + v.nextLine() + "\n" + v.facts() + "\n<details><summary>Details</summary>\n\n**" + status + "**\n"
 		closing = "\n</details>\n"
 	}
 	if p.Note != "" {
-		head += "\n" + prose(p.Note) + "\n"
+		head += "\n" + renderProse(p.Note) + "\n"
 	}
 	var tail strings.Builder
 	if p.Author != "" {
@@ -266,10 +279,20 @@ func (v view) comment(budget int) string {
 	}
 	var blocks []string
 	for _, r := range p.Records {
-		blocks = append(blocks, "\n"+r.markdown())
+		if headerCoversNext && r.Request > 0 && r.Request != v.story.Request {
+			r.ShowNext = true
+		}
+		blocks = append(blocks, "\n"+r.markdown(renderProse))
 	}
-	kept := fit(blocks, budget-len(head)-tail.Len()-len(closing), func(n int) string { return "\n" + moreLine(n) + "\n" })
-	return head + strings.Join(kept, "") + tail.String() + closing
+	kept := fit(blocks, budget-len(header)-len(head)-tail.Len()-len(closing), func(n int) string { return "\n" + moreLine(n) + "\n" })
+	return header + head + strings.Join(kept, "") + tail.String() + closing
+}
+
+// GitHub expands Markdown entities before it looks for mentions.
+var mentionAt = regexp.MustCompile(`(?i)@|&(?:commat|#0*64|#x0*40);`)
+
+func neutralizeMentions(text string) string {
+	return mentionAt.ReplaceAllString(text, "$0\u200b")
 }
 
 // heading is the status line with "Archfit" as the first word of a heading.
@@ -281,37 +304,37 @@ func heading(line string) string {
 }
 
 // markdown is one record of the comment: where in code, the rule in bold, what; then its fields as a list.
-func (r Record) markdown() string {
+func (r Record) markdown(renderProse func(string) string) string {
 	where := place(r.Path, r.Line)
 	var b strings.Builder
 	if where != "" {
 		b.WriteString(codeSpan(where) + " ")
 	}
-	b.WriteString("**" + prose(r.Rule) + "**")
+	b.WriteString("**" + renderProse(r.Rule) + "**")
 	if r.What != "" {
-		b.WriteString(" " + prose(r.What))
+		b.WriteString(" " + renderProse(r.What))
 	}
 	b.WriteString("\n")
 	if r.Why != "" {
-		b.WriteString("- why: " + prose(r.Why) + "\n")
+		b.WriteString("- why: " + renderProse(r.Why) + "\n")
 	}
 	if r.Instead != "" {
-		b.WriteString("- instead: " + prose(r.Instead) + "\n")
+		b.WriteString("- instead: " + renderProse(r.Instead) + "\n")
 	}
 	if r.Balance != nil {
-		b.WriteString("- balance: " + prose(result.BalanceText(*r.Balance, r.Subject)) + "\n")
+		b.WriteString("- balance: " + renderProse(result.BalanceText(*r.Balance, r.Subject)) + "\n")
 	}
 	if r.Surface != nil {
-		b.WriteString("- surface: " + prose(result.SurfaceText(*r.Surface)) + "\n")
+		b.WriteString("- surface: " + renderProse(result.SurfaceText(*r.Surface)) + "\n")
 	}
 	if r.ShowNext {
 		next := r.Next
-		step := prose(next.Text)
+		step := renderProse(next.Text)
 		if next.Kind != nextFix && next.Kind != nextWait {
 			step = codeSpan(next.Text)
 		}
 		if next.Note != "" {
-			step += " (" + prose(next.Note) + ")"
+			step += " (" + renderProse(next.Note) + ")"
 		}
 		b.WriteString("- next: " + step + "\n")
 	}

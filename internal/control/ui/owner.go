@@ -107,6 +107,7 @@ type setupJSON struct {
 	State        string             `json:"state"`
 	Missing      []string           `json:"missing"`
 	FirstPull    int                `json:"first_pull,omitempty"`
+	SetupPull    int                `json:"setup_pull,omitempty"`
 	Issue        int                `json:"issue,omitempty"`
 	Rules        []setupFindingJSON `json:"rules"`
 }
@@ -147,7 +148,7 @@ func (s *server) apiSetup(r *http.Request, sc scope) (any, error) {
 		approval.Href = "https://github.com/" + sc.repo.FullName + "/pull/" + strconv.Itoa(approval.Pull)
 	}
 	body := setupJSON{Approval: approval, PasskeyKnown: passkeyKnown, Admitted: out.Admitted, Policy: out.Policy, Workflow: out.Workflow, Passkey: passkey, OpenPull: out.OpenPull,
-		State: out.State, Missing: out.Missing, FirstPull: out.FirstPull, Issue: out.Issue, Rules: []setupFindingJSON{}}
+		State: out.State, Missing: out.Missing, FirstPull: out.FirstPull, SetupPull: out.SetupPull, Issue: out.Issue, Rules: []setupFindingJSON{}}
 	for _, f := range out.Rules.Findings {
 		body.Rules = append(body.Rules, setupFindingJSON{Code: f.Code, State: f.State, Text: f.Text})
 	}

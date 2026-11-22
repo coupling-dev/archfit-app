@@ -54,3 +54,22 @@ func TestSetupSeparatesSignatureFromActivation(t *testing.T) {
 		})
 	}
 }
+
+func TestSetupPullRequiresNoRecordedApproval(t *testing.T) {
+	for _, summary := range []gate.ApprovalSummary{
+		{Status: gate.ApprovalPending, Kind: gate.OwnerFirst, Pull: 12, ApprovedHead: "head", CurrentHead: "head"},
+		{Status: gate.ApprovalStale, Kind: gate.OwnerFirst, Pull: 12, ApprovedHead: "old", CurrentHead: "head"},
+		{Status: gate.ApprovalUnknown, Kind: gate.OwnerFirst, Pull: 12},
+	} {
+		t.Run(string(summary.Status), func(t *testing.T) {
+			h := newSetupHub()
+			h.pulls = []api.Pull{{Number: 12, State: "open", BaseRef: "main", HeadRepo: setupRepo.FullName, HeadRef: "archfit/setup", HeadSHA: "head"}}
+			h.files["head"] = map[string]string{".archfit.yaml": setupPolicy, workflowPath: setupWorkflow(setupCommit)}
+			s := &setups{gh: h, gate: approvalView{summary: summary}, actionApproved: func(ref string) bool { return ref == setupCommit }}
+			out, err := s.Setup(t.Context(), setupRepo)
+			if err != nil || out.SetupPull != 0 || out.FirstPull != 12 || out.Approval != summary {
+				t.Fatalf("Setup = %+v, %v", out, err)
+			}
+		})
+	}
+}

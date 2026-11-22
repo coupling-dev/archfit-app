@@ -1,0 +1,8 @@
+Set up Archfit for acme/app
+
+Merge the setup pull request to start the checks.
+
+Open pull request #12
+(opens GitHub)
+
+Setup pull request #12: open. No merge is stopped before you merge it.

@@ -14,7 +14,7 @@ const path = '/r/acme/app';
 const api = 'GET /api/repos/acme/app/home';
 const fixtures = new URL('../../internal/control/ui/testdata/home/', import.meta.url);
 const names = readdirSync(fixtures)
-  .filter((n) => n.endsWith('.json'))
+  .filter((n) => n.endsWith('.json') && n !== 'setup-open.json')
   .sort();
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(name + '.json', fixtures), 'utf8'));
 
@@ -148,6 +148,9 @@ for (const file of names) {
       await expect(page.getByRole('link', { name: 'See what needs you' })).toHaveCount(0);
     }
     await expect(page.getByRole('heading', { name: 'Needs you' })).toHaveCount(body.needs_you.length ? 1 : 0);
+    if (body.needs_you.length && body.needs_you.every((need) => need.kind !== 'request')) {
+      await expect(page.getByRole('region', { name: 'Needs you' }).getByRole('list', { name: 'Story of the change' })).toHaveCount(0);
+    }
     if (!body.setup) {
       for (const need of body.needs_you)
         await expect(page.getByRole('link', { name: need.text })).toHaveAttribute('href', need.href);
@@ -448,3 +451,16 @@ test('home: setup chips use semantic colours in both themes', async ({ page }) =
     await expect(page.locator('.setup .status-label').filter({ hasText: /^to do$/ }).first()).toHaveCSS('background-color', attention);
   }
 });
+
+for (const width of [375, 1280]) {
+  test(`open request story at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await open(page, path, { [api]: () => [200, fixture('one-request')] });
+    const needs = page.getByRole('region', { name: 'Needs you' });
+    const story = needs.getByRole('list', { name: 'Story of the change' });
+    await expect(story.getByRole('listitem')).toHaveCount(6);
+    await expect(story.locator('[aria-current="step"]')).toHaveCount(1);
+    await expect(story.locator('[aria-current="step"]')).toContainText('ask #431');
+    await expect(needs.getByRole('link', { name: 'Request #431 waits.' })).toHaveAttribute('href', '/r/acme/app/requests/431');
+  });
+}
