@@ -317,3 +317,21 @@ func TestSetupRecognizesInitialAdvisoryPull(t *testing.T) {
 		t.Fatalf("initial setup pull not recognized: %+v", out)
 	}
 }
+
+func TestSetupPullRejectsLegacyReviews(t *testing.T) {
+	for _, tc := range []struct{ name, branch, policy string }{
+		{"wrong branch", "feature", setupPolicy},
+		{"required policy", "archfit/setup", setupPolicy + "gate: required\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newSetupHub()
+			h.pulls = []api.Pull{{Number: 12, State: "open", BaseRef: "main", HeadRepo: setupRepo.FullName, HeadRef: tc.branch, HeadSHA: "head"}}
+			h.files["head"] = map[string]string{".archfit.yaml": tc.policy, workflowPath: setupWorkflow(setupCommit)}
+			s := &setups{gh: h, gate: setupView{}, actionApproved: func(ref string) bool { return ref == setupCommit }}
+			out, err := s.Setup(t.Context(), setupRepo)
+			if err != nil || out.SetupPull != 0 || out.FirstPull != 12 {
+				t.Fatalf("Setup = %+v, %v", out, err)
+			}
+		})
+	}
+}
