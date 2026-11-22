@@ -50,6 +50,7 @@ type view struct {
 	covered  string        // candidate next kind; says checks whether the author line covers each individual step
 	next     *nextLink     // the App page of a pending owner step; nil when none is known
 	head     string        // the commit the check is for, shown with next
+	advisory string        // the line that says the check does not block the merge; "" in required mode (task 8.7)
 }
 
 // newView builds the view of r, whose Status is the status the App gave it.
@@ -188,7 +189,11 @@ func (v view) title() string {
 	if v.next != nil {
 		return v.mark() + " Waiting for an " + v.next.role + ": " + v.next.label
 	}
-	return v.mark() + " " + strings.TrimPrefix(v.result.Summary, statusPrefix)
+	title := v.mark() + " " + strings.TrimPrefix(v.result.Summary, statusPrefix)
+	if v.advisory != "" && (v.result.Status == result.StatusPass || v.result.Status == result.StatusFail) {
+		title += ", advisory"
+	}
+	return title
 }
 
 const statusPrefix = "archfit: "
@@ -199,9 +204,13 @@ func (v view) summary() string {
 	blocks := textRecords(v.result)
 	fence := fenceFor(strings.Join(blocks, "") + v.result.Summary)
 	lead := v.lead()
-	frame := len(lead) + len(fence) + len("text\n") + len("\n") + len(fence)
-	kept := fit(blocks, maxBody-frame-len(v.result.Summary)-1, func(n int) string { return moreLine(n) + "\n" })
-	return lead + fence + "text\n" + strings.Join(kept, "") + v.result.Summary + "\n" + fence
+	status := v.result.Summary + "\n"
+	if v.advisory != "" {
+		status += v.advisory + "\n"
+	}
+	frame := len(lead) + len(fence) + len("text\n") + len(fence)
+	kept := fit(blocks, maxBody-frame-len(status), func(n int) string { return moreLine(n) + "\n" })
+	return lead + fence + "text\n" + strings.Join(kept, "") + status + fence
 }
 
 // textRecords is the text record of each error and unknown reason, in record order, without the status line.

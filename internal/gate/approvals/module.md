@@ -44,7 +44,10 @@ direct push to the policy is the new rule with no owner's word.
      strictly behind `Repo.GuardedSince` and the pushed commit on its history, or, for the push that created the
      branch, the pushed commit strictly behind it; a push that moves the branch back from a later commit is not one): `unguarded`, recorded (`records.Unguarded`), so a delivery of it again after the first
      consume is not outside the flow. Change control starts with the first approval (task 23) or
-     the first consume at the tip; the envelope 2 upload says `first_approval` until then (manager, 2026-11-12).
+     the first consume at the tip; the envelope 2 upload of a required policy says `first_approval` until then (manager,
+     2026-11-12). An advisory policy needs no approval, so its uploads give their verdict. This branch is the seam of a
+     policy push in an advisory repository: it must never open the "changed outside the flow" state, and task 8.7b
+     extends its record (`records.Unguarded`) with the history of the push.
   7. Otherwise `outside`: `records.Outside` sets the state and records the push in one swap, then one issue is opened
      to the owners of the policy before the push (the one owners stood behind; the pushed one when there is none), and
      its number recorded (`records.OutsideIssue`). Already outside the flow with an issue: a note names the new commit.
@@ -249,7 +252,7 @@ var ErrNotAdmin, ErrNotOwner, ErrNotDue, ErrNotApprovable, ErrMoved, ErrNeedsPas
   digest is not the expected one: the push is outside the flow and the proposal void (fail closed).
 - **Stated limit**: two consumes handled out of order use both proposals' approvals; the approved digest is the newer
   one. A first consume after an unjudged direct push approves nothing: the repository stays without an approved policy
-  (`first_approval`) until the first approval.
+  (`first_approval`, for a required policy) until the first approval.
 - **Stated limit**: a direct push that lands while the first consume of a repository is in flight (after it read the
   tip, before its swap) is judged unguarded, and the consume approves: the tip then holds a policy no approval made,
   with no state and no issue. Every upload is `unknown` (`policy_unapproved`, fail closed) until the sweep compares the

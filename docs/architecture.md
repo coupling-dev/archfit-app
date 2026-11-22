@@ -24,7 +24,7 @@ The checked-in [manifest](../internal/wire/manifest/manifest4.json) approves eng
 
 ## Feedback
 
-The App publishes `archfit/gate`: pass is success; fail is failure, or neutral in advisory mode. Waiting is in progress. Unknown is action required, not neutral or skipped.
+The App publishes `archfit/gate`: pass is success; fail is failure, or neutral in advisory mode. Waiting is in progress. Unknown is action required, not neutral or skipped, with two bounded exceptions named in `AGENTS.md`: the setup pull request before any policy is in force, and, in advisory mode, a verified report that has no verdict yet. Both are neutral and say why.
 
 ## Requests and answers
 

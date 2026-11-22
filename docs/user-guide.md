@@ -354,6 +354,17 @@ Open `/r/<owner>/<repo>/pull/<number>` to see the check result. The page and the
 records, and instructions for the author and owner. A result can be **pass**, **fail**, **waiting**, or **unknown**.
 Unknown is not a pass. A request number links to the request page. An unknown result says why under its heading in one sentence. A pull request with no check result yet says so and that the check runs on the next push. Unknown results have no author line: each record's `next:` line names the step and who takes it.
 
+**Advisory and required.** With `gate: advisory`, or no `gate`, `archfit/gate` never blocks a merge and no owner approval is
+needed to start: checks begin when the setup pull request merges. A pass is success, titled `pass, advisory`. A fail is
+neutral, titled `fail, <n> errors, advisory`, and the summary says how to make the check required. Before that merge, the
+setup pull request shows neutral **No verdict yet: merge this setup pull request to start advisory checks.** and the App
+reads nothing from its files, even when they say `gate: required`. An `unknown` is neutral when the report is verified and
+there is no verdict yet (the engine has none, the policy changed since the run, or the first policy has not merged); the
+check says why and the one next step. An `unknown` the App cannot verify (a wrong binding, digest or target, a changed
+workflow, an engine the App does not list, or a policy changed outside the flow) is `action_required` in every mode. With
+`gate: required` the first approval is still needed, and every `unknown` is `action_required`. A head that edits `gate` to
+`required` changes nothing until the policy merges and an owner approves it.
+
 ![Pull request waiting for a request](images/pull.png)
 
 For example, the comment for this fixture says:

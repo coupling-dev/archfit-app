@@ -193,9 +193,12 @@ func TestPublish4AdvisoryFailIsNeutralWithTheSameRecords(t *testing.T) {
 	if r.Conclusion != conclusionFailure || a.Conclusion != conclusionNeutral {
 		t.Errorf("conclusions %q and %q, want failure and neutral", r.Conclusion, a.Conclusion)
 	}
-	if r.Title != a.Title || r.Summary != a.Summary || len(a.Annotations) != len(r.Annotations) ||
-		required.comments.all()[0].Body != advisory.comments.all()[0].Body {
+	if len(a.Annotations) != len(r.Annotations) || required.comments.all()[0].Body != advisory.comments.all()[0].Body {
 		t.Error("advisory mode changed the records")
+	}
+	if !strings.HasSuffix(a.Title, ", advisory") || !strings.Contains(a.Summary, "Advisory: this check does not block the merge.") ||
+		strings.Contains(r.Title+r.Summary, "dvisory") {
+		t.Errorf("titles %q and %q, summaries %q and %q: want the advisory words only in advisory mode", r.Title, a.Title, r.Summary, a.Summary)
 	}
 }
 

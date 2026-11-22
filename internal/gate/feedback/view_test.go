@@ -77,7 +77,7 @@ func TestViewGoldens(t *testing.T) {
 			v := newView(tc.result)
 			golden4(t, tc.name+".comment.md", v.comment(maxBody))
 			switch tc.name {
-			case "pass", "fail-fix", "fail-advisory", "fail-ask", "fail-copy", "fail-expired-exception", "waiting", "unknown":
+			case "pass", "pass-advisory", "fail-fix", "fail-advisory", "fail-ask", "fail-copy", "fail-expired-exception", "waiting", "unknown", "unknown-advisory":
 				golden4(t, tc.name+".check.md", checkText(v, tc.advisory))
 			}
 			golden4(t, tc.name+".title.txt", v.title()+"\n")
@@ -101,6 +101,7 @@ func viewFixtures(t *testing.T) []viewFixture {
 	t.Helper()
 	fixtures := []viewFixture{
 		{"pass", engineResult(t, "pass"), false},
+		{"pass-advisory", engineResult(t, "pass"), true},
 		{"fail-fix", engineResult(t, "deny"), false},
 		{"fail-advisory", engineResult(t, "deny"), true},
 		{"fail-ask", engineResult(t, "graph"), false},
@@ -110,6 +111,7 @@ func viewFixtures(t *testing.T) []viewFixture {
 		{"fail-expired-exception", engineResult(t, "expired_exception"), false},
 		{"waiting", engineResult(t, "waiting"), false},
 		{"unknown", engineResult(t, "policy_differs"), false},
+		{"unknown-advisory", engineResult(t, "policy_differs"), true},
 		{"design-12-5-rule", engineResult(t, "deny"), false},
 	}
 	for _, tc := range []struct{ name, source string }{
@@ -177,7 +179,10 @@ func twelveWaitingRequests(t *testing.T) result.Result {
 
 // checkText is a check run as a reader sees it: its state, title, summary and annotations.
 func checkText(v view, advisory bool) string {
-	status, conclusion := checkState(v.result.Status, advisory)
+	p := pub4(prTarget(headB), 7, 1, v.result)
+	p.Advisory, p.NeutralUnknown = advisory, advisory
+	v.advisory = p.advisoryLine("https://app.archfit.test")
+	status, conclusion := checkState(v.result.Status, p.Advisory, p.NeutralUnknown)
 	var b strings.Builder
 	fmt.Fprintf(&b, "status: %s\nconclusion: %s\ntitle: %s\n\n%s\n", status, conclusion, v.title(), v.summary())
 	for _, a := range v.annotations() {
@@ -234,23 +239,24 @@ func TestGoldensOfArchfit4UseNoNotUsedWord(t *testing.T) {
 func TestCheckStateOfEachStatus(t *testing.T) {
 	for _, tc := range []struct {
 		status                 result.Status
-		advisory               bool
+		advisory, neutral      bool
 		wantStatus, wantResult string
 	}{
-		{result.StatusPass, false, "completed", "success"},
-		{result.StatusPass, true, "completed", "success"},
-		{result.StatusFail, false, "completed", "failure"},
-		{result.StatusFail, true, "completed", "neutral"},
-		{result.StatusWaiting, false, "in_progress", ""},
-		{result.StatusWaiting, true, "in_progress", ""},
-		{result.StatusUnknown, false, "completed", "action_required"},
-		{result.StatusUnknown, true, "completed", "action_required"},
-		{result.Status("other"), true, "completed", "action_required"},
-		{result.Status(""), false, "completed", "action_required"},
+		{result.StatusPass, false, false, "completed", "success"},
+		{result.StatusPass, true, false, "completed", "success"},
+		{result.StatusFail, false, false, "completed", "failure"},
+		{result.StatusFail, true, false, "completed", "neutral"},
+		{result.StatusWaiting, false, false, "in_progress", ""},
+		{result.StatusWaiting, true, true, "in_progress", ""},
+		{result.StatusUnknown, false, false, "completed", "action_required"},
+		{result.StatusUnknown, true, false, "completed", "action_required"}, // an advisory policy alone does not make it neutral
+		{result.StatusUnknown, true, true, "completed", "neutral"},
+		{result.Status("other"), true, true, "completed", "action_required"},
+		{result.Status(""), false, false, "completed", "action_required"},
 	} {
-		status, conclusion := checkState(tc.status, tc.advisory)
+		status, conclusion := checkState(tc.status, tc.advisory, tc.neutral)
 		if status != tc.wantStatus || conclusion != tc.wantResult {
-			t.Errorf("checkState(%q, advisory %v) = %s %s, want %s %s", tc.status, tc.advisory, status, conclusion, tc.wantStatus, tc.wantResult)
+			t.Errorf("checkState(%q, advisory %v, neutral unknown %v) = %s %s, want %s %s", tc.status, tc.advisory, tc.neutral, status, conclusion, tc.wantStatus, tc.wantResult)
 		}
 	}
 }
