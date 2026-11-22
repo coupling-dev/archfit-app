@@ -63,7 +63,8 @@ func (s *Service) Filed(ctx context.Context, i Issue) (string, error) {
 	}
 
 	req := records.Request{Key: key, Reason: form.Reason, Expires: form.Expires, Rule: form.Answer.Rule,
-		From: form.Answer.From, To: form.Answer.To, Record: capRecord(form.Record), Numbers: records.Numbers{}}
+		From: form.Answer.From, To: form.Answer.To, Record: capRecord(form.Record), Numbers: records.Numbers{},
+		AskedBy: i.Author, AskedAt: asker{i.Author, i.Today}.at()}
 	if b := form.Answer.Balance; b != nil {
 		req.Numbers.Balance = &records.Balance{Score: b.Value, Max: 10, Min: b.Min, Strength: b.Strength, Volatility: b.Volatility}
 	}

@@ -225,6 +225,30 @@ export function effectLead(line: string): [string, string] {
   return m ? [m[1], line.slice(m[1].length)] : ['', line];
 }
 
+// askedAgo is how long ago a request was filed, in the largest whole unit: "just now", "12 minutes ago", "3 days ago".
+export function askedAgo(at: string, now: Date): string {
+  const s = Math.floor((now.getTime() - new Date(at).getTime()) / 1000);
+  if (!Number.isFinite(s)) return '';
+  if (s < 60) return 'just now';
+  for (const [unit, size] of [['day', 86_400], ['hour', 3_600], ['minute', 60]] as const) {
+    const n = Math.floor(s / size);
+    if (n >= 1) return `${n} ${unit}${n === 1 ? '' : 's'} ago`;
+  }
+  return 'just now';
+}
+
+// ledeLine is the line under the question: who asked and when (when the record knows), the reason, and the pull
+// requests that wait on the answer.
+export function ledeLine(r: Pick<RequestView, 'number' | 'state' | 'reason' | 'waiting' | 'asked_by' | 'asked_at'>, now: Date): string {
+  const pulls = r.state === 'open' ? (r.waiting ?? []) : [];
+  const waits = pulls.length
+    ? ` Pull request ${pulls.map((n) => `#${n}`).join(', ')} ${pulls.length === 1 ? 'waits' : 'wait'} for your answer.`
+    : '';
+  const ago = r.asked_at ? askedAgo(r.asked_at, now) : '';
+  const who = r.asked_by ? `Asked by @${r.asked_by}${ago ? ` ${ago}` : ''}: ` : 'The author says: ';
+  return `Request #${r.number}. ${who}“${r.reason}”${waits}`;
+}
+
 // defaultUntil is the date an "allow until a date" answer offers first: 90 days from today, in UTC.
 export function defaultUntil(today: Date): string {
   return new Date(today.getTime() + 90 * 86_400_000).toISOString().slice(0, 10);

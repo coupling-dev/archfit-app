@@ -3,6 +3,7 @@ package requests
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
@@ -40,6 +41,9 @@ func TestFiledUnprotectedCan(t *testing.T) {
 	}
 	if req.Key != graphKey || req.Record != record || req.Numbers.Verified || req.Numbers.Balance == nil || req.Numbers.Balance.Score != 9 {
 		t.Errorf("stored request = %+v", req)
+	}
+	if req.AskedBy != "writer" || req.AskedAt != testToday.UTC().Format(time.RFC3339) {
+		t.Errorf("asked by %q at %q, want writer at %s", req.AskedBy, req.AskedAt, testToday.UTC().Format(time.RFC3339))
 	}
 }
 

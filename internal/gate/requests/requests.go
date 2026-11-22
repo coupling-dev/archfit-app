@@ -91,6 +91,19 @@ type Comment struct {
 	Today  time.Time // the App's date
 }
 
+// asker is who filed a request and when.
+type asker struct {
+	login string
+	when  time.Time
+}
+
+func (a asker) at() string {
+	if a.when.IsZero() {
+		return ""
+	}
+	return a.when.UTC().Format(time.RFC3339)
+}
+
 // IsRequest reports whether a comment holds a request line, usable or not.
 func IsRequest(body string) bool {
 	_, ok, _ := request.ParseComment(body, time.Time{})
@@ -177,7 +190,7 @@ func (s *Service) Comment(ctx context.Context, c Comment) (string, error) {
 			o.left++
 			continue
 		}
-		id, joined, err := s.open(ctx, c.Repo, pol, g, line, c.Pull)
+		id, joined, err := s.open(ctx, c.Repo, pol, g, line, c.Pull, asker{c.Author, c.Today})
 		if err != nil {
 			return ReactionNone, err
 		}
@@ -256,11 +269,12 @@ func deniedPair(pol policy3.File, from, to string) (answered, bool) {
 // open opens the request issue of g, assigns the owners and labels it, then stores the request with its index entry.
 // When another request took the key meanwhile, the new issue is closed with a note and pull joins the other: joined is
 // true and id is the other's.
-func (s *Service) open(ctx context.Context, r api.Repo, pol policy3.File, g group, line request.Line, pull int) (id int, joined bool, err error) {
+func (s *Service) open(ctx context.Context, r api.Repo, pol policy3.File, g group, line request.Line, pull int, by asker) (id int, joined bool, err error) {
 	e := g.errs[0]
 	req := records.Request{Key: g.key, Reason: line.Reason, Expires: line.Expires, Rule: e.Rule, Path: e.Path,
 		From: e.From, To: e.To, Record: recordsOf(g.errs), Waiting: []int{pull}, Listed: []int{pull},
-		Numbers: records.Numbers{Verified: true, Balance: balance(e.Balance)}, Surface: groupSurface(g.errs)}
+		Numbers: records.Numbers{Verified: true, Balance: balance(e.Balance)}, Surface: groupSurface(g.errs),
+		AskedBy: by.login, AskedAt: by.at()}
 	issue := issueOf(req)
 	created, err := s.gh.CreateIssue(ctx, r.RepoRef, api.NewIssue{Title: issue.Title(), Body: issue.Body()})
 	if err != nil {
