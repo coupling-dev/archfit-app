@@ -6,7 +6,7 @@ The checked-in [release manifest](../internal/wire/manifest/manifest4.json) appr
 
 ## Install and set up
 
-1. Install the GitHub App for the repository. An account not on the operator's approved list waits for operator admission.
+1. Install the GitHub App for the repository. If the account is not admitted, [ask for beta access](https://github.com/coupling-dev/archfit/issues/new?template=beta-access.yml). If you are not an organization administrator, GitHub sends your request to its administrators; send one of them the [install link](https://github.com/apps/archfit-review/installations/new) and ask them to install Archfit on the repository.
 2. Put a version 1 `.archfit.yaml` (the App reads no other version) and `.github/workflows/archfit.yaml` in the repository. Read them before the first approval. The App does not generate these files.
 3. Sign in to the App and register a passkey as a repository administrator. See [Register a passkey](#register-a-passkey).
 4. A repository administrator named as an owner in the proposed policy must approve the first policy with a passkey. The owner action supports a same-repository open pull request when the default branch has no valid policy, or the current default-branch policy otherwise. Follow **Review and approve** from Home when you have a passkey, or **Review proposed files** without one. The pull page uses **Review first policy**. The App resolves the correct destination for eligible viewers; other viewers see which role can act.
@@ -67,7 +67,7 @@ then. A **Next step** appears only while setup is incomplete.
 page that resolves it, so you need no URL. The longest wait is first. A step with no recorded time, such as a policy
 changed outside the flow, has no wait and comes last. The App reads the first 25 repositories with an approved
 policy; when it cannot read a repository, or reads fewer, a line under **Needs you** says so.
-A repository whose installation no operator has admitted shows **not admitted**; an operator admits, and an owner
+A repository whose installation no operator has admitted shows **not admitted** and links to the beta access request; an operator admits, and an owner
 approves. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** and says the repositories are listed on the home page, with a link to `/`.
 
 When you come back to the repository list, a repository's Home, its policy or a pull request page you already opened in
