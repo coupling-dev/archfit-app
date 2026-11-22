@@ -312,8 +312,7 @@ func TestSetupRecognizesInitialAdvisoryPull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	field := reflect.ValueOf(out).FieldByName("SetupPull")
-	if !field.IsValid() || field.Int() != 12 {
+	if out.SetupPull != 12 {
 		t.Fatalf("initial setup pull not recognized: %+v", out)
 	}
 }
