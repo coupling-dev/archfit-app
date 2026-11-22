@@ -1,0 +1,11 @@
+status: completed
+conclusion: neutral
+title: ⚠️ unknown, no verdict
+
+```text
+.archfit.yaml: policy: differs from origin/main
+  why: only owners change the policy
+  next: git checkout origin/main -- .archfit.yaml
+archfit: unknown, no verdict
+Advisory: this check does not block the merge.
+```
