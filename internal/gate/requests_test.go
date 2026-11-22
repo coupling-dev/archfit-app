@@ -616,8 +616,7 @@ func (w *world4) uploadCoupling(p *pull, surface bool, status string) {
 	w.wantStatus(w.send4(s), status, "")
 }
 
-// A request keeps the 0.9.0 balance inputs, and becomes a surface request when a pull request that joins it later
-// reports the use past the surface: from then on it is never approved as such.
+// A surface request is distinct from an edge-only coupling request.
 func TestARequestKeepsTheInputsAndTheSurfaceOfALaterPullRequest(t *testing.T) {
 	w := newAskWorld(t)
 	first, second := w.pullBy(7), w.pullBy(8)
@@ -627,9 +626,9 @@ func TestARequestKeepsTheInputsAndTheSurfaceOfALaterPullRequest(t *testing.T) {
 	if b := r.Numbers.Balance; b == nil || b.Score != 2 || b.Strength != "intrusive" || b.Volatility != "high" || r.Surface != nil {
 		t.Fatalf("stored request = %+v, balance %+v", r, b)
 	}
-	w.uploadCoupling(second, true, "waiting") // covered by #1000 before it asks
+	w.uploadCoupling(second, true, "fail")
 	w.ask(second, workerLogin, "/archfit request the same need")
-	if r := w.storedRequest(firstRequest); r.Surface == nil || !slices.Equal(r.Surface.Public, []string{"pkg/util"}) || r.Surface.Package != "pkg/util/retry" {
+	if r := w.storedRequest(firstRequest + 1); r.Surface == nil || !slices.Equal(r.Surface.Public, []string{"pkg/util"}) || r.Surface.Package != "pkg/util/retry" {
 		t.Errorf("after the join, surface = %+v", r.Surface)
 	}
 }
@@ -645,7 +644,7 @@ func TestRequestDeduplicationBySurfaceAndState(t *testing.T) {
 	}{
 		{"same surface", surface("pkg/util/setup"), surface("pkg/util/setup"), false, true},
 		{"different surface", surface("pkg/util/setup"), surface("pkg/util/replay"), false, false},
-		{"answered surface", surface("pkg/util/setup"), surface("pkg/util/setup"), true, false},
+		{"answered surface", surface("pkg/util/setup"), surface("pkg/util/setup"), true, true},
 		{"same graph", graph, graph, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
