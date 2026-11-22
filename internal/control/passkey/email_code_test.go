@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -166,43 +167,94 @@ func TestEmailCodeFailedSendAndPrivacy(t *testing.T) {
 	}
 }
 
-func TestEmailCodeAuthorizationScopeAndExpiry(t *testing.T) {
+type delayedFailureSink struct {
+	entered chan string
+	release chan struct{}
+	mu      sync.Mutex
+	calls   int
+	latest  string
+}
+
+func (s *delayedFailureSink) SendCode(_ context.Context, _, code string) error {
+	s.mu.Lock()
+	s.calls++
+	n := s.calls
+	s.latest = code
+	s.mu.Unlock()
+	if n == 1 {
+		s.entered <- code
+		<-s.release
+		return errors.New("private error")
+	}
+	return nil
+}
+func TestEmailCodeLateSendFailureDoesNotInvalidateResend(t *testing.T) {
+	var seconds atomic.Int64
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	sink := &delayedFailureSink{entered: make(chan string, 1), release: make(chan struct{})}
+	svc, err := NewEmailCodes(store.NewMemory(), sink, []byte("01234567890123456789012345678901"), func() time.Time { return start.Add(time.Duration(seconds.Load()) * time.Second) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := EmailCodeScope{UserID: 101, InstallationID: 7, RepositoryID: 70, SessionBinding: "binding"}
+	result := make(chan error, 1)
+	go func() { _, err := svc.Send(ctx, scope, "owner@example.invalid"); result <- err }()
+	<-sink.entered
+	seconds.Store(60)
+	if _, err = svc.Send(ctx, scope, "owner@example.invalid"); err != nil {
+		t.Fatal(err)
+	}
+	close(sink.release)
+	if err = <-result; !errors.Is(err, ErrCodeSend) {
+		t.Fatalf("first send: %v", err)
+	}
+	sink.mu.Lock()
+	code := sink.latest
+	sink.mu.Unlock()
+	if err = svc.Verify(ctx, scope, code); err != nil {
+		t.Fatalf("resend invalidated: %v", err)
+	}
+}
+
+func TestEmailCodeResendPreservesAttemptsAcrossScopes(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	sink := &codeSink{}
 	svc, err := NewEmailCodes(store.NewMemory(), sink, []byte("01234567890123456789012345678901"), func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
-	scope := EmailCodeScope{UserID: 101, InstallationID: 7, RepositoryID: 70, SessionBinding: "session"}
+	scope := EmailCodeScope{UserID: 101, InstallationID: 7, RepositoryID: 70, SessionBinding: "one"}
 	if _, err = svc.Send(ctx, scope, "owner@example.invalid"); err != nil {
 		t.Fatal(err)
 	}
-	if err = svc.Verify(ctx, scope, sink.code); err != nil {
-		t.Fatal(err)
+	old := sink.code
+	wrong := "000000"
+	if old == wrong {
+		wrong = "000001"
+	}
+	for i := 0; i < 4; i++ {
+		if err = svc.Verify(ctx, scope, wrong); !errors.Is(err, ErrCodeWrong) {
+			t.Fatalf("guess: %v", err)
+		}
 	}
 	other := scope
-	other.SessionBinding = "other"
-	if err = svc.Spend(ctx, other); err == nil {
-		t.Fatal("other session spent authorization")
-	}
-	if err = svc.Spend(ctx, scope); err != nil {
-		t.Fatal(err)
-	}
-	if err = svc.Spend(ctx, scope); err == nil {
-		t.Fatal("authorization reused")
-	}
-	if _, err = svc.Send(ctx, scope, "owner@example.invalid"); !errors.Is(err, ErrCodeCooldown) {
-		t.Fatalf("cooldown after spend: %v", err)
+	other.RepositoryID++
+	other.SessionBinding = "two"
+	if _, err = svc.Send(ctx, other, "owner@example.invalid"); !errors.Is(err, ErrCodeCooldown) {
+		t.Fatalf("cross scope cooldown: %v", err)
 	}
 	now = now.Add(time.Minute)
-	if _, err = svc.Send(ctx, scope, "owner@example.invalid"); err != nil {
+	if _, err = svc.Send(ctx, other, "owner@example.invalid"); err != nil {
 		t.Fatal(err)
 	}
-	if err = svc.Verify(ctx, scope, sink.code); err != nil {
-		t.Fatal(err)
+	if err = svc.Verify(ctx, scope, old); !errors.Is(err, ErrCodeWrong) {
+		t.Fatalf("old code: %v", err)
 	}
-	now = now.Add(10 * time.Minute)
-	if err = svc.Spend(ctx, scope); err == nil {
-		t.Fatal("expired authorization spent")
+	if err = svc.Verify(ctx, other, sink.code); !errors.Is(err, ErrCodeLocked) {
+		t.Fatalf("cross scope lock: %v", err)
+	}
+	now = now.Add(15 * time.Minute)
+	if _, err = svc.Send(ctx, other, "owner@example.invalid"); err != nil {
+		t.Fatalf("lock boundary: %v", err)
 	}
 }
