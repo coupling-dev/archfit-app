@@ -46,3 +46,22 @@ func TestWeeklyRecordsAcceptedUpload(t *testing.T) {
 		t.Fatalf("summary = %+v, %v", got, err)
 	}
 }
+
+func TestWeeklyClassifiesAcceptedFailures(t *testing.T) {
+	for _, tc := range []struct {
+		golden string
+		owner  int
+	}{{"graph", 1}, {"deny", 0}} {
+		t.Run(tc.golden, func(t *testing.T) {
+			w, p, spec := advisoryWorld(t, policy4Advisory)
+			spec.result = w.result(tc.golden, p.head)
+			w.usePolicy(spec, policy4Advisory)
+			w.unrecorded()
+			w.wantStatus(w.send4(spec), "fail", "")
+			got, err := weekly.Read(context.Background(), w.mem, store.Tenant(p.repo.InstallationID), p.repo.FullName, w.gate.now().Add(time.Second))
+			if err != nil || !got.Known || got.Checked != 1 || got.Passed != 0 || got.Owner != tc.owner {
+				t.Fatalf("summary = %+v, %v", got, err)
+			}
+		})
+	}
+}
