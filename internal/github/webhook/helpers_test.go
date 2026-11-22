@@ -54,10 +54,10 @@ var fixtureCases = []fixtureCase{
 		HeadSHA: "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a", HeadRepo: "acme/app", BaseRef: "main", DefaultBranch: "main",
 		GroupReason: "dequeued",
 	}},
-	{"installation_created.json", "installation", Event{Kind: InstallationAdded, InstallationID: 6001, Account: "acme"}},
+	{"installation_created.json", "installation", Event{Kind: InstallationAdded, InstallationID: 6001, Account: "acme", AddedRepositories: []string{"acme/shop"}}},
 	{"installation_deleted.json", "installation", Event{Kind: InstallationRemoved, InstallationID: 6001, Account: "acme"}},
 	{"installation_repositories_added.json", "installation_repositories", Event{
-		Kind: InstallationAdded, InstallationID: 6002, Account: "acme",
+		Kind: InstallationAdded, InstallationID: 6002, Account: "acme", AddedRepositories: []string{"acme/lib"},
 	}},
 	{"installation_repositories_removed.json", "installation_repositories", Event{
 		Kind: ReposRemoved, InstallationID: 6002, Account: "acme",

@@ -12,7 +12,7 @@ func TestInstallationAddedRepositories(t *testing.T) {
 		want        []string
 	}{
 		{"installation_created.json", "installation", []string{"acme/shop"}},
-		{"installation_repositories_added.json", "installation_repositories", []string{"acme/shop"}},
+		{"installation_repositories_added.json", "installation_repositories", []string{"acme/lib"}},
 	} {
 		t.Run(tt.event, func(t *testing.T) {
 			body, err := os.ReadFile("testdata/" + tt.file)
