@@ -107,5 +107,5 @@ func Read(ctx context.Context, s store.Store, tenant store.Tenant, repo string, 
 		entries = append(entries, entry{e.At, e.Category})
 	}
 	c := summarize(entries, now)
-	return Summary{c.Checked, c.Passed, c.Owner, c.Known}, nil
+	return Summary(c), nil
 }
