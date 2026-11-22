@@ -21,7 +21,7 @@ func TestIssuesOpenedFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Event{
-		Kind: IssueOpened, DeliveryID: testDelivery, InstallationID: 5001, Repo: "acme/shop", RepoPrivate: true,
+		Kind: IssueOpened, DeliveryID: testDelivery, InstallationID: 5001, Repo: "acme/shop", RepoID: 101, RepoPrivate: true,
 		DefaultBranch: "main", Issue: 48, Author: "worker-1", AuthorType: "User",
 		Body: "/archfit request tc needs the retry helper\n\n```text\npkg_tc -> pkg_util: graph: not an allowed dependency\n  balance: 9/10 (min 7)\n```\n",
 	}

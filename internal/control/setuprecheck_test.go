@@ -58,7 +58,7 @@ func (f *fakeSetupGitHub) RunURL(context.Context, api.Repo, int64) (string, erro
 	f.runCalls++
 	return "https://github.com/o/r/actions/runs/1/job/2", f.runErr
 }
-func (f *fakeSetupGitHub) HasMarkerComment(context.Context, api.Repo, int) (bool, error) {
+func (f *fakeSetupGitHub) HasMarkerComment(context.Context, api.Repo, int, string) (bool, error) {
 	f.calls++
 	return f.marker, nil
 }
@@ -318,6 +318,7 @@ func TestWelcomePullOpened(t *testing.T) {
 			h.gh.install(7, ghr(70, "org7/app", true))
 			gh := &fakeSetupGitHub{marker: tt.marked, pulls: fakeSetupPulls{"org7/app": {{Number: 7, HeadRef: tt.branch, HeadRepoID: tt.headID}}}}
 			h.c.setup = &setupRecheck{store: store.NewMemory(), gh: gh, now: time.Now}
+			h.c.admit = admitAll{}
 			body := `{"action":"` + tt.action + `","installation":{"id":7},"repository":{"id":70,"full_name":"org7/app"},"pull_request":{"number":7,"head":{"ref":"` + tt.branch + `","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","repo":{"id":` + fmt.Sprint(tt.headID) + `,"full_name":"org7/app"}}}}`
 			e, err := webhook.Parse("pull_request", "delivery", []byte(body))
 			if err != nil {
