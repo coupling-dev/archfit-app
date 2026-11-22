@@ -55,9 +55,9 @@ func (s *Service) voidMovedEdits(ctx context.Context, r api.Repo, pin records.Pi
 }
 
 func editNote(login, passkey string, asIs bool) string {
-	what := "policy YAML edited"
+	what := "policy edited"
 	if asIs {
-		what = "the open policy proposal approved as it is"
+		what = "the policy pull request approved again as it is"
 	}
 	return "archfit: " + what + " by `" + login + "` with the passkey `" + requests.PasskeyShown(passkey) + "`.\n"
 }

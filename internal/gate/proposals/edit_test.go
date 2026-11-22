@@ -259,7 +259,7 @@ func TestOpenProposalApprovedAsItIsAfterMainMoved(t *testing.T) {
 	if a := load[records.Approval](t, w.store, records.ApprovalKey(testRepo.FullName, first.Approval)); a.State != records.StateVoid {
 		t.Errorf("the stale edit stays %s", a.State)
 	}
-	if note := w.hub.lastComment(out.PullRequest); !strings.Contains(note, "approved as it is") {
+	if note := w.hub.lastComment(out.PullRequest); !strings.Contains(note, "approved again as it is") {
 		t.Errorf("note %q", note)
 	}
 }
