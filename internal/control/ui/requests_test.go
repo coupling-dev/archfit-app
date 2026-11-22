@@ -147,7 +147,7 @@ func TestRequestAPIGoldens(t *testing.T) {
 		Record: "app.go:3 graph app -> util\n  balance: 9/10 (min 7)\n", Numbers: gate.RequestNumbers{Verified: true, Balance: &gate.RequestBalance{Score: 9, Max: 10, Min: 7}},
 		Dependencies: []gate.RequestDependency{{Kind: gate.EarlierDeny, Rule: "no-util-to-app", From: "util", To: "app"}},
 		Policy:       true, Layers: []string{"outer", "core"}, Modules: []gate.RequestModule{{Name: "app", Layer: "outer", Volatility: "high"}, {Name: "util", Layer: "core", Volatility: "low"}},
-		Waiting: []int{12}}
+		Waiting: []int{12}, AskedBy: "dev", AskedAt: "2026-11-22T09:12:00Z"}
 	for _, tc := range []struct {
 		name string
 		view gate.RequestView

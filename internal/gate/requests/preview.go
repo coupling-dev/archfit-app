@@ -227,6 +227,8 @@ type View struct {
 	Surface *records.Surface
 	// Waiting are the pull requests waiting on this request, in the order the store holds them.
 	Waiting []int
+	AskedBy string // the login that filed the request, "" for an older record
+	AskedAt string // when, RFC 3339
 }
 
 // PullEffect is what an answer does to one open pull request, by its stored errors (M2 D6). An answer clears an
@@ -260,7 +262,7 @@ func (s *Service) View(ctx context.Context, r api.Repo, number int) (View, error
 	}
 	v := View{Number: number, State: req.State, Reason: req.Reason, Rule: req.Rule, Path: req.Path, From: req.From,
 		To: req.To, Expires: req.Expires, Record: req.Record, Numbers: req.Numbers, Surface: req.Surface,
-		Waiting: append([]int{}, req.Waiting...)}
+		Waiting: append([]int{}, req.Waiting...), AskedBy: req.AskedBy, AskedAt: req.AskedAt}
 	pol, _, found, err := s.policyAt(ctx, r)
 	if err != nil || !found {
 		return v, err
