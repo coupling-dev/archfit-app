@@ -7,6 +7,7 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/gate/approvals"
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 // SetupState is the recorded change-control state, not an admission verdict.
@@ -65,6 +66,35 @@ func (g *Gate) SetupState(ctx context.Context, r api.Repo) (SetupState, error) {
 	if state.OutsideFlow != nil {
 		out.OutsideFlow = true
 		out.Issue = state.OutsideFlow.Issue
+	}
+	return out, nil
+}
+
+// SetupPolicyChange is a display-only record, not an approval. An empty Merger
+// means the merger is unknown; Direct identifies a push without a linked PR.
+type SetupPolicyChange struct {
+	Commit      string
+	PullRequest int
+	Merger      string
+	Direct      bool
+	Requests    []int
+}
+
+// SetupPolicyHistory reads pre-approval changes in recording order. Delayed
+// deliveries can put changes out of branch order. The ledger
+// only contains changes observed by the App; it cannot establish complete history
+// or describe semantic changes. A successful empty result is a non-nil slice.
+func (g *Gate) SetupPolicyHistory(ctx context.Context, r api.Repo) ([]SetupPolicyChange, error) {
+	if err := g.admitted(ctx, Target{Repo: r}); err != nil {
+		return nil, err
+	}
+	changes, err := records.PolicyHistory(ctx, g.v4.store, store.Tenant(r.InstallationID), r.FullName)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SetupPolicyChange, 0, len(changes))
+	for _, c := range changes {
+		out = append(out, SetupPolicyChange{Commit: c.Commit, PullRequest: c.PullRequest, Merger: c.Merger, Direct: c.Direct, Requests: c.Requests})
 	}
 	return out, nil
 }

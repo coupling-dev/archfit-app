@@ -3,6 +3,7 @@ package gate
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
@@ -12,14 +13,19 @@ import (
 )
 
 type homeFiles struct {
+	mu    sync.Mutex
 	reads []string
 }
 
 func (g *homeFiles) BranchHead(context.Context, api.RepoRef, string) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.reads = append(g.reads, "tip")
 	return "immutable-tip", nil
 }
 func (g *homeFiles) File(_ context.Context, _ api.RepoRef, ref, path string) ([]byte, string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.reads = append(g.reads, ref+":"+path)
 	if path == homePolicyPath {
 		return []byte("version: 1\nowners: [alice]\nmodules:\n  app:\n    paths: [cmd/**]\n"), "", nil
@@ -65,5 +71,17 @@ func TestHomeFacadeReadsThePolicyAtTheProtectedTip(t *testing.T) {
 		if ref == "main:"+homePolicyPath {
 			t.Fatal("read a moving policy ref")
 		}
+	}
+}
+
+func TestHomeFilesConcurrentRecording(t *testing.T) {
+	gh := &homeFiles{}
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Go(func() { _, _, _ = gh.File(t.Context(), api.RepoRef{}, "tip", homePolicyPath) })
+	}
+	wg.Wait()
+	if len(gh.reads) != 100 {
+		t.Fatalf("recorded %d reads, want 100", len(gh.reads))
 	}
 }
