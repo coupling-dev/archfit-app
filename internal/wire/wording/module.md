@@ -16,6 +16,7 @@ a person calls one function.
 - Hold `wording.go.txt`, the engine's `internal/testutil/wording.go`, pinned in `SCHEMA_SOURCE` (repository, commit,
   SHA-256).
 - `NotUsedIn(text)`: the "Not used" words text uses, matched as the engine matches them.
+- `StoryNotUsedIn(text)`: the same list plus the story-only list, in source order; opt-in for migrated surfaces.
 - Nothing else: no I/O at run time, no decision. It is for tests; no production path calls it.
 
 ## Subdomain Classification
@@ -26,7 +27,7 @@ section 5.
 ## Encapsulated Knowledge
 
 - The vendored file is Go source of the engine's `testutil` package. It is embedded and parsed with `go/parser`, never
-  compiled, so the App reads the engine's `notUsedWords` and `gateNames` without a copy typed by hand.
+  compiled, so the App reads the engine's `notUsedWords`, `storyOnlyWords` and `gateNames` without a copy typed by hand.
 - The matching: whole words in any case; a phrase matches across any white space; the two gate names (the check
   `archfit/gate` and the policy key `gate:`) are removed first.
 - A vendored file the parser cannot read is a defect of this package: the package panics when it loads, and
@@ -37,6 +38,7 @@ section 5.
 ```go
 // NotUsedIn returns the words of the "Not used" column of design section 5 that text uses, in list order.
 func NotUsedIn(text string) []string
+func StoryNotUsedIn(text string) []string
 ```
 
 ## Re-vendor

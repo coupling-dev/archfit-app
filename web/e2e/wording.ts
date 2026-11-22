@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 const notUsed = JSON.parse(readFileSync(new URL('./not-used.json', import.meta.url), 'utf8')) as {
   words: string[];
   gateNames: string;
+  storyOnlyWords: string[];
 };
 // not-used.json is a copy of the App's vendored engine file; a re-vendor that changes the list fails every spec here
 // until the copy follows.
@@ -12,11 +13,12 @@ const vendored = readFileSync(new URL('../../internal/wire/wording/wording.go.tx
 const vendoredWords = [...(/var notUsedWords = \[\]string\{([\s\S]*?)\n\}/.exec(vendored)?.[1] ?? '').matchAll(/"([^"]*)"/g)].map(
   (m) => m[1],
 );
+const vendoredStory = [...(/var storyOnlyWords = \[\]string\{([\s\S]*?)\n\}/.exec(vendored)?.[1] ?? '').matchAll(/"([^"]*)"/g)].map((m) => m[1]);
 const vendoredGate = /regexp\.MustCompile\(`([^`]*)`\)/.exec(vendored)?.[1];
-if (JSON.stringify(vendoredWords) !== JSON.stringify(notUsed.words) || vendoredGate !== notUsed.gateNames)
+if (JSON.stringify(vendoredStory) !== JSON.stringify(notUsed.storyOnlyWords) || JSON.stringify(vendoredWords) !== JSON.stringify(notUsed.words) || vendoredGate !== notUsed.gateNames)
   throw new Error('web/e2e/not-used.json differs from internal/wire/wording/wording.go.txt: copy the list again');
 const gateNames = new RegExp(notUsed.gateNames.replace(/^\(\?i\)/, ''), 'gi');
-const patterns = notUsed.words.map((w) => {
+const compile = (words: string[]) => words.map((w) => {
   const phrase = w
     .split(/\s+/)
     .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
@@ -27,4 +29,11 @@ const patterns = notUsed.words.map((w) => {
 export function notUsedIn(text: string): string[] {
   const t = text.replace(gateNames, ' ');
   return patterns.filter((p) => p.re.test(t)).map((p) => p.w);
+}
+
+const patterns = compile(notUsed.words);
+const storyPatterns = compile(notUsed.storyOnlyWords);
+export function storyNotUsedIn(text: string): string[] {
+  const t = text.replace(gateNames, ' ');
+  return [...patterns, ...storyPatterns].filter((p) => p.re.test(t)).map((p) => p.w);
 }

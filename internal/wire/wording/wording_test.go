@@ -52,13 +52,21 @@ func TestVendoredFileMatchesSchemaSource(t *testing.T) {
 
 func TestNotUsedMatchesAsTheEngine(t *testing.T) {
 	var cases []struct {
-		Text string   `json:"text"`
-		Want []string `json:"want"`
+		Text      string   `json:"text"`
+		Want      []string `json:"want"`
+		StoryWant []string `json:"storyWant"`
 	}
 	if err := json.Unmarshal(read(t, "../../../web/e2e/wording-cases.json"), &cases); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range cases {
+		storyWant := tc.StoryWant
+		if storyWant == nil {
+			storyWant = tc.Want
+		}
+		if got := StoryNotUsedIn(tc.Text); !slices.Equal(got, storyWant) {
+			t.Errorf("StoryNotUsedIn(%q) = %q, want %q", tc.Text, got, storyWant)
+		}
 		if got := NotUsedIn(tc.Text); !slices.Equal(got, tc.Want) {
 			t.Errorf("NotUsedIn(%q) = %q, want %q", tc.Text, got, tc.Want)
 		}
@@ -67,15 +75,19 @@ func TestNotUsedMatchesAsTheEngine(t *testing.T) {
 
 func TestWebWordsMatchVendoredEngine(t *testing.T) {
 	var web struct {
-		Words     []string `json:"words"`
-		GateNames string   `json:"gateNames"`
-		Source    string   `json:"source"`
+		Words          []string `json:"words"`
+		StoryOnlyWords []string `json:"storyOnlyWords"`
+		GateNames      string   `json:"gateNames"`
+		Source         string   `json:"source"`
 	}
 	if err := json.Unmarshal(read(t, "../../../web/e2e/not-used.json"), &web); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(web.Words, notUsed.list) {
 		t.Errorf("web words = %q, engine words = %q", web.Words, notUsed.list)
+	}
+	if !slices.Equal(web.StoryOnlyWords, storyOnly.list) {
+		t.Errorf("web story words = %q, engine words = %q", web.StoryOnlyWords, storyOnly.list)
 	}
 	if web.GateNames != notUsed.gateNames.String() {
 		t.Errorf("web gate names = %q, engine = %q", web.GateNames, notUsed.gateNames)
@@ -92,4 +104,14 @@ func read(t *testing.T, path string) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+func TestStoryVocabulary(t *testing.T) {
+	text := "proposal surface PR reload"
+	if got := NotUsedIn(text); len(got) != 0 {
+		t.Errorf("legacy = %q", got)
+	}
+	if got := StoryNotUsedIn(text); !slices.Equal(got, []string{"proposal", "reload", "surface", "PR"}) {
+		t.Errorf("story = %q", got)
+	}
 }

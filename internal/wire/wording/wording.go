@@ -19,7 +19,8 @@ import (
 //go:embed wording.go.txt
 var vendored []byte
 
-var notUsed = load(vendored)
+var notUsed = load(vendored, "notUsedWords")
+var storyOnly = load(vendored, "storyOnlyWords")
 
 type words struct {
 	list      []string
@@ -31,11 +32,20 @@ type words struct {
 // in any case, a phrase across any white space, after the two gate names (the check archfit/gate and the policy key
 // gate:) are removed. It matches as the engine's testutil.NotUsedIn.
 func NotUsedIn(text string) []string {
-	text = notUsed.gateNames.ReplaceAllString(text, " ")
+	return matchWords(text, notUsed)
+}
+
+// StoryNotUsedIn applies the extended story vocabulary without changing legacy callers.
+func StoryNotUsedIn(text string) []string {
+	return append(NotUsedIn(text), matchWords(text, storyOnly)...)
+}
+
+func matchWords(text string, w words) []string {
+	text = w.gateNames.ReplaceAllString(text, " ")
 	var found []string
-	for i, p := range notUsed.patterns {
+	for i, p := range w.patterns {
 		if p.MatchString(text) {
-			found = append(found, notUsed.list[i])
+			found = append(found, w.list[i])
 		}
 	}
 	return found
@@ -43,7 +53,7 @@ func NotUsedIn(text string) []string {
 
 // load reads the engine's notUsedWords and gateNames from the vendored source. The file is fixed at build time, so a
 // file it cannot read is a defect of this package and panics; TestNotUsedMatchesAsTheEngine runs it.
-func load(src []byte) words {
+func load(src []byte, listName string) words {
 	file, err := parser.ParseFile(token.NewFileSet(), "wording.go.txt", src, 0)
 	if err != nil {
 		panic(fmt.Sprintf("wording: %v", err))
@@ -60,7 +70,7 @@ func load(src []byte) words {
 				continue
 			}
 			switch v.Names[0].Name {
-			case "notUsedWords":
+			case listName:
 				if list, ok := v.Values[0].(*ast.CompositeLit); ok {
 					for _, elt := range list.Elts {
 						w.list = append(w.list, unquote(elt))
