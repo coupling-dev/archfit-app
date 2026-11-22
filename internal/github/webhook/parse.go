@@ -73,6 +73,12 @@ var actionKinds = map[string]map[string]EventKind{
 // payload holds the only fields read from any delivery. Unknown fields are ignored on purpose.
 type payload struct {
 	Action       string `json:"action"`
+	Repositories []struct {
+		FullName string `json:"full_name"`
+	} `json:"repositories"`
+	RepositoriesAdded []struct {
+		FullName string `json:"full_name"`
+	} `json:"repositories_added"`
 	Installation struct {
 		ID      int64 `json:"id"`
 		Account struct {
@@ -173,6 +179,19 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 	ev.InstallationID = p.Installation.ID
 	if kind == InstallationAdded || kind == InstallationRemoved || kind == ReposRemoved {
 		ev.Account = p.Installation.Account.Login
+		if kind == InstallationAdded {
+			ev.InstallationCreated = eventType == typeInstallation
+			ev.RepositoriesOmitted = ev.InstallationCreated && p.Repositories == nil
+			if eventType == typeInstallation {
+				for _, r := range p.Repositories {
+					ev.AddedRepositories = append(ev.AddedRepositories, r.FullName)
+				}
+			} else {
+				for _, r := range p.RepositoriesAdded {
+					ev.AddedRepositories = append(ev.AddedRepositories, r.FullName)
+				}
+			}
+		}
 		return ev, nil
 	}
 

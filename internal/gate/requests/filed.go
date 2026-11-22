@@ -48,6 +48,9 @@ func (s *Service) Filed(ctx context.Context, i Issue) (string, error) {
 	if err != nil {
 		return s.refuse(ctx, ref, i.Number, request.NothingToAsk("").Reply())
 	}
+	if form.Answer.Rule == ruleCoupling && form.Answer.Surface != nil {
+		key = surfaceKey(key, form.Answer.Package)
+	}
 	pol, found, err := s.policy(ctx, i.Repo)
 	if err != nil {
 		return ReactionNone, err

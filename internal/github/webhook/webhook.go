@@ -29,26 +29,29 @@ const (
 
 // Event is the normalized form of a verified delivery. Identity fields come from the signed payload only.
 type Event struct {
-	Kind           EventKind
-	DeliveryID     string
-	InstallationID int64
-	Repo           string // "owner/name", "" for installation events
-	Account        string // installation kinds only: the login of the installation's account; "" when the payload has none
-	RepoPrivate    bool
-	PullRequest    int
-	HeadSHA        string
-	HeadRepo       string // differs from Repo for forks
-	BaseRef        string
-	DefaultBranch  string   // the repository's default branch; "" when the payload does not name one
-	Branch         string   // push kinds only: the branch, without "refs/heads/"
-	ChangedPaths   []string // default_branch_push only
-	Before         string   // default_branch_push only: the commit before the push; "" when the push created the branch
-	CommentID      int64    // pull_commented only: the comment's ID
-	Issue          int      // issue_opened only: the issue number
-	Author         string   // pull_commented and issue_opened: the login that wrote the comment or the issue
-	AuthorType     string   // pull_commented and issue_opened: the account type, "User" or "Bot"; "" when absent
-	Body           string   // pull_commented and issue_opened: the comment text or the issue body
-	GroupReason    string   // merge_group_destroyed only: "merged", "dequeued", "invalidated" or what GitHub sends
+	Kind                EventKind
+	DeliveryID          string
+	InstallationID      int64
+	InstallationCreated bool     // installation.created event
+	RepositoriesOmitted bool     // installation.created has no repositories array
+	AddedRepositories   []string // repositories named by an installation addition
+	Repo                string   // "owner/name", "" for installation events
+	Account             string   // installation kinds only: the login of the installation's account; "" when the payload has none
+	RepoPrivate         bool
+	PullRequest         int
+	HeadSHA             string
+	HeadRepo            string // differs from Repo for forks
+	BaseRef             string
+	DefaultBranch       string   // the repository's default branch; "" when the payload does not name one
+	Branch              string   // push kinds only: the branch, without "refs/heads/"
+	ChangedPaths        []string // default_branch_push only
+	Before              string   // default_branch_push only: the commit before the push; "" when the push created the branch
+	CommentID           int64    // pull_commented only: the comment's ID
+	Issue               int      // issue_opened only: the issue number
+	Author              string   // pull_commented and issue_opened: the login that wrote the comment or the issue
+	AuthorType          string   // pull_commented and issue_opened: the account type, "User" or "Bot"; "" when absent
+	Body                string   // pull_commented and issue_opened: the comment text or the issue body
+	GroupReason         string   // merge_group_destroyed only: "merged", "dequeued", "invalidated" or what GitHub sends
 }
 
 // Header names of a GitHub webhook delivery. Callers read these headers and pass their values to VerifyAny and Parse.

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/coupling-dev/archfit-app/internal/github/api"
@@ -19,14 +21,14 @@ func (c *Control) HandleEvent(ctx context.Context, e webhook.Event) error {
 	if e.InstallationID <= 0 {
 		return errors.New("control: event without an installation ID")
 	}
-	ctx, cancel := context.WithTimeout(ctx, eventTimeout)
-	defer cancel()
 	switch e.Kind {
 	case webhook.InstallationAdded, webhook.ReposRemoved:
+		discovery, cancel := context.WithTimeout(ctx, eventTimeout)
+		defer cancel()
 		// An account waiting for approval costs no GitHub call and gets no entitlement record, so its trial starts when
 		// it is approved: the first sweep after the approval observes it. An event without an account is judged by
 		// the installation's record alone: only a configured login admits without one.
-		admitted, err := c.admit.Admitted(ctx, e.InstallationID, e.Account)
+		admitted, err := c.admit.Admitted(discovery, e.InstallationID, e.Account)
 		if err != nil {
 			return fmt.Errorf("control: read admission of installation %d: %w", e.InstallationID, err)
 		}
@@ -34,12 +36,17 @@ func (c *Control) HandleEvent(ctx context.Context, e webhook.Event) error {
 			return nil
 		}
 		// hasPrivate is read from GitHub: installation events carry no repository.
-		repos, err := c.repos.ListRepos(ctx, e.InstallationID)
+		repos, err := c.repos.ListRepos(discovery, e.InstallationID)
 		if err != nil {
 			return fmt.Errorf("control: list repositories of installation %d: %w", e.InstallationID, err)
 		}
-		if err := c.account.Observe(ctx, e.InstallationID, hasPrivate(repos), c.now()); err != nil {
+		if err := c.account.Observe(discovery, e.InstallationID, hasPrivate(repos), c.now()); err != nil {
 			return fmt.Errorf("control: observe installation %d: %w", e.InstallationID, err)
+		}
+		if e.Kind == webhook.InstallationAdded && c.setup != nil {
+			if err := c.recheckAdded(ctx, e, repos); err != nil {
+				return err
+			}
 		}
 	case webhook.InstallationRemoved:
 		if err := c.account.Forget(ctx, e.InstallationID); err != nil {
@@ -133,4 +140,51 @@ func hasPrivate(repos []api.Repo) bool {
 		}
 	}
 	return false
+}
+
+type setupPullLister interface {
+	SearchSetupPulls(context.Context, int64, string) ([]api.SetupCandidate, error)
+}
+
+func (c *Control) recheckAdded(ctx context.Context, e webhook.Event, repos []api.Repo) error {
+	selected := make(map[string]api.Repo)
+	for _, r := range repos {
+		if (e.InstallationCreated && e.RepositoriesOmitted) || slices.Contains(e.AddedRepositories, r.FullName) {
+			selected[strings.ToLower(r.FullName)] = r
+		}
+	}
+	if len(selected) == 0 {
+		return nil
+	}
+	account := e.Account
+	if account == "" {
+		for _, repo := range selected {
+			account, _, _ = strings.Cut(repo.FullName, "/")
+			break
+		}
+	}
+	searchCtx, cancel := context.WithTimeout(ctx, eventTimeout)
+	candidates, err := c.setupPulls.SearchSetupPulls(searchCtx, e.InstallationID, account)
+	cancel()
+	if err != nil {
+		return err
+	}
+	for _, candidate := range candidates {
+		repo, ok := selected[strings.ToLower(candidate.Repo)]
+		if !ok {
+			continue
+		}
+		prCtx, done := context.WithTimeout(ctx, eventTimeout)
+		outcome, err := c.setup.run(prCtx, repo, candidate.Number, "", true)
+		done()
+		slog.InfoContext(ctx, "setup recheck", "repository", repo.FullName, "pr", candidate.Number, "outcome", outcome)
+		if err != nil {
+			if api.Permanent(err) {
+				slog.WarnContext(ctx, "setup recheck skipped pull", "repository", repo.FullName, "pr", candidate.Number, "error", err.Error())
+				continue
+			}
+			return err
+		}
+	}
+	return nil
 }

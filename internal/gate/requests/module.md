@@ -66,6 +66,7 @@ who asked still sees `fail`.
   no line; declare-public and declare-model add the request's package to the `public` or `model` list of `to`
   (`policy3.AddSurface`). A comment, `RequestComment(431)` = `request #431`, ends the first line of the entry the edit
   writes: `Edit` passes it to the policy writer as its note (M2 task 19), which also turns a flow list into a block list.
+- A surface request key includes its target package as well as its module edge; a missing package keeps the edge-only key. Old stored keys are unchanged. A different package or an edge-only coupling error does not join it.
 - A surface request (engine 0.9.0; the surfaces design 6.9) is a coupling error past the declared surface of `to`. The
   request keeps that surface (`records.Surface`) from the first of its errors that has one, and from any verified
   result that joins it later; it never loses it (`mergeSurface`). The package it declares is only ever one a verified

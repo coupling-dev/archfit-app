@@ -58,10 +58,10 @@ var fixtureCases = []fixtureCase{
 		Kind: CheckSuiteCompleted, InstallationID: 42, Repo: "acme/app", RepoPrivate: true,
 		HeadSHA: "4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b", HeadRepo: "acme/app", Branch: "archfit/policy", DefaultBranch: "main",
 	}},
-	{"installation_created.json", "installation", Event{Kind: InstallationAdded, InstallationID: 6001, Account: "acme"}},
+	{"installation_created.json", "installation", Event{Kind: InstallationAdded, InstallationID: 6001, Account: "acme", InstallationCreated: true, AddedRepositories: []string{"acme/shop"}}},
 	{"installation_deleted.json", "installation", Event{Kind: InstallationRemoved, InstallationID: 6001, Account: "acme"}},
 	{"installation_repositories_added.json", "installation_repositories", Event{
-		Kind: InstallationAdded, InstallationID: 6002, Account: "acme",
+		Kind: InstallationAdded, InstallationID: 6002, Account: "acme", AddedRepositories: []string{"acme/lib"},
 	}},
 	{"installation_repositories_removed.json", "installation_repositories", Event{
 		Kind: ReposRemoved, InstallationID: 6002, Account: "acme",

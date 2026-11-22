@@ -118,3 +118,26 @@ func TestRequestNames(t *testing.T) {
 		}
 	}
 }
+
+func TestSurfaceRequestKeyCoverage(t *testing.T) {
+	e := ask("a", "b")
+	e.Rule = "coupling"
+	e.Surface = &result.Surface{}
+	for _, tc := range []struct {
+		name, pkg, key string
+		covered        bool
+	}{
+		{"same package", "b/setup", "coupling a b b/setup", true},
+		{"different package", "b/replay", "coupling a b b/setup", false},
+		{"missing package", "", "coupling a b", true},
+		{"old edge key", "b/setup", "coupling a b", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e.Package = tc.pkg
+			_, ids := Cover(failed(e), openIndex(t, map[string]int{tc.key: 431}))
+			if got := len(ids) != 0; got != tc.covered {
+				t.Errorf("covered = %v, want %v", got, tc.covered)
+			}
+		})
+	}
+}

@@ -12,6 +12,10 @@ The checked-in [release manifest](../internal/wire/manifest/manifest4.json) appr
 4. A repository administrator named as an owner in the proposed policy must approve the first policy with a passkey. The owner action supports a same-repository open pull request when the default branch has no valid policy, or the current default-branch policy otherwise. Follow **Review and approve** from Home when you have a passkey, or **Review proposed files** without one. The pull page uses **Review first policy**. The App resolves the correct destination for eligible viewers; other viewers see which role can act.
 5. Configure the branch ruleset below and verify the workflow and engine are approved in the App's release manifest.
 
+After installation on an admitted account, the App looks for an open same-repository pull request from `archfit/setup`.
+It asks GitHub to re-run the check suite. If GitHub refuses or no suite is available, the App comments
+with a link to the job or workflow so you can re-run it yourself.
+
 After an owner approves the onboarding pull request, the App sets `archfit/gate` to success on that exact head, bound to the approved policy and workflow digests. This is the owner's approval, not an engine pass; run diagnostics remain visible in the pull request comment. Merge the pull request to activate change control. You can require `archfit/gate` before or after activation. A new head needs a new approval.
 
 The App's setup API reads the policy and workflow at one default-branch commit and reports admission, first approval and ruleset advice. It does not change GitHub rulesets. Home keeps setup visible until the applicable required-check settings are confirmed, even after owner approval. A proposed policy or workflow is labelled as present in its PR, not yet on the default branch. Unavailable ruleset features do not block setup progress; unknown settings still need an administrator to check them. Setup progress is not an enforcement verdict.
