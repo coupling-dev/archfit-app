@@ -20,6 +20,7 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/gate/proposals"
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
 	asks "github.com/coupling-dev/archfit-app/internal/gate/requests"
+	"github.com/coupling-dev/archfit-app/internal/gate/weekly"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
 	"github.com/coupling-dev/archfit-app/internal/store"
 	"github.com/coupling-dev/archfit-app/internal/wire/envelope"
@@ -158,6 +159,22 @@ func (g *Gate) serveUpload4(w http.ResponseWriter, req *http.Request) {
 	}
 	if err == nil {
 		err = g.driftPushed(ctx, u, d)
+	}
+
+	if err == nil && u.Binding.PullRequest != 0 && len(d.Reasons) == 0 && u.Result != nil {
+		category := "checked"
+		switch u.Result.Status {
+		case result.StatusPass:
+			category = "pass"
+		case result.StatusFail:
+			if slices.ContainsFunc(u.Result.Errors, asks.Asks) {
+				category = "owner"
+			}
+		}
+		b := u.Binding
+		if statsErr := weekly.Record(ctx, g.v4.store, store.Tenant(b.Repo.InstallationID), b.Repo.FullName, b.PullRequest, b.RunID, b.RunAttempt, d.StagedAt, category); statsErr != nil {
+			slog.WarnContext(ctx, "weekly summary unavailable", "error", statsErr)
+		}
 	}
 
 	status, body := http.StatusOK, any(nil)
