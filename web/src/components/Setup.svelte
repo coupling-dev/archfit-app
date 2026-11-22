@@ -31,9 +31,8 @@
     {#if setup.policy}<p>The policy is on the default branch.</p>
     {:else if setup.first_pull !== undefined}<p>Pull request #{setup.first_pull} proposes the first policy.</p>
     {:else}
-      <p>Run <code>archfit init</code> in your repository. It creates .archfit.yaml and adds its agent block to AGENTS.md. It does not write the workflow.</p>
-      <pre class="command"><code>archfit init</code></pre>
-      <p>Copy the workflow from <a href="https://github.com/coupling-dev/archfit-action">the Archfit action repository</a> into <code>.github/workflows/archfit.yaml</code>.</p>
+      <p>Run the setup command in your repository. It writes the policy and workflow, then opens a pull request or prints a link to open one.</p>
+      <pre class="command"><code>archfit setup</code></pre>
     {/if}
   {:else if i === 1}
     {#if pullStep.kind === 'review'}
