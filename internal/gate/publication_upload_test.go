@@ -148,7 +148,7 @@ func TestUploadStagesPendingBeforeLeaseFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.gh.artifacts[p.runID] = body
-	publisher := feedback.New4(w.gh, w.gh, w.gh, failPublicationLease{w.mem}, testAudience, w.clock, nil)
+	publisher := feedback.New4(w.gh, w.gh, w.gh, failPublicationLease{w.mem}, testAudience, w.clock, nil, nil)
 	err = publisher.Publish4(t.Context(), feedback.Publication4{Target: inputs.Target{Repo: w.shop, PullRequest: p.number, HeadSHA: p.head}, RunID: p.runID, RunAttempt: 1, Result: res})
 	if err == nil {
 		t.Fatal("expected lease failure")

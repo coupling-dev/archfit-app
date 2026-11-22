@@ -103,3 +103,24 @@ func (c *Client) UserRepos(ctx context.Context, userToken string) ([]Repo, error
 	}
 	return out, nil
 }
+
+// AccountType returns the type GitHub gives the account login, "User", "Organization" or "Bot", read with the
+// installation of r.
+func (c *Client) AccountType(ctx context.Context, r RepoRef, login string) (string, error) {
+	cr, _, err := r.target()
+	if err != nil {
+		return "", err
+	}
+	seg, err := escapeSegment(login)
+	if err != nil {
+		return "", err
+	}
+	var j struct {
+		Type string `json:"type"`
+	}
+	k := call{cred: cr, method: http.MethodGet, route: "/users/{login}", url: apiURL("/users/"+seg, nil)}
+	if err := c.send(ctx, k, &j); err != nil {
+		return "", err
+	}
+	return j.Type, nil
+}

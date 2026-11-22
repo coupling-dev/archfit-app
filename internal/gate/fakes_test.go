@@ -25,7 +25,8 @@ const (
 
 // fakeGitHub is an in-memory GitHub behind every role interface the gate path uses.
 type fakeGitHub struct {
-	failPath map[string]error // a File read of this path fails, whatever the ref
+	failPath map[string]error  // a File read of this path fails, whatever the ref
+	accounts map[string]string // login → GitHub account type; a login missing here is not found
 	mu       sync.Mutex
 
 	installations []api.Installation
@@ -249,6 +250,18 @@ func (f *fakeGitHub) Pull(_ context.Context, r api.RepoRef, number int) (api.Pul
 		return api.Pull{}, api.ErrNotFound
 	}
 	return p, nil
+}
+
+func (f *fakeGitHub) AccountType(_ context.Context, r api.RepoRef, login string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("AccountType", r); err != nil {
+		return "", err
+	}
+	if kind, ok := f.accounts[login]; ok {
+		return kind, nil
+	}
+	return "", api.ErrNotFound
 }
 
 func (f *fakeGitHub) CommitPulls(_ context.Context, r api.RepoRef, sha string) ([]api.Pull, error) {

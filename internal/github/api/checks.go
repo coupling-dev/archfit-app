@@ -31,6 +31,7 @@ type annotationJSON struct {
 type checkOutputJSON struct {
 	Title       string           `json:"title"`
 	Summary     string           `json:"summary"`
+	Text        string           `json:"text,omitempty"`
 	Annotations []annotationJSON `json:"annotations,omitempty"`
 	// AnnotationsCount is response-only: checkRunBody never sets it, so no request carries it.
 	AnnotationsCount int `json:"annotations_count,omitempty"`
@@ -59,7 +60,7 @@ func (j checkRunJSON) checkRun() CheckRun {
 		run.StartedAt = *j.StartedAt
 	}
 	if j.Output != nil {
-		run.Title, run.Summary, run.AnnotationCount = j.Output.Title, j.Output.Summary, j.Output.AnnotationsCount
+		run.Title, run.Summary, run.Text, run.AnnotationCount = j.Output.Title, j.Output.Summary, j.Output.Text, j.Output.AnnotationsCount
 	}
 	return run
 }
@@ -69,6 +70,8 @@ func checkRunBody(c CheckRun) (checkRunJSON, error) {
 	switch {
 	case len(c.Summary) > maxSummaryBytes:
 		return checkRunJSON{}, errors.New("github: check run summary over 65535 bytes")
+	case len(c.Text) > maxSummaryBytes:
+		return checkRunJSON{}, errors.New("github: check run text over 65535 bytes")
 	case len(c.Annotations) > maxAnnotations:
 		return checkRunJSON{}, errors.New("github: check run with more than 50 annotations")
 	case len(c.Annotations) > 0 && (c.Title == "" || c.Summary == ""):
@@ -88,8 +91,8 @@ func checkRunBody(c CheckRun) (checkRunJSON, error) {
 		started := c.StartedAt.UTC()
 		body.StartedAt = &started
 	}
-	if c.Title != "" || c.Summary != "" || len(c.Annotations) > 0 {
-		body.Output = &checkOutputJSON{Title: c.Title, Summary: c.Summary}
+	if c.Title != "" || c.Summary != "" || c.Text != "" || len(c.Annotations) > 0 {
+		body.Output = &checkOutputJSON{Title: c.Title, Summary: c.Summary, Text: c.Text}
 		for _, a := range c.Annotations {
 			line := max(a.Line, 1)
 			body.Output.Annotations = append(body.Output.Annotations,

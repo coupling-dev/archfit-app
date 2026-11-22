@@ -159,7 +159,7 @@ func (s receiptWriteFailure) CompareAndSwapAll(ctx context.Context, tenant store
 
 func TestReceiptWriteFailureDoesNotRetryGitHub(t *testing.T) {
 	h := newHarness(headB)
-	h.pub = New4(h.checks, h.comments, h.pulls, receiptWriteFailure{h.store}, appURL, h.clock.now, nil)
+	h.pub = New4(h.checks, h.comments, h.pulls, receiptWriteFailure{h.store}, appURL, h.clock.now, nil, nil)
 	p := pub4(prTarget(headB), 7, 1, engineResult(t, "policy_differs"))
 	p.Generated = true
 	p.Source = "upload"
