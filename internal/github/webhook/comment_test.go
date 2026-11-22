@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func commentPayload(action string, onPull bool) obj {
@@ -27,7 +28,7 @@ func TestIssueCommentFixtures(t *testing.T) {
 	}{
 		{"issue_comment_created_pull.json", Event{
 			Kind: PullCommented, InstallationID: 5001, Repo: "acme/shop", RepoID: 101, RepoPrivate: true, PullRequest: 46,
-			DefaultBranch: "main", CommentID: 9001, Author: "agent-bot[bot]", AuthorType: "Bot",
+			DefaultBranch: "main", CreatedAt: time.Date(2026, 10, 29, 9, 0, 0, 0, time.UTC), CommentID: 9001, Author: "agent-bot[bot]", AuthorType: "Bot",
 			Body: "<!-- archfit:decision-request -->\n```json\n{}\n```\n<!-- /archfit:decision-request -->",
 		}},
 		{"issue_comment_created_issue.json", Event{Kind: Ignored, InstallationID: 5001}},

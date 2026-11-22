@@ -127,6 +127,10 @@ type Request struct {
 	Record string `json:"record,omitempty"`
 	// Surface is set for a surface request: a coupling error past the declared surface of To (engine 0.9.0).
 	Surface *Surface `json:"surface,omitempty"`
+	// AskedBy and AskedAt are the login that filed the request and when, RFC 3339 in UTC. The page shows them under
+	// the question; records filed before they were kept have neither.
+	AskedBy string `json:"asked_by,omitempty"`
+	AskedAt string `json:"asked_at,omitempty"`
 }
 
 // Surface is the declared surface of the module a surface request reaches, as the error reported it, and the package

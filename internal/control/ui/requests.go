@@ -37,6 +37,9 @@ type requestJSON struct {
 	Surface *requestSurfaceJSON `json:"surface,omitempty"`
 	// Waiting are the pull requests waiting on this request: the answer page names them under its question.
 	Waiting []int `json:"waiting"`
+	// AskedBy and AskedAt name who filed the request and when (RFC 3339); absent for an older record.
+	AskedBy string `json:"asked_by,omitempty"`
+	AskedAt string `json:"asked_at,omitempty"`
 }
 
 type requestSurfaceJSON struct {
@@ -116,7 +119,8 @@ func (s *server) apiRequest(r *http.Request, sc scope) (any, error) {
 	}
 	body := requestJSON{IssueHref: v.IssueHref, Number: v.Number, State: v.State, Reason: v.Reason, Rule: v.Rule, Path: v.Path, From: v.From,
 		To: v.To, Expires: v.Expires, Record: v.Record, Verified: v.Numbers.Verified, Policy: v.Policy, Allowed: v.Allowed,
-		Dependencies: []requestDependencyJSON{}, Layers: append([]string{}, v.Layers...), Modules: []moduleJSON{}, Earlier: []earlierJSON{}, Waiting: append([]int{}, v.Waiting...)}
+		Dependencies: []requestDependencyJSON{}, Layers: append([]string{}, v.Layers...), Modules: []moduleJSON{}, Earlier: []earlierJSON{}, Waiting: append([]int{}, v.Waiting...),
+		AskedBy: v.AskedBy, AskedAt: v.AskedAt}
 	for _, d := range v.Dependencies {
 		body.Dependencies = append(body.Dependencies, requestDependencyJSON{Kind: d.Kind, Rule: d.Rule, From: d.From, To: d.To, Expires: d.Expires})
 	}

@@ -30,6 +30,7 @@
     dependency,
     earlierLine,
     effectLead,
+    ledeLine,
     effectLines,
     loosens,
     moduleLine,
@@ -155,15 +156,6 @@
     }
   }
 
-  // ledeLine is the line under the question: the request, the author's reason, and the pull requests that wait on it.
-  function ledeLine(r: RequestView): string {
-    const pulls = r.state === 'open' ? (r.waiting ?? []) : [];
-    const waits = pulls.length
-      ? ` Pull request ${pulls.map((n) => `#${n}`).join(', ')} ${pulls.length === 1 ? 'waits' : 'wait'} for your answer.`
-      : '';
-    return `Request #${r.number}. The author says: “${r.reason}”${waits}`;
-  }
-
   function answeredLine(r: RequestView): string {
     const a = r.answer;
     if (!a)
@@ -193,7 +185,7 @@
       <h1>{question(body)}</h1>
       <p class="lede">
         {#if body.state !== 'open'}<span class="status {status.tone}">{status.word}</span>{/if}
-        {ledeLine(body)}
+        {ledeLine(body, new Date())}
       </p>
       {#if body.state !== 'open' || status.line !== 'Waiting for an owner to answer.'}<p class="small">{status.line}</p>{/if}
     </div>
