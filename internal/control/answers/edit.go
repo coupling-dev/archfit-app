@@ -12,6 +12,7 @@ import (
 type EditAnswer struct {
 	YAML, Base, Target, Token string
 	Later                     bool
+	AsIs                      bool // approve the open proposal's file as it is
 }
 
 // Edits validates an edit before prompting, then redeems the existing one-use token.
@@ -32,7 +33,7 @@ func (s *service) ReloadEditor(ctx context.Context, r api.Repo, u passkey.User) 
 
 func editInput(u passkey.User, a EditAnswer) gate.EditInput {
 	return gate.EditInput{File: []byte(a.YAML), Base: a.Base, Target: a.Target,
-		Owner: gate.AnswerOwner{ID: u.ID, Login: u.Login}, Later: a.Later}
+		Owner: gate.AnswerOwner{ID: u.ID, Login: u.Login}, Later: a.Later, AsIs: a.AsIs}
 }
 
 func (s *service) PreviewEdit(ctx context.Context, r api.Repo, u passkey.User, a EditAnswer) (gate.EditView, error) {

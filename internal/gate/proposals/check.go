@@ -35,6 +35,24 @@ const (
 // invalidation uses the same lease and cannot overwrite or be overwritten by it.
 // Any condition false sets nothing: a ruleset that requires the check then refuses the merge.
 func (s *Service) check(ctx context.Context, r api.Repo, tip string, pin records.Pin, listed []approved) error {
+	if err := s.verify(ctx, r, tip, pin, listed); err != nil {
+		return err
+	}
+	_, err := s.gh.CreateCheckRun(ctx, r.RepoRef, api.CheckRun{
+		Name:       gateCheck,
+		HeadSHA:    pin.HeadSHA,
+		ExternalID: ExternalID(pin.Proposal),
+		Status:     statusCompleted,
+		Conclusion: conclusionSuccess,
+		Title:      checkTitle,
+		Summary:    checkSummary(r.DefaultBranch, pin, listed),
+		StartedAt:  s.now().UTC(),
+	})
+	return err
+}
+
+// verify reads every condition of check again and writes nothing.
+func (s *Service) verify(ctx context.Context, r api.Repo, tip string, pin records.Pin, listed []approved) error {
 	ref := r.RepoRef
 	if err := s.editTarget(ctx, r, tip, listed); err != nil {
 		return err
@@ -72,17 +90,7 @@ func (s *Service) check(ctx context.Context, r api.Repo, tip string, pin records
 	if policy3.Digest(file) != pin.Digest {
 		return fmt.Errorf("%w: the policy of %s is not the one the approvals make", errRefused, Branch)
 	}
-	_, err = s.gh.CreateCheckRun(ctx, ref, api.CheckRun{
-		Name:       gateCheck,
-		HeadSHA:    head,
-		ExternalID: ExternalID(pin.Proposal),
-		Status:     statusCompleted,
-		Conclusion: conclusionSuccess,
-		Title:      checkTitle,
-		Summary:    checkSummary(r.DefaultBranch, pin, listed),
-		StartedAt:  s.now().UTC(),
-	})
-	return err
+	return nil
 }
 
 // stateAllows is the last condition of check: the repository's state lets the proposal pass. Without a revert in

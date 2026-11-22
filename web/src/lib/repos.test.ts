@@ -61,7 +61,7 @@ describe('repository next step', () => {
     expect(nextStep({ ...row, setup_stage: 'not_started', next_step: { text: 'Continue', href } })).toBeUndefined();
   });
 
-  it('asks an operator to admit an installation that is not admitted', () => {
-    expect(nextStep({ ...row, waiting: true })).toEqual({ text: 'Ask an operator to admit this installation.' });
+  it('directs an unadmitted account to beta access', () => {
+    expect(nextStep({ ...row, waiting: true })).toEqual({ text: 'Archfit is in a closed beta. Ask for access: https://github.com/coupling-dev/archfit/issues/new?template=beta-access.yml' });
   });
 });

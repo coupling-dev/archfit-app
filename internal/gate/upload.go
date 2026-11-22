@@ -14,6 +14,9 @@ const (
 	// the GitHub event of a run on a pushed branch
 )
 
+const BetaAccessMessage = "Archfit is in a closed beta. Ask for access: https://github.com/coupling-dev/archfit/issues/new?template=beta-access.yml"
+
 type refused struct {
-	Error string `json:"error"`
+	Error   string `json:"error"`
+	Message string `json:"message,omitempty"`
 }

@@ -1,0 +1,21 @@
+{
+  "action": "completed",
+  "check_suite": {
+    "head_branch": "archfit/policy",
+    "head_sha": "4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b",
+    "status": "completed",
+    "conclusion": "success",
+    "app": { "slug": "github-actions" }
+  },
+  "repository": {
+    "full_name": "acme/app",
+    "private": true,
+    "default_branch": "main"
+  },
+  "installation": {
+    "id": 42
+  },
+  "sender": {
+    "login": "octocat"
+  }
+}

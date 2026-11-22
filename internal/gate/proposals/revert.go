@@ -130,6 +130,7 @@ func (s *Service) revert(ctx context.Context, r api.Repo, in RevertInput) (Outco
 	if err != nil {
 		return Outcome{}, err
 	}
+	pin.MergeNow = !in.Later
 	switch err := records.RevertTo(ctx, s.store, t, r.FullName, id, approval, rev, *pin); {
 	case errors.Is(err, records.ErrMoved):
 		return Outcome{}, ErrMoved
@@ -143,7 +144,7 @@ func (s *Service) revert(ctx context.Context, r api.Repo, in RevertInput) (Outco
 		s.retire(after, r, cur.rec.HeadSHA, cur.rec.PullRequest, cur.id, RetiredSuperseded)
 	}
 	out := Outcome{Approval: id, PullRequest: pin.PullRequest}
-	out.State, out.Merge = s.publish(after, r, tip, *pin, listed, in.Later)
+	out.State, out.Merge, out.Reason = s.publish(after, r, tip, *pin, listed, in.Later)
 	if rev.Issue != 0 {
 		if _, err := s.gh.CreateComment(after, ref, rev.Issue, revertNote(in.Owner.Login, passkey, out)); err != nil {
 			logFailure(after, r, "note the revert", err)

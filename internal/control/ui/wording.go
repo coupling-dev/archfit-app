@@ -74,6 +74,7 @@ var sentinels = []struct {
 		"This answer loosens the policy. Confirm it with your passkey, then answer again."},
 	{gate.ErrEditChanged, http.StatusConflict, "edit_changed", "the policy changed; reload"},
 	{gate.ErrEditSize, http.StatusRequestEntityTooLarge, "edit_size", "The policy exceeds the 32 KiB edit limit."},
+	{gate.ErrEditUnchanged, http.StatusConflict, "edit_unchanged", "Nothing changed against the open policy pull request."},
 	{gate.ErrAnswerBusy, http.StatusConflict, "answer_busy",
 		"Another answer for this repository is being written. Nothing was changed. Try again in a minute."},
 	{gate.ErrProposalFull, http.StatusConflict, "proposal_full",

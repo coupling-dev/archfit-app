@@ -21,6 +21,7 @@ const (
 	SchemaPullIndex     = "archfit-app.pull-index.v1"
 	SchemaRepos         = "archfit-app.repos.v1"
 	SchemaPolicyPush    = "archfit-app.policy-push.v1"
+	SchemaPolicyHistory = "archfit-app.policy-history.v1"
 )
 
 // States of requests, approvals and proposals.
@@ -183,6 +184,9 @@ type Proposal struct {
 	ExpectedDigest string   `json:"expected_digest"`
 	EditEpoch      uint64   `json:"edit_epoch,omitempty"`  // increments when an edit leaves this proposal
 	EditVoided     bool     `json:"edit_voided,omitempty"` // this head still contains a void edit; repin before merging
+	// MergeNow says the last approval that joined asked to merge now: the App merges the pull request by itself when
+	// GitHub can. After a "merge later" answer it waits for a later answer.
+	MergeNow bool `json:"merge_now,omitempty"`
 	// WorkflowDigest is the FileDigest of .github/workflows/archfit.yaml at HeadSHA that the approval admits; "" when it
 	// admits none. Its merge must land that file too.
 	WorkflowDigest string `json:"workflow_digest,omitempty"`
@@ -263,6 +267,35 @@ func (*Request) check() error    { return nil }
 func (*Approval) check() error   { return nil }
 func (*Pull) check() error       { return nil }
 func (*PolicyPush) check() error { return nil }
+
+// NoPolicy is the digest a PolicyChange shows for a commit without a policy.
+const NoPolicy = "none"
+
+// PolicyChange is one default-branch push that changed the policy before the first approval, as GitHub reports it.
+// Display only: it approves nothing.
+type PolicyChange struct {
+	OldDigest   string `json:"old_digest"` // NoPolicy when the commit before had none
+	NewDigest   string `json:"new_digest"` // NoPolicy when the push deleted it
+	Commit      string `json:"commit"`     // the head commit of the push
+	PullRequest int    `json:"pull_request,omitempty"`
+	// Merger is the login GitHub reports in the pull request's merged_by; never the commit author.
+	Merger   string `json:"merger,omitempty"`
+	Direct   bool   `json:"direct,omitempty"`   // no pull request merged this commit
+	Requests []int  `json:"requests,omitempty"` // from "# request #N" lines the change added
+}
+
+// PolicyHistoryRecord is the list at PolicyHistoryKey, oldest first.
+type PolicyHistoryRecord struct {
+	Schema  string         `json:"schema"`
+	Changes []PolicyChange `json:"changes"`
+}
+
+func (v *PolicyHistoryRecord) stamp() string {
+	v.Schema = SchemaPolicyHistory
+	return v.Schema
+}
+
+func (*PolicyHistoryRecord) check() error { return nil }
 
 func (v *Proposal) check() error {
 	if len(v.Approvals) > MaxApprovals {

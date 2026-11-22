@@ -3,6 +3,7 @@ package proposals
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -635,5 +636,44 @@ func TestAVoidIsNotedEvenWhenTheAnswerFails(t *testing.T) {
 	}
 	if got := w.requestState(432); got != records.StateOpen {
 		t.Errorf("request 432 = %q, want still open", got)
+	}
+}
+
+func TestBehindProposalIsRebuiltOnTipBeforeMerge(t *testing.T) {
+	w := newWorld(t)
+	w.hub.strict = true
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	w.request(432, "graph", "pkg_tc", "pkg_db")
+	first := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
+	tip := w.hub.push(fakeBase, "README.md", "main moved")
+	out := w.mustAnswer(olivia, 432, requests.Answer{Kind: policy3.Approve}, false)
+	if out.State != requests.PullMerged || out.PullRequest != first.PullRequest {
+		t.Fatalf("outcome %+v", out)
+	}
+	merged := w.hub.file(fakeBase, policyPath)
+	if !strings.Contains(merged, "pkg_util") || !strings.Contains(merged, "pkg_db") {
+		t.Errorf("merged policy lost an answer:\n%s", merged)
+	}
+	if w.hub.file(fakeBase, "README.md") != "main moved" {
+		t.Error("the merge dropped main's commit")
+	}
+	if p := w.proposalOf(out); w.hub.commits[p.HeadSHA].parent != tip {
+		t.Errorf("merged head %s is not one App commit on the tip %s", p.HeadSHA, tip)
+	}
+}
+
+func TestRefusedMergeSaysWhy(t *testing.T) {
+	w := newWorld(t)
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	w.hub.strict = true
+	w.hub.mergeErr = fmt.Errorf("%w: 405", api.ErrNotMergeable)
+	w.hub.hooks["MergePull"] = func() { // main moves as GitHub refuses: the hook runs under the fake's lock
+		h := w.hub
+		old := h.branches[fakeBase]
+		h.branches[fakeBase] = h.put(old, "main moved", h.commits[old].files)
+	}
+	out := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, false)
+	if out.State != requests.PullRefused || out.Reason != "the branch is behind the default branch" {
+		t.Fatalf("outcome %+v", out)
 	}
 }

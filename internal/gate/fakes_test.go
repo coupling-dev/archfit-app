@@ -251,6 +251,21 @@ func (f *fakeGitHub) Pull(_ context.Context, r api.RepoRef, number int) (api.Pul
 	return p, nil
 }
 
+func (f *fakeGitHub) CommitPulls(_ context.Context, r api.RepoRef, sha string) ([]api.Pull, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("CommitPulls", r); err != nil {
+		return nil, err
+	}
+	var out []api.Pull
+	for _, p := range f.pulls {
+		if p.MergeCommitSHA == sha && strings.EqualFold(p.HeadRepo, r.FullName) || p.MergeCommitSHA == sha && p.HeadRepo == "" {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeGitHub) OpenPulls(_ context.Context, r api.RepoRef) ([]api.Pull, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

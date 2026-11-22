@@ -23,6 +23,7 @@ const (
 	ReposRemoved        EventKind = "repos_removed"
 	MergeGroupRequested EventKind = "merge_group_requested" // checks_requested: GitHub built a merge group commit
 	MergeGroupDestroyed EventKind = "merge_group_destroyed" // destroyed: merged, dequeued or invalidated
+	CheckSuiteCompleted EventKind = "check_suite_completed" // a suite of checks finished on a branch head
 	Ignored             EventKind = "ignored"
 )
 
@@ -38,6 +39,9 @@ type Event struct {
 	Account             string   // installation kinds only: the login of the installation's account; "" when the payload has none
 	RepoPrivate         bool
 	PullRequest         int
+	RepoID              int64
+	HeadRepoID          int64
+	HeadRef             string
 	HeadSHA             string
 	HeadRepo            string // differs from Repo for forks
 	BaseRef             string

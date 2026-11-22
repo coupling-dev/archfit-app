@@ -929,3 +929,21 @@ func (w *world4) decide(s *spec4) decided {
 	}
 	return decided{d}
 }
+
+func TestUpload4UnadmittedIncludesBetaAccess(t *testing.T) {
+	w := newWorld4(t)
+	p := w.openPull(w.shop, 7)
+	s := w.spec4(p, "pass")
+	w.admit.refused[w.shop.InstallationID] = true
+	a := w.send4(s)
+	var body struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(a.raw), &body); err != nil {
+		t.Fatal(err)
+	}
+	want := "Archfit is in a closed beta. Ask for access: https://github.com/coupling-dev/archfit/issues/new?template=beta-access.yml"
+	if a.status != http.StatusForbidden || a.Error != "installation_not_approved" || body.Message != want {
+		t.Fatalf("answer = %d %s; want 403 with beta access message", a.status, a.raw)
+	}
+}

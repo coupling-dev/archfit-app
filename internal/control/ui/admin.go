@@ -23,7 +23,7 @@ type waitingError struct{ account string }
 
 func (e *waitingError) Error() string { return "ui: installation not approved" }
 
-const waitingSentence = "This account is waiting to be admitted."
+const waitingSentence = "This installation is waiting to be admitted. " + gate.BetaAccessMessage + " Until you are admitted, nothing runs and nothing is posted on your pull requests."
 
 // admit answers a repository's admission. The gate refuses the same installation, so the page tells the user why
 // nothing happens instead of showing an empty repository.

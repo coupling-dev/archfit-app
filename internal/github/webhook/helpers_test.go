@@ -28,19 +28,19 @@ type fixtureCase struct {
 
 var fixtureCases = []fixtureCase{
 	{"pull_request_opened.json", "pull_request", Event{
-		Kind: PullOpened, InstallationID: 5001, Repo: "acme/shop", RepoPrivate: true, PullRequest: 42,
+		Kind: PullOpened, InstallationID: 5001, Repo: "acme/shop", RepoID: 1296269, RepoPrivate: true, PullRequest: 42, HeadRepoID: 1296269, HeadRef: "feature/seams",
 		HeadSHA: shaA, HeadRepo: "acme/shop", BaseRef: "main", DefaultBranch: "main",
 	}},
 	{"pull_request_synchronize.json", "pull_request", Event{
-		Kind: PullSynchronized, InstallationID: 5001, Repo: "acme/shop", RepoPrivate: true, PullRequest: 43,
+		Kind: PullSynchronized, InstallationID: 5001, Repo: "acme/shop", RepoID: 1296269, RepoPrivate: true, PullRequest: 43, HeadRepoID: 99887766, HeadRef: "patch-1",
 		HeadSHA: shaB, HeadRepo: "octocat/shop", BaseRef: "main", DefaultBranch: "main",
 	}},
 	{"pull_request_closed.json", "pull_request", Event{
-		Kind: PullClosed, InstallationID: 5001, Repo: "acme/shop", RepoPrivate: true, PullRequest: 44,
+		Kind: PullClosed, InstallationID: 5001, Repo: "acme/shop", RepoID: 1296269, RepoPrivate: true, PullRequest: 44, HeadRef: "patch-2",
 		HeadSHA: "3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f", HeadRepo: "", BaseRef: "release/1.x", DefaultBranch: "main",
 	}},
 	{"push_default_branch.json", "push", Event{
-		Kind: DefaultBranchPush, InstallationID: 5002, Repo: "acme/lib",
+		Kind: DefaultBranchPush, InstallationID: 5002, Repo: "acme/lib", RepoID: 5550123,
 		HeadSHA: "6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192", HeadRepo: "acme/lib", BaseRef: "trunk", DefaultBranch: "trunk",
 		Branch: "trunk", Before: "5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081",
 		ChangedPaths: []string{".archfit.yaml", "go.mod", "internal/api/handler.go", "legacy/old.go"},
@@ -53,6 +53,10 @@ var fixtureCases = []fixtureCase{
 		Kind: MergeGroupDestroyed, InstallationID: 42, Repo: "acme/app", RepoPrivate: true,
 		HeadSHA: "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a", HeadRepo: "acme/app", BaseRef: "main", DefaultBranch: "main",
 		GroupReason: "dequeued",
+	}},
+	{"check_suite_completed.json", "check_suite", Event{
+		Kind: CheckSuiteCompleted, InstallationID: 42, Repo: "acme/app", RepoPrivate: true,
+		HeadSHA: "4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b", HeadRepo: "acme/app", Branch: "archfit/policy", DefaultBranch: "main",
 	}},
 	{"installation_created.json", "installation", Event{Kind: InstallationAdded, InstallationID: 6001, Account: "acme", InstallationCreated: true, AddedRepositories: []string{"acme/shop"}}},
 	{"installation_deleted.json", "installation", Event{Kind: InstallationRemoved, InstallationID: 6001, Account: "acme"}},

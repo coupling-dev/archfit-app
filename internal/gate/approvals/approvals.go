@@ -56,6 +56,7 @@ type GitHub interface {
 	File(ctx context.Context, r api.RepoRef, ref, path string) (content []byte, blobSHA string, err error)
 	BranchHead(ctx context.Context, r api.RepoRef, branch string) (string, error)
 	Pull(ctx context.Context, r api.RepoRef, number int) (api.Pull, error)
+	CommitPulls(ctx context.Context, r api.RepoRef, sha string) ([]api.Pull, error)
 	PullSummary(ctx context.Context, r api.RepoRef, number int) (api.Pull, error)
 	Compare(ctx context.Context, r api.RepoRef, base, head string) (api.Comparison, error)
 	CreateIssue(ctx context.Context, r api.RepoRef, i api.NewIssue) (api.Issue, error)
@@ -196,8 +197,13 @@ func (s *Service) Pushed(ctx context.Context, p Push) (Outcome, error) {
 		}
 	}
 	if unguarded {
-		// Recorded, so a delivery of this push again after the first consume is not judged outside the flow.
-		if err := records.Unguarded(ctx, s.store, t, name, push, digest); err != nil {
+		// Recorded, so a delivery of this push again after the first consume is not judged outside the flow, with the
+		// display-only history entry the first approval's page lists.
+		change, err := s.policyChange(ctx, p, after)
+		if err != nil {
+			return Outcome{}, err
+		}
+		if err := records.Unguarded(ctx, s.store, t, name, push, digest, change); err != nil {
 			return Outcome{}, fmt.Errorf("approvals: record the push to a repository without an approved policy: %w", err)
 		}
 		return Outcome{Judged: JudgedUnguarded, Voided: voided}, nil

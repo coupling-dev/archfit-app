@@ -33,7 +33,7 @@ func (f *fakeAnswers) PreviewEdit(_ context.Context, r api.Repo, u passkey.User,
 	if problems := policy3.Diagnostics([]byte(a.YAML)); len(problems) > 0 {
 		return gate.EditView{Errors: problems}, f.err
 	}
-	return gate.EditView{Digest: policy3.Digest([]byte(a.YAML)), Target: sha(7), Diff: "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n", Errors: policy3.Diagnostics([]byte(a.YAML))}, f.err
+	return gate.EditView{Digest: policy3.Digest([]byte(a.YAML)), Target: sha(7), Diff: "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n", Against: "the open policy pull request", Errors: policy3.Diagnostics([]byte(a.YAML))}, f.err
 }
 
 func (f *fakeAnswers) Edit(_ context.Context, r api.Repo, u passkey.User, a answers.EditAnswer) (gate.AnswerOutcome, error) {
@@ -66,6 +66,38 @@ func TestEditAPIHasStrictScopeCSRFAndJSON(t *testing.T) {
 				t.Fatal("invalid write reached answers")
 			}
 		})
+	}
+}
+
+func TestEditPreviewSaysWhatTheDiffIsAgainst(t *testing.T) {
+	e := newEnv(t)
+	res := e.as("alice", permRead).postJSON(policyAPI+"/edit/preview",
+		map[string]any{"answer": "edit", "yaml": policyText, "base_digest": "sha256:base"})
+	wantStatus(t, res, http.StatusOK)
+	var body editPreviewJSON
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil || body.Against != "the open policy pull request" {
+		t.Fatalf("body %s, %v", res.Body.String(), err)
+	}
+}
+
+func TestEditPassesApproveAsItIs(t *testing.T) {
+	e := newEnv(t)
+	res := e.as("alice", permRead).postJSON(policyAPI+"/edit", map[string]any{"answer": "edit", "yaml": policyText,
+		"base_digest": "sha256:base", "target": sha(7), "token": "tok", "as_is": true})
+	wantStatus(t, res, http.StatusOK)
+	if len(e.answers.edits) != 1 || !e.answers.edits[0].AsIs {
+		t.Fatalf("edits %+v", e.answers.edits)
+	}
+}
+
+func TestEditUnchangedSaysNothingChanged(t *testing.T) {
+	e := newEnv(t)
+	e.answers.err = gate.ErrEditUnchanged
+	res := e.as("alice", permRead).postJSON(policyAPI+"/edit",
+		map[string]any{"answer": "edit", "yaml": policyText, "base_digest": "sha256:base", "target": sha(7), "token": "tok"})
+	wantStatus(t, res, http.StatusConflict)
+	if !strings.Contains(res.Body.String(), "Nothing changed against the open policy pull request.") {
+		t.Fatalf("body %s", res.Body.String())
 	}
 }
 
