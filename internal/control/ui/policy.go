@@ -89,12 +89,13 @@ type policyEditJSON struct {
 	Lost        string `json:"lost,omitempty"`   // what Reload removes from the proposal
 	Voided      bool   `json:"voided,omitempty"`
 	Foreign     bool   `json:"foreign,omitempty"`
+	MergeNow    bool   `json:"merge_now,omitempty"` // the App merges it by itself when GitHub allows
 }
 
 // editJSONOf is the editor's state for the page: the whole file only while editing or when a proposal is open.
 func editJSONOf(base gate.EditBase, editing bool) policyEditJSON {
 	v := policyEditJSON{Available: true, Recovery: base.Recovery, PullRequest: base.PullRequest, Target: base.Target,
-		Diff: base.Diff, Lost: base.Lost, Voided: base.Voided, Foreign: base.Foreign}
+		Diff: base.Diff, Lost: base.Lost, Voided: base.Voided, Foreign: base.Foreign, MergeNow: base.MergeNow}
 	if editing || base.PullRequest != 0 {
 		v.File, v.Digest = string(base.File), base.Digest
 	}

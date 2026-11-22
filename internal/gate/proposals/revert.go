@@ -130,6 +130,7 @@ func (s *Service) revert(ctx context.Context, r api.Repo, in RevertInput) (Outco
 	if err != nil {
 		return Outcome{}, err
 	}
+	pin.MergeNow = !in.Later
 	switch err := records.RevertTo(ctx, s.store, t, r.FullName, id, approval, rev, *pin); {
 	case errors.Is(err, records.ErrMoved):
 		return Outcome{}, ErrMoved

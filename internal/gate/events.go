@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/coupling-dev/archfit-app/internal/gate/inputs"
+	"github.com/coupling-dev/archfit-app/internal/gate/proposals"
 	asks "github.com/coupling-dev/archfit-app/internal/gate/requests"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
 	"github.com/coupling-dev/archfit-app/internal/github/webhook"
@@ -59,6 +60,13 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 		return g.requestFiled(ctx, e)
 	case webhook.DefaultBranchPush:
 		return g.branchPushed(ctx, e)
+	case webhook.CheckSuiteCompleted:
+		// Checks finished on the App's policy branch: merge its pull request now if GitHub allows. Without this event
+		// subscription the sweep does it within the hour.
+		if e.Branch == proposals.Branch {
+			g.advance(ctx, eventTarget(e).Repo)
+		}
+		return reactionNone, nil
 	}
 	return reactionNone, nil
 }
@@ -72,6 +80,8 @@ func (g *Gate) branchPushed(ctx context.Context, e webhook.Event) (string, error
 	if err := g.workflowPushed(ctx, e); err != nil {
 		return reactionNone, err
 	}
+	// The default branch moved: bring the policy pull request up to date now, so its checks start on the new head.
+	g.advance(ctx, eventTarget(e).Repo)
 	return reactionNone, nil
 }
 

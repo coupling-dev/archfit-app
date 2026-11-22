@@ -489,6 +489,10 @@ The deploy workflow [`.github/workflows/deploy.yaml`](../.github/workflows/deplo
   6. In each repository that uses the queue: the Archfit workflow has the `merge_group` trigger and the Action pin of
      the release ([user guide](../docs/user-guide.md#configure-the-ruleset)), and the default branch's ruleset requires
      `archfit/gate` and turns on **Require merge queue**.
+- **Subscribe to check suites** (optional, once): the App then merges its policy pull request as soon as the
+  required checks finish, instead of at the next hourly sweep. In the App's settings, **Permissions & events**,
+  under **Subscribe to events**, tick **Check suite** and save. The App already has the Checks permission it needs.
+  Check it with the `gh api` line above: `"check_suite"` is in `events`.
 - **Pause processing** for an incident: `gcloud tasks queues pause archfit-webhooks --location=europe-west1`. The next
   `runtime` plan shows the queue as changed until `paused` matches.
 

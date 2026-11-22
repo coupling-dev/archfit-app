@@ -53,6 +53,9 @@ delivery ID header are not covered by the signature; only the body is.
 - `merge_group`: `checks_requested` → `MergeGroupRequested`; `destroyed` → `MergeGroupDestroyed`; every other action
   → `Ignored`. GitHub delivers the event only after the owner subscribes the App to "Merge group" (repository
   permission Merge queues: Read).
+- `check_suite`: `completed` → `CheckSuiteCompleted`; every other action → `Ignored`. GitHub delivers it only after
+  the owner subscribes the App to "Check suite" (Checks permission). It is an optional speed-up: the gate's sweep does
+  the same work within the hour.
 - `installation`: `created` → `InstallationAdded`; `deleted` → `InstallationRemoved`; `suspend`, `unsuspend`,
   `new_permissions_accepted` → `Ignored` **[default]**.
 - `installation_repositories`: `added` → `InstallationAdded`; `removed` → `ReposRemoved`.
@@ -72,6 +75,9 @@ delivery ID header are not covered by the signature; only the body is.
   `reason` verbatim (`MergeGroupDestroyed` only: `merged`, `dequeued`, `invalidated`; `""` when absent).
   `DefaultBranch` comes from the repository object. The payload's member list, `head_ref` and `base_sha` are not read:
   membership comes from GitHub's merge queue API, never from a webhook.
+- `CheckSuiteCompleted`: `HeadSHA` = `check_suite.head_sha`, `HeadRepo` = `Repo`, `Branch` = `check_suite.head_branch`
+  (`""` for a suite on a commit no branch names). Only a signal: the gate reads the branch and the pull request from
+  GitHub.
 - `PullCommented`: `PullRequest` = `issue.number`, `CommentID` = `comment.id`, `Author` = `comment.user.login`,
   `AuthorType` = `comment.user.type` verbatim (`"User"`, `"Bot"`; `""` when absent), `Body` = `comment.body`. It has no
   head SHA, head repository or base: the payload does not carry them, and the consumer reads the pull request.
@@ -113,6 +119,7 @@ const (
     ReposRemoved       EventKind = "repos_removed"
     MergeGroupRequested EventKind = "merge_group_requested" // checks_requested: GitHub built a merge group commit
     MergeGroupDestroyed EventKind = "merge_group_destroyed" // destroyed: merged, dequeued or invalidated
+    CheckSuiteCompleted EventKind = "check_suite_completed" // a suite of checks finished on a branch head
     Ignored            EventKind = "ignored"
 )
 

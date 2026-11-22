@@ -55,7 +55,7 @@ func TestEditMergePushConsumesAndCannotReplay(t *testing.T) {
 	}
 }
 
-func TestCodeOnlyPushVoidsEditAndLateMergeIsNotConsumed(t *testing.T) {
+func TestCodeOnlyPushKeepsEditButAMergeOffItsTargetIsNotConsumed(t *testing.T) {
 	w := newWorld(t)
 	w.edited()
 	w.gh.commit("code", policyV(0))
@@ -66,11 +66,8 @@ func TestCodeOnlyPushVoidsEditAndLateMergeIsNotConsumed(t *testing.T) {
 	if err := records.Load(context.Background(), w.mem, w.tenant(), records.ApprovalKey(testRepo.FullName, "edit"), &a); err != nil {
 		t.Fatal(err)
 	}
-	if a.State != records.StateVoid || !w.proposal("edit-proposal").EditVoided {
-		t.Fatal("edit not void", a)
-	}
-	if len(w.gh.checks) == 0 || w.gh.checks[len(w.gh.checks)-1].Conclusion == "success" {
-		t.Fatal("success not retired")
+	if a.State != records.StateOpen || w.proposal("edit-proposal").EditVoided || len(w.gh.checks) != 0 {
+		t.Fatal("a code-only push voided the edit", a)
 	}
 	w.merge(12, "late", 1)
 	out := w.push("code", "late", PolicyPath)

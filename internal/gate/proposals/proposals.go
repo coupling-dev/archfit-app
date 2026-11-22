@@ -251,6 +251,7 @@ func (s *Service) answer(ctx context.Context, r api.Repo, in Input) (Outcome, er
 		if pin, err = s.write(ctx, r, cur, tip, want, append(kept, approved{id: id, rec: approval, change: change})); err != nil {
 			return Outcome{}, err
 		}
+		pin.MergeNow = !in.Later
 	}
 	switch err := records.Answer(ctx, s.store, t, r.FullName, id, approval, pin); {
 	case errors.Is(err, records.ErrAnswered):
@@ -467,7 +468,11 @@ func (s *Service) loadApprovals(ctx context.Context, r api.Repo, repo records.Re
 			if err := json.Unmarshal(a.rec.Change, a.edit); err != nil {
 				return fmt.Errorf("proposals: approval %s holds an unreadable edit: %w", id, err)
 			}
-			if a.edit.Target != p.tip {
+			same, err := s.samePolicy(ctx, r.RepoRef, a.edit.Target, p.tip)
+			if err != nil {
+				return err
+			}
+			if !same {
 				p.stale = append(p.stale, a)
 				continue
 			}
@@ -702,6 +707,11 @@ func (s *Service) upToDate(ctx context.Context, r api.Repo, tip string, pin reco
 	if cmp.Status == "ahead" || cmp.Status == "identical" {
 		return pin
 	}
+	// The tip holds the approved policy, the one the head was written on: the same bytes on the tip are the same
+	// change. Otherwise the policy changed under the proposal, and the merge is refused as before.
+	if err := s.stateAllows(ctx, r, tip, listed); err != nil {
+		return pin
+	}
 	file, _, err := s.gh.File(ctx, r.RepoRef, pin.HeadSHA, policyPath)
 	if err != nil || policy3.Digest(file) != pin.Digest {
 		return pin
@@ -716,9 +726,20 @@ func (s *Service) upToDate(ctx context.Context, r api.Repo, tip string, pin reco
 		logFailure(ctx, r, "bring the policy pull request up to date", err)
 		return pin
 	}
-	if err := records.Join(ctx, s.store, tenant(r), r.FullName, listed[0].id, pin.Proposal, head, pin.Digest, p.EditEpoch); err != nil {
+	var edits []string
+	for _, a := range listed {
+		if a.edit != nil {
+			edits = append(edits, a.id)
+		}
+	}
+	if err := records.Rebase(ctx, s.store, tenant(r), r.FullName, pin.Proposal, head, pin.Digest, tip, p.EditEpoch, edits); err != nil {
 		logFailure(ctx, r, "pin the updated proposal", err)
 		return pin
+	}
+	for _, a := range listed {
+		if a.edit != nil {
+			a.edit.Target = tip
+		}
 	}
 	s.retire(ctx, r, pin.HeadSHA, pin.PullRequest, pin.Proposal, RetiredSuperseded)
 	pin.HeadSHA = head

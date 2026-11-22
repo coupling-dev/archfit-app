@@ -24,6 +24,9 @@ type EditorBase struct {
 	Target          string
 	Diff, Lost      string
 	Voided, Foreign bool
+	// MergeNow: its last answer asked to merge now, so the App merges it by itself (Advance); else it waits for an
+	// owner to merge it now.
+	MergeNow bool
 }
 
 // Editor reads only recorded authority. An unrecorded pull never supplies bytes.
@@ -65,7 +68,7 @@ func (s *Service) Editor(ctx context.Context, r api.Repo) (EditorBase, error) {
 	if pull.HeadRef != Branch || !strings.EqualFold(pull.HeadRepo, r.FullName) || pull.BaseRef != r.DefaultBranch {
 		return EditorBase{}, ErrEditChanged
 	}
-	v := EditorBase{File: raw, Digest: cur.rec.ExpectedDigest, PullRequest: cur.rec.PullRequest, Target: tip,
+	v := EditorBase{File: raw, Digest: cur.rec.ExpectedDigest, PullRequest: cur.rec.PullRequest, Target: tip, MergeNow: cur.rec.MergeNow,
 		Diff:    requests.Diff(policyPath, tipFile, raw),
 		Foreign: head != cur.rec.HeadSHA || pull.HeadSHA != cur.rec.HeadSHA,
 		Voided:  cur.rec.EditVoided || slices.ContainsFunc(cur.stale, func(a approved) bool { return a.edit != nil })}

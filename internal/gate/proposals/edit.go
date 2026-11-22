@@ -186,6 +186,7 @@ func (s *Service) Edit(ctx context.Context, r api.Repo, in EditInput) (Outcome, 
 	if err != nil {
 		return Outcome{}, err
 	}
+	pin.MergeNow = !in.Later
 	if err := records.EditPolicy(ctx, s.store, tenant(r), r.FullName, id, a, edit, *pin); err != nil {
 		return Outcome{}, err
 	}

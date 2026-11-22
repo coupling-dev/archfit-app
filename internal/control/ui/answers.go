@@ -89,5 +89,6 @@ func answeredNotice(out gate.AnswerOutcome) string {
 	if out.Reason != "" {
 		why = ": " + out.Reason + "."
 	}
-	return "Answered. The policy change is in " + pull + ", but GitHub did not merge it" + why + " It stays open until it merges."
+	return "Answered. The policy change is in " + pull + ". GitHub has not merged it yet" + why +
+		" The App merges it by itself when GitHub allows; nothing else is needed from you."
 }

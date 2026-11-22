@@ -1,6 +1,7 @@
 package approvals
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -47,8 +48,10 @@ func (s *Service) editParent(ctx context.Context, r api.Repo, p *proposal) (stri
 	return parent, nil
 }
 
-// retireMovedEdits also runs for code-only pushes and sweeps. A merged proposal
-// is checked by editParent at consumption, not compared to its own new tip.
+// retireMovedEdits also runs for code-only pushes and sweeps. An edit approval binds the policy bytes: it is voided
+// only when the policy at the tip is not the one at its target, so a code-only push voids nothing (the App rebuilds the
+// pull request on the tip and moves the target with it). A merged proposal is checked by editParent at consumption,
+// not compared to its own new tip.
 func (s *Service) retireMovedEdits(ctx context.Context, r api.Repo) error {
 	release, err := proposals.Hold(ctx, r, s.store, s.now)
 	if err != nil {
@@ -95,7 +98,11 @@ func (s *Service) retireMovedEdits(ctx context.Context, r api.Repo) error {
 			if err := json.Unmarshal(a.Change, &edit); err != nil {
 				return err
 			}
-			if edit.Target == tip {
+			same, err := s.samePolicy(ctx, r.RepoRef, edit.Target, tip)
+			if err != nil {
+				return err
+			}
+			if same {
 				continue
 			}
 			if err := s.retire(ctx, r, p, proposals.RetiredVoid); err != nil {
@@ -104,10 +111,27 @@ func (s *Service) retireMovedEdits(ctx context.Context, r api.Repo) error {
 			if _, _, err := records.Void(ctx, s.store, tenant(r), r.FullName, id); err != nil {
 				return err
 			}
-			s.note(ctx, r, p.rec.PullRequest, "archfit: the policy changed; reload. The YAML edit's approval is void; edit again in the App.\n")
+			s.note(ctx, r, p.rec.PullRequest, "archfit: the policy on the default branch changed after the owner approved this "+
+				"pull request, so the approval no longer holds. An owner approves it again on the Policy page.\n")
 		}
 	}
 	return nil
+}
+
+// samePolicy reports whether commits a and b hold the same policy bytes.
+func (s *Service) samePolicy(ctx context.Context, ref api.RepoRef, a, b string) (bool, error) {
+	if a == b {
+		return true, nil
+	}
+	x, _, err := s.gh.File(ctx, ref, a, PolicyPath)
+	if err != nil {
+		return false, err
+	}
+	y, _, err := s.gh.File(ctx, ref, b, PolicyPath)
+	if err != nil {
+		return false, err
+	}
+	return bytes.Equal(x, y), nil
 }
 
 func editConsumeError(err error) error {

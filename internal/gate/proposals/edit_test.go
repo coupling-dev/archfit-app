@@ -3,6 +3,7 @@ package proposals
 import (
 	"context"
 	"errors"
+	"maps"
 	"strings"
 	"testing"
 
@@ -112,14 +113,15 @@ func TestEditRefusesBeforeRedemptionOrWrites(t *testing.T) {
 	}
 }
 
-func TestTargetMovesWhileWritingEdit(t *testing.T) {
+func TestTargetPolicyMovesWhileWritingEdit(t *testing.T) {
 	w := newWorld(t)
 	in := w.editInput(testPolicy, testPolicy+"# edit\n", false)
 	w.hub.onCommit = func() {
 		h := w.hub
 		old := h.branches[fakeBase]
-		c := h.commits[old]
-		h.branches[fakeBase] = h.put(old, "code-only target move", c.files)
+		files := maps.Clone(h.commits[old].files)
+		files[policyPath] = []byte(testPolicy + "# main\n")
+		h.branches[fakeBase] = h.put(old, "policy target move", files)
 	}
 	out, err := w.svc.Edit(context.Background(), testRepo, in)
 	if err != nil || out.State != records.StateVoid || w.hub.count("MergePull") != 0 {
@@ -172,7 +174,8 @@ func TestMovedTargetVoidsEditNeverReplaysIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.hub.push(fakeBase, "README.md", "target moved")
+	w.hub.push(fakeBase, policyPath, testPolicy+"# main\n")
+	w.approveTip()
 	w.request(432, "graph", "pkg_tc", "pkg_util")
 	w.mustAnswer(olivia, 432, requests.Answer{Kind: policy3.Approve}, true)
 	a := load[records.Approval](t, w.store, records.ApprovalKey(testRepo.FullName, out.Approval))
@@ -237,7 +240,8 @@ func TestOpenProposalApprovedAsItIsAfterMainMoved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.hub.push(fakeBase, "README.md", "main moved")
+	w.hub.push(fakeBase, policyPath, testPolicy+"# main\n")
+	w.approveTip()
 	view, err := w.svc.Editor(context.Background(), testRepo)
 	if err != nil {
 		t.Fatal(err)
@@ -253,7 +257,7 @@ func TestOpenProposalApprovedAsItIsAfterMainMoved(t *testing.T) {
 	if err != nil || out.State != requests.PullMerged || out.PullRequest != first.PullRequest {
 		t.Fatalf("approve as it is: %+v, %v", out, err)
 	}
-	if got := w.hub.file(fakeBase, policyPath); got != head || w.hub.file(fakeBase, "README.md") != "main moved" {
+	if got := w.hub.file(fakeBase, policyPath); got != head {
 		t.Errorf("merged %q", got)
 	}
 	if a := load[records.Approval](t, w.store, records.ApprovalKey(testRepo.FullName, first.Approval)); a.State != records.StateVoid {

@@ -24,6 +24,8 @@ type Pin struct {
 	HeadSHA     string
 	EditEpoch   uint64 // proposal edit generation the writer read, after its own voids
 	Digest      string // the expected policy digest of HeadSHA
+	// MergeNow says the approval that joins asked to merge now; it sets Proposal.MergeNow.
+	MergeNow bool
 }
 
 // Answer records an owner's answer in one CompareAndSwapAll, so nothing of it can be written without the rest: the new
@@ -118,7 +120,7 @@ func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approv
 			return nil, ErrFull
 		}
 		p.Approvals = append(p.Approvals, approvalID)
-		p.HeadSHA, p.ExpectedDigest, p.EditVoided = pin.HeadSHA, pin.Digest, false
+		p.HeadSHA, p.ExpectedDigest, p.EditVoided, p.MergeNow = pin.HeadSHA, pin.Digest, false, pin.MergeNow
 		proposalIndex, err := writeIndex(cur[4], before, proposals)
 		if err != nil {
 			return nil, err

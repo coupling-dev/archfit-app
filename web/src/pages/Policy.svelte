@@ -122,15 +122,19 @@
         <button class="btn primary" disabled={busy} onclick={reloadEditor}>{busy ? 'Restoring…' : `Restore ${pull}`}</button>
       {:else}
         {#if edit.voided}
-          <Banner tone="attention" title="Your approval was cancelled">
-            <p>The default branch changed after you approved {pull}, so the approval no longer holds. The change is still in {pull}. Approve it again to merge it.</p>
+          <Banner tone="attention" title="Your approval no longer holds">
+            <p>The policy on the default branch changed after you approved {pull}. The change is still in {pull}. Next: you approve it again, or nothing merges.</p>
           </Banner>
+        {:else if edit.merge_now}
+          <p>You approved {pull}: {lines(n)}. <b>Next: nothing for you.</b> The App merges {pull} when its checks pass, and brings it up to date with the default branch by itself.</p>
         {:else}
-          <p>{pull} is open and approved but not merged yet. Approve it again to merge it now; Archfit first brings it up to date with the default branch.</p>
+          <p>{pull} is approved and waits, as its last answer chose. Next: merge it now, or answer another request first.</p>
         {/if}
         <p>The change in {pull} against the default branch:</p>
         <Diff text={edit.diff ?? ''} label={`The change in ${pull}`} />
-        <button class="btn primary" disabled={busy} onclick={approveAsIs}>{busy ? 'Confirming…' : `Approve and merge ${pull} (${lines(n)}) with passkey`}</button>
+        {#if edit.voided || !edit.merge_now}
+          <button class="btn primary" disabled={busy} onclick={approveAsIs}>{busy ? 'Confirming…' : `Approve and merge ${pull} (${lines(n)}) with passkey`}</button>
+        {/if}
         {#if edit.voided && edit.lost}
           <details>
             <summary>Discard the change instead</summary>

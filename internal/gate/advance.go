@@ -1,0 +1,21 @@
+package gate
+
+import (
+	"context"
+	"log/slog"
+
+	"github.com/coupling-dev/archfit-app/internal/github/api"
+)
+
+// advance moves the App's open policy pull request on: up to date with the default branch, then merged when GitHub
+// allows (proposals.Advance). The default-branch push and the sweep call it, so an approved change merges with no
+// owner step. A failure is logged and never fails the push or the sweep: the next call tries again.
+func (g *Gate) advance(ctx context.Context, r api.Repo) {
+	if g.proposals == nil {
+		return
+	}
+	if err := g.proposals.Advance(ctx, r); err != nil {
+		slog.Default().WarnContext(ctx, "gate: advance the policy pull request", "installation_id", r.InstallationID,
+			"repository", r.FullName, "error", err.Error())
+	}
+}

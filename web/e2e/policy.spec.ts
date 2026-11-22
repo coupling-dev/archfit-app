@@ -324,7 +324,7 @@ function voided(passkey = '', outcome: object = { pull_request: 44, state: 'merg
 test('policy: a cancelled approval shows the open change and one action to approve it again', async ({ page }) => {
   const device = await authenticator(page, true);
   const writes = await open(page, path, voided(device.id));
-  await expect(page.getByText('Your approval was cancelled')).toBeVisible();
+  await expect(page.getByText('Your approval no longer holds')).toBeVisible();
   await expect(page.getByLabel('The change in #44')).toHaveText(proposalDiff);
   await expect(page.getByLabel('Lines that discarding removes')).toBeHidden();
   await page.getByText('Discard the change instead').click();
@@ -349,4 +349,16 @@ test('policy: a merge GitHub refused is a warning with its reason, not a success
   await expect(box.getByRole('alert')).toHaveText(notice);
   await expect(box.getByRole('alert')).toHaveClass(/warn/);
   await expect(box.getByRole('status')).toHaveCount(0);
+});
+
+test('policy: an approved pull request the App merges by itself offers no button', async ({ page }) => {
+  await open(page, path, {
+    [api]: () => [200, { ...typical, edit: { available: true, reason: '', file: proposalYAML, digest: baseDigest,
+      merge_now: true, pull_request: 44, target, diff: proposalDiff } }],
+  });
+  const box = page.getByRole('region', { name: 'Policy pull request #44' });
+  await expect(box).toContainText('Next: nothing for you.');
+  await expect(box.getByLabel('The change in #44')).toHaveText(proposalDiff);
+  await expect(box.getByRole('button')).toHaveCount(0);
+  await expectClean(page);
 });

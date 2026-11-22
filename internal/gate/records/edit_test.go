@@ -97,3 +97,49 @@ func TestVoidingEditInvalidatesTheOldPinAndNeverReopensZero(t *testing.T) {
 		t.Fatal("request zero exists", err)
 	}
 }
+
+func TestRebaseMovesTheEditTargetWithThePin(t *testing.T) {
+	s, m := editSetup(t)
+	if err := records.Rebase(context.Background(), s, tenant, repoName, "p1", "head2", "new", "target2", 0, []string{"e1"}); err != nil {
+		t.Fatal(err)
+	}
+	if p := load[records.Proposal](t, s, records.ProposalKey(repoName, "p1")); p.HeadSHA != "head2" || p.ExpectedDigest != "new" {
+		t.Fatalf("pin %+v", p)
+	}
+	if err := records.Consume(context.Background(), s, tenant, repoName, m); !errors.Is(err, records.ErrMoved) {
+		t.Fatal("the old target still consumes", err)
+	}
+	m.Parent, m.Over, m.Push.Before = "target2", "target", "target2"
+	if err := records.Consume(context.Background(), s, tenant, repoName, m); err != nil {
+		t.Fatal("the new target does not consume", err)
+	}
+}
+
+func TestRebaseRefusesAMovedProposal(t *testing.T) {
+	for _, name := range []string{"other digest", "old epoch", "void edit", "unknown edit"} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := editSetup(t)
+			digest, epoch, edits := "new", uint64(0), []string{"e1"}
+			switch name {
+			case "other digest":
+				digest = "other"
+			case "old epoch":
+				epoch = 7
+			case "void edit":
+				if _, _, err := records.Void(context.Background(), s, tenant, repoName, "e1"); err != nil {
+					t.Fatal(err)
+				}
+				epoch = 1
+			case "unknown edit":
+				edits = []string{"e9"}
+			}
+			err := records.Rebase(context.Background(), s, tenant, repoName, "p1", "head2", digest, "target2", epoch, edits)
+			if !errors.Is(err, records.ErrMoved) && !errors.Is(err, records.ErrNoRecord) {
+				t.Fatalf("err = %v", err)
+			}
+			if p := load[records.Proposal](t, s, records.ProposalKey(repoName, "p1")); p.HeadSHA != "head" {
+				t.Fatalf("pin moved: %+v", p)
+			}
+		})
+	}
+}

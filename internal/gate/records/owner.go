@@ -281,7 +281,7 @@ func joinPolicy(ctx context.Context, s store.Store, t store.Tenant, fullName, ap
 			return nil, ErrFull
 		}
 		p.Approvals = append(p.Approvals, approvalID)
-		p.HeadSHA, p.ExpectedDigest, p.EditVoided = pin.HeadSHA, pin.Digest, false
+		p.HeadSHA, p.ExpectedDigest, p.EditVoided, p.MergeNow = pin.HeadSHA, pin.Digest, false, pin.MergeNow
 		a.State, a.Proposal = StateOpen, pin.Proposal
 		index, err := writeIndex(cur[2], before, x)
 		if err != nil {
