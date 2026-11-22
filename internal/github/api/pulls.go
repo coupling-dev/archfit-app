@@ -25,6 +25,7 @@ type pullJSON struct {
 	ChangedFiles int       `json:"changed_files"`
 	MergeCommit  string    `json:"merge_commit_sha"` // null stays ""
 	Mergeable    *bool     `json:"mergeable"`        // null until GitHub has computed it
+	MergeState   string    `json:"mergeable_state"`
 	Head         struct {
 		SHA  string `json:"sha"`
 		Ref  string `json:"ref"`
@@ -46,6 +47,7 @@ func (j pullJSON) pull() Pull {
 		Merged:  j.MergedAt != nil && *j.MergedAt != "",
 		HeadSHA: j.Head.SHA, HeadRef: j.Head.Ref, BaseRef: j.Base.Ref, BaseSHA: j.Base.SHA,
 		UpdatedAt: j.UpdatedAt, MergeCommitSHA: j.MergeCommit, Mergeable: j.Mergeable,
+		MergeableState: j.MergeState,
 	}
 	if j.Head.Repo != nil {
 		p.HeadRepo = j.Head.Repo.FullName

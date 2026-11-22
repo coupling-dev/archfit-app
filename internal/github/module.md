@@ -134,6 +134,8 @@ deeper module.
   (no child writes `.github/workflows/`); events `pull_request`, `push`, `merge_group`, `installation`,
   `installation_repositories`; user authorization (OAuth) enabled. Requests as issues (M2 task 16) also need `issues: write`
   and the events `issue_comment` and `issues`; the owner adds them to the App registration before the release.
+  Optional: the event `check_suite` lets the App merge its policy pull request as soon as the checks finish; without
+  it the hourly sweep does.
 
 ## Internal Design
 

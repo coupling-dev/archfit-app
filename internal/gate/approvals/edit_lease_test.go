@@ -41,7 +41,7 @@ func TestEditRetirementWaitsForInFlightCheckPublication(t *testing.T) {
 	defer release()
 	observer := &observedLease{Store: w.mem, read: make(chan struct{}, 1)}
 	w.svc.store = observer
-	w.gh.commit("code", policyV(0))
+	w.gh.commit("code", policyV(2)) // the policy on the default branch changed: the edit's bytes no longer apply
 	done := make(chan error, 1)
 	go func() { done <- w.svc.retireMovedEdits(ctx, testRepo) }()
 	select {

@@ -26,6 +26,8 @@ var (
 	ErrEditChanged = proposals.ErrEditChanged
 	ErrEditPolicy  = proposals.ErrEditPolicy
 	ErrEditSize    = proposals.ErrEditSize
+	// ErrEditUnchanged refuses an edit that equals the open proposal's file.
+	ErrEditUnchanged = proposals.ErrEditUnchanged
 )
 
 func (g *Gate) Editor(ctx context.Context, t Target) (EditBase, error) {

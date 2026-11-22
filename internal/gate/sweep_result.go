@@ -139,6 +139,7 @@ func (g *Gate) sweepRepo4(ctx context.Context, r api.Repo, sum *Summary) error {
 			}
 		}
 	}
+	g.advance(ctx, r)
 	state, err = g.v4.repoState(ctx, r)
 	if err != nil {
 		return err

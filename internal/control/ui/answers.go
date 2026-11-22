@@ -85,5 +85,10 @@ func answeredNotice(out gate.AnswerOutcome) string {
 	case out.State == gate.AnswerLater:
 		return "Answered. The policy change is in " + pull + "; it takes effect when " + pull + " merges."
 	}
-	return "Answered. The policy change is in " + pull + ", but GitHub did not merge it. It stays open until it merges."
+	why := "."
+	if out.Reason != "" {
+		why = ": " + out.Reason + "."
+	}
+	return "Answered. The policy change is in " + pull + ". GitHub has not merged it yet" + why +
+		" The App merges it by itself when GitHub allows; nothing else is needed from you."
 }
