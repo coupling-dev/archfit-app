@@ -46,6 +46,7 @@ type emailCodeRecord struct {
 	LockedUntil time.Time `json:"locked_until"`
 	Guesses     int       `json:"guesses"`
 	Active      bool      `json:"active"`
+	Authorized  bool      `json:"authorized"`
 	Digest      []byte    `json:"digest,omitempty"`
 	Binding     []byte    `json:"binding,omitempty"`
 }
@@ -131,6 +132,7 @@ func (s *EmailCodes) Send(ctx context.Context, scope EmailCodeScope, recipient s
 		}
 		r.Sent = now
 		r.Active = false
+		r.Authorized = false
 		r.Digest = stored
 		r.Binding = binding
 		return nil
@@ -200,8 +202,32 @@ func (s *EmailCodes) Verify(ctx context.Context, scope EmailCodeScope, code stri
 			return nil
 		}
 		r.Digest = nil
-		r.Binding = nil
+		r.Active = false
+		r.Authorized = true
 		r.Guesses = 0
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return outcome
+}
+
+// Spend consumes a verified first-registration authorization for its exact scope.
+func (s *EmailCodes) Spend(ctx context.Context, scope EmailCodeScope) error {
+	if !validCodeScope(scope) {
+		return ErrInvalid
+	}
+	now := s.now().UTC()
+	var outcome error
+	err := s.update(ctx, scope.UserID, func(r *emailCodeRecord) error {
+		outcome = nil
+		if !r.Authorized || !now.Before(r.Sent.Add(10*time.Minute)) || subtle.ConstantTimeCompare(r.Binding, s.binding(scope)) != 1 {
+			outcome = ErrCodeExpired
+			return nil
+		}
+		r.Authorized = false
+		r.Binding = nil
 		return nil
 	})
 	if err != nil {

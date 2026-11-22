@@ -165,3 +165,44 @@ func TestEmailCodeFailedSendAndPrivacy(t *testing.T) {
 		t.Fatalf("cooldown: %v", err)
 	}
 }
+
+func TestEmailCodeAuthorizationScopeAndExpiry(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	sink := &codeSink{}
+	svc, err := NewEmailCodes(store.NewMemory(), sink, []byte("01234567890123456789012345678901"), func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := EmailCodeScope{UserID: 101, InstallationID: 7, RepositoryID: 70, SessionBinding: "session"}
+	if _, err = svc.Send(ctx, scope, "owner@example.invalid"); err != nil {
+		t.Fatal(err)
+	}
+	if err = svc.Verify(ctx, scope, sink.code); err != nil {
+		t.Fatal(err)
+	}
+	other := scope
+	other.SessionBinding = "other"
+	if err = svc.Spend(ctx, other); err == nil {
+		t.Fatal("other session spent authorization")
+	}
+	if err = svc.Spend(ctx, scope); err != nil {
+		t.Fatal(err)
+	}
+	if err = svc.Spend(ctx, scope); err == nil {
+		t.Fatal("authorization reused")
+	}
+	if _, err = svc.Send(ctx, scope, "owner@example.invalid"); !errors.Is(err, ErrCodeCooldown) {
+		t.Fatalf("cooldown after spend: %v", err)
+	}
+	now = now.Add(time.Minute)
+	if _, err = svc.Send(ctx, scope, "owner@example.invalid"); err != nil {
+		t.Fatal(err)
+	}
+	if err = svc.Verify(ctx, scope, sink.code); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(10 * time.Minute)
+	if err = svc.Spend(ctx, scope); err == nil {
+		t.Fatal("expired authorization spent")
+	}
+}
