@@ -65,6 +65,18 @@ func TestAnswerBatchMixedAndDuplicates(t *testing.T) {
 	if err := records.AnswerBatch(ctx, s, tenant, repoName, items, pin); err != nil {
 		t.Fatal(err)
 	}
+	for _, item := range items {
+		got := load[records.Approval](t, s, records.ApprovalKey(repoName, item.ApprovalID))
+		proposal := ""
+		if item.Join {
+			proposal = pin.Proposal
+		}
+		if got.Request != item.Approval.Request || got.State != records.StateOpen || got.Proposal != proposal ||
+			got.Kind != item.Approval.Kind || !bytes.Equal(got.Change, item.Approval.Change) {
+			t.Errorf("approval %s = %+v", item.ApprovalID, got)
+		}
+	}
+
 	x := loadIndex(t, s, records.RequestIndexKey(repoName), records.SchemaRequestIndex)
 	if _, ok := x.Lookup("first"); ok {
 		t.Error("unjoined request remains indexed")

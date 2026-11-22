@@ -46,7 +46,9 @@ func Answer(ctx context.Context, s store.Store, t store.Tenant, fullName, approv
 	return AnswerBatch(ctx, s, t, fullName, []BatchAnswer{{ApprovalID: approvalID, Approval: a, Join: pin != nil}}, pin)
 }
 
-// AnswerBatch records all answers in one atomic swap.
+// AnswerBatch records 1 to 20 answers with distinct approval IDs and requests in one atomic swap.
+// Items with Join set require the shared pin, join in input order up to MaxApprovals, and keep their requests indexed.
+// Other items remove their request index entry if it still points to them.
 func AnswerBatch(ctx context.Context, s store.Store, t store.Tenant, fullName string, items []BatchAnswer, pin *Pin) error {
 	if len(items) == 0 || len(items) > 20 {
 		return errors.New("records: answer: invalid batch size")
