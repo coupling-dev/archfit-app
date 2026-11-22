@@ -1,10 +1,12 @@
 package weekly
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -32,7 +34,12 @@ func key(repo string) string { return "v4/weekly/" + strings.ToLower(repo) }
 
 func decode(raw []byte) (snapshot, error) {
 	var s snapshot
-	if err := json.Unmarshal(raw, &s); err != nil || s.Schema != schema || len(s.Entries) > maxEntries {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&s); err != nil || s.Schema != schema || s.Entries == nil || len(s.Entries) > maxEntries {
+		return snapshot{}, errors.New("weekly: unreadable summary")
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return snapshot{}, errors.New("weekly: unreadable summary")
 	}
 	seen := make(map[int]bool)

@@ -5,6 +5,9 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/coupling-dev/archfit-app/internal/gate/weekly"
 
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
 	"github.com/coupling-dev/archfit-app/internal/store"
@@ -32,5 +35,14 @@ func TestWeeklyFailureDoesNotAffectGate(t *testing.T) {
 	}
 	if pull.Status != "pass" {
 		t.Fatalf("stored status = %q", pull.Status)
+	}
+}
+
+func TestWeeklyRecordsAcceptedUpload(t *testing.T) {
+	w, p, spec := advisoryWorld(t, policy4Advisory)
+	w.wantStatus(w.send4(spec), "pass", "")
+	got, err := weekly.Read(context.Background(), w.mem, store.Tenant(p.repo.InstallationID), p.repo.FullName, w.gate.now().Add(time.Second))
+	if err != nil || !got.Known || got.Checked != 1 || got.Passed != 1 {
+		t.Fatalf("summary = %+v, %v", got, err)
 	}
 }

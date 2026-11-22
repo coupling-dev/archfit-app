@@ -44,4 +44,14 @@ func TestRecordedSummary(t *testing.T) {
 	if err == nil || got.Known {
 		t.Fatalf("corrupt: %+v, %v", got, err)
 	}
+	for _, raw := range []string{`{"schema":"archfit-app.weekly.v1"}`, `{"schema":"archfit-app.weekly.v1","entries":null}`, `{"schema":"archfit-app.weekly.v1","entries":[],"extra":true}`} {
+		if err := s.Put(ctx, 1, key("owner/repo"), []byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+		got, err := Read(ctx, s, 1, "owner/repo", now)
+		if err == nil || got.Known {
+			t.Fatalf("malformed %s: %+v %v", raw, got, err)
+		}
+	}
+
 }
