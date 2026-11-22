@@ -64,3 +64,25 @@ func TestVerifiedPrimaryEmail(t *testing.T) {
 		}
 	})
 }
+
+func TestVerifiedPrimaryEmailPageLimit(t *testing.T) {
+	const route = "/user/emails"
+	const limit = 100
+	pages := make([]reply, limit+1)
+	for i := range pages {
+		pages[i] = reply{status: http.StatusOK, body: "[]"}
+		if i < limit {
+			pages[i].header = map[string]string{"Link": linkHeader(route, i+2)}
+		}
+	}
+	pages[0].body = `[{"email":"primary@example.invalid","primary":true,"verified":true}]`
+
+	e := newEnv(t, script(pages...))
+	got, err := e.c.VerifiedPrimaryEmail(context.Background(), "fake-user-token")
+	if got != "" || err == nil || !strings.Contains(err.Error(), "more than 100 pages") {
+		t.Fatalf("page exhaustion: returned address = %t, err = %v", got != "", err)
+	}
+	if n := e.gh.count(http.MethodGet, route); n != limit {
+		t.Errorf("GET requests = %d, want %d", n, limit)
+	}
+}

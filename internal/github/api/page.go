@@ -10,6 +10,7 @@ import (
 const (
 	perPage  = "100"
 	maxItems = 1000
+	maxPages = 100 // bounds requests even when GitHub returns short or empty pages
 )
 
 // pagedURL is apiURL with per_page=100.
@@ -25,7 +26,7 @@ func pagedURL(path string, q url.Values) string {
 // object response; "" means the response is the array. more reports that GitHub holds items beyond limit.
 func listPages[T any](ctx context.Context, c *Client, k call, field string, limit int) (items []T, more bool, err error) {
 	items = []T{}
-	for {
+	for pageNumber := 1; ; pageNumber++ {
 		res, err := c.do(ctx, k)
 		if err != nil {
 			return nil, false, err
@@ -53,6 +54,9 @@ func listPages[T any](ctx context.Context, c *Client, k call, field string, limi
 		}
 		if len(items) == limit {
 			return items, true, nil
+		}
+		if pageNumber == maxPages {
+			return nil, false, k.errorf("more than %d pages", maxPages)
 		}
 		u, err := url.Parse(next)
 		if err != nil || u.Scheme != "https" || u.Host != apiHost {

@@ -123,6 +123,8 @@ needs one. It is a wide leaf on purpose: role interfaces keep each consumer's kn
 
 ### Pagination
 
+A request for a page beyond the 100-page limit fails without returning a partial list.
+
 `per_page=100`, follow `Link: rel="next"`. Cap: 1 000 items per call **[default]**. Beyond the cap the call
 returns an error, never a silent partial list. This holds for `ListInstallations`, `ListRepos`, `UserRepos`,
 `OpenPulls`, `AppComments`, `AppIssues`, `CheckRuns` and `HeadRuns`. The exceptions are `ChangedFiles`, whose contract has
