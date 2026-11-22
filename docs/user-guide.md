@@ -4,6 +4,20 @@ This guide is for repository administrators and policy owners using Archfit 4. T
 
 The checked-in [release manifest](../internal/wire/manifest/manifest4.json) approves engine v0.9.0 and Action v0.9.0 by their exact identities.
 
+## First-passkey operator confirmation
+
+Before registering a first passkey, open **Passkeys**, select **Request confirmation**, and send the installation and attempt IDs through the trusted private channel used for beta admission. A GitHub sign-in alone does not authorize registration. A configured Archfit operator verifies your GitHub identity through that channel, then issues a token. Enter it in **Token from the operator** and select **Confirm and register a passkey**. The browser prompts immediately; registration returns to the approval page when you arrived from it.
+
+The token is single-use and valid for 10 minutes. A pending request can be issued for 30 minutes. Five wrong tokens lock the attempt for 15 minutes. If lost or exposed, ask the operator to revoke and reissue; never put tokens in a URL, GitHub issue, pull request, ticket, shared document or screenshot.
+
+### Operator runbook
+
+Only configured immutable GitHub operator IDs can use the existing **Admin** page and its confirmation controls. Find the attempt by its installation and attempt IDs. Verify the numeric GitHub user and repository shown against the owner you know through the established private admission channel; do not trust a contact address supplied in the request. If identity or channel is unclear, do not issue.
+
+After verification select **Issue token** and send the one-time value only through that private channel. It appears once; **Hide token** clears it. Lookup never returns it again. If lost or exposed, select **Revoke token** and issue another after any lock expires. Issuing another invalidates the previous token. Operators never register a credential on the owner's behalf. Audit records contain issue, validation, revocation, lockout and registration events without tokens.
+
+The public algorithm is standard: exactly 16 random bytes from Go crypto/rand.Read, encoded as 22 unpadded base64url characters; only SHA-256(token) is stored. TLS, authenticated scope binding, constant-time hash comparison and atomic single use provide security, not secrecy of this algorithm.
+
 ## Install and set up
 
 1. Install the GitHub App for the repository. If the account is not admitted, [ask for beta access](https://github.com/coupling-dev/archfit/issues/new?template=beta-access.yml). If you are not an organization administrator, GitHub sends your request to its administrators; send one of them the [install link](https://github.com/apps/archfit-review/installations/new) and ask them to install Archfit on the repository.

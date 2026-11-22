@@ -78,7 +78,7 @@ func New(d Deps) (*Control, error) {
 		Owners:  answers.NewOwners(d.OwnerActions, passkeys), Setups: onboarding.NewSetup(d.GitHub, d.SetupViews),
 		OAuth: d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,
 		Account:    acct,
-		Admissions: d.Admissions, PolicyViews: d.PolicyViews, RequestViews: d.RequestViews, Passkeys: passkeys, Operators: d.Operators, Now: d.Now,
+		Admissions: d.Admissions, PolicyViews: d.PolicyViews, RequestViews: d.RequestViews, Passkeys: passkeys, Confirmations: passkey.NewOperatorConfirmations(d.Store, d.Now), Operators: d.Operators, Now: d.Now,
 
 		RepoStates: gate.NewRepoStates(d.Store, d.Admissions),
 		HomeViews:  gate.NewHome(d.GitHub, d.Store, d.Admissions), PullViews: gate.NewPullViews(d.GitHub, d.Store),

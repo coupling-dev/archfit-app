@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FirstPasskey from '../components/FirstPasskey.svelte';
   import Skeleton from '../components/Skeleton.svelte';
   import PageHead from '../components/ui/PageHead.svelte';
   import { explain, explainLoad, getJSON, repoAPI, type ApiError, type Passkey, type Passkeys, type Session } from '../lib/api';
@@ -62,11 +63,12 @@
     {#if returnTo}<a href={returnTo}>Back to {returnTo.includes('/requests/') ? 'request' : returnTo.includes('/policy') ? 'policy' : 'approval'}</a>{/if}
   </PageHead>
 
+  {#if list.length === 0}<FirstPasskey {api} {session} done={() => { if (returnTo) location.assign(returnTo); else load(); }} />{/if}
   <section class="box" aria-labelledby="your-passkeys">
     <div class="box-head">
       <h2 class="title-box" id="your-passkeys">Your passkeys <span class="counter">{list.length}</span></h2>
       <div class="stack-sm passkey-add">
-        <button class="btn sm primary" type="button" disabled={busy} onclick={add}>Add a passkey</button>
+        {#if list.length > 0}<button class="btn sm primary" type="button" disabled={busy} onclick={add}>Add a passkey</button>{/if}
         <p class="small muted">{list.length ? 'A passkey after your first is confirmed with one you have.' : 'Only an owner named in the policy can add one, or a repository administrator before the first policy.'}</p>
       </div>
     </div>
