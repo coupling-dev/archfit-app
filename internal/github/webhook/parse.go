@@ -82,6 +82,7 @@ type payload struct {
 		} `json:"account"`
 	} `json:"installation"`
 	Repository struct {
+		ID            int64  `json:"id"`
 		FullName      string `json:"full_name"`
 		Private       bool   `json:"private"`
 		DefaultBranch string `json:"default_branch"`
@@ -90,7 +91,9 @@ type payload struct {
 		Number int `json:"number"`
 		Head   struct {
 			SHA  string `json:"sha"`
+			Ref  string `json:"ref"`
 			Repo *struct {
+				ID       int64  `json:"id"`
 				FullName string `json:"full_name"`
 			} `json:"repo"`
 		} `json:"head"`
@@ -191,6 +194,7 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 		return Event{}, errNoRepository
 	}
 	ev.Repo = p.Repository.FullName
+	ev.RepoID = p.Repository.ID
 	ev.RepoPrivate = p.Repository.Private
 	ev.DefaultBranch = p.Repository.DefaultBranch
 
@@ -235,8 +239,10 @@ func Parse(eventType, deliveryID string, body []byte) (Event, error) {
 		}
 		ev.PullRequest = p.PullRequest.Number
 		ev.HeadSHA = p.PullRequest.Head.SHA
+		ev.HeadRef = p.PullRequest.Head.Ref
 		if p.PullRequest.Head.Repo != nil {
 			ev.HeadRepo = p.PullRequest.Head.Repo.FullName
+			ev.HeadRepoID = p.PullRequest.Head.Repo.ID
 		}
 		ev.BaseRef = p.PullRequest.Base.Ref
 	}

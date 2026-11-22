@@ -88,13 +88,13 @@ func (c *Client) RunURL(ctx context.Context, repo Repo, id int64) (string, error
 }
 
 // HasMarkerComment checks comments authored by this App.
-func (c *Client) HasMarkerComment(ctx context.Context, repo Repo, pr int) (bool, error) {
+func (c *Client) HasMarkerComment(ctx context.Context, repo Repo, pr int, marker string) (bool, error) {
 	comments, err := c.AppComments(ctx, repo.RepoRef, pr)
 	if err != nil {
 		return false, err
 	}
 	for _, v := range comments {
-		if strings.Contains(v.Body, "<!-- archfit:setup-recheck -->") {
+		if strings.Contains(v.Body, marker) {
 			return true, nil
 		}
 	}

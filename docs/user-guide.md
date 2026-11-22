@@ -16,6 +16,9 @@ After installation on an admitted account, the App looks for an open same-reposi
 It asks GitHub to re-run the check suite. If GitHub refuses or no suite is available, the App comments
 with a link to the job or workflow so you can re-run it yourself.
 
+When the App first sees an open `archfit/setup` pull request in the same repository, it posts one welcome comment.
+Merge it to start advisory checks; an owner can make the check required later.
+
 After an owner approves the onboarding pull request, the App sets `archfit/gate` to success on that exact head, bound to the approved policy and workflow digests. This is the owner's approval, not an engine pass; run diagnostics remain visible in the pull request comment. Merge the pull request to activate change control. You can require `archfit/gate` before or after activation. A new head needs a new approval.
 
 The App's setup API reads the policy and workflow at one default-branch commit and reports admission, first approval and ruleset advice. It does not change GitHub rulesets. Home keeps setup visible until the applicable required-check settings are confirmed, even after owner approval. A proposed policy or workflow is labelled as present in its PR, not yet on the default branch. Unavailable ruleset features do not block setup progress; unknown settings still need an administrator to check them. Setup progress is not an enforcement verdict.

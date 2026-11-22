@@ -61,7 +61,7 @@ func TestSetupRecheckAdapter(t *testing.T) {
 			} else if found {
 				t.Fatal("unexpected suite")
 			}
-			marker, err := env.c.HasMarkerComment(ctx, repo, 7)
+			marker, err := env.c.HasMarkerComment(ctx, repo, 7, "<!-- archfit:setup-recheck -->")
 			if err != nil || marker != tt.marker {
 				t.Fatalf("marker %v: %v", marker, err)
 			}
