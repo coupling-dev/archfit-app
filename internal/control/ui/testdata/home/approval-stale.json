@@ -2,6 +2,9 @@
   "state": "not_set_up",
   "status": "Pull requests are not checked yet. Finish the setup steps.",
   "setup": {
+    "weekly": {
+      "known": false
+    },
     "approval": {
       "status": "stale",
       "kind": "workflow",

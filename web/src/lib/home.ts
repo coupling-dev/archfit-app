@@ -23,7 +23,9 @@ export interface ApprovalSummary {
   merged?: boolean;
   href?: string;
 }
+export interface WeeklySummary { known: boolean; checked?: number; quiet?: number; asked?: number; caveat?: string }
 export interface HomeSetup {
+  weekly?: WeeklySummary;
   approval: ApprovalSummary;
   passkey_known: boolean;
   owner_action?: OwnerReview;
@@ -138,6 +140,7 @@ export function homeStateLabel(state: HomeState): string {
 }
 
 export interface Home {
+  weekly?: WeeklySummary;
   state: HomeState;
   status: string;
   needs_you: HomeNeed[];
@@ -223,6 +226,10 @@ export function readHome(value: unknown): Home {
       };
     }),
   };
+  if (v.weekly !== undefined) {
+    const w = object(v.weekly);
+    home.weekly = boolean(w.known) ? { known: true, checked: nonnegativeNumber(w.checked), quiet: nonnegativeNumber(w.quiet), asked: nonnegativeNumber(w.asked), caveat: string(w.caveat) } : { known: false };
+  }
   if (v.map !== undefined) {
     const m = object(v.map);
     home.map = {
@@ -249,7 +256,10 @@ export function readHome(value: unknown): Home {
   }
   if (v.setup !== undefined) {
     const s = object(v.setup);
+    const weekly = s.weekly === undefined ? undefined : object(s.weekly);
+    const weeklyKnown = weekly === undefined ? false : boolean(weekly.known);
     home.setup = {
+      ...(weekly === undefined ? {} : { weekly: weeklyKnown ? { known: true, checked: nonnegativeNumber(weekly.checked), quiet: nonnegativeNumber(weekly.quiet), asked: nonnegativeNumber(weekly.asked), caveat: string(weekly.caveat) } : { known: false } }),
       approval: readApproval(s.approval),
       passkey_known: boolean(s.passkey_known),
       ...(s.owner_action === undefined ? {} : { owner_action: readOwnerReview(s.owner_action) }),

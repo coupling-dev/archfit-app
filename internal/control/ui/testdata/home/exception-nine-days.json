@@ -1,4 +1,7 @@
 {
+  "weekly": {
+    "known": false
+  },
   "state": "clean",
   "status": "The default branch follows the policy. 1 exception expires in 9 days. Nothing needs you.",
   "map": {

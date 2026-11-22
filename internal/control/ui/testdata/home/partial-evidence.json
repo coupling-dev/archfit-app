@@ -1,4 +1,7 @@
 {
+  "weekly": {
+    "known": false
+  },
   "state": "unknown",
   "status": "The last check could not read every file, so the state is unknown. Nothing needs you.",
   "map": {

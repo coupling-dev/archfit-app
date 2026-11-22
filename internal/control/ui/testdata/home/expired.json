@@ -1,4 +1,7 @@
 {
+  "weekly": {
+    "known": false
+  },
   "state": "expired",
   "status": "An exception passed its date and the code still breaks the rule, so every pull request fails.",
   "needs_you": [

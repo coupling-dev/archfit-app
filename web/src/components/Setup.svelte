@@ -101,6 +101,12 @@
           <span class="number" aria-hidden="true">{done[i] ? '✓' : i + 1}</span>
           <div class="step-copy">
             <h3 class="title-box">{i + 1} · {step.title}</h3>
+            {#if i === 3 && setup.weekly?.known}
+              <p>This week: {setup.weekly.checked} checked, {setup.weekly.quiet} quiet, {setup.weekly.asked} asked</p>
+              <p>{setup.weekly.caveat}</p>
+            {:else if i === 3 && setup.weekly}
+              <p>This week: counts unavailable</p>
+            {/if}
             {#if !done[i]}<p>{step.text}</p>{/if}
           </div>
           <StatusLabel label={setupStepChip(done, i)} />
@@ -124,6 +130,7 @@
   </div>
   <div class="box-body">
     {#if complete}
+      {#if setup.weekly?.known}<p>This week: {setup.weekly.checked} checked, {setup.weekly.quiet} quiet, {setup.weekly.asked} asked</p><p>{setup.weekly.caveat}</p>{:else if setup.weekly}<p>This week: counts unavailable</p>{/if}
       <Disclosure summary="Setup details">{@render stepList()}</Disclosure>
     {:else}
       <div class="progress" aria-label="{completed} of 4 steps done"><span>{completed} of 4 done</span><span class="bar" aria-hidden="true"><span style="width: {completed * 25}%"></span></span></div>
