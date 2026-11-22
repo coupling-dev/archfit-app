@@ -148,6 +148,9 @@ for (const file of names) {
       await expect(page.getByRole('link', { name: 'See what needs you' })).toHaveCount(0);
     }
     await expect(page.getByRole('heading', { name: 'Needs you' })).toHaveCount(body.needs_you.length ? 1 : 0);
+    if (body.needs_you.length && body.needs_you.every((need) => need.kind !== 'request')) {
+      await expect(page.getByRole('region', { name: 'Needs you' }).getByRole('list', { name: 'Story of the change' })).toHaveCount(0);
+    }
     if (!body.setup) {
       for (const need of body.needs_you)
         await expect(page.getByRole('link', { name: need.text })).toHaveAttribute('href', need.href);
