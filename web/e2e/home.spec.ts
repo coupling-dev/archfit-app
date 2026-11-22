@@ -448,3 +448,16 @@ test('home: setup chips use semantic colours in both themes', async ({ page }) =
     await expect(page.locator('.setup .status-label').filter({ hasText: /^to do$/ }).first()).toHaveCSS('background-color', attention);
   }
 });
+
+for (const width of [375, 1280]) {
+  test(`open request story at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await open(page, path, { [api]: () => [200, fixture('one-request')] });
+    const needs = page.getByRole('region', { name: 'Needs you' });
+    const story = needs.getByRole('list', { name: 'Story of the change' });
+    await expect(story.getByRole('listitem')).toHaveCount(6);
+    await expect(story.locator('[aria-current="step"]')).toHaveCount(1);
+    await expect(story.locator('[aria-current="step"]')).toContainText('ask #431');
+    await expect(needs.getByRole('link', { name: 'Request #431 waits.' })).toHaveAttribute('href', '/r/acme/app/requests/431');
+  });
+}
