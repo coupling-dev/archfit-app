@@ -30,6 +30,7 @@ type pullJSON struct {
 		Ref  string `json:"ref"`
 		Repo *struct {
 			FullName string `json:"full_name"`
+			ID       int64  `json:"id"`
 		} `json:"repo"`
 	} `json:"head"`
 	Base struct {
@@ -48,6 +49,7 @@ func (j pullJSON) pull() Pull {
 	}
 	if j.Head.Repo != nil {
 		p.HeadRepo = j.Head.Repo.FullName
+		p.HeadRepoID = j.Head.Repo.ID
 	}
 	p.Title = j.Title
 	if j.User != nil {
