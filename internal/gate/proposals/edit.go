@@ -147,6 +147,9 @@ func (s *Service) Edit(ctx context.Context, r api.Repo, in EditInput) (Outcome, 
 		return Outcome{}, err
 	}
 	switch same := cur != nil && bytes.Equal(in.File, base); {
+	case !in.AsIs && cur != nil && (cur.rec.EditVoided || len(cur.stale) > 0):
+		// The open pull request waits for a decision (approve it again, or discard): no edit is written over it.
+		return Outcome{}, ErrEditChanged
 	case in.AsIs && !same:
 		return Outcome{}, ErrEditChanged
 	case !in.AsIs && same:

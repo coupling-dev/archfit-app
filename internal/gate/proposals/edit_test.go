@@ -285,3 +285,18 @@ func TestApproveAsItIsNeedsTheOpenProposalsFile(t *testing.T) {
 		t.Fatalf("another file: %v, redeemed %d", err, len(w.redeemed))
 	}
 }
+
+func TestAnEditIsRefusedWhileTheOpenPullRequestNeedsADecision(t *testing.T) {
+	w := newWorld(t)
+	if _, err := w.svc.Edit(context.Background(), testRepo, w.editInput(testPolicy, testPolicy+"# first\n", true)); err != nil {
+		t.Fatal(err)
+	}
+	w.hub.push(fakeBase, policyPath, testPolicy+"# main\n")
+	w.approveTip() // the first edit's bytes no longer apply: it is stale
+	head := w.hub.file(Branch, policyPath)
+	in := w.editInput(head, head+"# second\n", false)
+	redeemed := len(w.redeemed)
+	if _, err := w.svc.Edit(context.Background(), testRepo, in); !errors.Is(err, ErrEditChanged) || len(w.redeemed) != redeemed {
+		t.Fatalf("an edit over a stale one: %v", err)
+	}
+}

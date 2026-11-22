@@ -50,7 +50,10 @@ func (g *Gate) react(ctx context.Context, e webhook.Event) (string, error) {
 		}
 		return reactionNone, nil
 	case webhook.PullClosed:
-		return reactionPullClosed, g.pullClosed(ctx, e)
+		if err := g.pullClosed(ctx, e); err != nil {
+			return reactionPullClosed, err
+		}
+		return reactionPullClosed, g.proposalClosed(ctx, e)
 	case webhook.PullCommented:
 		if asks.IsRequest(e.Body) {
 			return g.requestCommented(ctx, e)

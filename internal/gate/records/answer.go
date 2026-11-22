@@ -183,6 +183,8 @@ func voidApproval(cur [][]byte, approvalID string, request int, reopened *bool) 
 				p.EditEpoch++
 			}
 			p.Approvals = slices.Delete(p.Approvals, i, i+1)
+			// The answer that asked to merge now may be the one leaving: the rest waits for a new answer (fail safe).
+			p.MergeNow = false
 			if next[3], err = Encode(&p); err != nil {
 				return nil, err
 			}

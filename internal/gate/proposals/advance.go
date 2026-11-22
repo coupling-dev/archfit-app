@@ -1,6 +1,7 @@
 package proposals
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"slices"
@@ -28,7 +29,8 @@ func (s *Service) Advance(ctx context.Context, r api.Repo) error {
 	defer release()
 	ctx, cancel := context.WithTimeout(ctx, recordTimeout+afterTimeout)
 	defer cancel()
-	cur, err := s.readCurrent(ctx, r, false)
+	// current voids a proposal whose pull request was closed, so a reopened one never merges on its old approvals.
+	cur, err := s.current(ctx, r)
 	if err != nil || cur == nil {
 		return err
 	}
@@ -65,18 +67,20 @@ func (s *Service) Advance(ctx context.Context, r api.Repo) error {
 			return err
 		}
 		next := s.resync(ctx, r, cur, cur.tip, file, kept)
-		if next == nil {
+		if next == nil || len(voided) > 0 {
+			// An answer left the pull request: whether the rest merges now is a new answer's choice.
 			return nil
 		}
 		pin = *next
 	default:
-		next := s.upToDate(ctx, r, cur.tip, pin, listed)
-		if next.HeadSHA == pin.HeadSHA && s.passedOn(ctx, r.RepoRef, pin) {
-			return s.mergeWhenReady(ctx, r, cur.tip, pin, listed)
-		}
-		pin = next
+		pin = s.upToDate(ctx, r, cur.tip, pin, listed)
 	}
-	if err := s.check(ctx, r, cur.tip, pin, listed); err != nil {
+	// Every D13 condition is read again on every pass; the check run is written only when this head has none yet.
+	check := s.check
+	if s.passedOn(ctx, r.RepoRef, pin) {
+		check = s.verify
+	}
+	if err := check(ctx, r, cur.tip, pin, listed); err != nil {
 		if errors.Is(err, ErrEditChanged) {
 			s.voidMovedEdits(ctx, r, pin, listed)
 			return nil
@@ -87,13 +91,27 @@ func (s *Service) Advance(ctx context.Context, r api.Repo) error {
 	return s.mergeWhenReady(ctx, r, cur.tip, pin, listed)
 }
 
+// Closed voids the open proposal when its pull request was closed without a merge (the pull_request closed event), so
+// it never merges on its old approvals after a reopen.
+func (s *Service) Closed(ctx context.Context, r api.Repo) error {
+	release, err := s.hold(ctx, r)
+	if err != nil {
+		return err
+	}
+	defer release()
+	ctx, cancel := context.WithTimeout(ctx, recordTimeout)
+	defer cancel()
+	_, err = s.current(ctx, r)
+	return err
+}
+
 // passedOn reports whether the latest archfit/gate run on the pinned head is this proposal's success.
 func (s *Service) passedOn(ctx context.Context, ref api.RepoRef, pin records.Pin) bool {
 	runs, err := s.gh.CheckRuns(ctx, ref, pin.HeadSHA, gateCheck)
 	if err != nil || len(runs) == 0 {
 		return false
 	}
-	last := runs[len(runs)-1]
+	last := slices.MaxFunc(runs, func(a, b api.CheckRun) int { return cmp.Compare(a.ID, b.ID) })
 	return last.ExternalID == ExternalID(pin.Proposal) && last.Status == statusCompleted && last.Conclusion == conclusionSuccess
 }
 

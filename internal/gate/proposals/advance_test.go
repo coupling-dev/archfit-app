@@ -216,3 +216,50 @@ func TestARevertOfADeletedPolicyWorksWithAnEditOpen(t *testing.T) {
 		t.Fatalf("revert %+v, %v", out, err)
 	}
 }
+
+func TestAVoidedMergeNowAnswerLeavesAMergeLaterOneWaiting(t *testing.T) {
+	w := newWorld(t)
+	w.hub.requireCI = true
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	w.request(432, "graph", "pkg_tc", "pkg_db")
+	w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, true)
+	w.mustAnswer(olivia, 432, requests.Answer{Kind: policy3.Approve}, false)
+	w.hub.push(fakeBase, policyPath, strings.Replace(testPolicy, "  pkg_db:\n    paths: [pkg/db/**]\n", "", 1))
+	w.approveTip() // an owner confirmed a policy without pkg_db: answer 432 no longer applies
+	w.advance()
+	w.ciPasses()
+	w.advance()
+	if len(w.hub.merges) != 1 {
+		t.Fatalf("the merge-later answer merged after the merge-now one was voided: %v", w.hub.merges)
+	}
+}
+
+func TestAPullRequestClosedThenReopenedNeverMergesOnItsOldApprovals(t *testing.T) {
+	w := newWorld(t)
+	w.hub.requireCI = true
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	out := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, false)
+	w.hub.pulls[out.PullRequest].State = "closed"
+	if err := w.svc.Closed(context.Background(), testRepo); err != nil {
+		t.Fatal(err)
+	}
+	w.hub.pulls[out.PullRequest].State = "open"
+	w.ciPasses()
+	w.advance()
+	if len(w.hub.merges) != 1 {
+		t.Fatalf("a reopened pull request merged on its old approvals: %v", w.hub.merges)
+	}
+}
+
+func TestAdvanceRechecksThePullRequestBeforeMergingOnAnEarlierSuccess(t *testing.T) {
+	w := newWorld(t)
+	w.hub.requireCI = true
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	out := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, false)
+	w.hub.pulls[out.PullRequest].BaseRef = "release"
+	w.ciPasses()
+	w.advance()
+	if len(w.hub.merges) != 1 {
+		t.Fatalf("merged a pull request into another base: %v", w.hub.merges)
+	}
+}

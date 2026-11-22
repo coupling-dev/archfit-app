@@ -210,7 +210,13 @@ Submission cleans closed proposals after valid redemption, reopening their reque
   A proposal with an edit keeps it too while the default branch's policy bytes equal those at the edit's target; a
   change of those bytes retires success and voids the edit. `Advance` (default-branch push, sweep, `check_suite`)
   rebuilds a merge-now proposal on the tip, moving the edits' targets with the pin (`records.Rebase`), and merges it
-  when GitHub reports it mergeable; a merge-later proposal is left for a later answer. A ruleset that does not
+  when GitHub reports it mergeable; a merge-later proposal is left for a later answer. Every pass reads every D13
+  condition again (`verify`); the check run is written only when the head has no success of this proposal yet. When the
+  approved policy changed under a proposal of request answers (an owner confirmed a change), `Advance` writes the
+  answers again on it, as the next answer would: an answer approves a change, not bytes. An answer that no longer
+  applies is voided, and then nothing merges until a new answer (voiding clears `MergeNow`). A pull request closed
+  without a merge voids its proposal at the `pull_request` closed event (`Closed`), so a reopen merges nothing old. A
+  normal edit is refused while the pull request waits for a decision (a voided or stale approval). A ruleset that does not
   require an up-to-date branch lets an owner merge it on GitHub before the next answer rewrites it. When only other
   files moved, that merge is the approved policy. When the default branch's policy changed, the merged policy is not
   the expected digest, so the push is "policy changed outside the flow" (task 20): fail closed, not a silent approval.
