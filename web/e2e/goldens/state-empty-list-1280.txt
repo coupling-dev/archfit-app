@@ -5,3 +5,7 @@ Choose a repository to open its Home.
 No repository yet
 
 No repository is available to you through an Archfit installation yet.
+
+If you asked to install Archfit on an organization and you are not its administrator, GitHub sent your request to the organization's administrators. Send one of them this link and one sentence:
+
+https://github.com/apps/archfit-review/installations/new

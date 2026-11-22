@@ -14,6 +14,12 @@ Security rules for identities, secrets, and incidents are in [Security](security
   It is the only way to test real webhooks, uploads, and the OIDC audience before production.
   See the trigger in [Options](architecture.md#options).
 
+## Admit a beta account before inviting it
+
+1. Add the account login to `ApprovedAccounts` in a configuration pull request. Configured logins are case-insensitive.
+2. Merge and deploy the configuration change.
+3. Send the partner the invitation only after the deployment. No installation record is needed for a configured login.
+
 ## Infrastructure as code
 
 - Terraform (or OpenTofu) owns every cloud resource, IAM binding, and service setting.

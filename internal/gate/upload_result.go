@@ -171,6 +171,9 @@ func (g *Gate) serveUpload4(w http.ResponseWriter, req *http.Request) {
 		body = a
 	case errors.As(err, &rejection):
 		status, body = rejection.Status, refused{Error: rejection.Code}
+		if rejection.Code == "installation_not_approved" {
+			body = refused{Error: rejection.Code, Message: BetaAccessMessage}
+		}
 	case errors.Is(err, api.ErrRateLimited):
 		status, body = http.StatusServiceUnavailable, refused{Error: codeRateLimited}
 		w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds))
