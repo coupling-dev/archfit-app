@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { docsClock, open } from './support';
+import { stateFixtures } from './state-fixtures';
 
 // The five states an owner meets on Home, from the contract fixtures. home.spec.ts runs the axe, CSP and words checks
 // on every fixture; this file only captures them. Run with ARCHFIT_DOCS_SHOTS=1 to write
@@ -37,3 +38,17 @@ for (const [label, file] of states) {
     });
   }
 }
+
+test('setup pull has one primary action @docs', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await docsClock(page);
+  const state = stateFixtures.find((entry) => entry.name === 'setup-open');
+  if (!state) throw new Error('setup-open fixture missing');
+  await open(page, state.path, { [`GET ${state.api}`]: () => state.reply });
+  await expect(page.getByRole('heading', { name: state.heading })).toBeVisible();
+  await expect(page.getByText(state.text, { exact: true })).toBeVisible();
+  await expect(page.getByText('Merge the setup pull request to start the checks.', { exact: true })).toBeVisible();
+  await expect(page.locator('a.btn.primary')).toHaveCount(1);
+  await expect(page.getByRole('link', { name: /Open pull request #12/ })).toHaveAttribute('href', 'https://github.com/acme/app/pull/12');
+  if (process.env.ARCHFIT_DOCS_SHOTS) await page.screenshot({ path: new URL('../../docs/images/home/setup-open-1280-light.png', import.meta.url).pathname, animations: 'disabled' });
+});

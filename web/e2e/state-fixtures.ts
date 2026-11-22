@@ -23,6 +23,11 @@ unknownRuleset.setup.rules = [
   { code: 'administrator_bypass', state: 'unknown', text: '' },
 ];
 
+const setupOpen = readHome(fixture('home/not-set-up'));
+if (!setupOpen.setup) throw new Error('The setup fixture must include setup.');
+setupOpen.setup.setup_pull = 12;
+setupOpen.status = 'Merge the setup pull request to start the checks.';
+
 // The same deterministic identifier stress case as policy-reading.spec.ts; no new policy facts.
 const longNames = fixture<Policy>('policy/pumba');
 const module = longNames.modules[0];
@@ -42,6 +47,7 @@ interface StateFixture {
 }
 
 export const stateFixtures: StateFixture[] = [
+  { name: 'setup-open', path: '/r/acme/app', api: '/api/repos/acme/app/home', reply: [200, setupOpen], heading: 'Set up Archfit for acme/app', text: 'Setup pull request #12: open. No merge is stopped before you merge it.' },
   {
     name: 'waiting-installation',
     path: '/r/octo/tool',
