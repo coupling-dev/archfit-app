@@ -116,7 +116,7 @@ jobs:
       - run: tofu fmt -check -recursive infra
       - name: Validate and test each stack
         run: |
-          for stack in infra/data infra/runtime; do
+          for stack in infra/data infra/runtime infra/candidate-823/data infra/candidate-823/runtime; do
             tofu -chdir="$stack" init -backend=false -input=false -lockfile=readonly
             tofu -chdir="$stack" validate
             tofu -chdir="$stack" test

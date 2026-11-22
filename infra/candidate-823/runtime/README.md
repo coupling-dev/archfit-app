@@ -17,8 +17,8 @@ tofu -chdir=infra/candidate-823/runtime validate
 tofu -chdir=infra/candidate-823/runtime test
 ```
 
-Mock tests do not prove live IAM, routing, readiness or state isolation. CI does
-not yet run this root; integration is a separate change. The owner must review
+CI initializes this root with the backend disabled, validates it, and runs its
+mock tests. Mock tests do not prove live IAM, routing, readiness or state isolation. The owner must review
 the exact candidate-only saved plan and resource addresses, identity, project,
 quota, effective IAM, registry digest, numeric secret versions and state access
 before a separately approved apply. DNS for candidate-823.coupling.dev is an
