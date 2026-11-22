@@ -289,3 +289,20 @@ func TestStoryMentionOnRepublishAndNewRun(t *testing.T) {
 		t.Fatalf("comments: %+v", comments)
 	}
 }
+
+func TestStoryCommentPreservesCopyableLiterals(t *testing.T) {
+	r := result.Result{Status: result.StatusWaiting, Errors: []result.Error{
+		{Path: "src/@shared/widget.ts", Next: result.Next{Kind: nextWait, Text: "wait for an owner: #40"}},
+		{Next: result.Next{Kind: nextCommand, Text: "npm install @acme/lib"}},
+	}}
+	v := newView(r)
+	s := storyOf(v, nil)
+	v.story = &s
+	v.next = &nextLink{label: "answer", url: "https://app.example/requests/@owner", role: "owner"}
+	body := v.comment(maxBody)
+	for _, literal := range []string{"`src/@shared/widget.ts`", "`npm install @acme/lib`", "](https://app.example/requests/@owner)"} {
+		if !strings.Contains(body, literal) {
+			t.Errorf("comment lost %q: %s", literal, body)
+		}
+	}
+}

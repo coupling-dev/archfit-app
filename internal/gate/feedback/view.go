@@ -252,15 +252,20 @@ func (v view) comment(budget int) string {
 	if headerCoversNext {
 		p.Author, p.Owner = "", ""
 	}
-	head := "## " + v.mark() + " " + p.StatusLine + "\n"
+	renderProse := prose
+	if v.story != nil {
+		renderProse = func(text string) string { return prose(neutralizeMentions(text)) }
+	}
+	status := renderProse(p.StatusLine)
+	head := "## " + v.mark() + " " + status + "\n"
 	closing := ""
 	if v.next != nil {
 		// A pending owner step is the whole message; the records and the lines for author and owner fold away.
-		head = "## " + v.title() + "\n\n" + v.nextLine() + "\n" + v.facts() + "\n<details><summary>Details</summary>\n\n**" + prose(p.StatusLine) + "**\n"
+		head = "## " + v.title() + "\n\n" + v.nextLine() + "\n" + v.facts() + "\n<details><summary>Details</summary>\n\n**" + status + "**\n"
 		closing = "\n</details>\n"
 	}
 	if p.Note != "" {
-		head += "\n" + prose(p.Note) + "\n"
+		head += "\n" + renderProse(p.Note) + "\n"
 	}
 	var tail strings.Builder
 	if p.Author != "" {
@@ -277,15 +282,7 @@ func (v view) comment(budget int) string {
 		if headerCoversNext && r.Request > 0 && r.Request != v.story.Request {
 			r.ShowNext = true
 		}
-		blocks = append(blocks, "\n"+r.markdown())
-	}
-	if v.story != nil {
-		// Only the story header can actively mention an account. Keep the text
-		// readable but break the GitHub mention before budgeting the comment.
-		head = neutralizeMentions(head)
-		for i, block := range blocks {
-			blocks[i] = neutralizeMentions(block)
-		}
+		blocks = append(blocks, "\n"+r.markdown(renderProse))
 	}
 	kept := fit(blocks, budget-len(header)-len(head)-tail.Len()-len(closing), func(n int) string { return "\n" + moreLine(n) + "\n" })
 	return header + head + strings.Join(kept, "") + tail.String() + closing
@@ -307,37 +304,37 @@ func heading(line string) string {
 }
 
 // markdown is one record of the comment: where in code, the rule in bold, what; then its fields as a list.
-func (r Record) markdown() string {
+func (r Record) markdown(renderProse func(string) string) string {
 	where := place(r.Path, r.Line)
 	var b strings.Builder
 	if where != "" {
 		b.WriteString(codeSpan(where) + " ")
 	}
-	b.WriteString("**" + prose(r.Rule) + "**")
+	b.WriteString("**" + renderProse(r.Rule) + "**")
 	if r.What != "" {
-		b.WriteString(" " + prose(r.What))
+		b.WriteString(" " + renderProse(r.What))
 	}
 	b.WriteString("\n")
 	if r.Why != "" {
-		b.WriteString("- why: " + prose(r.Why) + "\n")
+		b.WriteString("- why: " + renderProse(r.Why) + "\n")
 	}
 	if r.Instead != "" {
-		b.WriteString("- instead: " + prose(r.Instead) + "\n")
+		b.WriteString("- instead: " + renderProse(r.Instead) + "\n")
 	}
 	if r.Balance != nil {
-		b.WriteString("- balance: " + prose(result.BalanceText(*r.Balance, r.Subject)) + "\n")
+		b.WriteString("- balance: " + renderProse(result.BalanceText(*r.Balance, r.Subject)) + "\n")
 	}
 	if r.Surface != nil {
-		b.WriteString("- surface: " + prose(result.SurfaceText(*r.Surface)) + "\n")
+		b.WriteString("- surface: " + renderProse(result.SurfaceText(*r.Surface)) + "\n")
 	}
 	if r.ShowNext {
 		next := r.Next
-		step := prose(next.Text)
+		step := renderProse(next.Text)
 		if next.Kind != nextFix && next.Kind != nextWait {
 			step = codeSpan(next.Text)
 		}
 		if next.Note != "" {
-			step += " (" + prose(next.Note) + ")"
+			step += " (" + renderProse(next.Note) + ")"
 		}
 		b.WriteString("- next: " + step + "\n")
 	}
