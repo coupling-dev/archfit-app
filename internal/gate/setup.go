@@ -80,7 +80,8 @@ type SetupPolicyChange struct {
 	Requests    []int
 }
 
-// SetupPolicyHistory reads recorded pre-approval changes oldest first. The ledger
+// SetupPolicyHistory reads pre-approval changes in recording order. Delayed
+// deliveries can put changes out of branch order. The ledger
 // only contains changes observed by the App; it cannot establish complete history
 // or describe semantic changes. A successful empty result is a non-nil slice.
 func (g *Gate) SetupPolicyHistory(ctx context.Context, r api.Repo) ([]SetupPolicyChange, error) {

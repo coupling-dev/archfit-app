@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"testing"
 
+	"encoding/json"
+	"github.com/coupling-dev/archfit-app/internal/gate/inputs"
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
 	"github.com/coupling-dev/archfit-app/internal/store"
 )
@@ -42,6 +44,20 @@ func TestSetupPolicyHistory(t *testing.T) {
 	other.InstallationID++
 	if got, err = w.gate.SetupPolicyHistory(ctx, other); err == nil {
 		t.Fatalf("unadmitted installation = %#v", got)
+	}
+	raw, err := json.Marshal(inputs.Admission{Account: "acme", By: "operator", ByID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.mem.Put(ctx, store.Tenant(other.InstallationID), inputs.AdmissionKey, raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := records.Unguarded(ctx, w.mem, store.Tenant(other.InstallationID), other.FullName, records.Push{After: "other"}, "digest", records.PolicyChange{Commit: "other"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = w.gate.SetupPolicyHistory(ctx, other)
+	if err != nil || len(got) != 1 || got[0].Commit != "other" {
+		t.Fatalf("other installation = %#v, %v", got, err)
 	}
 	down := errors.New("store down")
 	w.counts.fail[records.PolicyHistoryKey(w.shop.FullName)] = down
