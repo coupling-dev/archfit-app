@@ -14,7 +14,9 @@ Your policy defines modules, allowed dependencies, rules and exceptions. Authors
 
 Your installation on octo is waiting to be admitted.
 
-Archfit is in a closed beta. Ask for access: https://github.com/coupling-dev/archfit/issues/new?template=beta-access.yml Until then nothing runs and nothing is posted on your pull requests. Nothing to do now: this page changes once it is admitted.
+Archfit is in a closed beta. Ask for access: https://github.com/coupling-dev/archfit/issues/new?template=beta-access.yml
+
+Until you are admitted, nothing runs and nothing is posted on your pull requests.
 
 How admission works
 
