@@ -22,6 +22,7 @@ const confirmationRequestLifetime = 30 * time.Minute
 const confirmationLock = 15 * time.Minute
 
 var ErrConfirmation = errors.New("passkey: confirmation cannot be used")
+var ErrConfirmationWrong = errors.New("passkey: confirmation token mismatch")
 var ErrConfirmationExpired = errors.New("passkey: confirmation expired")
 
 // ConfirmationLocked reports the server's lock expiry.
@@ -281,7 +282,7 @@ func (s *OperatorConfirmations) Verify(ctx context.Context, scope ConfirmationSc
 		}
 		if subtle.ConstantTimeCompare(r.Hash, hash[:]) != 1 {
 			r.Failures++
-			refused = ErrConfirmation
+			refused = ErrConfirmationWrong
 			if r.Failures >= 5 {
 				r.LockedUntil = now.Add(confirmationLock)
 				r.Hash = nil

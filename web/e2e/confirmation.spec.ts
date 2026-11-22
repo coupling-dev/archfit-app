@@ -91,3 +91,21 @@ test('a failed first registration offers a fresh confirmation without reload',as
  expect(requests).toBe(2);
  await expect(page.getByLabel('Token from the operator')).toHaveValue('');
 });
+
+test('known token mismatch retains the attempt for direct retry',async({page})=>{
+ let requests=0;
+ await open(page,'/r/acme/app/passkeys',{
+  [`GET ${api}`]:()=>[200,{passkeys:[]}],
+  [`POST ${api}/confirmation`]:()=>[200,{attempt:`attempt-${++requests}`,installation:1}],
+  [`POST ${api}/register`]:()=>[422,{error:'That token cannot be used. Check the latest token from the operator and try again.'}],
+ });
+ await page.getByRole('button',{name:'Request confirmation'}).click();
+ await page.getByLabel('Token from the operator').fill('mistyped');
+ await page.getByRole('button',{name:'Confirm and register a passkey'}).click();
+ await expect(page.getByRole('alert')).toContainText('Check the latest token');
+ await expect(page.getByRole('button',{name:'Request confirmation'})).toHaveCount(0);
+ await page.getByLabel('Token from the operator').fill(dummy);
+ await page.getByRole('button',{name:'Confirm and register a passkey'}).click();
+ await expect(page.getByRole('alert')).not.toContainText('may have been consumed');
+ expect(requests).toBe(1);
+});

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -42,5 +43,15 @@ func TestOperatorConfirmationHTTPAuthorization(t *testing.T) {
 	wantStatus(t, ops.postJSON("/api/admin/confirmations/revoke", body), http.StatusOK)
 	if err = svc.Verify(t.Context(), passkey.ConfirmationScope{InstallationID: 1, RepositoryID: 10, UserID: e.user("alice").UserID, SessionBinding: "test-binding", AttemptID: id}, out.Token); err == nil {
 		t.Fatal("revoked token accepted")
+	}
+}
+
+func TestConfirmationIssueNeverCompresses(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "https://app.example/api/admin/confirmations/issue", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
+	writeJSON(w, r, http.StatusOK, confirmationIssueJSON{Token: strings.Repeat("dummy", 512)})
+	if w.Header().Get("Content-Encoding") != "" {
+		t.Fatal("token-bearing response compressed")
 	}
 }

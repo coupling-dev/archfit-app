@@ -20,6 +20,7 @@
   const submitted=token; token='';
   try { await addPasskey(api,session.csrf,false,{attempt,confirmation:submitted},()=>prompting=true); done(); }
   catch(e){const detail=passkeyFailure(e) ? 'The browser did not finish registration.' : explain(e as ApiError,window.location.pathname);
+   if ((e as ApiError).status === 422) { error=detail; return; }
    attempt='';installation=0;
    error=detail+' Confirmation may have been consumed. Request confirmation again and ask the operator to issue a token for the new attempt.';}
   finally{busy=false;prompting=false;}
