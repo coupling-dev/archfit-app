@@ -4,6 +4,8 @@
   import Skeleton from '../components/Skeleton.svelte';
   import Icon from '../components/ui/Icon.svelte';
   import PageHead from '../components/ui/PageHead.svelte';
+  import StoryRow from '../components/ui/StoryRow.svelte';
+  import { storySteps } from '../lib/request';
   import StatusLabel from '../components/ui/StatusLabel.svelte';
   import { explainLoad, repoAPI, type ApiError } from '../lib/api';
   import { firstJSON } from '../lib/early';
@@ -56,6 +58,9 @@
           {#if href}
             <a {href}>{need.text}{#if isExternalHref(href)}<Icon name="link-external" size={12} /><span class="sr-only"> (opens GitHub)</span>{/if}</a>
           {:else}<p>{need.text}</p>{/if}
+          {#if need.kind === 'request' && need.request}
+            <StoryRow steps={storySteps({ state: 'open', answer: undefined })} ask={`#${need.request}`} />
+          {/if}
           {#if waitingFor(need.since)}<p class="muted">Waiting {waitingFor(need.since)}</p>{/if}
           {#if need.record}<details><summary>Show the record</summary><pre>{need.record}</pre></details>{/if}
         </div>

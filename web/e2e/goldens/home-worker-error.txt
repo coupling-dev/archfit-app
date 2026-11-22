@@ -7,6 +7,24 @@ Open the request
 View policy
 Needs you
 Request #431 waits.
+✓
+change
+: done
+✗
+check
+: failed
+●
+ask #431
+: now
+○
+answer
+: later
+○
+policy
+: later
+○
+re-check
+: later
 Show the record
 The map
 Matrix
