@@ -177,6 +177,10 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 		done(1, 0)
 	})
 	reads.Wait()
+	// A first approval can exist before its digest is active on the default branch.
+	if out.Approval.Status != gate.ApprovalNeeded {
+		out.SetupPull = 0
+	}
 	ruleReads.Wait()
 	out.Rules = rules
 	if out.State == "approved" && out.Approval.Status == gate.ApprovalNeeded {
