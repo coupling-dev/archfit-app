@@ -163,6 +163,11 @@ Functions, all under one installation tenant:
   merge of a head the App wrote before the swap cannot match an expected digest that names an unrecorded answer. The
   repository record is in the swap unchanged: an open request of a repository outside the flow is `ErrOutsideFlow`, so
   no answer is written on a policy no owner approved, even when the state lands after the caller checked it.
+- `AnswerBatch(ctx, s, t, repo, items []BatchAnswer, pin *Pin) error`: applies `Answer` to 1–20 distinct
+  requests and approval IDs in one swap. Items with `Join` set use the shared pin and join in input order;
+  their requests stay indexed. Other requests leave the index when it points to them. The swap checks the
+  repository, both indexes and the proposal when any item joins, for up to 44 keys. An error records none
+  of the answers. `Answer` uses the same transaction for one item.
 - `Void(ctx, s, t, repo, approvalID) (request int, reopened bool, err error)`: the approval becomes `void`, leaves its
   proposal's list (so a proposal's capacity counts only approvals that still apply), and its `answered` request is
   `open` again with its index entry, in one swap of up to 4 keys; when another open request holds the key now, the
@@ -236,7 +241,7 @@ merge parent to equal every remaining edit's target. Request 0 never opens, reop
 - **Volatility**: Low (the store side)
 - **Balanced?**: Yes
 - **Shared knowledge**: `Tenant`, `Get`, `ErrNotFound`, `Update`, `ErrConflict`, and the limits of
-  `CompareAndSwapAll` (10 keys, 64 KiB values). The Firestore driver makes each swap atomic across App instances.
+  `CompareAndSwapAll` (44 keys, 64 KiB values). The Firestore driver makes each swap atomic across App instances.
 
 `gate/requests` (M2 task 16) writes the requests and the request index: a request is stored with its index entry
 in one `Indexed` swap, and the pull request joins it in another. Later milestone 2 modules (answers, approvals, the
