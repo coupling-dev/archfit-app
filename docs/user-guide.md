@@ -210,11 +210,14 @@ changed block instead of a minimal diff; no changed bytes are omitted.
 While a policy pull request is open, the policy page shows it above the policy, with its change against the default
 branch and one next action:
 
-- **Open, approved, not merged** (merge later was chosen, or GitHub refused the merge): **Approve and merge #N (k lines)
-  with passkey** approves the open proposal's file as it is and merges it now.
-- **Your approval was cancelled**: the default branch moved after an edit was approved, which voids that approval. The
-  change is still in the pull request. **Approve and merge #N (k lines) with passkey** approves it again. **Discard the
-  change instead** lists the lines that discarding removes from the pull request before you discard them.
+- **Approved, waiting for the checks**: **Next: nothing for you.** The App brings the pull request up to date with the
+  default branch by itself and merges it when GitHub allows (see below). No button.
+- **Approved, waiting** because its last answer chose merge later: **Approve and merge #N (k lines) with passkey**
+  approves the pull request's file as it is and merges it now.
+- **Your approval no longer holds**: the policy on the default branch changed after the approval. A code-only push
+  never does this. The change is still in the pull request; the diff shows what it would merge on the current policy.
+  **Approve and merge #N (k lines) with passkey** approves it again. **Discard the change instead** lists the lines
+  that discarding removes from the pull request before you discard them.
 - **#N changed outside Archfit**: someone changed the `archfit/policy` branch on GitHub. **Restore #N** writes the
   branch again from the recorded approvals only, and lists first the lines it removes. It approves and merges nothing.
 
@@ -226,17 +229,18 @@ Every edit needs your passkey, even one that tightens the policy. **Approve and 
 as the last change in the App's `archfit/policy` pull request. Its comment names the owner and the passkey.
 The merge push consumes the approval once.
 
-Before it merges, the App brings its pull request up to date: when the branch does not contain the default branch's
-head, it writes the same policy bytes as one new App commit on that head and checks the digest again. The approval
-binds the policy bytes, not the commit. When GitHub still refuses the merge, the page shows a warning with GitHub's
-reason, such as **the branch is behind the default branch**, and the pull request stays open. Other required checks
-must pass on the new commit before GitHub merges it; the App does not retry the merge on its own.
+The App owns its pull request's git steps. When the branch does not contain the default branch's head, it writes the
+same policy bytes as one new App commit on that head, sets `archfit/gate` and checks the digest again. The approval
+binds the policy bytes, not the commit, so it stays valid. The App then merges the pull request when GitHub reports it
+mergeable: right after the answer, on each default-branch push, at the hourly sweep, and, when the App is subscribed to
+check suites, as soon as the checks finish. Nobody updates the branch or merges by hand. When GitHub has not merged it
+yet, the answer shows a warning with GitHub's reason, such as **required checks or reviews have not passed yet**.
 
 If the starting file changed, the App says **the policy changed; reload**. Reload and read the preview again.
-Any default-branch tip movement before the merge, including a code-only push, voids the edit's approval.
-The App does not replay its YAML on the new tip; the policy page says the approval was cancelled and offers to approve
-the pull request again. This is the fail-closed reading of D9,
-not a comparison of whether the new policy loosens or tightens a rule.
+A change of the policy on the default branch before the merge voids the edit's approval; a code-only push does not.
+The App does not replay a whole-file edit on a changed policy; the policy page says the approval no longer holds and
+offers to approve the pull request again. This is the fail-closed reading of D9, not a comparison of whether the new
+policy loosens or tightens a rule.
 
 ## Configure the ruleset
 
@@ -258,7 +262,7 @@ line of the issue the App opens when the policy changed outside the flow, with a
 first policy** (`/owner/first`, with `?pull=<number>` for an onboarding pull request). Status markers are `✅` pass,
 `❌` fail, `⏳` waiting and `⚠️` unknown. The owner approval check says `✅ Owner approved this head (not an engine pass)`
 and keeps the fingerprints in a collapsed block.
-The App's own policy pull request waits for an owner on the **Policy** page, not on these pages: a cancelled approval,
+The App's own policy pull request waits for an owner on the **Policy** page, not on these pages: an approval that no longer holds,
 a merge GitHub refused, or a branch changed outside Archfit each shows there with its one next action (see
 [Edit the policy YAML](#edit-the-policy-yaml)).
 

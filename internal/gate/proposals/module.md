@@ -207,7 +207,10 @@ Submission cleans closed proposals after valid redemption, reopening their reque
   never asked twice while an answer waits; an answer joins the open proposal without a new line only when another key
   wrote the same line.
 - **Stated limit for proposals without whole-file edits**: a head keeps its `archfit/gate` success after the default branch moves.
-  A proposal with an edit instead retires success and voids the edit on any observed target-tip movement. A ruleset that does not
+  A proposal with an edit keeps it too while the default branch's policy bytes equal those at the edit's target; a
+  change of those bytes retires success and voids the edit. `Advance` (default-branch push, sweep, `check_suite`)
+  rebuilds a merge-now proposal on the tip, moving the edits' targets with the pin (`records.Rebase`), and merges it
+  when GitHub reports it mergeable; a merge-later proposal is left for a later answer. A ruleset that does not
   require an up-to-date branch lets an owner merge it on GitHub before the next answer rewrites it. When only other
   files moved, that merge is the approved policy. When the default branch's policy changed, the merged policy is not
   the expected digest, so the push is "policy changed outside the flow" (task 20): fail closed, not a silent approval.
