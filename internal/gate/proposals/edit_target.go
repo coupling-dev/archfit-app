@@ -54,6 +54,10 @@ func (s *Service) voidMovedEdits(ctx context.Context, r api.Repo, pin records.Pi
 	}
 }
 
-func editNote(login, passkey string) string {
-	return "archfit: policy YAML edited by `" + login + "` with the passkey `" + requests.PasskeyShown(passkey) + "`.\n"
+func editNote(login, passkey string, asIs bool) string {
+	what := "policy YAML edited"
+	if asIs {
+		what = "the open policy proposal approved as it is"
+	}
+	return "archfit: " + what + " by `" + login + "` with the passkey `" + requests.PasskeyShown(passkey) + "`.\n"
 }

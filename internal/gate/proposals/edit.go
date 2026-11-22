@@ -39,7 +39,10 @@ type EditInput struct {
 	Base, Target string
 	Owner        Owner
 	Later        bool
-	Redeem       func(context.Context, string) (string, error)
+	// AsIs approves the open proposal's file as it is: File must be that file, and the approval replaces the ones a
+	// move of the default branch voided, or merges a proposal GitHub refused.
+	AsIs   bool
+	Redeem func(context.Context, string) (string, error)
 }
 
 // EditView is a read-only preview; errors prevent the passkey step.
@@ -143,7 +146,10 @@ func (s *Service) Edit(ctx context.Context, r api.Repo, in EditInput) (Outcome, 
 	if err != nil {
 		return Outcome{}, err
 	}
-	if cur != nil && bytes.Equal(in.File, base) {
+	switch same := cur != nil && bytes.Equal(in.File, base); {
+	case in.AsIs && !same:
+		return Outcome{}, ErrEditChanged
+	case !in.AsIs && same:
 		return Outcome{}, ErrEditUnchanged
 	}
 	if in.Redeem == nil {
@@ -190,7 +196,7 @@ func (s *Service) Edit(ctx context.Context, r api.Repo, in EditInput) (Outcome, 
 	}
 	out := Outcome{Approval: id, PullRequest: pin.PullRequest}
 	out.State, out.Merge, out.Reason = s.publish(after, r, tip, *pin, listed, in.Later)
-	note := editNote(in.Owner.Login, credential)
+	note := editNote(in.Owner.Login, credential, in.AsIs)
 	if out.State == records.StateVoid {
 		note += "the policy changed; reload. The edit's approval is void.\n"
 	}

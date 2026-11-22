@@ -20,6 +20,7 @@ type editJSON struct {
 	Target string `json:"target,omitempty"`
 	Token  string `json:"token,omitempty"`
 	Later  bool   `json:"merge_later,omitempty"`
+	AsIs   bool   `json:"as_is,omitempty"` // approve the open proposal's file as it is
 }
 
 type editPreviewJSON struct {
@@ -41,7 +42,7 @@ func readEdit(r *http.Request) (answers.EditAnswer, error) {
 	if in.Answer != "edit" {
 		return answers.EditAnswer{}, invalid("Choose edit for a YAML answer.")
 	}
-	return answers.EditAnswer{YAML: in.YAML, Base: in.Base, Target: in.Target, Token: in.Token, Later: in.Later}, nil
+	return answers.EditAnswer{YAML: in.YAML, Base: in.Base, Target: in.Target, Token: in.Token, Later: in.Later, AsIs: in.AsIs}, nil
 }
 
 func (s *server) apiEditReload(r *http.Request, sc scope) (any, error) {
@@ -52,7 +53,7 @@ func (s *server) apiEditReload(r *http.Request, sc scope) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return policyEditJSON{Available: true, File: string(base.File), Digest: base.Digest, Recovery: base.Recovery}, nil
+	return editJSONOf(base, true), nil
 }
 
 func (s *server) apiEditPreview(r *http.Request, sc scope) (any, error) {

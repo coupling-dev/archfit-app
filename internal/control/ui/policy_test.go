@@ -182,6 +182,32 @@ func TestPolicyEditUsesOpenProposalHead(t *testing.T) {
 	}
 }
 
+func TestPolicyPageShowsAVoidedProposalWithoutEditing(t *testing.T) {
+	e := newEnv(t)
+	raw, err := os.ReadFile("testdata/policy/typical.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.gh.setFile(repoName, mainBranch, ".archfit.yaml", string(raw))
+	e.policy.state.ApprovedDigest = policy3.Digest(raw)
+	proposal := string(raw) + "# proposal\n"
+	e.answers.editor = gate.EditBase{File: []byte(proposal), Digest: policy3.Digest([]byte(proposal)), Recovery: true,
+		PullRequest: 44, Target: sha(5), Voided: true, Diff: "+# proposal", Lost: "-# proposal"}
+	var body policyPageJSON
+	e.as("alice", permRead).getJSON(policyAPI, &body)
+	want := policyEditJSON{Available: true, File: proposal, Digest: policy3.Digest([]byte(proposal)), Recovery: true,
+		PullRequest: 44, Target: sha(5), Voided: true, Diff: "+# proposal", Lost: "-# proposal"}
+	if body.Edit != want {
+		t.Fatalf("edit %+v", body.Edit)
+	}
+	e.answers.editor = gate.EditBase{File: raw, Digest: policy3.Digest(raw), Target: sha(5)}
+	body = policyPageJSON{}
+	e.as("alice", permRead).getJSON(policyAPI, &body)
+	if body.Edit.File != "" || body.Edit.PullRequest != 0 {
+		t.Fatalf("no proposal: %+v", body.Edit)
+	}
+}
+
 func TestPolicyBuiltinsAndExpiry(t *testing.T) {
 	raw := `version: 1
 owners: [alice]

@@ -229,3 +229,55 @@ func TestEditPreviewDiffsAgainstOpenProposal(t *testing.T) {
 		t.Fatalf("diff against the proposal: %+v, %v", v, err)
 	}
 }
+
+func TestOpenProposalApprovedAsItIsAfterMainMoved(t *testing.T) {
+	w := newWorld(t)
+	w.hub.strict = true
+	first, err := w.svc.Edit(context.Background(), testRepo, w.editInput(testPolicy, testPolicy+"# first\n", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.hub.push(fakeBase, "README.md", "main moved")
+	view, err := w.svc.Editor(context.Background(), testRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.PullRequest != first.PullRequest || !view.Voided || view.Foreign || !view.Recovery ||
+		!strings.Contains(view.Diff, "+# first") || !strings.Contains(view.Lost, "-# first") {
+		t.Fatalf("view %+v", view)
+	}
+	head := string(view.File)
+	in := w.editInput(head, head, false)
+	in.AsIs = true
+	out, err := w.svc.Edit(context.Background(), testRepo, in)
+	if err != nil || out.State != requests.PullMerged || out.PullRequest != first.PullRequest {
+		t.Fatalf("approve as it is: %+v, %v", out, err)
+	}
+	if got := w.hub.file(fakeBase, policyPath); got != head || w.hub.file(fakeBase, "README.md") != "main moved" {
+		t.Errorf("merged %q", got)
+	}
+	if a := load[records.Approval](t, w.store, records.ApprovalKey(testRepo.FullName, first.Approval)); a.State != records.StateVoid {
+		t.Errorf("the stale edit stays %s", a.State)
+	}
+	if note := w.hub.lastComment(out.PullRequest); !strings.Contains(note, "approved as it is") {
+		t.Errorf("note %q", note)
+	}
+}
+
+func TestApproveAsItIsNeedsTheOpenProposalsFile(t *testing.T) {
+	w := newWorld(t)
+	in := w.editInput(testPolicy, testPolicy, false)
+	in.AsIs = true
+	if _, err := w.svc.Edit(context.Background(), testRepo, in); !errors.Is(err, ErrEditChanged) {
+		t.Fatalf("no proposal: %v", err)
+	}
+	if _, err := w.svc.Edit(context.Background(), testRepo, w.editInput(testPolicy, testPolicy+"# first\n", true)); err != nil {
+		t.Fatal(err)
+	}
+	head := w.hub.file(Branch, policyPath)
+	in = w.editInput(head, head+"# more\n", false)
+	in.AsIs = true
+	if _, err := w.svc.Edit(context.Background(), testRepo, in); !errors.Is(err, ErrEditChanged) || len(w.redeemed) != 1 {
+		t.Fatalf("another file: %v, redeemed %d", err, len(w.redeemed))
+	}
+}

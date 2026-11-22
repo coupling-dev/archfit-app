@@ -80,6 +80,16 @@ func TestEditPreviewSaysWhatTheDiffIsAgainst(t *testing.T) {
 	}
 }
 
+func TestEditPassesApproveAsItIs(t *testing.T) {
+	e := newEnv(t)
+	res := e.as("alice", permRead).postJSON(policyAPI+"/edit", map[string]any{"answer": "edit", "yaml": policyText,
+		"base_digest": "sha256:base", "target": sha(7), "token": "tok", "as_is": true})
+	wantStatus(t, res, http.StatusOK)
+	if len(e.answers.edits) != 1 || !e.answers.edits[0].AsIs {
+		t.Fatalf("edits %+v", e.answers.edits)
+	}
+}
+
 func TestEditUnchangedSaysNothingChanged(t *testing.T) {
 	e := newEnv(t)
 	e.answers.err = gate.ErrEditUnchanged
