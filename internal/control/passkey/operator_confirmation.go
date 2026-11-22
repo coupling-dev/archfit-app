@@ -210,6 +210,10 @@ func (s *OperatorConfirmations) Issue(ctx context.Context, tenant int64, id stri
 		if now.Before(r.LockedUntil) {
 			return &ConfirmationLocked{r.LockedUntil}
 		}
+		if !r.LockedUntil.IsZero() {
+			r.Failures = 0
+			r.LockedUntil = time.Time{}
+		}
 		r.Hash = hash[:]
 		r.Revoked = false
 		r.OperatorID = operator
