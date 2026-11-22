@@ -8,7 +8,10 @@
 `New4` provides `Publisher4.Publish4` and `Withdraw4`. A `Publication4` writes archfit/gate on
 its head and one pull request comment, using the engine result's status and records. It writes no
 archfit/state check. Pass is success; fail is failure (neutral only in advisory mode); waiting is
-in_progress; unknown or an unrecognized status is action_required.
+in_progress; unknown or an unrecognized status is action_required, except where `Publication4.NeutralUnknown` is set
+(the App sets it for a verified report with no verdict yet under an advisory policy, and for the unguarded setup pull
+request), which makes it neutral with the same records. An advisory check titles a pass or fail `<status>, advisory`
+and ends its summary with `Advisory: this check does not block the merge.`; a fail adds how to make it required.
 
 The composed publisher's `OwnerCheck` callback resolves an exact owner approval (`gate/approvals`) inside the same lease.
 When present, its owner-approved success, title, summary and `approval:<id>` external ID replace only the

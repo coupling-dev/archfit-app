@@ -208,7 +208,9 @@ func TestSweepDropsAClosedPullFromTheIndexButKeepsItsRecord(t *testing.T) {
 func TestSweepWithoutApprovalStaysFirstApproval(t *testing.T) {
 	w := newWorld4(t)
 	p := w.openPull(w.shop, 7)
-	w.wantStatus(w.send4(w.spec4(p, "pass")), "pass", "")
+	s := w.spec4(p, "pass")
+	w.usePolicy(s, policy4Required)
+	w.wantStatus(w.send4(s), "pass", "")
 	w.unrecorded()
 	w.sweep4()
 	w.wantSweepGate(p, "completed", "action_required")
@@ -239,7 +241,7 @@ func TestSweepStalePolicyRerunsOnlyUnderTheGuard(t *testing.T) {
 			if (len(w.gh.reruns) == 1) != allowed {
 				t.Fatalf("reruns = %v", w.gh.reruns)
 			}
-			w.wantSweepGate(p, "completed", "action_required")
+			w.wantSweepGate(p, "completed", "neutral") // an advisory policy: the check waits for a run of the current policy
 			w.wantPublication(p, "sweep", result.StatusUnknown)
 			if !strings.Contains(w.comment(p), "the policy changed since this run") {
 				t.Error(w.comment(p))

@@ -178,7 +178,7 @@ func (g *Gate) sweepRepo4(ctx context.Context, r api.Repo, sum *Summary) error {
 			continue
 		} // the App alone owns a policy proposal's verdict
 		sum.Pulls++
-		if err := g.sweepPull4(ctx, r, pl, tip, state, pol.Gate != gateRequired, ambiguous, a, sum); err != nil {
+		if err := g.sweepPull4(ctx, r, pl, tip, policy3.Digest(raw), state, pol.Gate != gateRequired, decodeErr == nil, ambiguous, a, sum); err != nil {
 			if stop := sweep4Error(ctx, sum, err); stop != nil {
 				return stop
 			}
@@ -218,7 +218,11 @@ func (g *Gate) cleanPullIndex4(ctx context.Context, r api.Repo, open []api.Pull)
 	return nil
 }
 
-func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip string, state records.Repo, advisory, ambiguous bool, a *expiry.Approved, sum *Summary) error {
+// sweepPull4 re-decides one open pull request from the records. tipPolicy is the digest of the default branch's policy:
+// an advisory policy no owner approved yet (no approved digest, not outside the flow) has no approval to compare with, so
+// the stored result must match the policy on the tip, as the upload requires. validTip says the tip's policy decodes: only
+// an advisory policy that does makes the sweep's "the policy changed" unknown neutral, as the upload does.
+func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip, tipPolicy string, state records.Repo, advisory, validTip, ambiguous bool, a *expiry.Approved, sum *Summary) error {
 	var rec records.Pull
 	err := records.Load(ctx, g.store, store.Tenant(r.InstallationID), records.PullKey(r.FullName, pl.Number), &rec)
 	if err != nil && !errors.Is(err, records.ErrNoRecord) {
@@ -233,8 +237,13 @@ func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip stri
 		RunID: rec.RunID, RunAttempt: rec.RunAttempt, Digest: rec.PayloadDigest, Advisory: advisory, Current: current}
 	var reasons []reason4
 	add := func(code string, u result.Unknown) { reasons = append(reasons, reason4{Code: code, Record: u}) }
-	checkState(state, r, add)
-	if ambiguous || a == nil && len(reasons) == 0 {
+	checkState(state, r, advisory, add)
+	unguarded := advisory && state.ApprovedDigest == "" && state.OutsideFlow == nil
+	reference := state.ApprovedDigest
+	if unguarded {
+		reference = tipPolicy
+	}
+	if ambiguous || a == nil && !unguarded && len(reasons) == 0 {
 		add(reasonPolicyUnapproved, result.Unknown{Path: policyPath, Cause: "policy", What: "the policy range " + state.ApprovedCommit + ".." + tip + " cannot be reconciled safely",
 			Why:  "the history or proposal does not prove a single approved policy change",
 			Next: result.Next{Kind: "wait", Text: "an owner reconciles the policy through the approval flow"}})
@@ -255,7 +264,15 @@ func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip stri
 	running := rec.Reason == reasonPolicyChanged && slices.ContainsFunc(rec.Rechecks, func(rc records.Recheck) bool {
 		return rc.HeadSHA == pl.HeadSHA && rc.Path == sweep.PathRunning
 	})
-	stale := accepted && rec.PolicyDigest != state.ApprovedDigest || running
+	// A neutral unknown of an advisory policy must not outlive a switch to a required one: it would let a merge through.
+	neutral, err := g.neutralUnknownInRequired4(ctx, r, pl, rec, advisory)
+	if err != nil {
+		return err
+	}
+	stale := accepted && rec.PolicyDigest != reference || running || neutral
+	// The unknowns that wait for a check to read the current policy are neutral in advisory mode; no other one is.
+	waits := pub
+	waits.NeutralUnknown = advisory && validTip
 	var due []expiry.Exception
 	if accepted && a != nil {
 		due = expiry.Due(a.Exceptions, rec, g.now())
@@ -265,8 +282,8 @@ func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip stri
 		if stale {
 			what, next = "the policy changed since this run", "wait for the check running with the current policy"
 		}
-		pub.Result = unknownSweep4(what, next)
-		if err := g.v4.publisher.Publish4(ctx, pub); err != nil {
+		waits.Result = unknownSweep4(what, next)
+		if err := g.v4.publisher.Publish4(ctx, waits); err != nil {
 			return err
 		}
 	}
@@ -279,7 +296,7 @@ func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip stri
 		return err
 	}
 	if stale {
-		res, err := g.rerun4(ctx, r, pl, tip, rec, accepted || running)
+		res, err := g.rerun4(ctx, r, pl, tip, rec, accepted || running || neutral)
 		if err != nil {
 			return err
 		}
@@ -289,8 +306,8 @@ func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip stri
 		if res != sweep.RerunImpossible {
 			return nil
 		}
-		pub.Result = unknownSweep4("the policy changed since this run", "update the branch so its check reads the current policy")
-		return g.v4.publisher.Publish4(ctx, pub)
+		waits.Result = unknownSweep4("the policy changed since this run", "update the branch so its check reads the current policy")
+		return g.v4.publisher.Publish4(ctx, waits)
 	}
 	if len(due) > 0 {
 		res, err := g.rerun4(ctx, r, pl, tip, rec, true)
@@ -392,6 +409,25 @@ func unknownSweep4(what, next string) result.Result {
 	return result.Result{Status: result.StatusUnknown, Summary: summaryUnknown, Unknown: []result.Unknown{{
 		Cause: "tool", What: what, Next: result.Next{Kind: "fix", Text: next},
 	}}}
+}
+
+// neutralUnknownInRequired4 reports whether the gate check of the pull's head is a neutral unknown while the policy is
+// required: the unknown was given under an advisory policy, and the check no longer matches the mode.
+func (g *Gate) neutralUnknownInRequired4(ctx context.Context, r api.Repo, pl api.Pull, rec records.Pull, advisory bool) (bool, error) {
+	if advisory || rec.RunID == 0 || rec.Status != string(result.StatusUnknown) {
+		return false, nil
+	}
+	checks, err := g.checks.CheckRuns(ctx, r.RepoRef, pl.HeadSHA, gateCheck4)
+	if err != nil {
+		return false, err
+	}
+	var latest api.CheckRun
+	for _, c := range checks {
+		if c.ID > latest.ID {
+			latest = c
+		}
+	}
+	return latest.Conclusion == "neutral", nil
 }
 
 // currentSweep4 checks all authority inside the head lease: live pull, tip, approved state and the uploaded record.
