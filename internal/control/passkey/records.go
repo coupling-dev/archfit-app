@@ -62,11 +62,12 @@ type challenge struct {
 	Repo   string    `json:"repo"` // lower-case owner/name the ceremony was begun for
 	At     time.Time `json:"at"`   // when the ceremony began; for a token, when the assertion was verified
 	// Session is go-webauthn's SessionData, kept whole as the library asks. It lives at most TTL.
-	Session    json.RawMessage `json:"session,omitempty"`
-	Purpose    *Purpose        `json:"purpose,omitempty"`    // assert and token
-	Binding    []byte          `json:"binding,omitempty"`    // required for a first-registration ceremony
-	TokenHash  []byte          `json:"token_hash,omitempty"` // token: SHA-256 of the token
-	Credential []byte          `json:"credential,omitempty"` // token: the passkey that made the assertion
+	Session            json.RawMessage `json:"session,omitempty"`
+	Purpose            *Purpose        `json:"purpose,omitempty"` // assert and token
+	ConfirmationRepoID int64           `json:"confirmation_repo_id,omitempty"`
+	Binding            []byte          `json:"binding,omitempty"`    // required for a first-registration ceremony
+	TokenHash          []byte          `json:"token_hash,omitempty"` // token: SHA-256 of the token
+	Credential         []byte          `json:"credential,omitempty"` // token: the passkey that made the assertion
 }
 
 func encode(v any) ([]byte, error) {

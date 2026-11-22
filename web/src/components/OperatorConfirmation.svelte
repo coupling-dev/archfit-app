@@ -8,17 +8,22 @@
  let verified=$state(false);
  let error=$state('');
  let busy=$state(false);
+ let generation=0;
+ let selected: {installation:number;attempt:string}|null=null;
  async function act(action:'lookup'|'issue'|'revoke') {
+  const version=generation;
+  const body=action==='lookup'?{installation:Number(installation),attempt}:selected;
+  if(!body)return;
   busy=true;token='';error='';
   try {
-   const body={installation:Number(installation),attempt};
-   if(action==='lookup'){metadata=null;verified=false;metadata=await postJSON('/api/admin/confirmations/lookup',session.csrf,body);}
-   else if(action==='issue'){const v=await postJSON<{token:string}>('/api/admin/confirmations/issue',session.csrf,body);token=v.token;}
+   // Actions stay bound to the identity the operator actually looked up.
+   if(action==='lookup'){metadata=null;verified=false;const found=await postJSON<{UserID:number;RepositoryID:number;AttemptID:string}>('/api/admin/confirmations/lookup',session.csrf,body);if(version===generation){metadata=found;selected=body;}}
+   else if(action==='issue'){const v=await postJSON<{token:string}>('/api/admin/confirmations/issue',session.csrf,body);if(version===generation)token=v.token;}
    else {await postJSON('/api/admin/confirmations/revoke',session.csrf,body);verified=false;}
   } catch(e){error=explain(e as ApiError,window.location.pathname);}
   finally{busy=false;}
  }
- function changed(){metadata=null;token='';verified=false;}
+ function changed(){generation++;selected=null;metadata=null;token='';verified=false;}
 </script>
 <section class="box">
  <div class="box-body stack">

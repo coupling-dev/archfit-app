@@ -172,6 +172,7 @@ func (s *service) BeginRegistration(ctx context.Context, r api.Repo, u User, tok
 			c := readChallenge(next)
 			binding := sha256.Sum256([]byte(u.SessionBinding))
 			c.Binding = binding[:]
+			c.ConfirmationRepoID = r.ID
 			next, err = c.encode()
 			if err != nil {
 				return nil, err
@@ -217,7 +218,7 @@ func (s *service) FinishRegistration(ctx context.Context, r api.Repo, u User, cr
 	}
 	if rec == nil {
 		binding := sha256.Sum256([]byte(u.SessionBinding))
-		if u.SessionBinding == "" || subtle.ConstantTimeCompare(c.Binding, binding[:]) != 1 {
+		if u.SessionBinding == "" || c.ConfirmationRepoID != r.ID || subtle.ConstantTimeCompare(c.Binding, binding[:]) != 1 {
 			return Passkey{}, ErrCeremony
 		}
 	}

@@ -8,7 +8,7 @@ The checked-in [release manifest](../internal/wire/manifest/manifest4.json) appr
 
 Before registering a first passkey, open **Passkeys**, select **Request confirmation**, and send the installation and attempt IDs through the trusted private channel used for beta admission. A GitHub sign-in alone does not authorize registration. A configured Archfit operator verifies your GitHub identity through that channel, then issues a token. Enter it in **Token from the operator** and select **Confirm and register a passkey**. The browser prompts immediately; registration returns to the approval page when you arrived from it.
 
-The token is single-use and valid for 10 minutes. A pending request can be issued for 30 minutes. Five wrong tokens lock the attempt for 15 minutes. If lost or exposed, ask the operator to revoke and reissue; never put tokens in a URL, GitHub issue, pull request, ticket, shared document or screenshot.
+The token is single-use and valid for 10 minutes. A pending request can be issued for 30 minutes. Five wrong tokens lock the attempt for 15 minutes. If registration is canceled or fails after confirmation, request confirmation again and have the operator issue a token for that new attempt; the earlier token may already be consumed and cannot be reissued. If an unused token is lost or exposed, ask the operator to revoke and reissue; never put tokens in a URL, GitHub issue, pull request, ticket, shared document or screenshot.
 
 ### Operator runbook
 

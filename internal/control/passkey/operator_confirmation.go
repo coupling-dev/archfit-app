@@ -22,6 +22,7 @@ const confirmationRequestLifetime = 30 * time.Minute
 const confirmationLock = 15 * time.Minute
 
 var ErrConfirmation = errors.New("passkey: confirmation cannot be used")
+var ErrConfirmationExpired = errors.New("passkey: confirmation expired")
 
 // ConfirmationLocked reports the server's lock expiry.
 type ConfirmationLocked struct{ Until time.Time }
@@ -255,7 +256,7 @@ func (s *OperatorConfirmations) Issue(ctx context.Context, tenant int64, id stri
 // Verify atomically consumes a matching issued token for the authenticated attempt.
 func (s *OperatorConfirmations) Verify(ctx context.Context, scope ConfirmationScope, token string) (err error) {
 	defer func() { confirmationAudit(ctx, "verify", scope.InstallationID, scope.UserID, 0, err) }()
-	if !s.ready() || !validConfirmationScope(scope) {
+	if !s.ready() || !validConfirmationScope(scope) || token == "" {
 		return ErrConfirmation
 	}
 	binding := sha256.Sum256([]byte(scope.SessionBinding))
@@ -272,8 +273,11 @@ func (s *OperatorConfirmations) Verify(ctx context.Context, scope ConfirmationSc
 		if now.Before(r.LockedUntil) {
 			return &ConfirmationLocked{r.LockedUntil}
 		}
-		if r.Used || r.Revoked || len(r.Hash) != sha256.Size || !now.Before(r.ExpiresAt) {
+		if r.Used || r.Revoked || len(r.Hash) != sha256.Size {
 			return ErrConfirmation
+		}
+		if !now.Before(r.ExpiresAt) {
+			return ErrConfirmationExpired
 		}
 		if subtle.ConstantTimeCompare(r.Hash, hash[:]) != 1 {
 			r.Failures++

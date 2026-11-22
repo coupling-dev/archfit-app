@@ -63,7 +63,7 @@
     {#if returnTo}<a href={returnTo}>Back to {returnTo.includes('/requests/') ? 'request' : returnTo.includes('/policy') ? 'policy' : 'approval'}</a>{/if}
   </PageHead>
 
-  {#if list.length === 0}<FirstPasskey {api} {session} done={() => { if (returnTo) location.assign(returnTo); else load(); }} />{/if}
+  {#if list.length === 0}<FirstPasskey {api} {session} done={() => { if (returnTo) location.assign(returnTo); else { notice='Passkey registered. An issue tells you and the owners.'; load(); } }} />{/if}
   <section class="box" aria-labelledby="your-passkeys">
     <div class="box-head">
       <h2 class="title-box" id="your-passkeys">Your passkeys <span class="counter">{list.length}</span></h2>
