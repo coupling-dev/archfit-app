@@ -27,6 +27,31 @@ override_resource {
   }
 }
 
+override_resource {
+  target = google_secret_manager_secret.this["github_private_key"]
+  values = { id = "projects/coupling-dev-510710/secrets/archfit-823-github-private-key" }
+}
+
+override_resource {
+  target = google_secret_manager_secret.this["github_webhook_secret"]
+  values = { id = "projects/coupling-dev-510710/secrets/archfit-823-github-webhook-secret" }
+}
+
+override_resource {
+  target = google_secret_manager_secret.this["github_oauth_secret"]
+  values = { id = "projects/coupling-dev-510710/secrets/archfit-823-github-oauth-secret" }
+}
+
+override_resource {
+  target = google_secret_manager_secret.this["cookie_key"]
+  values = { id = "projects/coupling-dev-510710/secrets/archfit-823-cookie-key" }
+}
+
+override_resource {
+  target = google_secret_manager_secret.this["operator_token"]
+  values = { id = "projects/coupling-dev-510710/secrets/archfit-823-operator-token" }
+}
+
 run "candidate_database_is_isolated" {
   command = plan
 
@@ -78,4 +103,13 @@ run "candidate_access_and_outputs" {
     condition     = toset(keys(google_secret_manager_secret_iam_member.accessor)) == toset(["github_private_key/public", "github_private_key/worker", "github_webhook_secret/public", "github_webhook_secret/worker", "github_oauth_secret/public", "cookie_key/public", "operator_token/worker"]) && alltrue([for k, v in google_secret_manager_secret_iam_member.accessor : v.role == "roles/secretmanager.secretAccessor" && v.member == "serviceAccount:archfit-823-${split("/", k)[1]}@coupling-dev-510710.iam.gserviceaccount.com"])
     error_message = "Secret access must match the candidate role matrix."
   }
+  assert {
+    condition     = alltrue([for k, v in google_secret_manager_secret_iam_member.accessor : v.secret_id == "projects/coupling-dev-510710/secrets/${output.secret_ids[split("/", k)[0]]}"])
+    error_message = "Every secret grant must target its matching candidate container."
+  }
+  assert {
+    condition     = google_artifact_registry_repository.app.project == "coupling-dev-510710" && google_artifact_registry_repository.app.location == "europe-west1" && google_artifact_registry_repository.app.repository_id == "archfit-app-823" && google_artifact_registry_repository.app.format == "DOCKER"
+    error_message = "The image repository must be candidate-only."
+  }
+
 }
