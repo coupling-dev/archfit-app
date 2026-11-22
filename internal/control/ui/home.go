@@ -99,6 +99,9 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 	}
 	state := setup.(setupJSON)
 	if state.State != "approved" && state.State != "outside_flow" {
+		if state.SetupPull > 0 {
+			return homeJSON{State: homeStateNotSetUp, Status: "Merge the setup pull request to start the checks.", Setup: &state}, nil
+		}
 		if (state.Approval.Status == string(gate.ApprovalNeeded) || state.Approval.Status == string(gate.ApprovalStale)) &&
 			(state.State == "first_approval" || state.OpenPull > 0 || state.Approval.Pull > 0) {
 			pull := state.Approval.Pull
