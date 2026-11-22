@@ -37,8 +37,9 @@ type ConfirmationScope struct {
 // OperatorConfirmations stores one current first-enrolment attempt per user and installation.
 // Its callers enforce owner eligibility and operator authorization before calling it.
 type OperatorConfirmations struct {
-	store store.Store
-	now   func() time.Time
+	store     store.Store
+	now       func() time.Time
+	readToken func([]byte) (int, error)
 }
 
 type confirmationRecord struct {
@@ -56,8 +57,9 @@ type confirmationRecord struct {
 	OperatorID           int64
 }
 
+// NewOperatorConfirmations creates the state service; nil dependencies fail closed.
 func NewOperatorConfirmations(s store.Store, now func() time.Time) *OperatorConfirmations {
-	return &OperatorConfirmations{store: s, now: now}
+	return &OperatorConfirmations{store: s, now: now, readToken: rand.Read}
 }
 
 func confirmationUserKey(id int64) string     { return "v4/confirmation-user/" + strconv.FormatInt(id, 10) }
@@ -77,7 +79,9 @@ func readConfirmation(raw []byte) (confirmationRecord, error) {
 	err := decode(raw, confirmationSchema, &r)
 	return r, err
 }
-func (s *OperatorConfirmations) ready() bool { return s != nil && s.store != nil && s.now != nil }
+func (s *OperatorConfirmations) ready() bool {
+	return s != nil && s.store != nil && s.now != nil && s.readToken != nil
+}
 func confirmationAudit(ctx context.Context, event string, tenant, user, operator int64, err error) {
 	outcome := "ok"
 	if err != nil {
@@ -126,7 +130,11 @@ func (s *OperatorConfirmations) Request(ctx context.Context, scope ConfirmationS
 			if now.Before(r.LockedUntil) {
 				return nil, &ConfirmationLocked{r.LockedUntil}
 			}
-			if r.AttemptID != "" && !r.Used && now.Before(r.RequestedAt.Add(confirmationTTL)) {
+			until := r.RequestedAt.Add(confirmationTTL)
+			if r.ExpiresAt.After(until) {
+				until = r.ExpiresAt
+			}
+			if r.AttemptID != "" && !r.Used && now.Before(until) {
 				if r.RepositoryID != scope.RepositoryID || r.Binding != binding {
 					return nil, ErrConfirmation
 				}
@@ -192,17 +200,30 @@ func (s *OperatorConfirmations) update(ctx context.Context, tenant int64, id str
 
 // Issue returns the token once to an authenticated operator. Reissue invalidates its predecessor.
 func (s *OperatorConfirmations) Issue(ctx context.Context, tenant int64, id string, operator int64) (token string, err error) {
-	defer func() { confirmationAudit(ctx, "issue", tenant, 0, operator, err) }()
+	var user int64
+	replaced := false
+	defer func() {
+		if err == nil && replaced {
+			confirmationAudit(ctx, "revocation", tenant, user, operator, nil)
+		}
+		confirmationAudit(ctx, "issue", tenant, user, operator, err)
+	}()
 	if operator <= 0 || !s.ready() {
 		return "", ErrConfirmation
 	}
 	var raw [16]byte
-	if _, err = rand.Read(raw[:]); err != nil {
-		return "", err
+	n, entropyErr := s.readToken(raw[:])
+	if entropyErr != nil {
+		return "", entropyErr
+	}
+	if n != len(raw) {
+		return "", ErrConfirmation
 	}
 	token = base64.RawURLEncoding.EncodeToString(raw[:])
 	hash := sha256.Sum256([]byte(token))
 	err = s.update(ctx, tenant, id, func(r *confirmationRecord) error {
+		user = r.UserID
+		replaced = len(r.Hash) != 0 && !r.Revoked
 		now := s.now().UTC()
 		if r.Used {
 			return ErrConfirmation
@@ -277,11 +298,13 @@ func (s *OperatorConfirmations) Verify(ctx context.Context, scope ConfirmationSc
 
 // Revoke invalidates an open token. The operator may issue a fresh token afterward.
 func (s *OperatorConfirmations) Revoke(ctx context.Context, tenant int64, id string, operator int64) (err error) {
-	defer func() { confirmationAudit(ctx, "revoke", tenant, 0, operator, err) }()
+	var user int64
+	defer func() { confirmationAudit(ctx, "revocation", tenant, user, operator, err) }()
 	if operator <= 0 {
 		return ErrConfirmation
 	}
 	return s.update(ctx, tenant, id, func(r *confirmationRecord) error {
+		user = r.UserID
 		if r.Used {
 			return ErrConfirmation
 		}
