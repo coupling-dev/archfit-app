@@ -96,6 +96,25 @@ func TestStoryLineIsTheContractsShape(t *testing.T) {
 }
 
 func TestStoryLineCannotBeClosedOrGrowPastOneKiB(t *testing.T) {
+	for _, next := range []string{
+		"--> <!-- " + strings.Repeat("é", 2000),
+		strings.Repeat("<&", 300) + strings.Repeat("\x01\x1f", 200),
+	} {
+		r := result.Result{Status: result.StatusUnknown, Unknown: []result.Unknown{{Cause: "tool", What: "x",
+			Next: result.Next{Kind: nextWait, Text: next}}}}
+		line := storyLine(newView(r), nil)
+		if len(line) >= 1024 || !utf8.ValidString(line) {
+			t.Errorf("story line is %d bytes", len(line))
+		}
+		inner := strings.TrimSuffix(strings.TrimPrefix(line, storyPrefix), storySuffix)
+		if strings.Contains(inner, "-->") || strings.Contains(inner, "<!--") {
+			t.Errorf("the text can close the comment: %s", inner)
+		}
+		parseStory(t, line)
+	}
+}
+
+func TestStoryLineEscapedSizeIsStillBounded(t *testing.T) {
 	r := result.Result{Status: result.StatusUnknown, Unknown: []result.Unknown{{Cause: "tool", What: "x",
 		Next: result.Next{Kind: nextWait, Text: "--> <!-- " + strings.Repeat("é", 2000)}}}}
 	line := storyLine(newView(r), nil)

@@ -89,6 +89,8 @@ type github interface {
 	api.Merges
 	// CommitPulls lists the pull requests of a commit, for the policy history before the first approval.
 	CommitPulls(ctx context.Context, r api.RepoRef, sha string) ([]api.Pull, error)
+	// AccountType is GitHub's type of an account: only a "User" is @-mentioned.
+	AccountType(ctx context.Context, r api.RepoRef, login string) (string, error)
 }
 
 func New(d Deps) *Gate {

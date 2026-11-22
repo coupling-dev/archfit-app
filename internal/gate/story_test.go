@@ -45,9 +45,17 @@ func TestStoryReaderFollowsTheAnswerToThePolicyPullRequest(t *testing.T) {
 	put(records.RequestKey(repo.FullName, 40), &records.Request{State: records.StateAnswered, Approval: "a1"})
 	put(records.ApprovalKey(repo.FullName, "a1"), &records.Approval{Proposal: "p1", State: records.StateOpen})
 	put(records.ProposalKey(repo.FullName, "p1"), &records.Proposal{PullRequest: 44, State: records.StateOpen})
-	got, err := storyReader(gh, s)(ctx, repo, 40)
-	want := feedback.StoryFacts{State: records.StateAnswered, PolicyPull: 44, Owner: "alexei-led"}
-	if err != nil || got != want {
-		t.Fatalf("facts = %+v, %v; want %+v", got, err, want)
+	for _, tt := range []struct {
+		kind, owner string
+	}{{"User", "alexei-led"}, {"Organization", ""}, {"", ""}} {
+		gh.accounts = map[string]string{}
+		if tt.kind != "" {
+			gh.accounts["alexei-led"] = tt.kind
+		}
+		got, err := storyReader(gh, s)(ctx, repo, 40)
+		want := feedback.StoryFacts{State: records.StateAnswered, PolicyPull: 44, Owner: tt.owner}
+		if err != nil || got != want {
+			t.Errorf("account %q: facts = %+v, %v; want %+v", tt.kind, got, err, want)
+		}
 	}
 }

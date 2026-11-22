@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
@@ -67,22 +68,36 @@ type story struct {
 const (
 	storyPrefix = "<!-- archfit-story v1 "
 	storySuffix = " -->"
-	// maxStoryNext bounds the next text so the whole line stays under 1 KiB; the line itself is never cut.
-	maxStoryNext = 600
+	// maxStoryLine bounds the whole line, after JSON escaping; only the next text is shortened to fit it.
+	maxStoryLine = 1023
 )
 
 // storyLine is the archfit-story v1 line of v, with facts of its first request when there are any. json.Marshal
 // escapes <, > and &, so no text in it can close the comment.
 func storyLine(v view, facts *StoryFacts) string {
 	s := storyOf(v, facts)
-	if len(s.Next) > maxStoryNext {
-		// Cut on a rune boundary, so the line stays valid UTF-8.
-		end := maxStoryNext
-		for end > 0 && !utf8.RuneStart(s.Next[end]) {
+	line := encodeStory(s)
+	// Escaping can grow a byte to six (\u003c), so the bound is measured on the encoded line. Each pass drops the
+	// next text's last rune, which keeps it valid UTF-8; the fixed parts alone are far below the bound.
+	for len(line) > maxStoryLine && s.Next != "" {
+		over := len(line) - maxStoryLine
+		next := strings.TrimSuffix(s.Next, "…")
+		if next == "" {
+			s.Next = ""
+			line = encodeStory(s)
+			break
+		}
+		end := max(len(next)-max(over/6, 1), 0)
+		for end > 0 && !utf8.RuneStart(next[end]) {
 			end--
 		}
-		s.Next = s.Next[:end] + "…"
+		s.Next = next[:end] + "…"
+		line = encodeStory(s)
 	}
+	return line
+}
+
+func encodeStory(s story) string {
 	raw, _ := json.Marshal(s) // strings and ints always encode
 	return storyPrefix + string(raw) + storySuffix
 }

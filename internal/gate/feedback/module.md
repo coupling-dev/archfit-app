@@ -29,9 +29,11 @@ On a pull request, the check's `output.text` is one hidden line, `<!-- archfit-s
 `archfit status` reads: the six steps of the story (`change`, `check`, `ask`, `answer`, `policy`, `recheck`, each
 `done`, `current`, `failed`, `later` or `not-needed`), the request, the person it waits for (`waiting_for`) and the
 `next` text. The view decides the steps; `StoryReader` (the gate's) adds the request's state, the App's policy pull
-request that carries the answer, and the policy's first owner who is a person (never a team or a placeholder). A failed
-read leaves those out and the check is written anyway. The line stays under 1 KiB (`next` is cut at 600 bytes on a rune
-boundary) and JSON escaping keeps `-->` out of it. A push or merge group check has no story line.
+request that carries the answer, and the policy's first owner who is a person: a login GitHub reports as a `User`
+(`GET /users/{login}`), never a team, an organization or a placeholder. A failed read leaves those out and the check
+is written anyway. The encoded line stays under 1 KiB: `next` is shortened, rune by rune, until the line after JSON
+escaping fits, and that escaping keeps `-->` out of it. A push or merge group check has no story line, and neither has
+an owner-approved head, whose check is the owner's verdict.
 
 Every publication holds the installation/head Store lease. `Current` rechecks live authority
 inside that lease; false returns `ErrStaleInputs` without writing. `Withdraw4` accepts only unknown

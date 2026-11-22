@@ -1134,3 +1134,20 @@ func TestCommitPulls(t *testing.T) {
 	_, err = env.c.CommitPulls(context.Background(), repoA, "missing")
 	wantErrIs(t, "missing", err, ErrNotFound)
 }
+
+func TestAccountTypeReadsTheUser(t *testing.T) {
+	env := muxEnv(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /users/{login}", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]any{"login": r.PathValue("login"), "type": map[string]string{"alexei-led": "User", "acme": "Organization"}[r.PathValue("login")]})
+		})
+	})
+	for login, want := range map[string]string{"alexei-led": "User", "acme": "Organization"} {
+		got, err := env.c.AccountType(context.Background(), repoA, login)
+		if err != nil || got != want {
+			t.Errorf("AccountType(%s) = %q, %v; want %q", login, got, err, want)
+		}
+	}
+	if _, err := env.c.AccountType(context.Background(), repoA, "../x"); err == nil {
+		t.Error("a login that changes the route was sent")
+	}
+}
