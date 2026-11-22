@@ -36,6 +36,7 @@ type fakeHub struct {
 	strict    bool              // the base branch requires up-to-date branches: MergePull refuses a head behind it
 	requireCI bool              // other required checks: MergePull refuses a head until ciDone holds it
 	ciDone    map[string]bool   // heads whose other required checks passed
+	truncated bool              // the next Compare reports a cut file list, as GitHub does past 300 files
 }
 
 type fakeCommit struct {
@@ -216,7 +217,9 @@ func (h *fakeHub) Compare(ctx context.Context, _ api.RepoRef, base, head string)
 	case mergeBase == head:
 		status = "behind"
 	}
-	return api.Comparison{Status: status, Paths: paths}, nil
+	cut := h.truncated
+	h.truncated = false
+	return api.Comparison{Status: status, Paths: paths, Truncated: cut}, nil
 }
 
 func (h *fakeHub) CommitOn(ctx context.Context, _ api.RepoRef, branch, parent, message string, files []api.FileChange, force bool) (string, error) {

@@ -704,11 +704,33 @@ func (s *Service) upToDate(ctx context.Context, r api.Repo, tip string, pin reco
 		logFailure(ctx, r, "compare the policy pull request with the default branch", err)
 		return pin
 	}
-	if cmp.Status == "ahead" || cmp.Status == "identical" {
+	current := cmp.Status == "ahead" || cmp.Status == "identical"
+	var edits []string
+	retarget := false
+	for _, a := range listed {
+		if a.edit == nil {
+			continue
+		}
+		edits = append(edits, a.id)
+		if a.edit.Target != tip {
+			// The edit binds the bytes it was made on: it moves to the tip only while the tip holds them.
+			if same, err := s.samePolicy(ctx, r.RepoRef, a.edit.Target, tip); err != nil || !same {
+				return pin
+			}
+			retarget = true
+		}
+	}
+	if current && !retarget {
 		return pin
 	}
-	// The tip holds the approved policy, the one the head was written on: the same bytes on the tip are the same
-	// change. Otherwise the policy changed under the proposal, and the merge is refused as before.
+	// The same bytes are the same change only on the policy the head was written on: the default branch's policy did
+	// not change since the head's base (as moveHead decides), and the tip holds the approved policy (D13).
+	if !current {
+		back, err := s.gh.Compare(ctx, r.RepoRef, pin.HeadSHA, tip)
+		if err != nil || back.Truncated || slices.Contains(back.Paths, policyPath) {
+			return pin
+		}
+	}
 	if err := s.stateAllows(ctx, r, tip, listed); err != nil {
 		return pin
 	}
@@ -721,15 +743,12 @@ func (s *Service) upToDate(ctx context.Context, r api.Repo, tip string, pin reco
 		logFailure(ctx, r, "read the proposal", err)
 		return pin
 	}
-	head, err := s.gh.CommitOn(ctx, r.RepoRef, Branch, tip, commitMessage(listed), []api.FileChange{{Path: policyPath, Content: file}}, true)
-	if err != nil {
-		logFailure(ctx, r, "bring the policy pull request up to date", err)
-		return pin
-	}
-	var edits []string
-	for _, a := range listed {
-		if a.edit != nil {
-			edits = append(edits, a.id)
+	head := pin.HeadSHA
+	if !current {
+		head, err = s.gh.CommitOn(ctx, r.RepoRef, Branch, tip, commitMessage(listed), []api.FileChange{{Path: policyPath, Content: file}}, true)
+		if err != nil {
+			logFailure(ctx, r, "bring the policy pull request up to date", err)
+			return pin
 		}
 	}
 	if err := records.Rebase(ctx, s.store, tenant(r), r.FullName, pin.Proposal, head, pin.Digest, tip, p.EditEpoch, edits); err != nil {
@@ -741,7 +760,9 @@ func (s *Service) upToDate(ctx context.Context, r api.Repo, tip string, pin reco
 			a.edit.Target = tip
 		}
 	}
-	s.retire(ctx, r, pin.HeadSHA, pin.PullRequest, pin.Proposal, RetiredSuperseded)
+	if head != pin.HeadSHA {
+		s.retire(ctx, r, pin.HeadSHA, pin.PullRequest, pin.Proposal, RetiredSuperseded)
+	}
 	pin.HeadSHA = head
 	return pin
 }
@@ -757,6 +778,12 @@ func (s *Service) merge(ctx context.Context, r api.Repo, tip string, pin records
 			return records.StateVoid, "", ""
 		}
 		logFailure(ctx, r, "read the edit target before merge", err)
+		return requests.PullRefused, "", ""
+	}
+	// The repository's state is read again right before the merge: a success set earlier on this head does not hold
+	// once the policy changed outside the flow or was confirmed since (D13).
+	if err := s.stateAllows(ctx, r, tip, listed); err != nil {
+		logFailure(ctx, r, "read the repository state before merge", err)
 		return requests.PullRefused, "", ""
 	}
 	sha, err := s.gh.MergePull(ctx, r.RepoRef, pin.PullRequest, pin.HeadSHA)

@@ -71,8 +71,8 @@ func (s *Service) Editor(ctx context.Context, r api.Repo) (EditorBase, error) {
 	v := EditorBase{File: raw, Digest: cur.rec.ExpectedDigest, PullRequest: cur.rec.PullRequest, Target: tip, MergeNow: cur.rec.MergeNow,
 		Diff:    requests.Diff(policyPath, tipFile, raw),
 		Foreign: head != cur.rec.HeadSHA || pull.HeadSHA != cur.rec.HeadSHA,
-		Voided:  cur.rec.EditVoided || slices.ContainsFunc(cur.stale, func(a approved) bool { return a.edit != nil })}
-	v.Recovery = v.Foreign || v.Voided || len(cur.stale) > 0
+		Voided:  cur.rec.EditVoided || len(cur.stale) > 0}
+	v.Recovery = v.Foreign || v.Voided
 	if v.Recovery {
 		reloaded, _, _, err := apply(tipFile, cur)
 		if err != nil {

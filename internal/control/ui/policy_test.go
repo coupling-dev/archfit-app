@@ -208,6 +208,23 @@ func TestPolicyPageShowsAVoidedProposalWithoutEditing(t *testing.T) {
 	}
 }
 
+func TestReadOnlyPolicyPageSurvivesAnEditorError(t *testing.T) {
+	e := newEnv(t)
+	raw, err := os.ReadFile("testdata/policy/typical.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.gh.setFile(repoName, mainBranch, ".archfit.yaml", string(raw))
+	e.policy.state.ApprovedDigest = policy3.Digest(raw)
+	e.answers.err = gate.ErrEditChanged
+	var body policyPageJSON
+	e.as("alice", permRead).getJSON(policyAPI, &body)
+	if body.YAML != string(raw) || !body.Edit.Available || body.Edit.PullRequest != 0 {
+		t.Fatalf("read-only page: %+v", body.Edit)
+	}
+	wantStatus(t, e.as("alice", permRead).get(policyAPI+"?edit=1"), http.StatusConflict)
+}
+
 func TestPolicyBuiltinsAndExpiry(t *testing.T) {
 	raw := `version: 1
 owners: [alice]

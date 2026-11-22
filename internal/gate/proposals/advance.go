@@ -8,6 +8,7 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
 	"github.com/coupling-dev/archfit-app/internal/gate/requests"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
 // mergeable are GitHub's mergeable_state values under which a merge is expected to succeed.
@@ -42,11 +43,33 @@ func (s *Service) Advance(ctx context.Context, r api.Repo) error {
 		return nil
 	}
 	pin := records.Pin{Proposal: cur.id, PullRequest: cur.rec.PullRequest, HeadSHA: head, Digest: cur.rec.ExpectedDigest}
-	listed := cur.approvals
-	if next := s.upToDate(ctx, r, cur.tip, pin, listed); next.HeadSHA != pin.HeadSHA {
+	tipFile, _, err := s.policyAt(ctx, r.RepoRef, cur.tip)
+	if err != nil {
+		return err
+	}
+	file, kept, voided, err := apply(tipFile, cur)
+	if err != nil {
+		return err
+	}
+	listed := kept
+	switch {
+	case len(voided) > 0 || policy3.Digest(file) != pin.Digest:
+		// The default branch's policy changed under the proposal (an owner confirmed a change, or a revert's state
+		// ended): its answers are written again on that policy, as an answer does, never its old file copied over it.
+		if err := s.voidAndNote(ctx, r, pin.PullRequest, voided, false); err != nil {
+			return err
+		}
+		next := s.resync(ctx, r, cur, cur.tip, file, kept)
+		if next == nil {
+			return nil
+		}
+		pin = *next
+	default:
+		next := s.upToDate(ctx, r, cur.tip, pin, listed)
+		if next.HeadSHA == pin.HeadSHA && s.passedOn(ctx, r.RepoRef, pin) {
+			return s.mergeWhenReady(ctx, r, cur.tip, pin, listed)
+		}
 		pin = next
-	} else if s.passedOn(ctx, r.RepoRef, pin) {
-		return s.mergeWhenReady(ctx, r, cur.tip, pin, listed)
 	}
 	if err := s.check(ctx, r, cur.tip, pin, listed); err != nil {
 		if errors.Is(err, ErrEditChanged) {

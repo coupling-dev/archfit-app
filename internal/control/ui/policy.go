@@ -3,6 +3,7 @@ package ui
 import (
 	"cmp"
 	"errors"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
@@ -194,12 +195,17 @@ func (s *server) apiPolicy(r *http.Request, sc scope) (any, error) {
 			body.Edit.Reason = ""
 		}
 	}
-	if body.Edit.Available {
+	if editing := r.URL.Query().Get("edit") == "1"; body.Edit.Available {
 		base, err := s.answers.Editor(ctx, sc.repo)
-		if err != nil {
+		switch {
+		case err != nil && editing:
 			return nil, err
+		case err != nil:
+			// The read-only page never fails on the editor's state: it shows the policy without the pull request.
+			slog.Default().WarnContext(ctx, "ui: read the policy pull request", "repository", sc.repo.FullName, "error", err.Error())
+		default:
+			body.Edit = editJSONOf(base, editing)
 		}
-		body.Edit = editJSONOf(base, r.URL.Query().Get("edit") == "1")
 	}
 	return body, nil
 }

@@ -101,3 +101,59 @@ func TestAdvanceLeavesABranchSomeoneElseChanged(t *testing.T) {
 		t.Fatalf("a foreign head was merged: %v", w.hub.merges)
 	}
 }
+
+func TestAdvanceWritesTheAnswersAgainOnAConfirmedPolicy(t *testing.T) {
+	w := newWorld(t)
+	w.hub.strict, w.hub.requireCI = true, true
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	out := w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, false)
+	if out.State != requests.PullRefused {
+		t.Fatalf("first merge %+v", out)
+	}
+	confirmed := strings.Replace(testPolicy, "rules:", "  pkg_new:\n    paths: [pkg/new/**]\nrules:", 1)
+	w.hub.push(fakeBase, policyPath, confirmed)
+	w.approveTip() // an owner confirmed the change made outside the flow
+	w.advance()
+	w.ciPasses()
+	w.advance()
+	merged := w.hub.file(fakeBase, policyPath)
+	if !strings.Contains(merged, "pkg_new") {
+		t.Fatalf("the confirmed policy was reverted:\n%s", merged)
+	}
+	if !strings.Contains(merged, "pkg_util") || len(w.hub.merges) != 2 {
+		t.Fatalf("the answer did not merge on the confirmed policy (merges %v):\n%s", w.hub.merges, merged)
+	}
+}
+
+func TestAdvanceNeverMergesOnAPolicyChangedOutsideTheFlow(t *testing.T) {
+	w := newWorld(t)
+	w.hub.requireCI = true
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	w.mustAnswer(olivia, 431, requests.Answer{Kind: policy3.Approve}, false)
+	w.ciPasses() // the earlier archfit/gate success stays on the head
+	w.outsideWith(testPolicy + "# outside\n")
+	w.advance()
+	if len(w.hub.merges) != 1 {
+		t.Fatalf("merged while the policy changed outside the flow: %v", w.hub.merges)
+	}
+}
+
+func TestACurrentHeadStillMovesAnOlderEditsTarget(t *testing.T) {
+	w := newWorld(t)
+	first, err := w.svc.Edit(context.Background(), testRepo, w.editInput(testPolicy, testPolicy+"# first\n", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tip := w.hub.push(fakeBase, "README.md", "main moved")
+	w.hub.truncated = true // moveHead cannot read the paths, so it rebuilds on the tip
+	head := w.hub.file(Branch, policyPath)
+	out, err := w.svc.Edit(context.Background(), testRepo, w.editInput(head, head+"# second\n", false))
+	if err != nil || out.State != requests.PullMerged {
+		t.Fatalf("second edit %+v, %v", out, err)
+	}
+	a := load[records.Approval](t, w.store, records.ApprovalKey(testRepo.FullName, first.Approval))
+	var e records.Edit
+	if err := json.Unmarshal(a.Change, &e); err != nil || e.Target != tip {
+		t.Fatalf("the first edit still targets %q, not the tip %q", e.Target, tip)
+	}
+}
