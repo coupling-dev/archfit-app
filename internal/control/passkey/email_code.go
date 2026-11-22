@@ -26,6 +26,12 @@ var (
 	ErrCodeSend     = errors.New("passkey: email code send failed")
 )
 
+// CodeLockedError gives the UTC end of an account lock.
+type CodeLockedError struct{ LockedUntil time.Time }
+
+func (e *CodeLockedError) Error() string { return ErrCodeLocked.Error() }
+func (e *CodeLockedError) Unwrap() error { return ErrCodeLocked }
+
 type CodeSender interface {
 	SendCode(context.Context, string, string) error
 }
@@ -120,7 +126,7 @@ func (s *EmailCodes) Send(ctx context.Context, scope EmailCodeScope, recipient s
 	now := s.now().UTC()
 	err = s.update(ctx, scope.UserID, func(r *emailCodeRecord) error {
 		if now.Before(r.LockedUntil) {
-			return ErrCodeLocked
+			return &CodeLockedError{LockedUntil: r.LockedUntil.UTC()}
 		}
 		if !r.Sent.IsZero() && now.Before(r.Sent.Add(time.Minute)) {
 			return ErrCodeCooldown
@@ -166,7 +172,7 @@ func (s *EmailCodes) Send(ctx context.Context, scope EmailCodeScope, recipient s
 	if len(parts) != 2 || len(parts[0]) == 0 {
 		return "***", nil
 	}
-	return parts[0][:1] + "***@" + parts[1], nil
+	return string([]rune(parts[0])[0]) + "•••@" + parts[1], nil
 }
 func (s *EmailCodes) Verify(ctx context.Context, scope EmailCodeScope, code string) error {
 	if !validCodeScope(scope) {
@@ -177,7 +183,7 @@ func (s *EmailCodes) Verify(ctx context.Context, scope EmailCodeScope, code stri
 	err := s.update(ctx, scope.UserID, func(r *emailCodeRecord) error {
 		outcome = nil
 		if now.Before(r.LockedUntil) {
-			outcome = ErrCodeLocked
+			outcome = &CodeLockedError{LockedUntil: r.LockedUntil.UTC()}
 			return nil
 		}
 		if !r.LockedUntil.IsZero() {
@@ -194,6 +200,7 @@ func (s *EmailCodes) Verify(ctx context.Context, scope EmailCodeScope, code stri
 			outcome = ErrCodeWrong
 			if r.Guesses >= 5 {
 				r.LockedUntil = now.Add(15 * time.Minute)
+				outcome = &CodeLockedError{LockedUntil: r.LockedUntil}
 				r.Digest = nil
 				r.Binding = nil
 			}

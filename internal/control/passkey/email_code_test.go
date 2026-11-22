@@ -247,7 +247,7 @@ func TestEmailCodeResendPreservesAttemptsAcrossScopes(t *testing.T) {
 	if _, err = svc.Send(ctx, other, "owner@example.invalid"); err != nil {
 		t.Fatal(err)
 	}
-	if err = svc.Verify(ctx, scope, old); !errors.Is(err, ErrCodeWrong) {
+	if err = svc.Verify(ctx, scope, old); !errors.Is(err, ErrCodeLocked) {
 		t.Fatalf("old code: %v", err)
 	}
 	if err = svc.Verify(ctx, other, sink.code); !errors.Is(err, ErrCodeLocked) {
@@ -256,5 +256,37 @@ func TestEmailCodeResendPreservesAttemptsAcrossScopes(t *testing.T) {
 	now = now.Add(15 * time.Minute)
 	if _, err = svc.Send(ctx, other, "owner@example.invalid"); err != nil {
 		t.Fatalf("lock boundary: %v", err)
+	}
+}
+
+func TestEmailCodeMaskAndLockDeadline(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	sink := &codeSink{}
+	svc, err := NewEmailCodes(store.NewMemory(), sink, []byte("01234567890123456789012345678901"), func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := EmailCodeScope{UserID: 101, InstallationID: 7, RepositoryID: 70, SessionBinding: "binding"}
+	masked, err := svc.Send(ctx, scope, "éclair@example.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if masked != "é•••@example.invalid" {
+		t.Fatalf("mask: %q", masked)
+	}
+	wrong := "000000"
+	if sink.code == wrong {
+		wrong = "000001"
+	}
+	for i := 0; i < 5; i++ {
+		err = svc.Verify(ctx, scope, wrong)
+	}
+	var locked *CodeLockedError
+	if !errors.As(err, &locked) || !errors.Is(err, ErrCodeLocked) || !locked.LockedUntil.Equal(now.Add(15*time.Minute)) || locked.LockedUntil.Location() != time.UTC {
+		t.Fatalf("lock: %v", err)
+	}
+	_, err = svc.Send(ctx, scope, "éclair@example.invalid")
+	if !errors.As(err, &locked) || !locked.LockedUntil.Equal(now.Add(15*time.Minute)) {
+		t.Fatalf("send lock: %v", err)
 	}
 }
