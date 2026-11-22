@@ -301,7 +301,12 @@ func TestUpload4GivesUnknown(t *testing.T) {
 				}
 				return
 			}
-			c := w.wantGate(p, "completed", "action_required")
+			// A verified report that waits for the policy is neutral in advisory mode; an unverifiable one is never.
+			conclusion := "action_required"
+			if tt.reason == reasonPolicyChanged {
+				conclusion = "neutral"
+			}
+			c := w.wantGate(p, "completed", conclusion)
 			if c.Title != "⚠️ unknown, no verdict" || strings.Contains(w.feedbackText(p), "archfit: pass") {
 				t.Errorf("check %q shows what the App did not accept:\n%s", c.Title, w.feedbackText(p))
 			}
@@ -354,8 +359,8 @@ func TestUpload4FirstPolicy(t *testing.T) {
 		s := w.spec4(p, "pass")
 		w.setFile(w.shop, s.claims.SHA, ingest.WorkflowPath, wf)
 		u := w.decide(s)
-		if got := u.codes(); !slices.Equal(got, []string{reasonFirstPolicy, reasonWorkflowChanged}) {
-			t.Errorf("reasons = %v, want the first policy and the workflow", got)
+		if got := u.codes(); !slices.Equal(got, []string{reasonFirstPolicy}) {
+			t.Errorf("reasons = %v, want only the first policy: nothing is adjudicated from head files", got)
 		}
 	})
 }

@@ -96,8 +96,12 @@ type decision4 struct {
 	Status   result.Status
 	Reasons  []reason4 // in rule order
 	Advisory bool      // the default branch's policy has no gate: required, so a fail does not block
-	Tip      string    // the default branch's head every rule read; the decision holds while it is the head
-	NoPolicy bool      // the default branch has no valid policy: it cannot be confirmed, only reverted
+	// NeutralUnknown shows an unknown as neutral: the report is verified and there is no verdict yet (the engine's own
+	// unknown, or reasons that only wait for a policy), under an advisory policy on the tip or on the unguarded setup
+	// pull request. An unverifiable upload, a required policy's unknown and one without a valid policy stay action_required.
+	NeutralUnknown bool
+	Tip            string // the default branch's head every rule read; the decision holds while it is the head
+	NoPolicy       bool   // the default branch has no valid policy: it cannot be confirmed, only reverted
 	// Coverable is a fail of a pull request in required mode that the App accepted as it is: open requests decide
 	// whether it is waiting. Covered are those requests; Waiting is the result shown then.
 	Coverable   bool
@@ -218,18 +222,18 @@ func (v *upload4) decide(ctx context.Context, u ingest.Upload4) (decision4, erro
 	advisory := policy.Gate != gateRequired
 	validTip := found && err == nil
 	guarded := state.ApprovedDigest != "" || state.OutsideFlow != nil
+	setup := false
 	switch {
 	case !validTip && !guarded:
-		// No approved policy yet: this pull request brings the first one, which an administrator approves (task 23).
+		// No policy is in force: this pull request brings the first one, which an administrator approves (task 23).
+		// Until then the App adjudicates nothing from the head and the check is neutral (AGENTS.md, "Fail closed").
 		if approval == nil || approval.Kind != records.ProposalFirst || approval.ExpectedDigest != env.PolicyDigest {
-			add(reasonFirstPolicy, result.Unknown{Path: policyPath, Cause: "policy",
-				What: branch + " has no valid policy yet",
-				Why:  "an administrator approves the first policy",
-				Next: result.Next{Kind: "wait", Text: "an administrator approves the first policy in the App"}})
+			add(reasonFirstPolicy, firstPolicyRecord(branch, b.PullRequest))
+			setup = b.PullRequest != 0
 		}
 	case !validTip:
 		// Change control started, and the default branch has no valid policy: a change no approval made.
-		checkState(state, b.Repo, add)
+		checkState(state, b.Repo, advisory && validTip, add)
 		if state.OutsideFlow == nil {
 			add(reasonPolicyUnapproved, result.Unknown{Path: policyPath, Cause: "policy",
 				What: "changed on " + branch + " and has no recorded approval yet",
@@ -237,7 +241,7 @@ func (v *upload4) decide(ctx context.Context, u ingest.Upload4) (decision4, erro
 				Next: result.Next{Kind: "wait", Text: "the check runs again"}})
 		}
 	default:
-		checkState(state, b.Repo, add)
+		checkState(state, b.Repo, advisory, add)
 		if err := v.checkPolicy(ctx, ref, branch, tip, tipPolicy, env, add); err != nil {
 			return decision4{}, err
 		}
@@ -254,10 +258,18 @@ func (v *upload4) decide(ctx context.Context, u ingest.Upload4) (decision4, erro
 		return decision4{}, err
 	}
 
-	if len(reasons) > 0 || u.Result == nil {
-		return decision4{Status: result.StatusUnknown, Reasons: reasons, Advisory: advisory, Tip: tip, NoPolicy: !validTip}, nil
+	// The setup pull request shows its one record: the App adjudicates nothing from head files, workflow included.
+	// Only the two reasons that stop the App from judging the run for the default branch at all stay.
+	if setup {
+		reasons = slices.DeleteFunc(reasons, func(r reason4) bool {
+			return r.Code != reasonFirstPolicy && r.Code != reasonUnsupportedEvent && r.Code != reasonEnvelopeMismatch
+		})
 	}
-	return decision4{Status: u.Result.Status, Advisory: advisory, Tip: tip}, nil
+	neutral := setup || validTip && advisory && waitsOnly(reasons)
+	if len(reasons) > 0 || u.Result == nil {
+		return decision4{Status: result.StatusUnknown, Reasons: reasons, Advisory: advisory, NeutralUnknown: neutral, Tip: tip, NoPolicy: !validTip}, nil
+	}
+	return decision4{Status: u.Result.Status, Advisory: advisory, NeutralUnknown: neutral, Tip: tip}, nil
 }
 
 // cover derives the status waiting (design 7.1, M2 task 16): a fail whose errors all ask an owner and are all in open
@@ -300,10 +312,36 @@ func (v *upload4) repoState(ctx context.Context, r api.Repo) (records.Repo, erro
 	return state, nil
 }
 
+// waitingReasons are the App's reasons of a verified report that cannot be judged yet: there is no policy yet, or the
+// policy moved since the run. Every other reason says the upload cannot be verified or the policy cannot be trusted
+// (the binding, the identity, the digest or the target, the workflow, the engine, a change outside the flow), and
+// such a report is never neutral.
+var waitingReasons = []string{reasonFirstPolicy, reasonPolicyChanged}
+
+// waitsOnly reports whether every reason is one that only waits; no reason at all is the engine's own unknown.
+func waitsOnly(reasons []reason4) bool {
+	return !slices.ContainsFunc(reasons, func(r reason4) bool { return !slices.Contains(waitingReasons, r.Code) })
+}
+
+// firstPolicyRecord is the record of a default branch with no valid policy. The setup pull request says what to do;
+// a push has no pull request to merge.
+func firstPolicyRecord(branch string, pull int) result.Unknown {
+	if pull != 0 {
+		return result.Unknown{Path: policyPath, Cause: "policy",
+			What: "No verdict yet: merge this setup pull request to start advisory checks.",
+			Next: result.Next{Kind: "wait", Text: "merge this setup pull request"}}
+	}
+	return result.Unknown{Path: policyPath, Cause: "policy",
+		What: branch + " has no valid policy yet",
+		Why:  "an administrator approves the first policy",
+		Next: result.Next{Kind: "wait", Text: "an administrator approves the first policy in the App"}}
+}
+
 // checkState applies the repository's state: a policy no owner approved yet, or one changed outside the flow, gives no
 // verdict. Change control starts with the first approval (task 23), and a policy changed outside the flow stays unknown
-// until an owner confirms or reverts it.
-func checkState(state records.Repo, r api.Repo, add func(string, result.Unknown)) {
+// until an owner confirms or reverts it. An advisory policy on the tip needs no first approval: its verdict is shown
+// without one, and a required policy keeps the rule. This is the one place where advisory history is not an approval.
+func checkState(state records.Repo, r api.Repo, advisory bool, add func(string, result.Unknown)) {
 	switch {
 	case state.OutsideFlow != nil:
 		next := "an owner confirms or reverts it in the App"
@@ -314,7 +352,7 @@ func checkState(state records.Repo, r api.Repo, add func(string, result.Unknown)
 			What: "changed on " + r.DefaultBranch + " with no recorded approval",
 			Why:  "only owners change the policy",
 			Next: result.Next{Kind: "wait", Text: next}})
-	case state.ApprovedDigest == "":
+	case state.ApprovedDigest == "" && !advisory:
 		add(reasonFirstApproval, result.Unknown{Path: policyPath, Cause: "policy",
 			What: "has no recorded approval on " + r.DefaultBranch,
 			Why:  "an administrator approves the first policy",
@@ -631,7 +669,8 @@ func (d decision4) ownerPage(b ingest.Binding4) feedback.OwnerPage {
 		case r.Code == reasonWorkflowChanged && b.PullRequest > 0:
 			return feedback.OwnerPage{Label: labelWorkflow, Path: "/owner/workflow?pull=" + pull, Role: "owner"}
 		case r.Code == reasonFirstPolicy && b.PullRequest > 0:
-			return feedback.OwnerPage{Label: labelFirst, Path: "/owner/first?pull=" + pull, Role: "administrator"}
+			// The setup pull request waits for its merge, not for a person: its check is never a passkey wait.
+			return feedback.OwnerPage{}
 		case r.Code == reasonFirstPolicy, r.Code == reasonFirstApproval:
 			return feedback.OwnerPage{Label: labelFirst, Path: "/owner/first", Role: "administrator"}
 		}
@@ -652,9 +691,9 @@ func (v *upload4) publish(ctx context.Context, u ingest.Upload4, d decision4) er
 		RunID:      b.RunID,
 		RunAttempt: b.RunAttempt,
 		Digest:     u.Envelope.PayloadDigest,
-		Advisory:   d.Advisory,
-		Result:     d.shown(u.Result),
-		OwnerPage:  d.ownerPage(b),
+		Advisory:   d.Advisory, NeutralUnknown: d.NeutralUnknown,
+		Result:    d.shown(u.Result),
+		OwnerPage: d.ownerPage(b),
 		Current: func(ctx context.Context) (bool, error) {
 			tip, err := v.repos.BranchHead(ctx, b.Repo.RepoRef, b.Repo.DefaultBranch)
 			if err != nil {

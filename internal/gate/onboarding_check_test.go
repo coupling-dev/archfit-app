@@ -56,9 +56,9 @@ func TestOnboardingApprovalSurvivesUnknownUploads(t *testing.T) {
 			moved := w.onboardingHead(p)
 			moved.result = w.result("policy_differs", p.head)
 			w.wantStatus(w.send4(moved), "unknown", reasonFirstPolicy)
-			if run, ok := w.latestGate(p.head); !ok || run.Conclusion != "action_required" ||
+			if run, ok := w.latestGate(p.head); !ok || run.Conclusion != "neutral" ||
 				strings.HasPrefix(run.ExternalID, "approval:") {
-				t.Errorf("new head's check = %+v, want unknown without owner approval", run)
+				t.Errorf("new head's check = %+v, want the neutral setup check without owner approval", run)
 			}
 		})
 	}

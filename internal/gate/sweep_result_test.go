@@ -208,7 +208,9 @@ func TestSweepDropsAClosedPullFromTheIndexButKeepsItsRecord(t *testing.T) {
 func TestSweepWithoutApprovalStaysFirstApproval(t *testing.T) {
 	w := newWorld4(t)
 	p := w.openPull(w.shop, 7)
-	w.wantStatus(w.send4(w.spec4(p, "pass")), "pass", "")
+	s := w.spec4(p, "pass")
+	w.usePolicy(s, policy4Required)
+	w.wantStatus(w.send4(s), "pass", "")
 	w.unrecorded()
 	w.sweep4()
 	w.wantSweepGate(p, "completed", "action_required")

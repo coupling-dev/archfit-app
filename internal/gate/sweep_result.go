@@ -178,7 +178,7 @@ func (g *Gate) sweepRepo4(ctx context.Context, r api.Repo, sum *Summary) error {
 			continue
 		} // the App alone owns a policy proposal's verdict
 		sum.Pulls++
-		if err := g.sweepPull4(ctx, r, pl, tip, state, pol.Gate != gateRequired, ambiguous, a, sum); err != nil {
+		if err := g.sweepPull4(ctx, r, pl, tip, policy3.Digest(raw), state, pol.Gate != gateRequired, ambiguous, a, sum); err != nil {
 			if stop := sweep4Error(ctx, sum, err); stop != nil {
 				return stop
 			}
@@ -218,7 +218,10 @@ func (g *Gate) cleanPullIndex4(ctx context.Context, r api.Repo, open []api.Pull)
 	return nil
 }
 
-func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip string, state records.Repo, advisory, ambiguous bool, a *expiry.Approved, sum *Summary) error {
+// sweepPull4 re-decides one open pull request from the records. tipPolicy is the digest of the default branch's policy:
+// an advisory policy no owner approved yet (no approved digest, not outside the flow) has no approval to compare with, so
+// the stored result must match the policy on the tip, as the upload requires.
+func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip, tipPolicy string, state records.Repo, advisory, ambiguous bool, a *expiry.Approved, sum *Summary) error {
 	var rec records.Pull
 	err := records.Load(ctx, g.store, store.Tenant(r.InstallationID), records.PullKey(r.FullName, pl.Number), &rec)
 	if err != nil && !errors.Is(err, records.ErrNoRecord) {
@@ -233,8 +236,13 @@ func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip stri
 		RunID: rec.RunID, RunAttempt: rec.RunAttempt, Digest: rec.PayloadDigest, Advisory: advisory, Current: current}
 	var reasons []reason4
 	add := func(code string, u result.Unknown) { reasons = append(reasons, reason4{Code: code, Record: u}) }
-	checkState(state, r, add)
-	if ambiguous || a == nil && len(reasons) == 0 {
+	checkState(state, r, advisory, add)
+	unguarded := advisory && state.ApprovedDigest == "" && state.OutsideFlow == nil
+	reference := state.ApprovedDigest
+	if unguarded {
+		reference = tipPolicy
+	}
+	if ambiguous || a == nil && !unguarded && len(reasons) == 0 {
 		add(reasonPolicyUnapproved, result.Unknown{Path: policyPath, Cause: "policy", What: "the policy range " + state.ApprovedCommit + ".." + tip + " cannot be reconciled safely",
 			Why:  "the history or proposal does not prove a single approved policy change",
 			Next: result.Next{Kind: "wait", Text: "an owner reconciles the policy through the approval flow"}})
@@ -255,7 +263,7 @@ func (g *Gate) sweepPull4(ctx context.Context, r api.Repo, pl api.Pull, tip stri
 	running := rec.Reason == reasonPolicyChanged && slices.ContainsFunc(rec.Rechecks, func(rc records.Recheck) bool {
 		return rc.HeadSHA == pl.HeadSHA && rc.Path == sweep.PathRunning
 	})
-	stale := accepted && rec.PolicyDigest != state.ApprovedDigest || running
+	stale := accepted && rec.PolicyDigest != reference || running
 	var due []expiry.Exception
 	if accepted && a != nil {
 		due = expiry.Due(a.Exceptions, rec, g.now())
