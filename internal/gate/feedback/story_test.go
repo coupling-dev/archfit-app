@@ -237,3 +237,31 @@ func TestCommentHeaderMentionsAtMostOnePerson(t *testing.T) {
 		t.Errorf("too many mentions: %s", body)
 	}
 }
+
+func TestStoryMentionOnRepublishAndNewRun(t *testing.T) {
+	h := newHarness(headB)
+	h.pub = New4(h.checks, h.comments, h.pulls, h.store, appURL, h.clock.now, nil, func(context.Context, api.Repo, int) (StoryFacts, error) {
+		return StoryFacts{State: records.StateOpen, Owner: "alexei-led"}, nil
+	})
+	r := result.Result{Status: result.StatusWaiting, Errors: []result.Error{{Next: result.Next{Kind: nextWait, Text: "wait for an owner: #40"}}}}
+	p := pub4(prTarget(headB), 7, 1, r)
+	if err := h.pub.Publish4(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.pub.Publish4(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if n := h.comments.count("UpdateComment"); n != 0 {
+		t.Fatalf("identical publication updated comment %d times", n)
+	}
+	p.RunID = 8
+	if err := h.pub.Publish4(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if n := h.comments.count("UpdateComment"); n != 1 {
+		t.Fatalf("new run updated comment %d times", n)
+	}
+	if comments := h.comments.all(); len(comments) != 1 || strings.Count(comments[0].Body, "@alexei-led") != 1 {
+		t.Fatalf("comments: %+v", comments)
+	}
+}
