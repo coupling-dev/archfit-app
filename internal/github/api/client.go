@@ -139,6 +139,7 @@ type call struct {
 }
 
 type result struct {
+	status   int
 	body     []byte
 	link     string
 	location string
@@ -217,7 +218,7 @@ func (c *Client) do(ctx context.Context, k call) (result, error) {
 		case resp.status == http.StatusNotModified && cached != nil:
 			return result{body: cached.body, link: cached.link}, nil
 		case resp.status >= 200 && resp.status < 300:
-			res := result{body: resp.body, link: resp.header.Get("Link")}
+			res := result{status: resp.status, body: resp.body, link: resp.header.Get("Link")}
 			if etag := resp.header.Get("ETag"); cacheKey != "" && etag != "" {
 				c.cache.put(cacheKey, &cacheEntry{etag: etag, body: res.body, link: res.link})
 			}

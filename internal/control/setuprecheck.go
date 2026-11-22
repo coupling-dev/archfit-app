@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/coupling-dev/archfit-app/internal/github/api"
@@ -15,7 +16,7 @@ import (
 type setupGitHub interface {
 	ActionsSuite(context.Context, api.Repo, string) (int64, bool, error)
 	RerequestSuite(context.Context, api.Repo, int64) (int, error)
-	LatestRunURL(context.Context, api.Repo, string) (string, error)
+	RunURL(context.Context, api.Repo, int64) (string, error)
 	HasMarkerComment(context.Context, api.Repo, int) (bool, error)
 	Comment(context.Context, api.Repo, int, string) error
 }
@@ -97,6 +98,7 @@ func (s setupRecheck) check(ctx context.Context, repo api.Repo, pr int, head str
 	id, found, err := s.gh.ActionsSuite(ctx, repo, head)
 	if err == nil && found {
 		status, callErr := s.gh.RerequestSuite(ctx, repo, id)
+		slog.InfoContext(ctx, "setup suite rerequest", "repository", repo.FullName, "pr", pr, "status", status)
 		if callErr == nil && status == 201 {
 			return "rerequested", nil
 		}
@@ -108,11 +110,16 @@ func (s setupRecheck) check(ctx context.Context, repo api.Repo, pr int, head str
 	if marked {
 		return "commented", nil
 	}
-	url, err := s.gh.LatestRunURL(ctx, repo, head)
-	if err != nil {
-		return "failed", err
+	var body string
+	if found {
+		url, err := s.gh.RunURL(ctx, repo, id)
+		if err != nil {
+			return "failed", err
+		}
+		body = setupMarker + "\n## Archfit is installed. The check has not started.\n\nGitHub did not let the App start the check on this pull request. Re-run it: " + url + "\nAfter it runs, the check shows \"merge to start\"."
+	} else {
+		body = setupMarker + "\n## Archfit is installed. The check has not started.\n\nRe-run the archfit workflow, or push a new commit: https://github.com/" + repo.FullName + "/actions/workflows/archfit.yaml"
 	}
-	body := setupMarker + "\n## Archfit is installed. The check has not started.\n\nGitHub did not let the App start the check on this pull request. Re-run it: " + url + "\nAfter it runs, the check shows \"merge to start\"."
 	if err := s.gh.Comment(ctx, repo, pr, body); err != nil {
 		return "failed", err
 	}

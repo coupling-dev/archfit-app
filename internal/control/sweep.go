@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/coupling-dev/archfit-app/internal/github/api"
@@ -40,6 +41,11 @@ func (c *Control) HandleEvent(ctx context.Context, e webhook.Event) error {
 		}
 		if err := c.account.Observe(ctx, e.InstallationID, hasPrivate(repos), c.now()); err != nil {
 			return fmt.Errorf("control: observe installation %d: %w", e.InstallationID, err)
+		}
+		if e.Kind == webhook.InstallationAdded && c.setup != nil {
+			if err := c.recheckAdded(ctx, e, repos); err != nil {
+				return err
+			}
 		}
 	case webhook.InstallationRemoved:
 		if err := c.account.Forget(ctx, e.InstallationID); err != nil {
@@ -133,4 +139,31 @@ func hasPrivate(repos []api.Repo) bool {
 		}
 	}
 	return false
+}
+
+type setupPullLister interface {
+	SetupPulls(context.Context, api.RepoRef) ([]api.Pull, error)
+}
+
+func (c *Control) recheckAdded(ctx context.Context, e webhook.Event, repos []api.Repo) error {
+	for _, repo := range repos {
+		if !slices.Contains(e.AddedRepositories, repo.FullName) {
+			continue
+		}
+		pulls, err := c.setupPulls.SetupPulls(ctx, repo.RepoRef)
+		if err != nil {
+			return err
+		}
+		for _, p := range pulls {
+			if p.HeadRepoID != repo.ID || p.HeadRef != "archfit/setup" {
+				continue
+			}
+			outcome, err := c.setup.Run(ctx, repo, p.Number, p.HeadSHA)
+			slog.InfoContext(ctx, "setup recheck", "repository", repo.FullName, "pr", p.Number, "outcome", outcome)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
