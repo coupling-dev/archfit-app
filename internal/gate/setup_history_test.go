@@ -1,11 +1,11 @@
 package gate
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
 
-	"encoding/json"
 	"github.com/coupling-dev/archfit-app/internal/gate/inputs"
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
 	"github.com/coupling-dev/archfit-app/internal/store"
