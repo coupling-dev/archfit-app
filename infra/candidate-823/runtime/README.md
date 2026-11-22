@@ -26,7 +26,7 @@ owner prerequisite; Cloud Run domain mapping is Preview.
 
 Queues and Scheduler start paused. Before any separately reviewed activation,
 capture both Cloud Run revision names and traffic allocations for rollback,
-probe public readiness, verify the internal worker audience and IAM, and test
+probe public readiness at `https://candidate-823.coupling.dev/ready`, verify the internal worker audience and IAM, and test
 only the candidate database. Then review the paused-to-running plan. On failure,
 pause candidate dispatch and restore only the captured candidate revisions;
 never redirect to production. Deletion and teardown require separate approval.

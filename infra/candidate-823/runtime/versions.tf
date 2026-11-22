@@ -12,8 +12,8 @@ terraform {
 }
 
 provider "google" {
-  project = "coupling-dev-510710"
-  region  = "europe-west1"
+  project = local.project
+  region  = local.region
 }
 
 data "terraform_remote_state" "data" {

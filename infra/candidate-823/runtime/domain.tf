@@ -1,7 +1,7 @@
 # Cloud Run domain mapping (Preview, no SLA). The owner must have verified coupling.dev in Search Console.
 # DNS is at the registrar: the owner adds the records from the dns_records output.
 resource "google_cloud_run_domain_mapping" "public" {
-  name     = "candidate-823.coupling.dev"
+  name     = local.domain
   location = local.region
 
   metadata {

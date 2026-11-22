@@ -1,5 +1,5 @@
 output "base_url" {
-  value = "https://candidate-823.coupling.dev"
+  value = local.base_url
 }
 
 output "worker_url" {

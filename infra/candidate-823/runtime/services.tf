@@ -2,6 +2,8 @@ locals {
   data       = data.terraform_remote_state.data.outputs
   project    = "coupling-dev-510710"
   region     = "europe-west1"
+  domain     = "candidate-823.coupling.dev"
+  base_url   = "https://${local.domain}"
   worker_url = "https://archfit-823-worker-${local.data.project_number}.${local.region}.run.app"
   secret_env = {
     github_private_key    = "ARCHFIT_GITHUB_PRIVATE_KEY_FILE"
@@ -15,7 +17,7 @@ locals {
     worker = toset(["github_private_key", "github_webhook_secret", "operator_token"])
   }
   common_env = {
-    ARCHFIT_BASE_URL               = "https://candidate-823.coupling.dev"
+    ARCHFIT_BASE_URL               = local.base_url
     ARCHFIT_GITHUB_APP_ID          = var.github_app_id
     ARCHFIT_GITHUB_OAUTH_CLIENT_ID = var.github_oauth_client_id
     ARCHFIT_STORE                  = "firestore"
@@ -72,7 +74,7 @@ resource "google_cloud_run_v2_service" "this" {
       dynamic "env" {
         for_each = merge(local.common_env, { ARCHFIT_ROLE = each.key }, each.key == "public" ? {
           ARCHFIT_QUEUE       = "cloudtasks"
-          ARCHFIT_TASKS_QUEUE = "projects/${local.project}/locations/${local.region}/queues/archfit-823-webhooks"
+          ARCHFIT_TASKS_QUEUE = "projects/${local.project}/locations/${local.region}/queues/${local.queue_names.webhooks}"
         } : {})
         content {
           name  = env.key

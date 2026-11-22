@@ -28,7 +28,8 @@ locals {
 }
 
 resource "google_cloud_tasks_queue" "this" {
-  for_each = local.queues
+  for_each   = local.queues
+  depends_on = [google_cloud_run_v2_service_iam_member.worker_invoker]
 
   name          = local.queue_names[each.key]
   location      = local.region
@@ -75,6 +76,7 @@ resource "google_cloud_tasks_queue_iam_member" "public_enqueuer" {
 
 # The Scheduler starts the sweep each hour.
 resource "google_cloud_scheduler_job" "sweep" {
+  depends_on       = [google_cloud_run_v2_service_iam_member.worker_invoker]
   name             = "archfit-823-sweep"
   region           = local.region
   schedule         = "0 * * * *"

@@ -161,3 +161,37 @@ run "reject_image_tag" {
   variables { image_digests = { public = "latest", worker = "latest" } }
   expect_failures = [google_cloud_run_v2_service.this["public"], google_cloud_run_v2_service.this["worker"]]
 }
+
+run "reject_missing_admission" {
+  command = plan
+  variables { approved_accounts = [] }
+  expect_failures = [google_cloud_run_v2_service.this["public"], google_cloud_run_v2_service.this["worker"]]
+}
+
+run "reject_missing_operators" {
+  command = plan
+  variables { operators = [] }
+  expect_failures = [google_cloud_run_v2_service.this["public"], google_cloud_run_v2_service.this["worker"]]
+}
+
+run "fixed_domain_and_worker_routes" {
+  command = plan
+  assert {
+    condition     = google_cloud_run_domain_mapping.public.name == "candidate-823.coupling.dev" && google_cloud_run_domain_mapping.public.spec[0].route_name == "archfit-823-public"
+    error_message = "Only the candidate domain may map to the candidate public service."
+  }
+  assert {
+    condition = alltrue([
+      for queue, path in { webhooks = "/internal/webhooks", operator = "/internal/grants" } :
+      google_cloud_tasks_queue.this[queue].name == "archfit-823-${queue}" &&
+      google_cloud_tasks_queue.this[queue].http_target[0].uri_override[0].host == "archfit-823-worker-335297348272.europe-west1.run.app" &&
+      google_cloud_tasks_queue.this[queue].http_target[0].uri_override[0].path_override[0].path == path &&
+      google_cloud_tasks_queue.this[queue].http_target[0].oidc_token[0].service_account_email == "archfit-823-invoker@coupling-dev-510710.iam.gserviceaccount.com"
+    ])
+    error_message = "Each named queue must use its fixed candidate worker route and invoker."
+  }
+  assert {
+    condition     = google_cloud_scheduler_job.sweep.http_target[0].uri == "https://archfit-823-worker-335297348272.europe-west1.run.app/internal/sweep" && google_cloud_tasks_queue_iam_member.public_enqueuer.role == "roles/cloudtasks.enqueuer" && google_cloud_tasks_queue_iam_member.public_enqueuer.member == "serviceAccount:archfit-823-public@coupling-dev-510710.iam.gserviceaccount.com"
+    error_message = "The sweep must reach only the candidate worker and enqueue permission must be scoped to the candidate public identity."
+  }
+}
