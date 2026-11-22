@@ -47,7 +47,7 @@ var sentinels = []struct {
 	{gate.ErrFirstApproval, http.StatusConflict, "first_approval",
 		"A repository administrator must approve the first policy before a request can be answered."},
 	{gate.ErrOwnerNotAdmin, http.StatusForbidden, "not_administrator",
-		"Only a repository administrator who is also an owner named in the policy can approve the first policy."},
+		"Only a repository administrator who is also an owner named in the policy can approve the first policy. If you are a repository administrator, add your GitHub login to owners in .archfit.yaml, push the change, and try approving again."},
 	{gate.ErrOwnerNotOwner, http.StatusForbidden, "not_approved_owner",
 		"Only an owner named in the approved policy can make this action."},
 	{gate.ErrOwnerNeedsPasskey, http.StatusForbidden, "needs_step_up",
