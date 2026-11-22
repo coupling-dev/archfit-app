@@ -18,6 +18,7 @@ import (
 const confirmationSchema = "archfit-app.operator-confirmation.v1"
 const confirmationPurpose = "first-passkey"
 const confirmationTTL = 10 * time.Minute
+const confirmationRequestLifetime = 30 * time.Minute
 const confirmationLock = 15 * time.Minute
 
 var ErrConfirmation = errors.New("passkey: confirmation cannot be used")
@@ -130,7 +131,7 @@ func (s *OperatorConfirmations) Request(ctx context.Context, scope ConfirmationS
 			if now.Before(r.LockedUntil) {
 				return nil, &ConfirmationLocked{r.LockedUntil}
 			}
-			until := r.RequestedAt.Add(confirmationTTL)
+			until := r.RequestedAt.Add(confirmationRequestLifetime)
 			if r.ExpiresAt.After(until) {
 				until = r.ExpiresAt
 			}
@@ -162,7 +163,10 @@ func (s *OperatorConfirmations) Request(ctx context.Context, scope ConfirmationS
 		if errors.Is(err, store.ErrConflict) {
 			continue
 		}
-		return chosen, err
+		if err != nil {
+			return "", err
+		}
+		return chosen, nil
 	}
 	return "", store.ErrConflict
 }
@@ -225,7 +229,7 @@ func (s *OperatorConfirmations) Issue(ctx context.Context, tenant int64, id stri
 		user = r.UserID
 		replaced = len(r.Hash) != 0 && !r.Revoked
 		now := s.now().UTC()
-		if r.Used {
+		if r.Used || !now.Before(r.RequestedAt.Add(confirmationRequestLifetime)) {
 			return ErrConfirmation
 		}
 		if now.Before(r.LockedUntil) {
@@ -287,10 +291,11 @@ func (s *OperatorConfirmations) Verify(ctx context.Context, scope ConfirmationSc
 		r.Hash = nil
 		return nil
 	})
-	if err == nil {
+	persisted := err == nil
+	if persisted {
 		err = refused
 	}
-	if locked && err != nil {
+	if locked && persisted {
 		confirmationAudit(ctx, "lockout", scope.InstallationID, scope.UserID, 0, err)
 	}
 	return err
@@ -305,6 +310,9 @@ func (s *OperatorConfirmations) Revoke(ctx context.Context, tenant int64, id str
 	}
 	return s.update(ctx, tenant, id, func(r *confirmationRecord) error {
 		user = r.UserID
+		if s.now().UTC().Before(r.LockedUntil) {
+			return &ConfirmationLocked{r.LockedUntil}
+		}
 		if r.Used {
 			return ErrConfirmation
 		}
