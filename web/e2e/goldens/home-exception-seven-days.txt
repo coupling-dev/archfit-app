@@ -9,6 +9,9 @@ View policy
 Needs you
 1 exception expires in 7 days
 (opens GitHub)
+
+This week: counts unavailable
+
 The map
 Matrix
 Diagram

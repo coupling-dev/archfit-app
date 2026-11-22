@@ -71,9 +71,11 @@
 {/if}
 {#if body?.setup?.setup_pull}
   <p>Setup pull request #{body.setup.setup_pull}: open. No merge is stopped before you merge it.</p>
+  {#if body.setup.weekly?.known}<p>This week: {body.setup.weekly.checked} checked, {body.setup.weekly.quiet} quiet, {body.setup.weekly.asked} asked</p><p>{body.setup.weekly.caveat}</p>{:else if body.setup.weekly}<p>This week: counts unavailable</p>{/if}
 {:else if body?.setup}
   <Setup setup={body.setup} repo={route} showOwnerAction={!action?.needsPasskey} primaryHref={action?.href} />
 {/if}
+{#if body?.weekly?.known}<p>This week: {body.weekly.checked} checked, {body.weekly.quiet} quiet, {body.weekly.asked} asked</p><p>{body.weekly.caveat}</p>{:else if body?.weekly}<p>This week: counts unavailable</p>{/if}
 {#if body && showMap}
   {#if body.map}
     <section class="box" aria-labelledby="home-map">

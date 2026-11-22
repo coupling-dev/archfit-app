@@ -1,4 +1,7 @@
 {
+  "weekly": {
+    "known": false
+  },
   "state": "unknown",
   "status": "The state of the default branch is not known. Nothing needs you.",
   "map": {

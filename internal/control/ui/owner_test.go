@@ -13,7 +13,9 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/control/onboarding"
 	"github.com/coupling-dev/archfit-app/internal/control/passkey"
 	"github.com/coupling-dev/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/gate/weekly"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 type fakeSetups struct {
@@ -107,6 +109,97 @@ func TestSetupAPIRequiresRepositoryReadAndReturnsExplicitState(t *testing.T) {
 			t.Fatal("read while signed out")
 		}
 	})
+}
+
+func TestSetupAPIWeeklyUnknownWithoutEvidence(t *testing.T) {
+	e := newEnv(t)
+	res := e.as("alice", permRead).get(setupAPI)
+	wantStatus(t, res, http.StatusOK)
+	var body struct {
+		Weekly struct {
+			Known bool `json:"known"`
+		} `json:"weekly"`
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(res.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw["weekly"]; !ok {
+		t.Fatalf("weekly evidence missing from response: %s", res.Body.String())
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Weekly.Known {
+		t.Fatal("absent evidence must be unknown")
+	}
+}
+
+func TestSetupAPIWeeklyKnownCounts(t *testing.T) {
+	e := newEnv(t)
+	for i, category := range []string{"pass", "owner", "checked"} {
+		if err := weekly.Record(t.Context(), e.store, store.Tenant(installA), repoName, i+1, int64(i+1), 1, e.now, category); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res := e.as("alice", permRead).get(setupAPI)
+	wantStatus(t, res, http.StatusOK)
+	var body struct {
+		Weekly struct {
+			Known   bool   `json:"known"`
+			Checked int    `json:"checked"`
+			Quiet   int    `json:"quiet"`
+			Asked   int    `json:"asked"`
+			Caveat  string `json:"caveat"`
+		} `json:"weekly"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.Weekly.Known || body.Weekly.Checked != 3 || body.Weekly.Quiet != 1 || body.Weekly.Asked != 1 || body.Weekly.Caveat != weekly.Caveat {
+		t.Fatalf("unexpected weekly evidence: %s", res.Body.String())
+	}
+}
+
+func TestSetupAPIWeeklyUnreadableIsUnknown(t *testing.T) {
+	e := newEnv(t)
+	if err := e.store.Put(t.Context(), store.Tenant(installA), "v4/weekly/"+strings.ToLower(repoName), []byte("not json")); err != nil {
+		t.Fatal(err)
+	}
+	res := e.as("alice", permRead).get(setupAPI)
+	wantStatus(t, res, http.StatusOK)
+	var body struct {
+		Weekly map[string]json.RawMessage `json:"weekly"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if string(body.Weekly["known"]) != "false" || body.Weekly["checked"] != nil || body.Weekly["quiet"] != nil || body.Weekly["asked"] != nil {
+		t.Fatalf("unexpected weekly evidence: %s", res.Body.String())
+	}
+}
+
+func TestSetupAPIWeeklyIsolatesTenantAndRepository(t *testing.T) {
+	e := newEnv(t)
+	for _, item := range []struct {
+		tenant store.Tenant
+		repo   string
+	}{{store.Tenant(installB), repoName}, {store.Tenant(installA), otherRepo}} {
+		if err := weekly.Record(t.Context(), e.store, item.tenant, item.repo, 1, 1, 1, e.now, "pass"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res := e.as("alice", permRead).get(setupAPI)
+	wantStatus(t, res, http.StatusOK)
+	var body struct {
+		Weekly map[string]json.RawMessage `json:"weekly"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if string(body.Weekly["known"]) != "false" || body.Weekly["checked"] != nil {
+		t.Fatalf("cross-tenant or cross-repo evidence: %s", res.Body.String())
+	}
 }
 
 func TestSetupAPIPasskeyFlagIsBestEffort(t *testing.T) {

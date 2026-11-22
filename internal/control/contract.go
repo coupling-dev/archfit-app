@@ -74,6 +74,7 @@ func New(d Deps) (*Control, error) {
 		return nil, fmt.Errorf("control: passkey: %w", err)
 	}
 	page, err := ui.New(ui.Deps{
+		Store:   d.Store,
 		Answers: answers.New(d.Answers, passkeys),
 		Owners:  answers.NewOwners(d.OwnerActions, passkeys), Setups: onboarding.NewSetup(d.GitHub, d.SetupViews),
 		OAuth: d.OAuth, CookieKey: d.CookieKey, BaseURL: d.BaseURL, GitHub: d.GitHub,

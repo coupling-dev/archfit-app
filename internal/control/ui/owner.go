@@ -95,7 +95,16 @@ type approvalJSON struct {
 	Merged       bool   `json:"merged,omitempty"`
 	Href         string `json:"href,omitempty"`
 }
+type weeklyJSON struct {
+	Known   bool   `json:"known"`
+	Checked *int   `json:"checked,omitempty"`
+	Quiet   *int   `json:"quiet,omitempty"`
+	Asked   *int   `json:"asked,omitempty"`
+	Caveat  string `json:"caveat,omitempty"`
+}
+
 type setupJSON struct {
+	Weekly       weeklyJSON         `json:"weekly"`
 	Approval     approvalJSON       `json:"approval"`
 	PasskeyKnown bool               `json:"passkey_known"`
 	Review       *reviewJSON        `json:"owner_action,omitempty"`
@@ -149,6 +158,12 @@ func (s *server) apiSetup(r *http.Request, sc scope) (any, error) {
 	}
 	body := setupJSON{Approval: approval, PasskeyKnown: passkeyKnown, Admitted: out.Admitted, Policy: out.Policy, Workflow: out.Workflow, Passkey: passkey, OpenPull: out.OpenPull,
 		State: out.State, Missing: out.Missing, FirstPull: out.FirstPull, SetupPull: out.SetupPull, Issue: out.Issue, Rules: []setupFindingJSON{}}
+	if s.store != nil && s.now != nil {
+		summary, err := gate.ReadWeekly(r.Context(), s.store, sc.repo, s.now())
+		if err == nil && summary.Known {
+			body.Weekly = weeklyJSON{Known: true, Checked: &summary.Checked, Quiet: &summary.Passed, Asked: &summary.Owner, Caveat: gate.WeeklyCaveat}
+		}
+	}
 	for _, f := range out.Rules.Findings {
 		body.Rules = append(body.Rules, setupFindingJSON{Code: f.Code, State: f.State, Text: f.Text})
 	}

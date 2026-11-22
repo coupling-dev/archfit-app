@@ -1,4 +1,7 @@
 {
+  "weekly": {
+    "known": false
+  },
   "state": "clean",
   "status": "The default branch follows the policy. Nothing needs you.",
   "map": {

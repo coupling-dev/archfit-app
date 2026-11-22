@@ -33,7 +33,9 @@ It asks GitHub to re-run the check suite. If GitHub refuses or no suite is avail
 with a link to the job or workflow so you can re-run it yourself.
 
 When the App first sees an open `archfit/setup` pull request in the same repository, it posts one welcome comment.
-Merge it to start advisory checks; an owner can make the check required later.
+Merge it to start advisory checks; an owner can make the check required later. The repository Home shows the
+weekly counts of recorded checks: checked, quiet, and asked. Some checks may be missing. If the counts are unavailable,
+Home says so instead of showing zero.
 
 After an owner approves the onboarding pull request, the App sets `archfit/gate` to success on that exact head, bound to the approved policy and workflow digests. This is the owner's approval, not an engine pass; run diagnostics remain visible in the pull request comment. Merge the pull request to activate change control. You can require `archfit/gate` before or after activation. A new head needs a new approval.
 

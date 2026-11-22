@@ -36,6 +36,8 @@ Why a passkey?
 4
 4 · Require the archfit/gate check
 
+This week: counts unavailable
+
 GitHub does not merge a change until archfit/gate passes on the default branch.
 
 to do
