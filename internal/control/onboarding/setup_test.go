@@ -302,3 +302,18 @@ func TestUnlistedCommitCannotBeAdmittedThroughASameNamedTag(t *testing.T) {
 		t.Fatalf("Setup = %+v, %v; tag reads %v", out, err, h.tagReads)
 	}
 }
+
+func TestSetupRecognizesInitialAdvisoryPull(t *testing.T) {
+	h := newSetupHub()
+	h.pulls = []api.Pull{{Number: 12, State: "open", BaseRef: "main", HeadRepo: setupRepo.FullName, HeadRef: "archfit/setup", HeadSHA: "head"}}
+	h.files["head"] = map[string]string{".archfit.yaml": setupPolicy, workflowPath: setupWorkflow(setupCommit)}
+	s := &setups{gh: h, gate: setupView{}, actionApproved: func(ref string) bool { return ref == setupCommit }}
+	out, err := s.Setup(t.Context(), setupRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	field := reflect.ValueOf(out).FieldByName("SetupPull")
+	if !field.IsValid() || field.Int() != 12 {
+		t.Fatalf("initial setup pull not recognized: %+v", out)
+	}
+}
