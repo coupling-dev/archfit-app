@@ -29,6 +29,9 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/wire/result"
 )
 
+// weeklyWriteBudget bounds the optional write; leave the same amount for the upload response.
+const weeklyWriteBudget = 100 * time.Millisecond
+
 // policyPath is the policy file; the one on the default branch is the approved policy (design 9.1).
 const policyPath = ".archfit.yaml"
 
@@ -161,7 +164,8 @@ func (g *Gate) serveUpload4(w http.ResponseWriter, req *http.Request) {
 		err = g.driftPushed(ctx, u, d)
 	}
 
-	if err == nil && u.Binding.PullRequest != 0 && len(d.Reasons) == 0 && u.Result != nil {
+	deadline, _ := ctx.Deadline()
+	if err == nil && ctx.Err() == nil && time.Until(deadline) >= 2*weeklyWriteBudget && u.Binding.PullRequest != 0 && len(d.Reasons) == 0 && u.Result != nil {
 		category := "checked"
 		switch u.Result.Status {
 		case result.StatusPass:
@@ -172,7 +176,9 @@ func (g *Gate) serveUpload4(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 		b := u.Binding
-		if statsErr := weekly.Record(ctx, g.v4.store, store.Tenant(b.Repo.InstallationID), b.Repo.FullName, b.PullRequest, b.RunID, b.RunAttempt, d.StagedAt, category); statsErr != nil {
+		statsCtx, statsCancel := context.WithTimeout(ctx, weeklyWriteBudget)
+		defer statsCancel()
+		if statsErr := weekly.Record(statsCtx, g.v4.store, store.Tenant(b.Repo.InstallationID), b.Repo.FullName, b.PullRequest, b.RunID, b.RunAttempt, d.StagedAt, category); statsErr != nil {
 			slog.WarnContext(ctx, "weekly summary unavailable", "error", statsErr)
 		}
 	}

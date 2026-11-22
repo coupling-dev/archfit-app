@@ -65,3 +65,23 @@ func TestWeeklyClassifiesAcceptedFailures(t *testing.T) {
 		})
 	}
 }
+
+type slowWeeklyStore struct{ store.Store }
+
+func (s slowWeeklyStore) Get(ctx context.Context, tenant store.Tenant, key string) ([]byte, error) {
+	if strings.HasPrefix(key, "v4/weekly/") {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return s.Store.Get(ctx, tenant, key)
+}
+func TestSlowWeeklyDoesNotHoldUpload(t *testing.T) {
+	w, p, spec := advisoryWorld(t, policy4Advisory)
+	w.gate.v4.store = slowWeeklyStore{w.gate.v4.store}
+	start := time.Now()
+	w.wantStatus(w.send4(spec), "pass", "")
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("upload held for %s", elapsed)
+	}
+	w.wantGate(p, "completed", "success")
+}
