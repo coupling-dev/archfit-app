@@ -34,6 +34,7 @@ export interface HomeSetup {
   open_pull: number;
   missing: string[];
   first_pull?: number;
+  setup_pull?: number;
   rules: { code: string; state: string; text: string }[];
 }
 
@@ -258,6 +259,7 @@ export function readHome(value: unknown): Home {
       passkey: boolean(s.passkey),
       open_pull: nonnegativeNumber(s.open_pull),
       missing: array(s.missing).map(string),
+      ...(s.setup_pull === undefined ? {} : { setup_pull: number(s.setup_pull) }),
       ...(s.first_pull === undefined ? {} : { first_pull: number(s.first_pull) }),
       rules: array(s.rules).map((entry) => {
         const r = object(entry);
@@ -346,6 +348,7 @@ export function homeAction(home: Home, repo: Repo): HomeAction | undefined {
   const setup = home.setup;
   if (!setup) return undefined;
   const github = `https://github.com/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`;
+  if (setup.setup_pull) return { label: `Open pull request #${setup.setup_pull}`, href: `${github}/pull/${setup.setup_pull}`, external: true };
   const review = approvalNeedsReview(setup) && setup.owner_action?.href ? homeHref(repo, setup.owner_action.href) : undefined;
   if (review) return { label: ownerReviewLabel(setup), href: review, external: false, needsPasskey: true };
   const active = setupStepState(setup).done.indexOf(false);

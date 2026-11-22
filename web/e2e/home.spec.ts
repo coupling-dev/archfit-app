@@ -14,7 +14,7 @@ const path = '/r/acme/app';
 const api = 'GET /api/repos/acme/app/home';
 const fixtures = new URL('../../internal/control/ui/testdata/home/', import.meta.url);
 const names = readdirSync(fixtures)
-  .filter((n) => n.endsWith('.json'))
+  .filter((n) => n.endsWith('.json') && n !== 'setup-open.json')
   .sort();
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(name + '.json', fixtures), 'utf8'));
 

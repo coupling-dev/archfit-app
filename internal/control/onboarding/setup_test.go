@@ -302,3 +302,63 @@ func TestUnlistedCommitCannotBeAdmittedThroughASameNamedTag(t *testing.T) {
 		t.Fatalf("Setup = %+v, %v; tag reads %v", out, err, h.tagReads)
 	}
 }
+
+func TestSetupRecognizesInitialAdvisoryPull(t *testing.T) {
+	h := newSetupHub()
+	h.pulls = []api.Pull{{Number: 12, State: "open", BaseRef: "main", HeadRepo: setupRepo.FullName, HeadRef: "archfit/setup", HeadSHA: "head"}}
+	h.files["head"] = map[string]string{".archfit.yaml": setupPolicy, workflowPath: setupWorkflow(setupCommit)}
+	s := &setups{gh: h, gate: setupView{}, actionApproved: func(ref string) bool { return ref == setupCommit }}
+	out, err := s.Setup(t.Context(), setupRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.SetupPull != 12 {
+		t.Fatalf("initial setup pull not recognized: %+v", out)
+	}
+}
+
+func TestSetupPullRejectsLegacyReviews(t *testing.T) {
+	for _, tc := range []struct{ name, branch, policy string }{
+		{"wrong branch", "feature", setupPolicy},
+		{"required policy", "archfit/setup", setupPolicy + "gate: required\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newSetupHub()
+			h.pulls = []api.Pull{{Number: 12, State: "open", BaseRef: "main", HeadRepo: setupRepo.FullName, HeadRef: tc.branch, HeadSHA: "head"}}
+			h.files["head"] = map[string]string{".archfit.yaml": tc.policy, workflowPath: setupWorkflow(setupCommit)}
+			s := &setups{gh: h, gate: setupView{}, actionApproved: func(ref string) bool { return ref == setupCommit }}
+			out, err := s.Setup(t.Context(), setupRepo)
+			if err != nil || out.SetupPull != 0 || out.FirstPull != 12 {
+				t.Fatalf("Setup = %+v, %v", out, err)
+			}
+		})
+	}
+}
+
+func TestSetupPullRequiresInitialRepositoryState(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		pull   api.Pull
+		policy string
+		state  gate.SetupState
+	}{
+		{name: "fork", pull: api.Pull{State: "open", BaseRef: "main", HeadRepo: "fork/app", HeadRef: "archfit/setup"}, policy: setupPolicy},
+		{name: "wrong base", pull: api.Pull{State: "open", BaseRef: "other", HeadRepo: setupRepo.FullName, HeadRef: "archfit/setup"}, policy: setupPolicy},
+		{name: "invalid policy", pull: api.Pull{State: "open", BaseRef: "main", HeadRepo: setupRepo.FullName, HeadRef: "archfit/setup"}, policy: "invalid"},
+		{name: "prior approval", pull: api.Pull{State: "open", BaseRef: "main", HeadRepo: setupRepo.FullName, HeadRef: "archfit/setup"}, policy: setupPolicy, state: gate.SetupState{ApprovedDigest: "old"}},
+		{name: "outside flow", pull: api.Pull{State: "open", BaseRef: "main", HeadRepo: setupRepo.FullName, HeadRef: "archfit/setup"}, policy: setupPolicy, state: gate.SetupState{OutsideFlow: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newSetupHub()
+			tc.pull.Number = 12
+			tc.pull.HeadSHA = "head"
+			h.pulls = []api.Pull{tc.pull}
+			h.files["head"] = map[string]string{".archfit.yaml": tc.policy, workflowPath: setupWorkflow(setupCommit)}
+			s := &setups{gh: h, gate: setupView{tc.state}, actionApproved: func(ref string) bool { return ref == setupCommit }}
+			out, err := s.Setup(t.Context(), setupRepo)
+			if err != nil || out.SetupPull != 0 {
+				t.Fatalf("Setup = %+v, %v", out, err)
+			}
+		})
+	}
+}
