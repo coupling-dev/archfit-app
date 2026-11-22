@@ -84,11 +84,12 @@ func New(gh GitHub, s store.Store, p feedback.Publisher4) *Service {
 
 // Comment is a comment created on a pull request.
 type Comment struct {
-	Repo   api.Repo // RepoRef and DefaultBranch, from the event
-	Pull   int
-	Author string
-	Body   string
-	Today  time.Time // the App's date
+	Repo      api.Repo // RepoRef and DefaultBranch, from the event
+	Pull      int
+	Author    string
+	Body      string
+	Today     time.Time // the App's date
+	CreatedAt time.Time
 }
 
 // asker is who filed a request and when.
@@ -190,7 +191,7 @@ func (s *Service) Comment(ctx context.Context, c Comment) (string, error) {
 			o.left++
 			continue
 		}
-		id, joined, err := s.open(ctx, c.Repo, pol, g, line, c.Pull, asker{c.Author, c.Today})
+		id, joined, err := s.open(ctx, c.Repo, pol, g, line, c.Pull, asker{c.Author, c.CreatedAt})
 		if err != nil {
 			return ReactionNone, err
 		}

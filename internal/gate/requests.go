@@ -11,13 +11,13 @@ import (
 // and sets the pull request's check to waiting when open requests cover every error.
 func (g *Gate) requestCommented(ctx context.Context, e webhook.Event) (string, error) {
 	return g.asks.Comment(ctx, asks.Comment{Repo: eventTarget(e).Repo, Pull: e.PullRequest, Author: e.Author,
-		Body: e.Body, Today: g.now().UTC()})
+		Body: e.Body, Today: g.now().UTC(), CreatedAt: e.CreatedAt})
 }
 
 // requestFiled takes in an issue the CLI opened from a `can` answer before a pull request exists.
 func (g *Gate) requestFiled(ctx context.Context, e webhook.Event) (string, error) {
 	return g.asks.Filed(ctx, asks.Issue{Repo: eventTarget(e).Repo, Number: e.Issue, Author: e.Author, Body: e.Body,
-		Today: g.now().UTC()})
+		Today: g.now().UTC(), CreatedAt: e.CreatedAt})
 }
 
 // pullClosed drops a closed pull request from the pull index of Archfit 4.

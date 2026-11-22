@@ -30,7 +30,7 @@ func TestFiledUnprotectedCan(t *testing.T) {
 	gh := &filedGitHub{previewGH: w.gh}
 	svc := New(gh, w.mem, nil)
 	record := "pkg_tc -> pkg_util: graph: not an allowed dependency\n  balance: 9/10 (min 7): contract, pkg_util is low\n  next: request\npolicy: not protected\n"
-	reaction, err := svc.Filed(context.Background(), Issue{Repo: previewRepo, Number: 77, Author: "writer", Today: testToday,
+	reaction, err := svc.Filed(context.Background(), Issue{Repo: previewRepo, Number: 77, Author: "writer", Today: testToday, CreatedAt: testToday.Add(-time.Hour),
 		Body: "/archfit request why\n\n```text\n" + record + "```\n"})
 	if err != nil || reaction != ReactionFiled {
 		t.Fatalf("Filed = %q, %v; comments %q", reaction, err, gh.comments)
@@ -42,8 +42,8 @@ func TestFiledUnprotectedCan(t *testing.T) {
 	if req.Key != graphKey || req.Record != record || req.Numbers.Verified || req.Numbers.Balance == nil || req.Numbers.Balance.Score != 9 {
 		t.Errorf("stored request = %+v", req)
 	}
-	if req.AskedBy != "writer" || req.AskedAt != testToday.UTC().Format(time.RFC3339) {
-		t.Errorf("asked by %q at %q, want writer at %s", req.AskedBy, req.AskedAt, testToday.UTC().Format(time.RFC3339))
+	if req.AskedBy != "writer" || req.AskedAt != testToday.Add(-time.Hour).UTC().Format(time.RFC3339) {
+		t.Errorf("asked by %q at %q, want writer at %s", req.AskedBy, req.AskedAt, testToday.Add(-time.Hour).UTC().Format(time.RFC3339))
 	}
 }
 
@@ -91,5 +91,22 @@ func TestAVerifiedPackageReplacesTheReportedOne(t *testing.T) {
 	}
 	if !req.Numbers.Verified || req.Surface == nil || req.Surface.Package != "pkg/util/backoff" {
 		t.Errorf("after the join: verified %v, surface %+v", req.Numbers.Verified, req.Surface)
+	}
+}
+
+func TestFiledMissingCreationTime(t *testing.T) {
+	w := newPreviewWorld(t)
+	svc := New(&filedGitHub{previewGH: w.gh}, w.mem, nil)
+	record := "pkg_tc -> pkg_util: graph: not an allowed dependency\n  balance: 9/10 (min 7): contract, pkg_util is low\n  next: request\npolicy: not protected\n"
+	_, err := svc.Filed(context.Background(), Issue{Repo: previewRepo, Number: 77, Author: "writer", Today: testToday, Body: "/archfit request why\n\n```text\n" + record + "```\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req records.Request
+	if err := records.Load(context.Background(), w.mem, tenant(previewRepo), records.RequestKey(previewRepo.FullName, 77), &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.AskedAt != "" {
+		t.Fatalf("missing creation time stored as %q", req.AskedAt)
 	}
 }
