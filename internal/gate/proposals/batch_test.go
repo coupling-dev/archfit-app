@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/coupling-dev/archfit-app/internal/gate/records"
 	"github.com/coupling-dev/archfit-app/internal/gate/requests"
+	"github.com/coupling-dev/archfit-app/internal/store"
 	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 )
 
@@ -151,5 +153,63 @@ func TestBatchRedeemsExactlyReviewedDigestOnce(t *testing.T) {
 	}
 	if _, err = redeem(context.Background(), digest); !errors.Is(err, errToken) {
 		t.Fatalf("replay: %v", err)
+	}
+}
+
+type batchFailStore struct{ store.Store }
+
+func (s batchFailStore) CompareAndSwapAll(ctx context.Context, tenant store.Tenant, swaps []store.Swap) (bool, error) {
+	if len(swaps) > 1 {
+		return false, errors.New("pin unavailable")
+	}
+	return s.Store.CompareAndSwapAll(ctx, tenant, swaps)
+}
+
+func TestBatchFailedPinNeverPublishesGate(t *testing.T) {
+	w := newWorld(t)
+	w.request(431, "graph", "pkg_tc", "pkg_util")
+	items := []BatchItem{{Request: 431, Answer: requests.Answer{Kind: policy3.Approve}}}
+	digest, err := w.svc.BatchDigest(context.Background(), testRepo, items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.tokens["batch"] = digest
+	w.svc.store = batchFailStore{w.store}
+	_, err = w.svc.AnswerBatch(context.Background(), testRepo, BatchInput{Answers: items, Owner: olivia, Redeem: w.redeem("batch")})
+	if err == nil || !strings.Contains(err.Error(), "pin unavailable") {
+		t.Fatalf("error = %v", err)
+	}
+	if w.hub.count("CommitOn") != 1 || w.hub.count("CreateCheckRun") != 0 || w.requestState(431) != records.StateOpen {
+		t.Fatalf("writes=%v state=%s", w.hub.writes(), w.requestState(431))
+	}
+}
+
+func TestBatchRefusesInvalidInputsBeforeWrites(t *testing.T) {
+	for _, name := range []string{"empty", "duplicate", "oversize", "owner", "closed"} {
+		t.Run(name, func(t *testing.T) {
+			w := newWorld(t)
+			w.request(431, "graph", "pkg_tc", "pkg_util")
+			item := BatchItem{Request: 431, Answer: requests.Answer{Kind: policy3.Approve}}
+			items := []BatchItem{item}
+			owner := olivia
+			switch name {
+			case "empty":
+				items = nil
+			case "duplicate":
+				items = append(items, item)
+			case "oversize":
+				items = make([]BatchItem, 21)
+			case "owner":
+				owner = Owner{ID: 999, Login: "stranger"}
+			case "closed":
+				w.mustAnswer(olivia, 431, item.Answer, true)
+				w.hub.calls = nil
+				w.redeemed = nil
+			}
+			_, err := w.svc.AnswerBatch(context.Background(), testRepo, BatchInput{Answers: items, Owner: owner, Redeem: w.redeem("none")})
+			if err == nil || len(w.hub.writes()) != 0 || len(w.redeemed) != 0 {
+				t.Fatalf("error=%v writes=%v redeems=%v", err, w.hub.writes(), w.redeemed)
+			}
+		})
 	}
 }
