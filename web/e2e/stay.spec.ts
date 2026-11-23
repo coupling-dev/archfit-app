@@ -9,17 +9,17 @@ const reposGolden = (name: string) =>
   ) as object;
 
 const cases: { name: string; path: string; ready: string; mock?: Mock; keyboard: string }[] = [
-  { name: 'repositories', path: '/', ready: 'Repositories', keyboard: 'acme/clean' },
+  { name: 'repositories', path: '/repositories', ready: 'Repositories', keyboard: 'acme/clean' },
   {
     name: 'repositories-empty',
-    path: '/',
+    path: '/repositories',
     ready: 'Repositories',
     mock: { repos: reposGolden('no-repositories') },
     keyboard: 'Documentation',
   },
   {
     name: 'repositories-truncated',
-    path: '/',
+    path: '/repositories',
     ready: 'Repositories',
     mock: { repos: { ...reposGolden('all-states'), truncated: true } },
     keyboard: 'acme/clean',
