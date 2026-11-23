@@ -10,8 +10,9 @@
     session,
     repo = '',
     tab = '',
+    top = '',
     pull = 0,
-  }: { session: Session | null; repo?: string; tab?: 'home' | 'policy' | 'passkeys' | ''; pull?: number } = $props();
+  }: { session: Session | null; repo?: string; tab?: 'home' | 'policy' | 'passkeys' | ''; top?: 'needs' | 'repositories' | ''; pull?: number } = $props();
 
   let theme = $state<Theme>(storedTheme());
   const themeNames: Record<Theme, string> = { auto: 'Auto', light: 'Light', dark: 'Dark' };
@@ -41,7 +42,12 @@
     </svg>
     Archfit
   </a>
-  {#if session}<a href="/">Repositories</a>{/if}
+  {#if session}
+    <nav aria-label="Pages">
+      <a href="/" aria-current={top === 'needs' ? 'page' : undefined}>Needs you</a>
+      <a href="/repositories" aria-current={top === 'repositories' ? 'page' : undefined}>Repositories</a>
+    </nav>
+  {/if}
   {#if repo}
     <nav class="crumbs" aria-label="Breadcrumb">
       <span class="sep" aria-hidden="true">/</span>

@@ -178,6 +178,7 @@
 <Header
   {session}
   {repo}
+  top={route.kind === 'home' ? 'needs' : route.kind === 'repositories' ? 'repositories' : ''}
   tab={route.kind === 'repo'
     ? 'home'
     : route.kind === 'policy' || route.kind === 'passkeys'
