@@ -75,7 +75,7 @@ run "reject_wrong_database" {
 run "candidate_host_only" {
   command = plan
   assert {
-    condition     = alltrue([for service in google_cloud_run_v2_service.this : contains([for env in service.template[0].containers[0].env : "${env.name}=${env.value}"], "ARCHFIT_BASE_URL=https://candidate.coupling.dev")])
+    condition     = alltrue([for service in google_cloud_run_v2_service.this : contains([for env in service.template[0].containers[0].env : "${env.name}=${env.value}"], "ARCHFIT_BASE_URL=https://app-staging.coupling.dev")])
     error_message = "Both roles must use only the candidate host."
   }
 }
@@ -177,7 +177,7 @@ run "reject_missing_operators" {
 run "fixed_domain_and_worker_routes" {
   command = plan
   assert {
-    condition     = google_cloud_run_domain_mapping.public.name == "candidate.coupling.dev" && google_cloud_run_domain_mapping.public.spec[0].route_name == "archfit-candidate-public"
+    condition     = google_cloud_run_domain_mapping.public.name == "app-staging.coupling.dev" && google_cloud_run_domain_mapping.public.spec[0].route_name == "archfit-candidate-public"
     error_message = "Only the candidate domain may map to the candidate public service."
   }
   assert {

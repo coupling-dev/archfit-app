@@ -21,12 +21,12 @@ CI initializes this root with the backend disabled, validates it, and runs its
 mock tests. Mock tests do not prove live IAM, routing, readiness or state isolation. The owner must review
 the exact candidate-only saved plan and resource addresses, identity, project,
 quota, effective IAM, registry digest, numeric secret versions and state access
-before a separately approved apply. DNS for candidate.coupling.dev is an
+before a separately approved apply. DNS for app-staging.coupling.dev is an
 owner prerequisite; Cloud Run domain mapping is Preview.
 
 Queues and Scheduler start paused. Before any separately reviewed activation,
 capture both Cloud Run revision names and traffic allocations for rollback,
-probe public readiness at `https://candidate.coupling.dev/ready`, verify the internal worker audience and IAM, and test
+probe public readiness at `https://app-staging.coupling.dev/ready`, verify the internal worker audience and IAM, and test
 only the candidate database. Then review the paused-to-running plan. On failure,
 pause candidate dispatch and restore only the captured candidate revisions;
 never redirect to production. Deletion and teardown require separate approval.

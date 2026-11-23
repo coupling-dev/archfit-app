@@ -2,7 +2,7 @@ locals {
   data       = data.terraform_remote_state.data.outputs
   project    = "coupling-dev-510710"
   region     = "europe-west1"
-  domain     = "candidate.coupling.dev"
+  domain     = "app-staging.coupling.dev"
   base_url   = "https://${local.domain}"
   worker_url = "https://archfit-candidate-worker-${local.data.project_number}.${local.region}.run.app"
   secret_env = {
