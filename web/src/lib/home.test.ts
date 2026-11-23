@@ -12,6 +12,7 @@ import {
   setupPullStep,
   setupRuleStatus,
   setupStepState,
+  setupCanRequireGate,
   type HomeSetup,
 } from './home';
 import { mapLines, lineLabel } from '../components/map/model';
@@ -103,6 +104,7 @@ describe('map rules', () => {
 
 describe('setup step labels and progress', () => {
   const base: HomeSetup = {
+    mode: 'unknown',
     approval: needed,
     passkey_known: true,
     state: 'not_admitted',
@@ -224,7 +226,7 @@ describe('setup enforcement facts and advisory findings', () => {
     ['no findings', [], false],
   ])('%s', (_name, rules, complete) => {
     const state = setupStepState({
-      approval: active, passkey_known: true, state: 'approved', policy: true,
+      mode: 'unknown', approval: active, passkey_known: true, state: 'approved', policy: true,
       workflow: true, passkey: true, open_pull: 0, missing: [], rules,
     });
     expect(state.done[3]).toBe(complete);
@@ -235,7 +237,7 @@ describe('setup enforcement facts and advisory findings', () => {
   it.each(['administrator_bypass', 'app_bypass', 'policy_push', 'policy_push_bypass', 'approvals'])('%s is advisory, not an enforcement prerequisite', (code) => {
     for (const state of ['unknown', 'warning', 'not_applicable', 'ok']) {
       const result = setupStepState({
-        approval: active, passkey_known: true, state: 'approved', policy: true,
+        mode: 'unknown', approval: active, passkey_known: true, state: 'approved', policy: true,
         workflow: true, passkey: true, open_pull: 0, missing: [], rules: [...enforced, { code, state, text: '' }],
       });
       expect(result.done[3]).toBe(true);
@@ -263,6 +265,7 @@ describe('server-resolved owner actions', () => {
   it('marks a resolved review as work to do, not waiting', () => {
     expect(
       setupStepState({
+        mode: 'unknown',
         approval: needed,
         passkey_known: true,
         state: 'not_admitted',
@@ -298,6 +301,7 @@ describe('the one primary action', () => {
   const github = 'https://github.com/acme/app';
   const home = (over: Partial<Home>): Home => ({ state: 'clean', status: '', needs_you: [], ...over });
   const setup = (over: Partial<HomeSetup>): HomeSetup => ({
+    mode: 'unknown',
     approval: needed,
     passkey_known: true,
     state: 'not_admitted',
@@ -368,6 +372,14 @@ describe('the one primary action', () => {
     const review = { label: 'Review', href: '/r/acme/app/owner/workflow?pull=5' };
     expect(homeAction(home({ setup: setup({ open_pull: 5, owner_action: review }) }), repo)?.needsPasskey).toBe(true);
     expect(homeAction(home({ needs_you: [workflowNeed] }), repo)?.needsPasskey).toBeUndefined();
+  });
+
+  it('offers the check step instead of the ruleset while the gate is advisory', () => {
+    const advisory = setup({ mode: 'advisory', approval: active, state: 'approved', rules: gateOff });
+    expect(setupCanRequireGate(advisory)).toBe(true);
+    expect(homeAction(home({ setup: advisory }), repo)).toBeUndefined();
+    expect(setupCanRequireGate({ ...advisory, mode: 'required' })).toBe(false);
+    expect(setupCanRequireGate({ ...advisory, approval: needed })).toBe(false);
   });
 
   it('offers nothing when nothing is due and never an in-page anchor', () => {
@@ -404,6 +416,7 @@ describe('the one primary action', () => {
   const github = 'https://github.com/acme/app';
   const home = (over: Partial<Home>): Home => ({ state: 'clean', status: '', needs_you: [], ...over });
   const setup = (over: Partial<HomeSetup>): HomeSetup => ({
+    mode: 'unknown',
     approval: needed,
     passkey_known: true,
     state: 'not_admitted',
@@ -474,6 +487,14 @@ describe('the one primary action', () => {
     const review = { label: 'Review', href: '/r/acme/app/owner/workflow?pull=5' };
     expect(homeAction(home({ setup: setup({ open_pull: 5, owner_action: review }) }), repo)?.needsPasskey).toBe(true);
     expect(homeAction(home({ needs_you: [workflowNeed] }), repo)?.needsPasskey).toBeUndefined();
+  });
+
+  it('offers the check step instead of the ruleset while the gate is advisory', () => {
+    const advisory = setup({ mode: 'advisory', approval: active, state: 'approved', rules: gateOff });
+    expect(setupCanRequireGate(advisory)).toBe(true);
+    expect(homeAction(home({ setup: advisory }), repo)).toBeUndefined();
+    expect(setupCanRequireGate({ ...advisory, mode: 'required' })).toBe(false);
+    expect(setupCanRequireGate({ ...advisory, approval: needed })).toBe(false);
   });
 
   it('offers nothing when nothing is due and never an in-page anchor', () => {

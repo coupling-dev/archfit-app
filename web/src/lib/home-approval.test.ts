@@ -11,6 +11,7 @@ import {
 } from './home';
 
 const base: HomeSetup = {
+  mode: 'unknown',
   approval: { status: 'needed', kind: 'workflow', pull_request: 203 },
   state: 'not_admitted',
   policy: true,
