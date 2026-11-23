@@ -7,10 +7,15 @@ for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     await open(page, '/r/acme/app/pull/4');
     const repositories = page.getByRole('banner').getByRole('link', { name: 'Repositories', exact: true });
-    await expect(repositories).toHaveAttribute('href', '/');
+    await expect(repositories).toHaveAttribute('href', '/repositories');
     await repositories.click();
-    await expect(page).toHaveURL('/');
+    await expect(page).toHaveURL('/repositories');
     await expect(page.getByRole('heading', { name: 'Repositories', exact: true })).toBeVisible();
+    const needs = page.getByRole('banner').getByRole('link', { name: 'Needs you', exact: true });
+    await expect(needs).toHaveAttribute('href', '/');
+    await needs.click();
+    await expect(page).toHaveURL('/');
+    await expect(page.getByRole('heading', { name: 'Needs you', exact: true })).toBeVisible();
   });
 
   test(`landing and footer at ${width} @docs`, async ({ page }) => {

@@ -58,7 +58,7 @@ export const stateFixtures: StateFixture[] = [
   },
   {
     name: 'empty-list',
-    path: '/',
+    path: '/repositories',
     api: '/api/repos',
     reply: [200, fixture('repos/no-repositories')],
     heading: 'Repositories',

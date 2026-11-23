@@ -64,7 +64,7 @@ test('a read still in flight from a page the user left does not replace the page
   });
 
   await page.getByRole('banner').getByRole('link', { name: 'Repositories', exact: true }).click();
-  await expect.poll(() => pathOf(page)).toBe('/');
+  await expect.poll(() => pathOf(page)).toBe('/repositories');
   await expect(page.getByRole('heading', { name: 'Repositories', exact: true })).toBeVisible();
 
   const answered = page.waitForResponse((response) => response.url().includes('/pulls/9'));
