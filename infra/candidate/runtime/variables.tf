@@ -1,5 +1,5 @@
 variable "data_state_bucket" {
-  description = "Owner-supplied bucket containing candidate-823/data state."
+  description = "Owner-supplied bucket containing candidate/data state."
   type        = string
   nullable    = false
   validation {

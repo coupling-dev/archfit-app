@@ -9,11 +9,11 @@ locals {
     operator_token        = ["worker"]
   }
   secret_ids = {
-    github_private_key    = "archfit-823-github-private-key"
-    github_webhook_secret = "archfit-823-github-webhook-secret"
-    github_oauth_secret   = "archfit-823-github-oauth-secret"
-    cookie_key            = "archfit-823-cookie-key"
-    operator_token        = "archfit-823-operator-token"
+    github_private_key    = "archfit-candidate-github-private-key"
+    github_webhook_secret = "archfit-candidate-github-webhook-secret"
+    github_oauth_secret   = "archfit-candidate-github-oauth-secret"
+    cookie_key            = "archfit-candidate-cookie-key"
+    operator_token        = "archfit-candidate-operator-token"
   }
   secret_access = merge([for secret, roles in local.secret_readers : {
     for role in roles : "${secret}/${role}" => { secret = secret, role = role }
@@ -22,7 +22,7 @@ locals {
 
 resource "google_firestore_database" "candidate" {
   project                     = local.project
-  name                        = "archfit-823"
+  name                        = "archfit-candidate"
   location_id                 = local.region
   type                        = "FIRESTORE_NATIVE"
   app_engine_integration_mode = "DISABLED"
@@ -32,7 +32,7 @@ resource "google_firestore_database" "candidate" {
 resource "google_service_account" "runtime" {
   for_each   = toset(["public", "worker", "invoker"])
   project    = local.project
-  account_id = "archfit-823-${each.key}"
+  account_id = "archfit-candidate-${each.key}"
 }
 resource "google_project_iam_member" "state_user" {
   for_each = toset(["public", "worker"])
@@ -41,7 +41,7 @@ resource "google_project_iam_member" "state_user" {
   member   = google_service_account.runtime[each.key].member
   condition {
     title      = "candidate_database_only"
-    expression = "resource.name == \"projects/coupling-dev-510710/databases/archfit-823\""
+    expression = "resource.name == \"projects/coupling-dev-510710/databases/archfit-candidate\""
   }
 }
 resource "google_service_account_iam_member" "public_acts_as_invoker" {
@@ -71,6 +71,6 @@ resource "google_secret_manager_secret_iam_member" "accessor" {
 resource "google_artifact_registry_repository" "app" {
   project       = local.project
   location      = local.region
-  repository_id = "archfit-app-823"
+  repository_id = "archfit-app-candidate"
   format        = "DOCKER"
 }

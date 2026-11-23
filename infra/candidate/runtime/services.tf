@@ -2,9 +2,9 @@ locals {
   data       = data.terraform_remote_state.data.outputs
   project    = "coupling-dev-510710"
   region     = "europe-west1"
-  domain     = "candidate-823.coupling.dev"
+  domain     = "candidate.coupling.dev"
   base_url   = "https://${local.domain}"
-  worker_url = "https://archfit-823-worker-${local.data.project_number}.${local.region}.run.app"
+  worker_url = "https://archfit-candidate-worker-${local.data.project_number}.${local.region}.run.app"
   secret_env = {
     github_private_key    = "ARCHFIT_GITHUB_PRIVATE_KEY_FILE"
     github_webhook_secret = "ARCHFIT_GITHUB_WEBHOOK_SECRET_FILE"
@@ -22,7 +22,7 @@ locals {
     ARCHFIT_GITHUB_OAUTH_CLIENT_ID = var.github_oauth_client_id
     ARCHFIT_STORE                  = "firestore"
     ARCHFIT_FIRESTORE_PROJECT      = local.project
-    ARCHFIT_FIRESTORE_DATABASE     = "archfit-823"
+    ARCHFIT_FIRESTORE_DATABASE     = "archfit-candidate"
     GOOGLE_CLOUD_PROJECT           = local.project
     ARCHFIT_WORKER_URL             = local.worker_url
     ARCHFIT_INVOKER                = local.data.service_accounts.invoker
@@ -33,7 +33,7 @@ locals {
 
 resource "google_cloud_run_v2_service" "this" {
   for_each             = local.role_secrets
-  name                 = "archfit-823-${each.key}"
+  name                 = "archfit-candidate-${each.key}"
   location             = local.region
   ingress              = each.key == "worker" ? "INGRESS_TRAFFIC_INTERNAL_ONLY" : "INGRESS_TRAFFIC_ALL"
   invoker_iam_disabled = each.key == "public"
@@ -42,11 +42,11 @@ resource "google_cloud_run_v2_service" "this" {
 
   lifecycle {
     precondition {
-      condition     = local.data.project_id == local.project && local.data.region == local.region && local.data.project_number == "335297348272" && local.data.firestore_database == "archfit-823" && local.data.image_repository == "europe-west1-docker.pkg.dev/coupling-dev-510710/archfit-app-823/archfit-app" && alltrue([for role in ["public", "worker", "invoker"] : local.data.service_accounts[role] == "archfit-823-${role}@${local.project}.iam.gserviceaccount.com"])
+      condition     = local.data.project_id == local.project && local.data.region == local.region && local.data.project_number == "335297348272" && local.data.firestore_database == "archfit-candidate" && local.data.image_repository == "europe-west1-docker.pkg.dev/coupling-dev-510710/archfit-app-candidate/archfit-app" && alltrue([for role in ["public", "worker", "invoker"] : local.data.service_accounts[role] == "archfit-candidate-${role}@${local.project}.iam.gserviceaccount.com"])
       error_message = "Data outputs must identify the approved candidate resources."
     }
     precondition {
-      condition     = alltrue([for key, id in { github_private_key = "archfit-823-github-private-key", github_webhook_secret = "archfit-823-github-webhook-secret", github_oauth_secret = "archfit-823-github-oauth-secret", cookie_key = "archfit-823-cookie-key", operator_token = "archfit-823-operator-token" } : local.data.secret_ids[key] == id])
+      condition     = alltrue([for key, id in { github_private_key = "archfit-candidate-github-private-key", github_webhook_secret = "archfit-candidate-github-webhook-secret", github_oauth_secret = "archfit-candidate-github-oauth-secret", cookie_key = "archfit-candidate-cookie-key", operator_token = "archfit-candidate-operator-token" } : local.data.secret_ids[key] == id])
       error_message = "Secret IDs must identify candidate secrets."
     }
     precondition {
