@@ -77,19 +77,19 @@ For a workflow change, an owner named in the approved policy can follow the revi
 
 ## Repositories
 
-Open `/` after signing in to choose a repository. Each row shows the repository's **State** (`clean`, `drift`,
+Open `/repositories` after signing in to choose a repository. Each row shows the repository's **State** (`clean`, `drift`,
 `expired`, `changed outside the flow`, `not set up` or `unknown`) and its **archfit/gate** check: **required** when
 GitHub requires pull requests and the check on the default branch, **not required** when either is confirmed off,
 and **not confirmed** when the App could not confirm it. The rows appear first; **Checking…** stands in the
 **archfit/gate** column until the App has read each repository's settings, and the check and **Next step** fill in
 then. A **Next step** appears only while setup is incomplete.
-**Needs you** comes above the rows when an owner step waits on any repository. Each row names the step
+Open `/` for **Needs you**, the owner queue across repositories. Each row names the step
 (**Review the workflow change #413**, **Confirm the policy**), the repository, how long it has waited, and links to the
 page that resolves it, so you need no URL. The longest wait is first. A step with no recorded time, such as a policy
 changed outside the flow, has no wait and comes last. The App reads the first 25 repositories with an approved
-policy; when it cannot read a repository, or reads fewer, a line under **Needs you** says so.
+policy; when it cannot read a repository, or reads fewer, a line under **Needs you** says so. When nothing waits and the read is complete, the page says **Nothing needs you.** When no repository is installed, it shows the first-run steps and an install link.
 A repository whose installation no operator has admitted shows **not admitted** and links to the beta access request; an operator admits, and an owner
-approves. The **Repositories** link in the header always returns here. `/repos` is not an alias; it shows **Page not available** and says the repositories are listed on the home page, with a link to `/`.
+approves. The **Repositories** link in the header opens the list. `/repos` is not an alias; it shows **Page not available**.
 
 When you come back to the repository list, a repository's Home, its policy or a pull request page you already opened in
 this tab, the App shows the last answer at once and a **waiting** line says it is reading the current one. The page then

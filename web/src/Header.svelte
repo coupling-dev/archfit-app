@@ -88,3 +88,8 @@
     {/each}
   </nav>
 {/if}
+
+<style>
+  nav[aria-label="Pages"] { display: flex; gap: 12px; }
+  nav[aria-label="Pages"] a[aria-current="page"] { font-weight: 600; }
+</style>
