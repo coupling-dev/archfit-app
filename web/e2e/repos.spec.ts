@@ -5,7 +5,7 @@ import { expectClean, docsShot } from './support';
 for (const width of [1280, 390]) {
   test(`repositories: real stages and next destinations at ${width}px @docs`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
-    await open(page, '/');
+    await open(page, '/repositories');
     await expect(page.getByRole('heading', { name: 'Repositories' })).toBeVisible();
     await expect(page.getByRole('status', { name: 'Loading' })).toHaveCount(0);
     for (const word of ['not set up', 'drift', 'unknown', 'clean', 'changed outside the flow', 'required', 'not required', 'not confirmed']) {
@@ -41,7 +41,7 @@ for (const width of [1280, 390]) {
 }
 
 test('repositories: installation approval does not imply setup readiness', async ({ page }) => {
-  await open(page, '/');
+  await open(page, '/repositories');
   const row = page.getByRole('row', { name: /octo\/tool/ });
   await expect(row.getByText('not admitted', { exact: true })).toBeVisible();
   await expect(row.getByText('Policy approved', { exact: true })).toHaveCount(0);
@@ -49,7 +49,7 @@ test('repositories: installation approval does not imply setup readiness', async
 });
 
 test('repositories: unread setup says not confirmed and names no stage', async ({ page }) => {
-  await open(page, '/', {
+  await open(page, '/repositories', {
     repos: {
       repos: [
         {
@@ -74,7 +74,7 @@ test('repositories: unread setup says not confirmed and names no stage', async (
 test('repositories: rows show before the checks return, then fill in', async ({ page }) => {
   let release = () => {};
   const holdProbe = new Promise<void>((resolve) => (release = resolve));
-  await open(page, '/', { holdProbe });
+  await open(page, '/repositories', { holdProbe });
   const row = page.getByRole('row', { name: /acme\/clean/ });
   await expect(row.getByRole('link', { name: 'acme/clean' })).toBeVisible();
   await expect(row.getByText('clean', { exact: true })).toBeVisible();
@@ -93,7 +93,7 @@ test('repositories: rows show before the checks return, then fill in', async ({ 
 });
 
 test('repositories: when the checks fail the rows stay and say so', async ({ page }) => {
-  await open(page, '/', { probeError: true });
+  await open(page, '/repositories', { probeError: true });
   await expect(page.getByRole('link', { name: 'acme/clean' })).toBeVisible();
   await expect(page.getByRole('alert')).toContainText('The App did not answer');
   await expect(page.getByText('Checking…')).toHaveCount(0);
@@ -105,7 +105,7 @@ test('repositories: a failed check that answers before the list does not hide th
   let release = () => {};
   const holdList = new Promise<void>((resolve) => (release = resolve));
   const failed = page.waitForResponse((r) => r.url().includes('probe=1') && r.status() === 502);
-  await open(page, '/', { holdList, probeError: true });
+  await open(page, '/repositories', { holdList, probeError: true });
   await failed;
   await expect(page.getByRole('status', { name: 'Loading' })).toBeVisible();
   release();

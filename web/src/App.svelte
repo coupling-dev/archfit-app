@@ -157,7 +157,7 @@
   );
   const repo = $derived(
     knownRepo ||
-      (!pageError && !$waiting && route.kind !== 'home' && route.kind !== 'admin' && route.kind !== 'unknown' && session
+      (!pageError && !$waiting && route.kind !== 'home' && route.kind !== 'repositories' && route.kind !== 'admin' && route.kind !== 'unknown' && session
         ? route.fullName
         : ''),
   );
@@ -178,6 +178,7 @@
 <Header
   {session}
   {repo}
+  top={route.kind === 'home' ? 'needs' : route.kind === 'repositories' ? 'repositories' : ''}
   tab={route.kind === 'repo'
     ? 'home'
     : route.kind === 'policy' || route.kind === 'passkeys'
@@ -224,6 +225,8 @@
     <Skeleton rows={4} />
   {:else if route.kind === 'home'}
     {#await loadPage('home')}<Skeleton rows={4} />{:then { default: Page }}<Page {here} />{:catch}{@render unloaded()}{/await}
+  {:else if route.kind === 'repositories'}
+    {#await loadPage('repositories')}<Skeleton rows={4} />{:then { default: Page }}<Page {here} />{:catch}{@render unloaded()}{/await}
   {:else if route.kind === 'admin'}
     {#await loadPage('admin')}<Skeleton rows={4} />{:then { default: Page }}<Page {session} {here} />{:catch}{@render unloaded()}{/await}
   {:else if route.kind === 'repo'}

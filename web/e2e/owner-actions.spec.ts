@@ -21,7 +21,7 @@ for (const width of [1280, 390]) {
     await docsClock(page);
     await openMock(page, '/', { ownerActions });
     const needs = page.getByRole('region', { name: 'Needs you' });
-    await expect(needs.getByRole('heading', { name: 'Needs you' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Needs you' })).toBeVisible();
     const rows = needs.locator('.box-row');
     await expect(rows).toHaveCount(3);
     await expect(rows.nth(0)).toContainText('Review the workflow change #419');
@@ -36,9 +36,6 @@ for (const width of [1280, 390]) {
       '/r/alexei-led/pumba/owner/workflow?pull=419',
     );
     await expect(rows.nth(2).getByRole('link', { name: 'Confirm the policy' })).toHaveAttribute('href', '/r/acme/app/owner/confirm');
-    // The steps come before the repository table.
-    const before = await needs.evaluate((el) => !!(el.compareDocumentPosition(document.querySelector('table')!) & Node.DOCUMENT_POSITION_FOLLOWING));
-    expect(before).toBe(true);
     await expectClean(page);
   });
 }
@@ -67,16 +64,16 @@ test('repositories: new waits have one action each even when destinations coinci
 });
 
 test('repositories: no owner step shows no Needs you', async ({ page }) => {
-  await openMock(page, '/');
+  await openMock(page, '/repositories');
   await expect(page.getByRole('heading', { name: 'Repositories' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Needs you' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Needs you' })).toHaveCount(0);
   await expect(page.getByRole('status').filter({ hasText: 'owner step' })).toHaveCount(0);
 });
 
 test('repositories: owner steps the App could not read are said, not left out', async ({ page }) => {
   await openMock(page, '/', { ownerActions: { actions: [], unread: 2, truncated: false } });
   await expect(page.getByText('The App could not read the owner steps of 2 repositories.')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Needs you' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Needs you' })).toHaveCount(0);
 });
 
 test('repository Home: an owner step is the first row, with its link and wait', async ({ page }) => {

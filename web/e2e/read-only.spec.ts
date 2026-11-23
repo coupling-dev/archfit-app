@@ -5,7 +5,7 @@ test('read-only fixture guard aborts API writes and auth forms before dispatch',
   let dispatched = false;
   const writes = await open(
     page,
-    '/',
+    '/repositories',
     {
       'GET /api/repos': () => [200, { repos: [], truncated: false }],
       'POST /api/repos': () => {

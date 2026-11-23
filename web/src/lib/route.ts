@@ -11,6 +11,7 @@ export interface Repo {
 
 export type Route =
   | { kind: 'home' }
+  | { kind: 'repositories' }
   | { kind: 'admin' }
   | ({ kind: 'repo' | 'policy' | 'passkeys' } & Repo)
   | ({ kind: 'pull' | 'request'; number: number } & Repo)
@@ -34,6 +35,7 @@ export function parseRoute(pathname: string, search = ''): Route {
     return { kind: 'owner', action, pull, owner: repo.owner, name: repo.name, fullName: repo.fullName };
   }
   if (pathname === '/') return { kind: 'home' };
+  if (pathname === '/repositories') return { kind: 'repositories' };
   if (pathname === '/admin') return { kind: 'admin' };
   const m = repoPath.exec(pathname);
   if (!m) return { kind: 'unknown' };

@@ -151,6 +151,7 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 		}
 		index(w, r)
 	})
+	mux.Handle("GET /repositories", page)
 	mux.Handle("GET /r/{o}/{n}", page)
 	mux.Handle("GET /r/{o}/{n}/policy", page)
 	mux.Handle("GET /r/{o}/{n}/pull/{number}", pullPage)

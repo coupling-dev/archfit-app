@@ -1,7 +1,8 @@
 // The pages a signed-in user opens, each in a chunk of its own: the sign-in page and the first paint of the shell do not
 // carry them. A chunk is asked for once, when its page is first shown or when a link to it is pointed at.
 const loaders = {
-  home: () => import('../pages/Repos.svelte'),
+  home: () => import('../pages/NeedsYou.svelte'),
+  repositories: () => import('../pages/Repos.svelte'),
   admin: () => import('../pages/Admin.svelte'),
   repo: () => import('../pages/Home.svelte'),
   policy: () => import('../pages/Policy.svelte'),

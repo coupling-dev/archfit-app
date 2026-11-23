@@ -63,11 +63,12 @@ The public role serves `/health`, `/ready`, GitHub webhooks, the upload, OAuth a
 ### UI routes
 
 The shell serves these routes. Repository pages require sign-in. Each page reads its repository data from an authorized API, not from the shell.
-The repository list has the canonical page URL `/`. `/repos` is an unknown page, not an alias. The repository route prefix below is `/r/{owner}/{repo}`; API paths use `/api/repos/{owner}/{repo}`.
+The owner queue is at `/`; the repository list is at `/repositories`. `/repos` is an unknown page, not an alias. The repository route prefix below is `/r/{owner}/{repo}`; API paths use `/api/repos/{owner}/{repo}`.
 
 | Page route                    | Page data and actions                                                                                                                                              |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/`                           | Repository list from `GET /api/repos` and the owner steps that wait from `GET /api/owner-actions`; sign-in or admission state when needed.                                                                                     |
+| `/`                           | Owner queue from `GET /api/owner-actions` and first-run state from `GET /api/repos`; sign-in or admission state when needed. |
+| `/repositories`               | Repository list from `GET /api/repos` and its settings probe; requires sign-in. |
 | `/admin`                      | Operator-only installation administration: admit or revoke installations.                                                                                                                         |
 | Prefix                        | Home reads `/home`; setup remains until approval activation and applicable rules are confirmed. Active repositories also show requests, owner actions and the map. |
 | Prefix + `/policy`            | Reads `/policy`; `?edit=1` opens the YAML editor, which previews and submits through `/policy/edit` endpoints.                                                     |

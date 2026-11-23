@@ -1,6 +1,7 @@
 // Shared by the browser words spec and the route-parity gate; neither server routes nor client kinds come from here.
 export const pageRoutes = [
-  { kind: 'home', path: '/', heading: 'Repositories' },
+  { kind: 'home', path: '/', heading: 'Needs you' },
+  { kind: 'repositories', path: '/repositories', heading: 'Repositories' },
   { kind: 'admin', path: '/admin', heading: 'Installations' },
   { kind: 'repo', path: '/r/acme/app', heading: 'acme/app' },
   { kind: 'policy', path: '/r/acme/app/policy', heading: 'Policy' },
