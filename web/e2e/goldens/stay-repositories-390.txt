@@ -12,6 +12,11 @@ Repositories
 
 Choose a repository to open its Home.
 
+Search repositories
+All
+Not set up
+Unknown
+archfit/gate not required
 Repository
 acme/clean
 State
