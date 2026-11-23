@@ -147,6 +147,9 @@ func (s *server) apiPasskeyStepUp(r *http.Request, sc scope) (any, error) {
 	if in.Action == gate.ActionRequired {
 		// The App computes the required-gate policy itself; the step-up binds the digest it
 		// previewed now, never policy bytes.
+		if in.YAML != "" || in.Target != "" || in.BaseDigest != "" {
+			return nil, invalid("The App computes the required check change; the page sends only the digest.")
+		}
 		v, err := s.answers.MakeRequiredPreview(r.Context(), sc.repo, passkey.User{ID: sc.user.UserID, Login: sc.user.Login})
 		if err != nil {
 			return nil, err

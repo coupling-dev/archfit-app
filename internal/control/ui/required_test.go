@@ -95,4 +95,10 @@ func TestRequiredStepUpBindsTheDigestTheAppComputed(t *testing.T) {
 	if len(e.passkeys.all()) != 1 {
 		t.Fatal("a mismatched digest began a step-up")
 	}
+	// The step-up never takes policy bytes from the page either.
+	wantStatus(t, c.postJSON("/api/repos/"+repoName+"/passkeys/step-up",
+		map[string]any{"action": gate.ActionRequired, "digest": digest, "yaml": policyText}), http.StatusUnprocessableEntity)
+	if len(e.passkeys.all()) != 1 {
+		t.Fatal("policy bytes began a step-up")
+	}
 }
