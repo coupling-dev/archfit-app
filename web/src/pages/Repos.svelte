@@ -72,13 +72,13 @@
   <div class="filters">
     <label for="repo-search">Search repositories</label>
     <input id="repo-search" type="search" bind:value={search} />
-    <div class="filter-buttons" aria-label="Repository filters">
+    <div class="filter-buttons" role="group" aria-label="Repository filters">
       {#each filters as option (option)}
         <button class="btn" type="button" aria-pressed={filter === option} onclick={() => (filter = option)}>{option}</button>
       {/each}
     </div>
   </div>
-  {#if active}<p>Showing {visible.length} of {body.repos.length} repositories.</p>{/if}
+  {#if active}<p role="status">Showing {visible.length} of {body.repos.length} repositories.</p>{/if}
   {#if visible.length === 0}
     <p>No repository matches these filters. <button class="btn" type="button" onclick={clearFilters}>Clear filters</button></p>
   {:else}

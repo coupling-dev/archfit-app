@@ -128,6 +128,8 @@ for (const width of [1280, 390]) {
     await expect(page.getByText('No repository matches these filters.')).toBeVisible();
     await page.getByRole('button', { name: 'Clear filters' }).click();
     await expect(search).toHaveValue('');
+    await expect(page.getByRole('button', { name: 'All', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText('Showing 0 of 7 repositories.')).toHaveCount(0);
     for (const [filter, repo] of [['Not set up', 'acme/not-set-up'], ['Unknown', 'acme/unknown'], ['archfit/gate not required', 'acme/drift']]) {
       const button = page.getByRole('button', { name: filter, exact: true });
       await button.click();
