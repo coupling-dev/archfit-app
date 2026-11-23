@@ -120,3 +120,29 @@ func TestHomeRecordReadsOverlapWithBoundedConcurrencyAndStableErrors(t *testing.
 		})
 	}
 }
+
+func TestRequestRecordsAskedAt(t *testing.T) {
+	ctx := t.Context()
+	mem := store.NewMemory()
+	put := func(key string, value records.Value) {
+		t.Helper()
+		raw, err := records.Encode(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := mem.Put(ctx, 1, key, raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(records.RequestIndexKey("acme/app"), &records.Index{Schema: records.SchemaRequestIndex, Entries: []records.Entry{{Key: "1", ID: "1"}, {Key: "2", ID: "2"}}})
+	put(records.RequestKey("acme/app", 1), &records.Request{State: records.StateOpen, AskedAt: "2026-11-01T10:00:00Z"})
+	put(records.RequestKey("acme/app", 2), &records.Request{State: records.StateOpen})
+	h := &homeViews{store: mem}
+	got, err := h.requestRecords(ctx, 1, api.Repo{RepoRef: api.RepoRef{FullName: "acme/app"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].AskedAt.Format(time.RFC3339) != "2026-11-01T10:00:00Z" || !got[1].AskedAt.IsZero() {
+		t.Fatalf("requests = %+v", got)
+	}
+}

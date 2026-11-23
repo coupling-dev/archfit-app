@@ -27,7 +27,7 @@ func TestOwnerActionsListsWorkflowChangeWithLinkAndAge(t *testing.T) {
 
 	got := decodeAs[ownerActionsBody](t, e.as("alice", permRead).get(ownerActionsAPI))
 
-	want := ownerActionRow{Repo: repoName, Kind: gate.OwnerWorkflow, Label: "Review the workflow change", Pull: 4,
+	want := ownerActionRow{Repo: repoName, Kind: gate.OwnerWorkflow, Label: "Review the workflow change", Text: "Workflow change in pull request #4 waits for an owner.", Pull: 4,
 		Since: "2026-11-19T08:30:00Z", Href: "/r/" + repoName + "/owner/workflow?pull=4"}
 	if len(got.Actions) != 1 || got.Actions[0] != want || got.Unread != 0 || got.Truncated {
 		t.Fatalf("owner actions = %+v, want only %+v", got, want)
@@ -42,6 +42,9 @@ func TestOwnerActionsListsConfirmAndRevertForAPolicyChangedOutsideTheFlow(t *tes
 
 	var hrefs []string
 	for _, a := range got.Actions {
+		if a.Text == "" {
+			t.Fatalf("missing text: %+v", a)
+		}
 		hrefs = append(hrefs, a.Href)
 		if a.Pull != 0 || a.Since != "" {
 			t.Fatalf("a repository action names no pull request or time: %+v", a)
@@ -132,5 +135,51 @@ func TestPullShowsTheOwnerActionWhenNoResultIsStoredYet(t *testing.T) {
 
 	if got.Review == nil || got.Review.Label != "Review workflow change" || got.Review.Href != "/r/"+repoName+"/owner/workflow?pull=4" {
 		t.Fatalf("owner action = %+v", got.Review)
+	}
+}
+
+func TestOwnerActionsIncludesRequestsExceptionsAndDriftInWaitOrder(t *testing.T) {
+	e := newHomeEnv(t, homeWithException("2026-11-17"))
+	workflowPull(e, waitingSince)
+	homePut(t, e, "request-index", map[string]any{"schema": "archfit-app.request-index.v1", "entries": []any{map[string]any{"key": "graph app other", "id": "431"}, map[string]any{"key": "graph app util", "id": "432"}}})
+	homePut(t, e, "request/431", map[string]any{"schema": "archfit-app.request.v1", "key": "graph app other", "state": "open", "reason": "reason", "numbers": map[string]any{}, "asked_at": "2026-11-01T10:00:00Z"})
+	homePut(t, e, "request/432", map[string]any{"schema": "archfit-app.request.v1", "key": "graph app util", "state": "open", "reason": "reason", "numbers": map[string]any{}})
+	homeEditRepo(t, e, func(rec map[string]any) { rec["drift_issue"] = 72 })
+	got := decodeAs[ownerActionsBody](t, e.as("alice", permRead).get(ownerActionsAPI))
+	for _, row := range got.Actions {
+		if row.Text == "" {
+			t.Fatalf("missing text: %+v", row)
+		}
+	}
+	if got.Unread != 0 || got.Truncated || len(got.Actions) != 5 {
+		t.Fatalf("actions = %+v", got)
+	}
+	if got.Actions[0].Kind != "request" || got.Actions[0].Since != "2026-11-01T10:00:00Z" || got.Actions[0].Href != "/r/"+repoName+"/requests/431" || got.Actions[1].Kind != "workflow" {
+		t.Fatalf("ordered actions = %+v", got.Actions)
+	}
+	kinds := map[string]bool{}
+	for _, row := range got.Actions[2:] {
+		if row.Since != "" {
+			t.Fatalf("undated row = %+v", row)
+		}
+		kinds[row.Kind] = true
+	}
+	if !kinds["request"] || !kinds["exception"] || !kinds["drift"] {
+		t.Fatalf("missing undated kinds: %+v", got.Actions)
+	}
+}
+
+func TestOwnerActionsDistinguishesExceptions(t *testing.T) {
+	policy := homeWithException("2026-11-17") + "  - rule: graph\n    from: util\n    to: other\n    expires: 2026-11-17\n    why: Fix the import before this date.\n"
+	e := newHomeEnv(t, policy)
+	got := decodeAs[ownerActionsBody](t, e.as("alice", permRead).get(ownerActionsAPI))
+	var rows []ownerActionRow
+	for _, row := range got.Actions {
+		if row.Kind == "exception" {
+			rows = append(rows, row)
+		}
+	}
+	if len(rows) != 2 || rows[0].Text == rows[1].Text || rows[0].Label != "Open the policy" || rows[1].Label != "Open the policy" {
+		t.Fatalf("exceptions = %+v", rows)
 	}
 }

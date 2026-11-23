@@ -7,9 +7,9 @@ import { docsClock, expectClean, open } from './support';
 const label = 'Review the workflow change';
 const ownerActions = {
   actions: [
-    { repo: 'alexei-led/pumba', kind: 'workflow', label, pull_request: 419, since: '2026-11-11T12:00:00Z', href: '/r/alexei-led/pumba/owner/workflow?pull=419' },
-    { repo: 'alexei-led/ccgram', kind: 'workflow', label, pull_request: 413, since: '2026-11-13T09:00:00Z', href: '/r/alexei-led/ccgram/owner/workflow?pull=413' },
-    { repo: 'acme/app', kind: 'confirm', label: 'Confirm the policy', href: '/r/acme/app/owner/confirm' },
+    { repo: 'alexei-led/pumba', kind: 'workflow', text: 'Workflow change in pull request #419 waits for an owner.', label, pull_request: 419, since: '2026-11-11T12:00:00Z', href: '/r/alexei-led/pumba/owner/workflow?pull=419' },
+    { repo: 'alexei-led/ccgram', kind: 'workflow', text: 'Workflow change in pull request #413 waits for an owner.', label, pull_request: 413, since: '2026-11-13T09:00:00Z', href: '/r/alexei-led/ccgram/owner/workflow?pull=413' },
+    { repo: 'acme/app', kind: 'confirm', text: 'Confirm the policy changed outside the flow.', label: 'Confirm the policy', href: '/r/acme/app/owner/confirm' },
   ],
   unread: 0,
   truncated: false,
@@ -27,6 +27,7 @@ for (const width of [1280, 390]) {
     await expect(rows.nth(0)).toContainText('Review the workflow change #419');
     await expect(rows.nth(0)).toContainText('alexei-led/pumba');
     await expect(rows.nth(0)).toContainText('2 days');
+    if (width === 390) await expect(rows.nth(0).locator('a.btn')).toBeVisible();
     await expect(rows.nth(1)).toContainText('Review the workflow change #413');
     await expect(rows.nth(1)).toContainText('3 h');
     await expect(rows.nth(2)).toContainText('Confirm the policy');
@@ -41,6 +42,29 @@ for (const width of [1280, 390]) {
     await expectClean(page);
   });
 }
+
+test('repositories: new waits have one action each even when destinations coincide', async ({ page }) => {
+  const repo = 'acme/app';
+  await openMock(page, '/', { ownerActions: { actions: [
+    { repo, kind: 'request', text: 'Request #431 waits.', label: 'Answer request #431', since: '2026-11-11T12:00:00Z', href: '/r/acme/app/requests/431' },
+    { repo, kind: 'exception', text: '1 exception expires today', label: 'Open the policy', href: '/r/acme/app/policy' },
+    { repo, kind: 'drift', text: 'Drift on the default branch.', label: 'Open the policy', href: '/r/acme/app/policy' },
+  ], unread: 0, truncated: false } });
+  const rows = page.getByRole('region', { name: 'Needs you' }).locator('.box-row');
+  await expect(rows).toHaveCount(3);
+  for (const [i, label] of ['Answer request #431', 'Open the policy', 'Open the policy'].entries()) {
+    await expect(rows.nth(i).locator('a.btn')).toHaveCount(1);
+    await expect(rows.nth(i).locator('a.btn')).toHaveText(label);
+    await expect(rows.nth(i)).toContainText(repo);
+  }
+  await expect(rows.nth(0).locator('a.btn')).toHaveClass(/primary/);
+  await expect(rows.nth(1).locator('a.btn')).not.toHaveClass(/primary/);
+  await expect(rows.nth(2).locator('a.btn')).not.toHaveClass(/primary/);
+  await expect(rows.nth(0)).toContainText('Request #431 waits.');
+  await expect(rows.nth(1)).toContainText('1 exception expires today');
+  await expect(rows.nth(2)).toContainText('Drift on the default branch.');
+  await expectClean(page);
+});
 
 test('repositories: no owner step shows no Needs you', async ({ page }) => {
   await openMock(page, '/');

@@ -29,6 +29,7 @@ export interface OwnerActionRow {
   repo: string;
   kind: string;
   label: string;
+  text: string;
   pull_request?: number;
   since?: string;
   href: string;

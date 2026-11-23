@@ -72,15 +72,16 @@
   {#if owner?.actions.length}
     <section class="box needs" aria-labelledby="repos-needs">
       <div class="box-head"><h2 class="title-box" id="repos-needs">Needs you</h2></div>
-      {#each owner.actions as row (row.href)}
+      {#each owner.actions as row, index (index)}
         {@const age = waitingFor(row.since)}
         <div class="box-row need">
           <span class="need-icon"><Icon name="clock" /></span>
           <div class="need-body">
-            <a href={row.href}>{actionTitle(row)}</a>
+            <span>{row.text}</span>
             <a class="muted need-repo" href={`/r/${row.repo}`}>{row.repo}</a>
           </div>
-          {#if age}<span class="muted need-age">{age}</span>{/if}
+          {#if age}<span class="muted need-age">Waiting {age}</span>{/if}
+          <a class:primary={row.kind !== 'exception' && row.kind !== 'drift'} class="btn need-act" href={row.href}>{actionTitle(row)}</a>
         </div>
       {/each}
     </section>
@@ -155,6 +156,11 @@
   .need-age { white-space: nowrap; }
 
   @media (max-width: 640px) {
+    .need { flex-wrap: wrap; }
+    .need-act { margin-left: 26px; }
+    .need-age { margin-left: auto; }
+    .need-act { flex-basis: calc(100% - 26px); }
+    .need-body { flex-basis: calc(100% - 36px); }
     .repo-list { border: 0; background: transparent; }
     table, tbody, tr, td { display: block; width: 100%; }
     .repository { width: 100%; }

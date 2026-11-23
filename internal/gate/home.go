@@ -48,6 +48,7 @@ type HomeState struct {
 // HomeRequest is an open request with the record shown on its issue.
 type HomeRequest struct {
 	Number                 int
+	AskedAt                time.Time
 	Rule, From, To, Record string
 }
 
@@ -343,7 +344,8 @@ func (h *homeViews) requestRecords(ctx context.Context, t store.Tenant, r api.Re
 	var out []HomeRequest
 	for i, req := range loaded {
 		if req.State == records.StateOpen {
-			out = append(out, HomeRequest{Number: numbers[i], Rule: req.Rule, From: req.From, To: req.To, Record: req.Record})
+			askedAt, _ := time.Parse(time.RFC3339, req.AskedAt)
+			out = append(out, HomeRequest{Number: numbers[i], AskedAt: askedAt, Rule: req.Rule, From: req.From, To: req.To, Record: req.Record})
 		}
 	}
 	slices.SortFunc(out, func(a, b HomeRequest) int { return cmp.Compare(a.Number, b.Number) })
