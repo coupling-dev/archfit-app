@@ -3,8 +3,8 @@
 locals {
   state = var.paused ? "PAUSED" : "RUNNING"
   queue_names = {
-    webhooks = "archfit-823-webhooks"
-    operator = "archfit-823-operator"
+    webhooks = "archfit-candidate-webhooks"
+    operator = "archfit-candidate-operator"
   }
 
   queues = {
@@ -77,7 +77,7 @@ resource "google_cloud_tasks_queue_iam_member" "public_enqueuer" {
 # The Scheduler starts the sweep each hour.
 resource "google_cloud_scheduler_job" "sweep" {
   depends_on       = [google_cloud_run_v2_service_iam_member.worker_invoker]
-  name             = "archfit-823-sweep"
+  name             = "archfit-candidate-sweep"
   region           = local.region
   schedule         = "0 * * * *"
   time_zone        = "Etc/UTC"

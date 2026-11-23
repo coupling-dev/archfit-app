@@ -7,7 +7,7 @@ terraform {
     }
   }
   backend "gcs" {
-    prefix = "candidate-823/runtime"
+    prefix = "candidate/runtime"
   }
 }
 
@@ -20,6 +20,6 @@ data "terraform_remote_state" "data" {
   backend = "gcs"
   config = {
     bucket = var.data_state_bucket
-    prefix = "candidate-823/data"
+    prefix = "candidate/data"
   }
 }

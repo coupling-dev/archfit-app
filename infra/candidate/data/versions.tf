@@ -7,7 +7,7 @@ terraform {
     }
   }
   backend "gcs" {
-    prefix = "candidate-823/data"
+    prefix = "candidate/data"
   }
 }
 
