@@ -53,6 +53,10 @@ notes the answer on the request issue. Without it an answer is a record nobody a
      describe the pull request (every answer with its owner and passkey), set `archfit/gate` (D13), merge at the pinned
      head unless "merge later", note the answer on the request issue (the owner and the passkey, design 19) and close
      it.
+- `MakeRequiredPreview` and `MakeRequired` (onboarding 8.9): read the default branch's policy, refuse a non-owner, and
+  set `gate: required` through `Edit` with the same proposal, passkey and merge machinery. No client bytes name the
+  policy; the step-up token binds the digest the App computed, and a policy that already requires the gate is a no-op.
+  Before writing, a decode compares both files and refuses a change to any field but `gate`.
 - The D13 check, read again from GitHub before `archfit/gate` is set to success on the pinned head: `archfit/policy`
   is at that head; the pull request's head is that branch of this repository, its base the default branch, and it is
   open; from the tip the head changes `.archfit.yaml` and nothing else (not truncated); the policy at the head has the
