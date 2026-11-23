@@ -120,7 +120,7 @@
         {:else}
           <button class="btn primary" disabled={requiredBusy} onclick={previewRequired}>{requiredBusy ? 'Checking…' : 'Make the check required'}</button>
         {/if}
-        <p class="muted">The App opens a pull request that sets <code>gate: required</code> in the policy. Merge it, then add the ruleset below.</p>
+        <p class="muted">The App opens a pull request that sets <code>gate: required</code> in the policy and merges it when the checks pass. Then add the ruleset below.</p>
       </div>
     {/if}
     <p>Done when GitHub requires a pull request and the archfit/gate check on the default branch. Items marked optional are not needed for this step.</p>
