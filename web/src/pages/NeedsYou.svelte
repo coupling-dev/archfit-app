@@ -3,7 +3,6 @@
   import Icon from '../components/ui/Icon.svelte';
   import { getJSON, type OwnerActions, type Repos } from '../lib/api';
   import { actionTitle, waitingFor } from '../lib/owner-actions';
-  let { here }: { here: string } = $props();
   const installURL = 'https://github.com/apps/archfit-review/installations/new';
   let repos = $state<Repos | null>(null);
   getJSON<Repos>('/api/repos').then((b) => (repos = b), () => {});
