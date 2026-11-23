@@ -12,7 +12,8 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/github/api"
 )
 
-// Actions of a step-up that this package consumes itself. control/answers redeems the answer kinds.
+// Actions of a step-up that this package consumes itself. control/answers redeems the answer kinds and the gate's
+// make-required action.
 const (
 	ActionRegister = "register" // a second passkey
 	ActionRemove   = "remove"   // removing a passkey; Purpose.Passkey names it
@@ -44,7 +45,7 @@ type User struct {
 // the repository the call names; a value the caller puts there is replaced.
 type Purpose struct {
 	Repo       string `json:"repo"`                  // lower-case owner/name
-	Action     string `json:"action"`                // ActionRegister, ActionRemove, or an answer kind of control/answers
+	Action     string `json:"action"`                // ActionRegister, ActionRemove, an answer kind of control/answers, or the gate's make-required action
 	Request    int    `json:"request,omitempty"`     // the request issue; 0 when none
 	Digest     string `json:"digest,omitempty"`      // the policy change digest; "" when none
 	Target     string `json:"target,omitempty"`      // edit: exact protected tip of the preview

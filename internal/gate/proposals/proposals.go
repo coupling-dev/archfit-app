@@ -89,6 +89,9 @@ type Service struct {
 	now   func() time.Time
 	// sleep pauses between polls of the lease and of a pull request's head. Tests replace it.
 	sleep func(context.Context, time.Duration) error
+	// requireGate computes the policy with gate required. Tests replace it to prove that a
+	// change to any other field is refused before the write.
+	requireGate func([]byte) ([]byte, error)
 }
 
 // New returns the Service. A nil clock means time.Now.
@@ -96,7 +99,7 @@ func New(gh GitHub, s store.Store, now func() time.Time) *Service {
 	if now == nil {
 		now = time.Now
 	}
-	return &Service{gh: gh, store: s, now: now, sleep: sleepCtx}
+	return &Service{gh: gh, store: s, now: now, sleep: sleepCtx, requireGate: policy3.RequireGate}
 }
 
 // Owner is the signed-in owner who answers.

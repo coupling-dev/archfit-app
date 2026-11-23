@@ -362,3 +362,24 @@ func TestSetupPullRequiresInitialRepositoryState(t *testing.T) {
 		})
 	}
 }
+
+func TestSetupModeUsesDefaultBranchPolicy(t *testing.T) {
+	for _, tc := range []struct{ name, policy, want string }{
+		{"missing", "", "unknown"}, {"invalid", "version: 2\n", "unknown"},
+		{"default advisory", setupPolicy, "advisory"}, {"advisory", setupPolicy + "gate: advisory\n", "advisory"},
+		{"required", setupPolicy + "gate: required\n", "required"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newSetupHub()
+			h.files["tip"] = map[string]string{workflowPath: setupWorkflow(setupCommit)}
+			if tc.policy != "" {
+				h.files["tip"][".archfit.yaml"] = tc.policy
+			}
+			s := &setups{gh: h, gate: setupView{}, actionApproved: func(ref string) bool { return ref == setupCommit }}
+			out, err := s.Setup(context.Background(), setupRepo)
+			if err != nil || out.Mode != tc.want {
+				t.Fatalf("mode = %q, error %v; want %q", out.Mode, err, tc.want)
+			}
+		})
+	}
+}

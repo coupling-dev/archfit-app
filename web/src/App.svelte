@@ -227,7 +227,7 @@
   {:else if route.kind === 'admin'}
     {#await loadPage('admin')}<Skeleton rows={4} />{:then { default: Page }}<Page {session} {here} />{:catch}{@render unloaded()}{/await}
   {:else if route.kind === 'repo'}
-    {#await loadPage('repo')}<Skeleton rows={4} />{:then { default: Page }}<Page {route} {here} />{:catch}{@render unloaded()}{/await}
+    {#await loadPage('repo')}<Skeleton rows={4} />{:then { default: Page }}<Page {route} {here} {session} />{:catch}{@render unloaded()}{/await}
   {:else if route.kind === 'policy'}
     {#await loadPage('policy')}<Skeleton rows={4} />{:then { default: Page }}<Page {route} {here} {session} />{:catch}{@render unloaded()}{/await}
   {:else if route.kind === 'owner'}

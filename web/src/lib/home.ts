@@ -24,8 +24,12 @@ export interface ApprovalSummary {
   href?: string;
 }
 export interface WeeklySummary { known: boolean; checked?: number; quiet?: number; asked?: number; caveat?: string }
+// The policy's gate value as the App reports it: advisory when absent, unknown when unreadable.
+export const setupModes = ['advisory', 'required', 'unknown'] as const;
+export type SetupMode = (typeof setupModes)[number];
 export interface HomeSetup {
   weekly?: WeeklySummary;
+  mode: SetupMode;
   approval: ApprovalSummary;
   passkey_known: boolean;
   owner_action?: OwnerReview;
@@ -38,6 +42,12 @@ export interface HomeSetup {
   first_pull?: number;
   setup_pull?: number;
   rules: { code: string; state: string; text: string }[];
+}
+
+// The advisory state with an active first approval is the one where the page offers to
+// make the check required; the ruleset instructions stay below it.
+export function setupCanRequireGate(setup: HomeSetup): boolean {
+  return setup.mode === 'advisory' && setup.approval.status === 'active';
 }
 
 export function setupStepState(setup: HomeSetup) {
@@ -260,6 +270,7 @@ export function readHome(value: unknown): Home {
     const weeklyKnown = weekly === undefined ? false : boolean(weekly.known);
     home.setup = {
       ...(weekly === undefined ? {} : { weekly: weeklyKnown ? { known: true, checked: nonnegativeNumber(weekly.checked), quiet: nonnegativeNumber(weekly.quiet), asked: nonnegativeNumber(weekly.asked), caveat: string(weekly.caveat) } : { known: false } }),
+      mode: setupModes.find((m) => m === s.mode) ?? 'unknown',
       approval: readApproval(s.approval),
       passkey_known: boolean(s.passkey_known),
       ...(s.owner_action === undefined ? {} : { owner_action: readOwnerReview(s.owner_action) }),
@@ -363,6 +374,8 @@ export function homeAction(home: Home, repo: Repo): HomeAction | undefined {
   if (review) return { label: ownerReviewLabel(setup), href: review, external: false, needsPasskey: true };
   const active = setupStepState(setup).done.indexOf(false);
   if (active === 1) return { label: 'Create a pull request on GitHub', href: `${github}/compare`, external: true };
-  if (active === 3) return { label: 'Open ruleset settings', href: `${github}/settings/rules`, external: true };
+  // In advisory state the next action is the check's own step, not the ruleset: adding the
+  // ruleset first would require a check that still does not block a merge.
+  if (active === 3 && !setupCanRequireGate(setup)) return { label: 'Open ruleset settings', href: `${github}/settings/rules`, external: true };
   return undefined;
 }

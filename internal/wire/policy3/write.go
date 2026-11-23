@@ -17,6 +17,9 @@ import (
 // lines in flow style. The owner edits the file by hand.
 var ErrLayout = errors.New("policy layout the writer does not edit")
 
+// GateRequired is the gate value that makes a failing check block a merge.
+const GateRequired = "required"
+
 // The writer adds an answer to a policy file by inserting text. It never re-encodes the
 // file, because a YAML encoder rewrites indentation, quoting and blank lines. The YAML
 // node tree gives the positions: the line and column of each key, so the inserted lines
@@ -59,6 +62,34 @@ func AddDependsOn(file []byte, module, dependency, note string) ([]byte, error) 
 	return addToModuleList(file, module, "depends_on", dependency, comment, func(m *Module) {
 		m.DependsOn = append(slices.Clone(m.DependsOn), dependency)
 	})
+}
+
+// RequireGate returns file with the top-level gate set to required and every other value
+// unchanged. When the policy already requires the gate, it returns file unchanged. The value
+// keeps the line's trailing comment; a missing key is added as one line at the end of the file.
+// A gate written on a line of its own is ErrLayout.
+func RequireGate(file []byte) ([]byte, error) {
+	old, err := Decode(file)
+	if err != nil {
+		return nil, err
+	}
+	if old.Gate == GateRequired {
+		return file, nil
+	}
+	d, err := newDoc(file)
+	if err != nil {
+		return nil, err
+	}
+	var out []byte
+	switch key, value := entry(d.root, "gate"); {
+	case key == nil:
+		out = d.insertAfter(len(d.starts), "gate: "+GateRequired)
+	case value == nil || value.Kind != yaml.ScalarNode || value.Line != key.Line || !d.startsLine(key):
+		return nil, fmt.Errorf("%w: the gate value is not on its key's line", ErrLayout)
+	default:
+		out = d.replaceScalar(value, GateRequired)
+	}
+	return verify(file, out, func(f *File) { f.Gate = GateRequired })
 }
 
 // Role is a part of a module's surface that an answer declares a glob in.
@@ -546,6 +577,51 @@ func (d *doc) replaceLine(n int, lines ...string) []byte {
 	out = append(out, d.data[:start]...)
 	out = append(out, block...)
 	return append(out, d.data[end:]...)
+}
+
+// replaceScalar replaces the text of a scalar on its line with text, keeping the rest of the
+// line: the spaces and the comment that follow it.
+func (d *doc) replaceScalar(v *yaml.Node, text string) []byte {
+	line := d.text(v.Line)
+	start := byteOffset(line, v.Column)
+	end := scalarEnd(line, start, v.Style)
+	return d.replaceLine(v.Line, line[:start]+text+line[end:])
+}
+
+// scalarEnd returns the byte offset just past the scalar that starts at start. A quoted
+// scalar ends at its closing quote; a plain one ends at a comment or at white space.
+func scalarEnd(line string, start int, style yaml.Style) int {
+	if start >= len(line) {
+		return start
+	}
+	switch style {
+	case yaml.DoubleQuotedStyle:
+		for i := start + 1; i < len(line); i++ {
+			switch line[i] {
+			case '\\':
+				i++
+			case '"':
+				return i + 1
+			}
+		}
+		return len(line)
+	case yaml.SingleQuotedStyle:
+		for i := start + 1; i < len(line); i++ {
+			if line[i] == '\'' {
+				if i+1 < len(line) && line[i+1] == '\'' {
+					i++
+					continue
+				}
+				return i + 1
+			}
+		}
+		return len(line)
+	}
+	i := start
+	for i < len(line) && line[i] != '#' && line[i] != ' ' && line[i] != '\t' {
+		i++
+	}
+	return i
 }
 
 // byteOffset converts a column, counted in characters from 1, into a byte offset in the line.

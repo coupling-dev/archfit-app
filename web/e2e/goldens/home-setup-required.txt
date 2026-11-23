@@ -1,0 +1,54 @@
+acme/app
+clean
+
+The default branch follows the policy.
+
+Open ruleset settings
+(opens GitHub)
+View policy
+Set up Archfit
+
+Next: turn on the required check
+
+3 of 4 done
+✓
+1 · Add the policy
+done
+Details
+✓
+2 · Open a pull request with both files
+done
+Details
+✓
+3 · Owner approval
+done
+Details
+4
+4 · Require the archfit/gate check
+
+This week: counts unavailable
+
+GitHub does not merge a change until archfit/gate passes on the default branch.
+
+to do
+
+Done when GitHub requires a pull request and the archfit/gate check on the default branch. Items marked optional are not needed for this step.
+
+In GitHub, open Settings → Rules → Rulesets, then create or edit a branch ruleset for the default branch. Set Enforcement status to Active, then tick what each row names below.
+
+Check again
+
+After you save on GitHub, select Check again to read the settings again. It changes nothing in GitHub.
+
+Require archfit/gate
+off
+
+Until this is on, a failing archfit/gate check does not block a merge.
+
+Tick Require status checks to pass, add archfit/gate, and choose the Archfit app as its source.
+
+If the check is not listed yet, run the Archfit workflow on a pull request first.
+
+Repository rulesets
+
+The map is not available.

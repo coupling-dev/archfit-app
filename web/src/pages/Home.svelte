@@ -7,13 +7,13 @@
   import StoryRow from '../components/ui/StoryRow.svelte';
   import { storySteps } from '../lib/request';
   import StatusLabel from '../components/ui/StatusLabel.svelte';
-  import { explainLoad, repoAPI, type ApiError } from '../lib/api';
+  import { explainLoad, repoAPI, type ApiError, type Session } from '../lib/api';
   import { firstJSON } from '../lib/early';
   import { homeAction, homeHref, homeStateLabel, isExternalHref, needIcon, readHome, type Home } from '../lib/home';
   import { repoPage, type Repo } from '../lib/route';
   import { waitingFor } from '../lib/owner-actions';
 
-  let { route, here }: { route: Repo; here: string } = $props();
+  let { route, here, session }: { route: Repo; here: string; session: Session } = $props();
   let body = $state<Home | null>(null);
   let failure = $state('');
   function load() {
@@ -73,7 +73,7 @@
   <p>Setup pull request #{body.setup.setup_pull}: open. No merge is stopped before you merge it.</p>
   {#if body.setup.weekly?.known}<p>This week: {body.setup.weekly.checked} checked, {body.setup.weekly.quiet} quiet, {body.setup.weekly.asked} asked</p><p>{body.setup.weekly.caveat}</p>{:else if body.setup.weekly}<p>This week: counts unavailable</p>{/if}
 {:else if body?.setup}
-  <Setup setup={body.setup} repo={route} showOwnerAction={!action?.needsPasskey} primaryHref={action?.href} />
+  <Setup setup={body.setup} repo={route} showOwnerAction={!action?.needsPasskey} primaryHref={action?.href} {session} {here} />
 {/if}
 {#if body?.weekly?.known}<p>This week: {body.weekly.checked} checked, {body.weekly.quiet} quiet, {body.weekly.asked} asked</p><p>{body.weekly.caveat}</p>{:else if body?.weekly}<p>This week: counts unavailable</p>{/if}
 {#if body && showMap}

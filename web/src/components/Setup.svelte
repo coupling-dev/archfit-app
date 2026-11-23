@@ -1,11 +1,15 @@
 <script lang="ts">
   import Disclosure from './ui/Disclosure.svelte';
+  import Diff from './ui/Diff.svelte';
   import StatusLabel from './ui/StatusLabel.svelte';
+  import { explain, postJSON, repoAPI, type ApiError, type Answered, type Session } from '../lib/api';
+  import { confirm } from '../lib/passkey';
+  import { passkeyFailure } from '../lib/webauthn';
   import { repoPage, type Repo } from '../lib/route';
   import { setupRuleHelp } from '../lib/setup-rules';
-  import { approvalNeedsReview, ownerReviewLabel, homeHref, setupPullStep, setupRuleStatus, setupStepChip, setupStepState, type HomeSetup } from '../lib/home';
+  import { approvalNeedsReview, ownerReviewLabel, homeHref, setupCanRequireGate, setupPullStep, setupRuleStatus, setupStepChip, setupStepState, type HomeSetup } from '../lib/home';
 
-  let { setup, repo, showOwnerAction = true, primaryHref = '' }: { setup: HomeSetup; repo: Repo; showOwnerAction?: boolean; primaryHref?: string } = $props();
+  let { setup, repo, showOwnerAction = true, primaryHref = '', session, here }: { setup: HomeSetup; repo: Repo; showOwnerAction?: boolean; primaryHref?: string; session: Session; here: string } = $props();
   const steps = [
     { title: 'Add the policy', text: 'Your architecture rules live in .archfit.yaml, in the repository.' },
     { title: 'Open a pull request with both files', text: 'Rules reach the default branch through review, so the approval binds to exact file contents.' },
@@ -13,9 +17,9 @@
     { title: 'Require the archfit/gate check', text: 'GitHub does not merge a change until archfit/gate passes on the default branch.' },
   ];
   const passkeyReason = 'The check protects the rules themselves. A password or a GitHub review can be replayed by a compromised account, and in a one-person repository a self-review proves nothing. A passkey stays on your device, works only on this site, and approves the exact bytes of the policy and workflow. Any later edit needs a new approval.';
-  let state = $derived(setupStepState(setup));
-  let done = $derived(state.done);
-  let completed = $derived(state.completed);
+  let progress = $derived(setupStepState(setup));
+  let done = $derived(progress.done);
+  let completed = $derived(progress.completed);
   let active = $derived(done.indexOf(false));
   // Complete means every step is done and the approval is active: nothing left for the owner to do.
   let complete = $derived(completed === 4 && setup.approval.status === 'active');
@@ -24,6 +28,40 @@
   let approvalHref = $derived(setup.approval.href ? homeHref(repo, setup.approval.href) : undefined);
   let githubRepo = $derived(`https://github.com/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`);
   let rules = $derived(setup.rules.filter((rule) => !(rule.code === 'policy_push' && rule.state === 'not_applicable')));
+  // The required-gate flow: preview the App's change, approve it with the passkey, then show the
+  // pull request. The App computes the policy; this page never sends policy bytes.
+  const api = (suffix: string) => repoAPI(repo.owner, repo.name, suffix);
+  let requiredPreview = $state<{ digest: string; diff: string; against?: string } | null>(null);
+  let requiredBusy = $state(false);
+  let requiredError = $state('');
+  let requiredDone = $state(false);
+  let requiredPull = $state<number | null>(null);
+  let requiredNotice = $state('');
+
+  async function previewRequired() {
+    requiredBusy = true; requiredError = '';
+    try {
+      const p = await postJSON<{ digest?: string; diff: string; against?: string }>(api('setup/required/preview'), session.csrf, {});
+      if (typeof p.diff !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(p.digest ?? '')) throw new Error('The preview could not be read.');
+      requiredPreview = { digest: p.digest!, diff: p.diff, ...(p.against === undefined ? {} : { against: p.against }) };
+    } catch (e) { requiredError = explain(e as ApiError, here); }
+    finally { requiredBusy = false; }
+  }
+
+  async function applyRequired() {
+    const p = requiredPreview;
+    if (!p) return;
+    requiredBusy = true; requiredError = '';
+    try {
+      const token = await confirm(api, session.csrf, { action: 'make-required', digest: p.digest });
+      const out = await postJSON<Answered>(api('setup/required'), session.csrf, { token });
+      requiredDone = true;
+      requiredPull = out.pull_request ?? null;
+      requiredNotice = out.notice;
+      requiredPreview = null;
+    } catch (e) { requiredError = passkeyFailure(e) ?? explain(e as ApiError, here); }
+    finally { requiredBusy = false; }
+  }
 </script>
 
 {#snippet stepBody(i: number)}
@@ -31,9 +69,8 @@
     {#if setup.policy}<p>The policy is on the default branch.</p>
     {:else if setup.first_pull !== undefined}<p>Pull request #{setup.first_pull} proposes the first policy.</p>
     {:else}
-      <p>Run <code>archfit init</code> in your repository. It creates .archfit.yaml and adds its agent block to AGENTS.md. It does not write the workflow.</p>
-      <pre class="command"><code>archfit init</code></pre>
-      <p>Copy the workflow from <a href="https://github.com/coupling-dev/archfit-action">the Archfit action repository</a> into <code>.github/workflows/archfit.yaml</code>.</p>
+      <p>Run the setup command in your repository. It writes the policy and workflow, then opens a pull request or prints a link to open one.</p>
+      <pre class="command"><code>archfit setup</code></pre>
     {/if}
   {:else if i === 1}
     {#if pullStep.kind === 'review'}
@@ -49,7 +86,7 @@
       {#if primaryHref !== `${githubRepo}/compare`}<a class="btn" href={`${githubRepo}/compare`}>Create a pull request on GitHub</a>{/if}
     {/if}
   {:else if i === 2}
-    <p>{state.approvalText}</p>
+    <p>{progress.approvalText}</p>
     {#if approvalHref}<p><a href={approvalHref}>View pull request #{setup.approval.pull_request} and approval record</a></p>{/if}
     {#if approvalNeedsReview(setup) && setup.owner_action}
       {#if reviewHref}{#if showOwnerAction}<a class="btn" href={reviewHref}>{ownerReviewLabel(setup)}</a>{/if}
@@ -65,6 +102,27 @@
     {/if}
     <Disclosure summary="Why a passkey?"><p>{passkeyReason}</p></Disclosure>
   {:else}
+    {#if setupCanRequireGate(setup)}
+      <div class="required">
+        <p>Make the check required when the owners agree. It starts with one approval of the policy and the workflow.</p>
+        <p class="muted">Without the ruleset, a fail does not block a merge, even when the policy says required.</p>
+        {#if requiredError}<p class="flash error" role="alert">{requiredError}</p>{/if}
+        {#if requiredDone}
+          <p class="flash success" role="status">{requiredNotice}</p>
+          {#if requiredPull}<a class="btn" href={`${githubRepo}/pull/${requiredPull}`}>Pull request #{requiredPull} on GitHub</a>{/if}
+        {:else if requiredPreview}
+          <Diff text={requiredPreview.diff} label={`The policy change in .archfit.yaml against ${requiredPreview.against ?? 'the default branch'}`} />
+          {#if setup.passkey}
+            <button class="btn primary" disabled={requiredBusy} onclick={applyRequired}>{requiredBusy ? 'Confirming…' : 'Approve with your passkey'}</button>
+          {:else}
+            <a class="btn" href={repoPage(repo.fullName, '/passkeys')}>Register a passkey to approve</a>
+          {/if}
+        {:else}
+          <button class="btn primary" disabled={requiredBusy} onclick={previewRequired}>{requiredBusy ? 'Checking…' : 'Make the check required'}</button>
+        {/if}
+        <p class="muted">The App opens a pull request that sets <code>gate: required</code> in the policy and merges it when the checks pass. Then add the ruleset below.</p>
+      </div>
+    {/if}
     <p>Done when GitHub requires a pull request and the archfit/gate check on the default branch. Items marked optional are not needed for this step.</p>
     <div class="rules">
       <p>In GitHub, open Settings → Rules → Rulesets, then create or edit a branch ruleset for the default branch. Set Enforcement status to Active, then tick what each row names below.</p>
@@ -126,7 +184,7 @@
 <section class="box setup" aria-labelledby="setup-title">
   <div class="box-head">
     <h2 class="title-box" id="setup-title">Set up Archfit</h2>
-    <p>{state.next}</p>
+    <p>{progress.next}</p>
   </div>
   <div class="box-body">
     {#if complete}

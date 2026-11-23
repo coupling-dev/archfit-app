@@ -21,6 +21,10 @@ type Edits interface {
 	ReloadEditor(context.Context, api.Repo, passkey.User) (gate.EditBase, error)
 	PreviewEdit(context.Context, api.Repo, passkey.User, EditAnswer) (gate.EditView, error)
 	Edit(context.Context, api.Repo, passkey.User, EditAnswer) (gate.AnswerOutcome, error)
+	// MakeRequiredPreview and MakeRequired compute the required-gate policy in the gate; the
+	// token of MakeRequired binds the digest the App computed, never bytes from the caller.
+	MakeRequiredPreview(context.Context, api.Repo, passkey.User) (gate.EditView, error)
+	MakeRequired(context.Context, api.Repo, passkey.User, string) (gate.AnswerOutcome, error)
 }
 
 func (s *service) Editor(ctx context.Context, r api.Repo) (gate.EditBase, error) {
@@ -48,4 +52,19 @@ func (s *service) Edit(ctx context.Context, r api.Repo, u passkey.User, a EditAn
 		}
 	}
 	return s.gate.Edit(ctx, gate.Target{Repo: r}, in)
+}
+
+func (s *service) MakeRequiredPreview(ctx context.Context, r api.Repo, u passkey.User) (gate.EditView, error) {
+	return s.gate.MakeRequiredPreview(ctx, gate.Target{Repo: r}, gate.AnswerOwner{ID: u.ID, Login: u.Login})
+}
+
+// MakeRequired redeems the caller's step-up token for the digest the gate computed; a token made
+// for another action, repository or digest stays unused.
+func (s *service) MakeRequired(ctx context.Context, r api.Repo, u passkey.User, token string) (gate.AnswerOutcome, error) {
+	return s.gate.MakeRequired(ctx, gate.Target{Repo: r}, gate.RequiredInput{
+		Owner: gate.AnswerOwner{ID: u.ID, Login: u.Login},
+		Redeem: func(ctx context.Context, digest string) (string, error) {
+			return s.passkeys.Redeem(ctx, r, u.ID, token, passkey.Purpose{Action: gate.ActionRequired, Digest: digest})
+		},
+	})
 }
