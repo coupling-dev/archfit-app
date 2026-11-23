@@ -40,6 +40,8 @@ func repoRoutes(fullName string) []route {
 		{http.MethodGet, base + "/owner/revert", signedInOnly, nil, nil},
 		{http.MethodGet, api + "/owner/revert/view", permRead, nil, nil},
 		{http.MethodGet, api + "/setup", permRead, nil, nil},
+		{http.MethodPost, api + "/setup/required/preview", permRead, nil, struct{}{}},
+		{http.MethodPost, api + "/setup/required", permRead, nil, requiredJSON{Token: "tok"}},
 		{http.MethodGet, api + "/policy", permRead, nil, nil},
 		{http.MethodGet, api + "/requests/431", permRead, nil, nil},
 		{http.MethodGet, api + "/requests/431/preview", permRead, nil, nil},

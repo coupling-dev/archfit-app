@@ -12,13 +12,21 @@ type Edits interface {
 	ReloadEditor(context.Context, Target, AnswerOwner) (EditBase, error)
 	EditPreview(context.Context, Target, EditInput) (EditView, error)
 	Edit(context.Context, Target, EditInput) (AnswerOutcome, error)
+	// MakeRequiredPreview and MakeRequired set gate to required in the policy the App reads
+	// itself: no client bytes name the policy, and the passkey binds the digest the App computed.
+	MakeRequiredPreview(context.Context, Target, AnswerOwner) (EditView, error)
+	MakeRequired(context.Context, Target, RequiredInput) (AnswerOutcome, error)
 }
 
 type (
-	EditInput = proposals.EditInput
-	EditView  = proposals.EditView
-	EditBase  = proposals.EditorBase
+	EditInput     = proposals.EditInput
+	EditView      = proposals.EditView
+	EditBase      = proposals.EditorBase
+	RequiredInput = proposals.RequiredInput
 )
+
+// ActionRequired is the passkey step-up action of MakeRequired.
+const ActionRequired = proposals.ActionMakeRequired
 
 const MaxEditBytes = proposals.MaxEditBytes
 
@@ -56,4 +64,18 @@ func (g *Gate) Edit(ctx context.Context, t Target, in EditInput) (AnswerOutcome,
 		return AnswerOutcome{}, err
 	}
 	return g.proposals.Edit(ctx, t.Repo, in)
+}
+
+func (g *Gate) MakeRequiredPreview(ctx context.Context, t Target, owner AnswerOwner) (EditView, error) {
+	if err := g.admitted(ctx, t); err != nil {
+		return EditView{}, err
+	}
+	return g.proposals.MakeRequiredPreview(ctx, t.Repo, owner)
+}
+
+func (g *Gate) MakeRequired(ctx context.Context, t Target, in RequiredInput) (AnswerOutcome, error) {
+	if err := g.admitted(ctx, t); err != nil {
+		return AnswerOutcome{}, err
+	}
+	return g.proposals.MakeRequired(ctx, t.Repo, in.Owner, in.Redeem)
 }

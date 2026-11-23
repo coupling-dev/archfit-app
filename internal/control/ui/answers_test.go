@@ -27,6 +27,7 @@ type fakeAnswers struct {
 	answers []answers.Answer
 	edits   []answers.EditAnswer
 	editor  gate.EditBase
+	tokens  []string
 }
 
 func (f *fakeAnswers) Digest(_ context.Context, r api.Repo, number int, a answers.Answer) (string, error) {
@@ -40,6 +41,21 @@ func (f *fakeAnswers) Answer(_ context.Context, r api.Repo, u passkey.User, numb
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.repos, f.users, f.numbers, f.answers = append(f.repos, r), append(f.users, u), append(f.numbers, number), append(f.answers, a)
+	return f.out, f.err
+}
+
+func (f *fakeAnswers) MakeRequiredPreview(_ context.Context, r api.Repo, u passkey.User) (gate.EditView, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.repos, f.users = append(f.repos, r), append(f.users, u)
+	return gate.EditView{Digest: "sha256:" + sha(3), Target: sha(7), Against: "the default branch",
+		Diff: "--- a/.archfit.yaml\n+++ b/.archfit.yaml\n+gate: required\n", Errors: []string{}}, f.err
+}
+
+func (f *fakeAnswers) MakeRequired(_ context.Context, r api.Repo, u passkey.User, token string) (gate.AnswerOutcome, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.repos, f.users, f.tokens = append(f.repos, r), append(f.users, u), append(f.tokens, token)
 	return f.out, f.err
 }
 

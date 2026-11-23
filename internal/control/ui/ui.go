@@ -182,6 +182,8 @@ func newHandler(d Deps, gh github, sessions session.Sessions, web fs.FS) http.Ha
 	mux.Handle("GET /api/repos", s.apiSignedIn(s.apiRepos))
 	mux.Handle("GET /api/owner-actions", s.apiSignedIn(s.apiOwnerActions))
 	mux.Handle("GET /api/repos/{o}/{n}/setup", s.apiRepo(permRead, s.apiSetup))
+	mux.Handle("POST /api/repos/{o}/{n}/setup/required/preview", s.apiRepo(permRead, s.apiRequiredPreview))
+	mux.Handle("POST /api/repos/{o}/{n}/setup/required", s.apiRepo(permRead, s.apiRequired))
 	mux.Handle("GET /api/repos/{o}/{n}/owner/{action}/view", s.apiRepo(permRead, s.apiOwnerView))
 	mux.Handle("POST /api/repos/{o}/{n}/owner/{action}/digest", s.apiRepo(permRead, s.apiOwnerDigest))
 	mux.Handle("POST /api/repos/{o}/{n}/owner/{action}", s.apiRepo(permRead, s.apiOwnerAct))
