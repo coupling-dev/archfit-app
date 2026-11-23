@@ -23,6 +23,10 @@
       (filter === 'Unknown' && row.state === 'unknown') ||
       (filter === 'archfit/gate not required' && row.enforcement === 'not_required')),
   ));
+  let grouped = $derived(new Set((body?.repos ?? []).map((row) => row.full_name.split('/')[0])).size > 1);
+  let groups = $derived([...new Set(visible.map((row) => row.full_name.split('/')[0]))].sort().map((owner) => ({
+    owner, rows: visible.filter((row) => row.full_name.split('/')[0] === owner),
+  })));
   function clearFilters() { search = ''; filter = 'All'; }
   let failure = $state('');
   // The list answers from stored state. The probe reads each repository's required-check settings and answers the same
@@ -87,8 +91,10 @@
       <thead>
         <tr><th scope="col">Repository</th><th scope="col">State</th><th scope="col">archfit/gate</th><th scope="col">Next step</th></tr>
       </thead>
+      {#each groups as group (group.owner)}
       <tbody>
-        {#each visible as row (row.full_name)}
+        {#if grouped}<tr class="group-row"><th scope="colgroup" colspan="4">{group.owner} · {group.rows.length}</th></tr>{/if}
+        {#each group.rows as row (row.full_name)}
           {@const next = nextStep(row)}
           <tr>
             <td class="repository">
@@ -116,6 +122,7 @@
           </tr>
         {/each}
       </tbody>
+      {/each}
     </table>
   </div>
   {/if}
@@ -132,6 +139,7 @@
   .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px; }
   .filter-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
   .filter-buttons button[aria-pressed="true"] { font-weight: 700; text-decoration: underline; }
+  .group-row th { background: var(--bg-subtle, #f5f5f5); color: var(--fg-muted); font-size: 12px; font-weight: 600; text-align: left; padding: 10px 12px; }
   .repo-list { overflow: hidden; }
   td { vertical-align: top; overflow-wrap: anywhere; }
   .repository { width: 40%; }
@@ -144,6 +152,8 @@
     table, tbody, tr, td { display: block; width: 100%; }
     .repository { width: 100%; }
     thead { display: none; }
+    .group-row { border: 0; margin-bottom: 8px; padding: 0; }
+    .group-row th { display: block; }
     tr { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; padding: 16px; background: var(--bg); }
     table.data td { border: 0; padding: 0 0 12px; }
     table.data td:last-child { padding-bottom: 0; }

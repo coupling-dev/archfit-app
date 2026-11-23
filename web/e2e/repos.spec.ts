@@ -27,7 +27,7 @@ for (const width of [1280, 390]) {
     await expect(page.getByText('@alice')).toBeVisible();
     await expect(page.locator('form[action="/auth/logout"] input[name="csrf"]')).toHaveValue(session.csrf);
     if (width === 390) {
-      for (const card of await page.locator('tbody tr').all()) {
+      for (const card of await page.locator('tbody tr:not(.group-row)').all()) {
         const hrefs = await card.getByRole('link').evaluateAll((links) => links.map((a) => a.getAttribute('href')));
       expect(new Set(hrefs).size).toBe(hrefs.length);
         await expect(card.getByText('State', { exact: true })).toBeVisible();
@@ -139,5 +139,25 @@ for (const width of [1280, 390]) {
     }
     await page.getByRole('button', { name: 'All', exact: true }).click();
     await expect(page.getByText('Showing 1 of 7 repositories.')).toHaveCount(0);
+  });
+}
+
+for (const width of [1280, 390]) {
+  test(`repositories: account groups follow filtered rows at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await open(page, '/repositories');
+    await expect(page.locator('th[scope="colgroup"]')).toHaveText(['acme · 6', 'octo · 1']);
+    await page.getByLabel('Search repositories').fill('octo');
+    await expect(page.locator('th[scope="colgroup"]')).toHaveText(['octo · 1']);
+    await expect(page.getByRole('status').filter({ hasText: 'Showing 1 of 7 repositories.' })).toBeVisible();
+    await page.getByLabel('Search repositories').fill('');
+    await page.getByRole('button', { name: 'Unknown', exact: true }).click();
+    await expect(page.locator('th[scope="colgroup"]')).toHaveText(['acme · 1']);
+  });
+  test(`repositories: one account has no group header at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await open(page, '/repositories', { repos: { repos: [{ full_name: 'acme/one', state: 'clean', enforcement: 'required' }], truncated: false } });
+    await expect(page.getByRole('link', { name: 'acme/one' })).toBeVisible();
+    await expect(page.locator('th[scope="colgroup"]')).toHaveCount(0);
   });
 }
