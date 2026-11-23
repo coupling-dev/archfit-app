@@ -27,6 +27,7 @@ for (const width of [1280, 390]) {
     await expect(rows.nth(0)).toContainText('Review the workflow change #419');
     await expect(rows.nth(0)).toContainText('alexei-led/pumba');
     await expect(rows.nth(0)).toContainText('2 days');
+    if (width === 390) await expect(rows.nth(0).locator('a.btn')).toBeVisible();
     await expect(rows.nth(1)).toContainText('Review the workflow change #413');
     await expect(rows.nth(1)).toContainText('3 h');
     await expect(rows.nth(2)).toContainText('Confirm the policy');
@@ -46,12 +47,12 @@ test('repositories: new waits have one action each even when destinations coinci
   const repo = 'acme/app';
   await openMock(page, '/', { ownerActions: { actions: [
     { repo, kind: 'request', text: 'Request #431 waits.', label: 'Answer request #431', since: '2026-11-11T12:00:00Z', href: '/r/acme/app/requests/431' },
-    { repo, kind: 'exception', text: '1 exception expires today', label: 'Open the exception', href: '/r/acme/app/policy' },
-    { repo, kind: 'drift', text: 'Drift on the default branch.', label: 'Open the drift issue', href: '/r/acme/app/policy' },
+    { repo, kind: 'exception', text: '1 exception expires today', label: 'Open the policy', href: '/r/acme/app/policy' },
+    { repo, kind: 'drift', text: 'Drift on the default branch.', label: 'Open the policy', href: '/r/acme/app/policy' },
   ], unread: 0, truncated: false } });
   const rows = page.getByRole('region', { name: 'Needs you' }).locator('.box-row');
   await expect(rows).toHaveCount(3);
-  for (const [i, label] of ['Answer request #431', 'Open the exception', 'Open the drift issue'].entries()) {
+  for (const [i, label] of ['Answer request #431', 'Open the policy', 'Open the policy'].entries()) {
     await expect(rows.nth(i).locator('a.btn')).toHaveCount(1);
     await expect(rows.nth(i).locator('a.btn')).toHaveText(label);
     await expect(rows.nth(i)).toContainText(repo);

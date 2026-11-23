@@ -168,3 +168,18 @@ func TestOwnerActionsIncludesRequestsExceptionsAndDriftInWaitOrder(t *testing.T)
 		t.Fatalf("missing undated kinds: %+v", got.Actions)
 	}
 }
+
+func TestOwnerActionsDistinguishesExceptions(t *testing.T) {
+	policy := homeWithException("2026-11-17") + "  - rule: graph\n    from: util\n    to: other\n    expires: 2026-11-17\n    why: Fix the import before this date.\n"
+	e := newHomeEnv(t, policy)
+	got := decodeAs[ownerActionsBody](t, e.as("alice", permRead).get(ownerActionsAPI))
+	var rows []ownerActionRow
+	for _, row := range got.Actions {
+		if row.Kind == "exception" {
+			rows = append(rows, row)
+		}
+	}
+	if len(rows) != 2 || rows[0].Text == rows[1].Text || rows[0].Label != "Open the policy" || rows[1].Label != "Open the policy" {
+		t.Fatalf("exceptions = %+v", rows)
+	}
+}

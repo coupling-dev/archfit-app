@@ -81,7 +81,7 @@
             <a class="muted need-repo" href={`/r/${row.repo}`}>{row.repo}</a>
           </div>
           {#if age}<span class="muted need-age">Waiting {age}</span>{/if}
-          <a class:primary={row.kind !== 'exception' && row.kind !== 'drift'} class="btn" href={row.href}>{actionTitle(row)}</a>
+          <a class:primary={row.kind !== 'exception' && row.kind !== 'drift'} class="btn need-act" href={row.href}>{actionTitle(row)}</a>
         </div>
       {/each}
     </section>
@@ -156,6 +156,11 @@
   .need-age { white-space: nowrap; }
 
   @media (max-width: 640px) {
+    .need { flex-wrap: wrap; }
+    .need-act { margin-left: 26px; }
+    .need-age { margin-left: auto; }
+    .need-act { flex-basis: calc(100% - 26px); }
+    .need-body { flex-basis: calc(100% - 36px); }
     .repo-list { border: 0; background: transparent; }
     table, tbody, tr, td { display: block; width: 100%; }
     .repository { width: 100%; }

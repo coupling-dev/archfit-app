@@ -105,10 +105,19 @@ func (s *server) apiOwnerActions(r *http.Request, sc scope) (any, error) {
 					continue
 				}
 				key := gate.HomeException{Rule: x.Rule, From: x.From, To: x.To, Expires: x.Expires}
-				rows[i] = append(rows[i], ownerActionRow{Repo: repo.FullName, Kind: "exception", Label: "Open the exception", Text: homeExceptionStatus(left), Href: issueHref(repo.FullName, view.ExceptionIssues[key])})
+				number := view.ExceptionIssues[key]
+				label := "Open the policy"
+				if number > 0 {
+					label = "Open the exception"
+				}
+				rows[i] = append(rows[i], ownerActionRow{Repo: repo.FullName, Kind: "exception", Label: label, Text: exceptionWaitText(x.From, x.To, x.Rule, left), Href: issueHref(repo.FullName, number)})
 			}
 			if view.DriftKnown && len(view.Drift) > 0 || view.DriftIssue > 0 {
-				rows[i] = append(rows[i], ownerActionRow{Repo: repo.FullName, Kind: "drift", Label: "Open the drift issue", Text: "Drift on the default branch.", Href: issueHref(repo.FullName, view.DriftIssue)})
+				label := "Open the policy"
+				if view.DriftIssue > 0 {
+					label = "Open the drift issue"
+				}
+				rows[i] = append(rows[i], ownerActionRow{Repo: repo.FullName, Kind: "drift", Label: label, Text: "Drift on the default branch.", Href: issueHref(repo.FullName, view.DriftIssue)})
 			}
 
 		}()
@@ -131,4 +140,22 @@ func (s *server) apiOwnerActions(r *http.Request, sc scope) (any, error) {
 		return cmp.Or(cmp.Compare(a.Since, b.Since), cmp.Compare(a.Repo, b.Repo), cmp.Compare(a.Pull, b.Pull))
 	})
 	return body, nil
+}
+
+func exceptionWaitText(from, to, rule string, left int) string {
+	name := rule
+	if from != "" && to != "" {
+		name = from + " → " + to
+	}
+	prefix := "The exception for " + name
+	switch {
+	case left < 0:
+		return prefix + " expired."
+	case left == 0:
+		return prefix + " expires today."
+	case left == 1:
+		return prefix + " expires in 1 day."
+	default:
+		return fmt.Sprintf("%s expires in %d days.", prefix, left)
+	}
 }
