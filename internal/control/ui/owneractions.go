@@ -21,6 +21,7 @@ type ownerActionRow struct {
 	Repo  string `json:"repo"`
 	Kind  string `json:"kind"`
 	Label string `json:"label"`
+	Text  string `json:"text"`
 	Pull  int    `json:"pull_request,omitempty"`
 	Since string `json:"since,omitempty"` // RFC 3339; absent when no time is recorded
 	Href  string `json:"href"`
@@ -84,14 +85,14 @@ func (s *server) apiOwnerActions(r *http.Request, sc scope) (any, error) {
 			}
 			view.OutsideFlow = view.OutsideFlow || state == gate.RepoOutsideFlow
 			for _, a := range view.OwnerActions() {
-				row := ownerActionRow{Repo: repo.FullName, Kind: a.Kind, Label: a.Label, Pull: a.Pull, Href: "/r/" + repo.FullName + a.Path}
+				row := ownerActionRow{Repo: repo.FullName, Kind: a.Kind, Label: a.Label, Text: ownerNeedText(a), Pull: a.Pull, Href: "/r/" + repo.FullName + a.Path}
 				if !a.Since.IsZero() {
 					row.Since = a.Since.UTC().Format(time.RFC3339)
 				}
 				rows[i] = append(rows[i], row)
 			}
 			for _, req := range view.Requests {
-				row := ownerActionRow{Repo: repo.FullName, Kind: "request", Label: fmt.Sprintf("Answer request #%d", req.Number), Href: "/r/" + repo.FullName + "/requests/" + strconv.Itoa(req.Number)}
+				row := ownerActionRow{Repo: repo.FullName, Kind: "request", Label: fmt.Sprintf("Answer request #%d", req.Number), Text: fmt.Sprintf("Request #%d waits.", req.Number), Href: "/r/" + repo.FullName + "/requests/" + strconv.Itoa(req.Number)}
 				if !req.AskedAt.IsZero() {
 					row.Since = req.AskedAt.UTC().Format(time.RFC3339)
 				}
@@ -104,10 +105,10 @@ func (s *server) apiOwnerActions(r *http.Request, sc scope) (any, error) {
 					continue
 				}
 				key := gate.HomeException{Rule: x.Rule, From: x.From, To: x.To, Expires: x.Expires}
-				rows[i] = append(rows[i], ownerActionRow{Repo: repo.FullName, Kind: "exception", Label: "Open the exception", Href: issueHref(repo.FullName, view.ExceptionIssues[key])})
+				rows[i] = append(rows[i], ownerActionRow{Repo: repo.FullName, Kind: "exception", Label: "Open the exception", Text: homeExceptionStatus(left), Href: issueHref(repo.FullName, view.ExceptionIssues[key])})
 			}
 			if view.DriftKnown && len(view.Drift) > 0 || view.DriftIssue > 0 {
-				rows[i] = append(rows[i], ownerActionRow{Repo: repo.FullName, Kind: "drift", Label: "Open the drift issue", Href: issueHref(repo.FullName, view.DriftIssue)})
+				rows[i] = append(rows[i], ownerActionRow{Repo: repo.FullName, Kind: "drift", Label: "Open the drift issue", Text: "Drift on the default branch.", Href: issueHref(repo.FullName, view.DriftIssue)})
 			}
 
 		}()

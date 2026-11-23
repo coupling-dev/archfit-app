@@ -27,7 +27,7 @@ func TestOwnerActionsListsWorkflowChangeWithLinkAndAge(t *testing.T) {
 
 	got := decodeAs[ownerActionsBody](t, e.as("alice", permRead).get(ownerActionsAPI))
 
-	want := ownerActionRow{Repo: repoName, Kind: gate.OwnerWorkflow, Label: "Review the workflow change", Pull: 4,
+	want := ownerActionRow{Repo: repoName, Kind: gate.OwnerWorkflow, Label: "Review the workflow change", Text: "Workflow change in pull request #4 waits for an owner.", Pull: 4,
 		Since: "2026-11-19T08:30:00Z", Href: "/r/" + repoName + "/owner/workflow?pull=4"}
 	if len(got.Actions) != 1 || got.Actions[0] != want || got.Unread != 0 || got.Truncated {
 		t.Fatalf("owner actions = %+v, want only %+v", got, want)
@@ -42,6 +42,9 @@ func TestOwnerActionsListsConfirmAndRevertForAPolicyChangedOutsideTheFlow(t *tes
 
 	var hrefs []string
 	for _, a := range got.Actions {
+		if a.Text == "" {
+			t.Fatalf("missing text: %+v", a)
+		}
 		hrefs = append(hrefs, a.Href)
 		if a.Pull != 0 || a.Since != "" {
 			t.Fatalf("a repository action names no pull request or time: %+v", a)
@@ -143,6 +146,11 @@ func TestOwnerActionsIncludesRequestsExceptionsAndDriftInWaitOrder(t *testing.T)
 	homePut(t, e, "request/432", map[string]any{"schema": "archfit-app.request.v1", "key": "graph app util", "state": "open", "reason": "reason", "numbers": map[string]any{}})
 	homeEditRepo(t, e, func(rec map[string]any) { rec["drift_issue"] = 72 })
 	got := decodeAs[ownerActionsBody](t, e.as("alice", permRead).get(ownerActionsAPI))
+	for _, row := range got.Actions {
+		if row.Text == "" {
+			t.Fatalf("missing text: %+v", row)
+		}
+	}
 	if got.Unread != 0 || got.Truncated || len(got.Actions) != 5 {
 		t.Fatalf("actions = %+v", got)
 	}
