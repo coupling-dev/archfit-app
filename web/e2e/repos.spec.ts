@@ -114,3 +114,28 @@ test('repositories: a failed check that answers before the list does not hide th
   await expect(page.getByText('Checking…')).toHaveCount(0);
   await expectClean(page);
 });
+
+for (const width of [1280, 390]) {
+  test(`repositories: search and filters at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await open(page, '/repositories');
+    const search = page.getByLabel('Search repositories');
+    await expect(page.getByRole('button', { name: 'All', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await search.fill('ACME/DRIFT');
+    await expect(page.getByText('Showing 1 of 7 repositories.')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'acme/drift' })).toBeVisible();
+    await search.fill('no-such-repository');
+    await expect(page.getByText('No repository matches these filters.')).toBeVisible();
+    await page.getByRole('button', { name: 'Clear filters' }).click();
+    await expect(search).toHaveValue('');
+    for (const [filter, repo] of [['Not set up', 'acme/not-set-up'], ['Unknown', 'acme/unknown'], ['archfit/gate not required', 'acme/drift']]) {
+      const button = page.getByRole('button', { name: filter, exact: true });
+      await button.click();
+      await expect(button).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByText('Showing 1 of 7 repositories.')).toBeVisible();
+      await expect(page.getByRole('link', { name: repo })).toBeVisible();
+    }
+    await page.getByRole('button', { name: 'All', exact: true }).click();
+    await expect(page.getByText('Showing 1 of 7 repositories.')).toHaveCount(0);
+  });
+}

@@ -13,6 +13,17 @@
   const probed = '/api/repos?probe=1';
 
   let body = $state<Repos | null>(null);
+  const filters = ['All', 'Not set up', 'Unknown', 'archfit/gate not required'] as const;
+  let filter = $state<(typeof filters)[number]>('All');
+  let search = $state('');
+  let active = $derived(filter !== 'All' || search.trim() !== '');
+  let visible = $derived((body?.repos ?? []).filter((row) =>
+    row.full_name.toLowerCase().includes(search.trim().toLowerCase()) &&
+    (filter === 'All' || (filter === 'Not set up' && row.state === 'not set up') ||
+      (filter === 'Unknown' && row.state === 'unknown') ||
+      (filter === 'archfit/gate not required' && row.enforcement === 'not_required')),
+  ));
+  function clearFilters() { search = ''; filter = 'All'; }
   let failure = $state('');
   // The list answers from stored state. The probe reads each repository's required-check settings and answers the same
   // rows later, so the list shows at once and its rows fill in when the probe returns.
@@ -58,13 +69,26 @@
   {#if probeFailure}
     <p class="flash error" role="alert">{probeFailure}</p>
   {/if}
+  <div class="filters">
+    <label for="repo-search">Search repositories</label>
+    <input id="repo-search" type="search" bind:value={search} />
+    <div class="filter-buttons" aria-label="Repository filters">
+      {#each filters as option (option)}
+        <button class="btn" type="button" aria-pressed={filter === option} onclick={() => (filter = option)}>{option}</button>
+      {/each}
+    </div>
+  </div>
+  {#if active}<p>Showing {visible.length} of {body.repos.length} repositories.</p>{/if}
+  {#if visible.length === 0}
+    <p>No repository matches these filters. <button class="btn" type="button" onclick={clearFilters}>Clear filters</button></p>
+  {:else}
   <div class="box repo-list" aria-busy={probing}>
     <table class="data">
       <thead>
         <tr><th scope="col">Repository</th><th scope="col">State</th><th scope="col">archfit/gate</th><th scope="col">Next step</th></tr>
       </thead>
       <tbody>
-        {#each body.repos as row (row.full_name)}
+        {#each visible as row (row.full_name)}
           {@const next = nextStep(row)}
           <tr>
             <td class="repository">
@@ -94,6 +118,7 @@
       </tbody>
     </table>
   </div>
+  {/if}
   <p class="muted small">
     archfit/gate is required when GitHub requires pull requests and this check on the default branch. Not confirmed:
     the App could not confirm this check. Ask a repository administrator.
@@ -104,6 +129,9 @@
 {/if}
 
 <style>
+  .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .filter-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+  .filter-buttons button[aria-pressed="true"] { font-weight: 700; text-decoration: underline; }
   .repo-list { overflow: hidden; }
   td { vertical-align: top; overflow-wrap: anywhere; }
   .repository { width: 40%; }
