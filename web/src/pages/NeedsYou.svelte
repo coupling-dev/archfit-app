@@ -1,14 +1,15 @@
 <script lang="ts">
   import PageHead from '../components/ui/PageHead.svelte';
   import Icon from '../components/ui/Icon.svelte';
-  import { getJSON, type OwnerActions, type Repos } from '../lib/api';
+  import { explain, getJSON, type ApiError, type OwnerActions, type Repos } from '../lib/api';
   import { actionTitle, waitingFor } from '../lib/owner-actions';
+  let { here }: { here: string } = $props();
   const installURL = 'https://github.com/apps/archfit-review/installations/new';
   let repos = $state<Repos | null>(null);
-  getJSON<Repos>('/api/repos').then((b) => (repos = b), () => {});
+  getJSON<Repos>('/api/repos').then((b) => (repos = b), (e: ApiError) => { explain(e, here); });
   let owner = $state<OwnerActions | null>(null);
   let ownerFailed = $state(false);
-  getJSON<OwnerActions>('/api/owner-actions').then((b) => (owner = b), () => (ownerFailed = true));
+  getJSON<OwnerActions>('/api/owner-actions').then((b) => (owner = b), (e: ApiError) => { ownerFailed = true; explain(e, here); });
   let firstRun = $derived(!!repos && repos.repos.length === 0 && !!owner && !ownerFailed && owner.actions.length === 0);
   let oldest = $derived(waitingFor(owner?.actions.find((row) => row.since)?.since));
 </script>

@@ -224,7 +224,7 @@
   {:else if !session}
     <Skeleton rows={4} />
   {:else if route.kind === 'home'}
-    {#await loadPage('home')}<Skeleton rows={4} />{:then { default: Page }}<Page />{:catch}{@render unloaded()}{/await}
+    {#await loadPage('home')}<Skeleton rows={4} />{:then { default: Page }}<Page {here} />{:catch}{@render unloaded()}{/await}
   {:else if route.kind === 'repositories'}
     {#await loadPage('repositories')}<Skeleton rows={4} />{:then { default: Page }}<Page {here} />{:catch}{@render unloaded()}{/await}
   {:else if route.kind === 'admin'}
