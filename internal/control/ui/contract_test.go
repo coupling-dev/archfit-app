@@ -208,3 +208,15 @@ func TestPullPageNumberMustBeAPull(t *testing.T) {
 		wantStatus(t, c.get("/api/repos/"+repoName+"/pulls/"+n+"/graph"), http.StatusNotFound)
 	}
 }
+
+func TestRepositoriesPageRequiresSessionAndServesShell(t *testing.T) {
+	e := newEnv(t)
+	res := e.anonymous().get("/repositories")
+	wantStatus(t, res, http.StatusSeeOther)
+	if got, want := res.Header().Get("Location"), "/auth/login?return="+url.QueryEscape("/repositories"); got != want {
+		t.Errorf("Location = %q, want %q", got, want)
+	}
+	res = e.signIn("alice").get("/repositories")
+	wantStatus(t, res, http.StatusOK)
+	wantContains(t, res.Body.String(), `src="/assets/app-1a2b.js"`)
+}
