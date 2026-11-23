@@ -104,6 +104,7 @@ type weeklyJSON struct {
 }
 
 type setupJSON struct {
+	Mode         string             `json:"mode,omitempty"`
 	Weekly       weeklyJSON         `json:"weekly"`
 	Approval     approvalJSON       `json:"approval"`
 	PasskeyKnown bool               `json:"passkey_known"`
@@ -156,7 +157,7 @@ func (s *server) apiSetup(r *http.Request, sc scope) (any, error) {
 	if approval.Pull > 0 {
 		approval.Href = "https://github.com/" + sc.repo.FullName + "/pull/" + strconv.Itoa(approval.Pull)
 	}
-	body := setupJSON{Approval: approval, PasskeyKnown: passkeyKnown, Admitted: out.Admitted, Policy: out.Policy, Workflow: out.Workflow, Passkey: passkey, OpenPull: out.OpenPull,
+	body := setupJSON{Mode: out.Mode, Approval: approval, PasskeyKnown: passkeyKnown, Admitted: out.Admitted, Policy: out.Policy, Workflow: out.Workflow, Passkey: passkey, OpenPull: out.OpenPull,
 		State: out.State, Missing: out.Missing, FirstPull: out.FirstPull, SetupPull: out.SetupPull, Issue: out.Issue, Rules: []setupFindingJSON{}}
 	if s.store != nil && s.now != nil {
 		summary, err := gate.ReadWeekly(r.Context(), s.store, sc.repo, s.now())

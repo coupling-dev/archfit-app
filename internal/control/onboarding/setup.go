@@ -15,6 +15,7 @@ import (
 
 // Setup is derived from default-branch files, GitHub's rules and recorded approvals.
 type Setup struct {
+	Mode      string // advisory, required, or unknown from the protected policy
 	Approval  gate.ApprovalSummary
 	Admitted  bool
 	Policy    bool   // valid policy (version 1, or 3) on the default branch
@@ -53,7 +54,7 @@ func NewSetup(gh *api.Client, g gate.SetupViews) Setups {
 }
 
 func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
-	out := Setup{State: "not_admitted", Missing: []string{}}
+	out := Setup{State: "not_admitted", Mode: "unknown", Missing: []string{}}
 	// The rules need only the repository and its default branch name, so they overlap the tip read. Early returns
 	// wait for them below, so the read never outlives Setup and its result is joined before it is returned.
 	var rules RulesetReport
@@ -82,6 +83,14 @@ func (s *setups) Setup(ctx context.Context, r api.Repo) (Setup, error) {
 		return out, policy.ReadErr
 	}
 	digest, valid := policy.Digest, policy.ReadErr == nil && policy.DecodeErr == nil
+	if valid {
+		switch policy.File.Gate {
+		case "", "advisory":
+			out.Mode = "advisory"
+		case "required":
+			out.Mode = "required"
+		}
+	}
 	if !valid {
 		out.Missing = append(out.Missing, "The default branch has no valid policy.")
 	}
