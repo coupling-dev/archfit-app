@@ -34,6 +34,7 @@
   let requiredPreview = $state<{ digest: string; diff: string; against?: string } | null>(null);
   let requiredBusy = $state(false);
   let requiredError = $state('');
+  let requiredDone = $state(false);
   let requiredPull = $state<number | null>(null);
   let requiredNotice = $state('');
 
@@ -54,6 +55,7 @@
     try {
       const token = await confirm(api, session.csrf, { action: 'make-required', digest: p.digest });
       const out = await postJSON<Answered>(api('setup/required'), session.csrf, { token });
+      requiredDone = true;
       requiredPull = out.pull_request ?? null;
       requiredNotice = out.notice;
       requiredPreview = null;
@@ -105,9 +107,9 @@
         <p>Make the check required when the owners agree. It starts with one approval of the policy and the workflow.</p>
         <p class="muted">Without the ruleset, a fail does not block a merge, even when the policy says required.</p>
         {#if requiredError}<p class="flash error" role="alert">{requiredError}</p>{/if}
-        {#if requiredPull}
+        {#if requiredDone}
           <p class="flash success" role="status">{requiredNotice}</p>
-          <a class="btn" href={`${githubRepo}/pull/${requiredPull}`}>Pull request #{requiredPull} on GitHub</a>
+          {#if requiredPull}<a class="btn" href={`${githubRepo}/pull/${requiredPull}`}>Pull request #{requiredPull} on GitHub</a>{/if}
         {:else if requiredPreview}
           <Diff text={requiredPreview.diff} label={`The policy change in .archfit.yaml against ${requiredPreview.against ?? 'the default branch'}`} />
           {#if setup.passkey}
