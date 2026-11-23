@@ -2,9 +2,11 @@ package ui
 
 import (
 	"cmp"
+	"fmt"
 	"net/http"
 	"slices"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -88,6 +90,26 @@ func (s *server) apiOwnerActions(r *http.Request, sc scope) (any, error) {
 				}
 				rows[i] = append(rows[i], row)
 			}
+			for _, req := range view.Requests {
+				row := ownerActionRow{Repo: repo.FullName, Kind: "request", Label: fmt.Sprintf("Answer request #%d", req.Number), Href: "/r/" + repo.FullName + "/requests/" + strconv.Itoa(req.Number)}
+				if !req.AskedAt.IsZero() {
+					row.Since = req.AskedAt.UTC().Format(time.RFC3339)
+				}
+				rows[i] = append(rows[i], row)
+			}
+			today := s.now().UTC().Truncate(24 * time.Hour)
+			for _, x := range view.Policy.Exceptions {
+				left, ok := homeDays(x.Expires, today)
+				if !ok || left > homeExpiryDays {
+					continue
+				}
+				key := gate.HomeException{Rule: x.Rule, From: x.From, To: x.To, Expires: x.Expires}
+				rows[i] = append(rows[i], ownerActionRow{Repo: repo.FullName, Kind: "exception", Label: "Open the exception", Href: issueHref(repo.FullName, view.ExceptionIssues[key])})
+			}
+			if view.DriftKnown && len(view.Drift) > 0 || view.DriftIssue > 0 {
+				rows[i] = append(rows[i], ownerActionRow{Repo: repo.FullName, Kind: "drift", Label: "Open the drift issue", Href: issueHref(repo.FullName, view.DriftIssue)})
+			}
+
 		}()
 	}
 	wg.Wait()

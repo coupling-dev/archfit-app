@@ -161,13 +161,7 @@ func homeBody(view gate.HomeState, setup setupJSON, shown *setupJSON, repo strin
 		out.Map = homeMap(view, today)
 	}
 	base := "/r/" + repo
-	policyHref := base + "/policy"
-	issueHref := func(n int) string {
-		if n > 0 {
-			return "https://github.com/" + repo + "/issues/" + strconv.Itoa(n)
-		}
-		return policyHref
-	}
+
 	// The state is the first that holds, in the order of how much it matters to a pull request.
 	outside := view.OutsideFlow || setup.State == "outside_flow"
 	view.OutsideFlow = outside
@@ -206,13 +200,13 @@ func homeBody(view gate.HomeState, setup setupJSON, shown *setupJSON, repo strin
 			continue
 		}
 		key := gate.HomeException{Rule: x.Rule, From: x.From, To: x.To, Expires: x.Expires}
-		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "exception", Text: text, Href: issueHref(view.ExceptionIssues[key]), Rule: x.Rule,
+		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "exception", Text: text, Href: issueHref(repo, view.ExceptionIssues[key]), Rule: x.Rule,
 			From: x.From, To: x.To, Expires: x.Expires, DaysLeft: &left})
 	}
 	// Errors stored for an older head are not current; only an open issue, which is real on GitHub, stands without them.
 	drift := view.DriftKnown && len(view.Drift) > 0 || view.DriftIssue > 0
 	if drift {
-		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "drift", Text: "Drift on the default branch.", Href: issueHref(view.DriftIssue)})
+		out.NeedsYou = append(out.NeedsYou, homeNeedJSON{Kind: "drift", Text: "Drift on the default branch.", Href: issueHref(repo, view.DriftIssue)})
 	}
 	if n := len(view.WorkflowPulls); n > 0 {
 		if n == 1 {
@@ -246,6 +240,13 @@ func homeBody(view gate.HomeState, setup setupJSON, shown *setupJSON, repo strin
 		out.Status += " Nothing needs you."
 	}
 	return out
+}
+
+func issueHref(repo string, n int) string {
+	if n > 0 {
+		return "https://github.com/" + repo + "/issues/" + strconv.Itoa(n)
+	}
+	return "/r/" + repo + "/policy"
 }
 
 // ownerNeedText is the row of an owner step, as Home words it before a review replaces it.

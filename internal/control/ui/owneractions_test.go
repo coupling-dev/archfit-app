@@ -134,3 +134,29 @@ func TestPullShowsTheOwnerActionWhenNoResultIsStoredYet(t *testing.T) {
 		t.Fatalf("owner action = %+v", got.Review)
 	}
 }
+
+func TestOwnerActionsIncludesRequestsExceptionsAndDriftInWaitOrder(t *testing.T) {
+	e := newHomeEnv(t, homeWithException("2026-11-17"))
+	workflowPull(e, waitingSince)
+	homePut(t, e, "request-index", map[string]any{"schema": "archfit-app.request-index.v1", "entries": []any{map[string]any{"key": "graph app other", "id": "431"}, map[string]any{"key": "graph app util", "id": "432"}}})
+	homePut(t, e, "request/431", map[string]any{"schema": "archfit-app.request.v1", "key": "graph app other", "state": "open", "reason": "reason", "numbers": map[string]any{}, "asked_at": "2026-11-01T10:00:00Z"})
+	homePut(t, e, "request/432", map[string]any{"schema": "archfit-app.request.v1", "key": "graph app util", "state": "open", "reason": "reason", "numbers": map[string]any{}})
+	homeEditRepo(t, e, func(rec map[string]any) { rec["drift_issue"] = 72 })
+	got := decodeAs[ownerActionsBody](t, e.as("alice", permRead).get(ownerActionsAPI))
+	if got.Unread != 0 || got.Truncated || len(got.Actions) != 5 {
+		t.Fatalf("actions = %+v", got)
+	}
+	if got.Actions[0].Kind != "request" || got.Actions[0].Since != "2026-11-01T10:00:00Z" || got.Actions[0].Href != "/r/"+repoName+"/requests/431" || got.Actions[1].Kind != "workflow" {
+		t.Fatalf("ordered actions = %+v", got.Actions)
+	}
+	kinds := map[string]bool{}
+	for _, row := range got.Actions[2:] {
+		if row.Since != "" {
+			t.Fatalf("undated row = %+v", row)
+		}
+		kinds[row.Kind] = true
+	}
+	if !kinds["request"] || !kinds["exception"] || !kinds["drift"] {
+		t.Fatalf("missing undated kinds: %+v", got.Actions)
+	}
+}
