@@ -1,25 +1,28 @@
 <script lang="ts">
   import PageHead from '../components/ui/PageHead.svelte';
   import Icon from '../components/ui/Icon.svelte';
-  import { getJSON, type OwnerActions } from '../lib/api';
+  import { getJSON, type OwnerActions, type Repos } from '../lib/api';
   import { actionTitle, waitingFor } from '../lib/owner-actions';
   let { here }: { here: string } = $props();
+  const installURL = 'https://github.com/apps/archfit-review/installations/new';
+  let repos = $state<Repos | null>(null);
+  getJSON<Repos>('/api/repos').then((b) => (repos = b), () => {});
   let owner = $state<OwnerActions | null>(null);
   let ownerFailed = $state(false);
   getJSON<OwnerActions>('/api/owner-actions').then((b) => (owner = b), () => (ownerFailed = true));
+  let firstRun = $derived(!!repos && repos.repos.length === 0 && !!owner && !ownerFailed && owner.actions.length === 0);
   let oldest = $derived(waitingFor(owner?.actions.find((row) => row.since)?.since));
 </script>
 
 <PageHead title="Needs you">
   {#if owner?.actions.length}
     <p class="lede">{owner.actions.length} need you.{#if oldest} The oldest has waited {oldest}.{/if}</p>
-  {:else if owner && !ownerFailed && !owner.unread && !owner.truncated}
+  {:else if owner && !ownerFailed && !owner.unread && !owner.truncated && !firstRun}
     <p class="lede">Nothing needs you.</p>
   {/if}
 </PageHead>
   {#if owner?.actions.length}
-    <section class="box needs" aria-labelledby="repos-needs">
-      <div class="box-head"><h2 class="title-box" id="repos-needs">Needs you</h2></div>
+    <section class="box needs" aria-label="Needs you">
       {#each owner.actions as row, index (index)}
         {@const age = waitingFor(row.since)}
         <div class="box-row need">
@@ -32,6 +35,19 @@
           <a class:primary={row.kind !== 'exception' && row.kind !== 'drift'} class="btn need-act" href={row.href}>{actionTitle(row)}</a>
         </div>
       {/each}
+    </section>
+  {/if}
+  {#if firstRun}
+    <section class="box blankslate">
+      <h2>Start checking pull requests</h2>
+      <p>Install Archfit on GitHub, then follow four steps for each repository.</p>
+      <ol>
+        <li>Add the policy</li>
+        <li>Open a pull request with both files</li>
+        <li>Owner approval with a passkey</li>
+        <li>Require the archfit/gate check</li>
+      </ol>
+      <a class="btn primary" href={installURL}>Install Archfit on GitHub</a>
     </section>
   {/if}
   {#if ownerFailed}
