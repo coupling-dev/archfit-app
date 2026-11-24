@@ -70,7 +70,7 @@ The owner queue is at `/`; the repository list is at `/repositories`. `/repos` i
 | `/`                           | Owner queue from `GET /api/owner-actions` and first-run state from `GET /api/repos`; sign-in or admission state when needed. |
 | `/repositories`               | Repository list from `GET /api/repos` and its settings probe; requires sign-in. |
 | `/admin`                      | Operator-only installation administration: admit or revoke installations.                                                                                                                         |
-| Prefix                        | Home reads `/home`; setup remains until approval activation and applicable rules are confirmed. Active repositories also show requests, owner actions and the map. |
+| Prefix                        | Home reads `/home`; setup remains until approval activation and applicable rules are confirmed. Before the first approval it is `advisory` when an advisory policy and the workflow are on the default branch (checks report, nothing blocks), else `not_set_up`. Active repositories also show requests, owner actions and the map. |
 | Prefix + `/policy`            | Reads `/policy`; `?edit=1` opens the YAML editor, which previews and submits through `/policy/edit` endpoints.                                                     |
 | Prefix + `/requests/{number}` | Reads `/requests/{number}` and its previews; owner answers use its answer endpoints.                                                                               |
 | Prefix + `/pull/{number}`     | Reads `/pulls/{number}`; the page and GitHub comment use the same feedback model.                                                                                  |
