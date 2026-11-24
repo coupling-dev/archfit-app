@@ -59,3 +59,45 @@ func TestStoryReaderFollowsTheAnswerToThePolicyPullRequest(t *testing.T) {
 		}
 	}
 }
+
+func TestStoryReaderSaysWhenAnOpenRequestWaitsOnTheFirstApproval(t *testing.T) {
+	ctx := context.Background()
+	repo := api.Repo{RepoRef: api.RepoRef{InstallationID: 7, FullName: "acme/shop"}, DefaultBranch: "main"}
+	for _, tt := range []struct {
+		name     string
+		state    string
+		approved string
+		policy   bool
+		want     bool
+	}{
+		{"open, no first approval", records.StateOpen, "", true, true},
+		{"open, approved policy", records.StateOpen, "sha256:approved", true, false},
+		{"answered", records.StateAnswered, "", true, false},
+		{"open, no valid policy to approve", records.StateOpen, "", false, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := store.NewMemory()
+			put := func(key string, v records.Value) {
+				raw, err := records.Encode(v)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := s.Put(ctx, store.Tenant(7), key, raw); err != nil {
+					t.Fatal(err)
+				}
+			}
+			put(records.RequestKey(repo.FullName, 40), &records.Request{State: tt.state})
+			if tt.approved != "" {
+				put(records.RepoKey(repo.FullName), &records.Repo{ApprovedDigest: tt.approved})
+			}
+			gh := newFakeGitHub()
+			if tt.policy {
+				gh.files[fileKey(repo.FullName, "main", policyPath)] = []byte("version: 1\nowners: [acme/arch]\nmodules:\n  a:\n    paths: [a/**]\n")
+			}
+			got, err := storyReader(gh, s)(ctx, repo, 40)
+			if err != nil || got.FirstApproval != tt.want {
+				t.Errorf("facts = %+v, %v; want first approval %v", got, err, tt.want)
+			}
+		})
+	}
+}

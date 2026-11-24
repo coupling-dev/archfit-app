@@ -193,6 +193,22 @@ func (s *publisher) publish4(ctx context.Context, p Publication4) (written, supe
 	if v.next != nil {
 		details = v.next.url
 	}
+	// The story is read before the check is built: a request that waits on the first approval changes its summary too.
+	if p.Target.PullRequest > 0 {
+		facts := s.storyFacts(ctx, p, v)
+		st := storyOf(v, facts)
+		v.story = &st
+		if facts != nil {
+			v.policyPull = facts.PolicyPull
+			v.firstApproval = facts.FirstApproval && st.Request > 0 && st.Steps.Ask == stepCurrent
+		}
+		if st.Request > 0 {
+			v.requestURL = OwnerLink(s.appURL, p.Target.Repo.FullName, "/requests/"+strconv.Itoa(st.Request))
+		}
+		if v.firstApproval {
+			v.firstPolicyURL = OwnerLink(s.appURL, p.Target.Repo.FullName, "/owner/first")
+		}
+	}
 	run := api.CheckRun{
 		Name:        gateCheck,
 		HeadSHA:     p.Target.HeadSHA,
@@ -205,17 +221,8 @@ func (s *publisher) publish4(ctx context.Context, p Publication4) (written, supe
 		Annotations: v.annotations(),
 		StartedAt:   start,
 	}
-	if p.Target.PullRequest > 0 {
-		facts := s.storyFacts(ctx, p, v)
-		st := storyOf(v, facts)
-		v.story = &st
-		if facts != nil {
-			v.policyPull = facts.PolicyPull
-		}
-		if st.Request > 0 {
-			v.requestURL = OwnerLink(s.appURL, p.Target.Repo.FullName, "/requests/"+strconv.Itoa(st.Request))
-		}
-		run.Text = boundedStoryLine(st)
+	if v.story != nil {
+		run.Text = boundedStoryLine(*v.story)
 	}
 	if p.ownerCheck != nil {
 		run = *p.ownerCheck

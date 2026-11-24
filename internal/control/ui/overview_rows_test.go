@@ -35,6 +35,10 @@ func (r *rowStates) RepoState(_ context.Context, repo api.Repo) (string, error) 
 	return "approved", nil
 }
 
+func (r *rowStates) OpenRequests(context.Context, api.Repo) ([]gate.HomeRequest, error) {
+	return nil, nil
+}
+
 // rowSetups counts the Setup probes per row and reports each one as it starts.
 type rowSetups struct {
 	mu      sync.Mutex

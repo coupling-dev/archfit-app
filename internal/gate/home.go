@@ -325,8 +325,14 @@ func (h *homeViews) repoRecord(ctx context.Context, r api.RepoRef) (records.Repo
 }
 
 func (h *homeViews) requestRecords(ctx context.Context, t store.Tenant, r api.Repo) ([]HomeRequest, error) {
-	requests, err := h.index(ctx, t, records.RequestIndexKey(r.FullName), records.SchemaRequestIndex)
-	if err != nil {
+	return openRequests(ctx, h.store, t, r)
+}
+
+// openRequests are the open requests of r from the stored request index and records, by number.
+func openRequests(ctx context.Context, s store.Store, t store.Tenant, r api.Repo) ([]HomeRequest, error) {
+	requests := records.Index{Schema: records.SchemaRequestIndex}
+	err := records.Load(ctx, s, t, records.RequestIndexKey(r.FullName), &requests)
+	if err != nil && !errors.Is(err, records.ErrNoRecord) {
 		return nil, err
 	}
 	loaded := make([]records.Request, len(requests.Entries))
@@ -337,7 +343,7 @@ func (h *homeViews) requestRecords(ctx context.Context, t store.Tenant, r api.Re
 			return errors.New("home: invalid request number")
 		}
 		numbers[i] = number
-		return records.Load(ctx, h.store, t, records.RequestKey(r.FullName, number), &loaded[i])
+		return records.Load(ctx, s, t, records.RequestKey(r.FullName, number), &loaded[i])
 	}); err != nil {
 		return nil, err
 	}

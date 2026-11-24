@@ -114,7 +114,7 @@ workflow authority comes from the digest-checked approved policy, never from pro
 
 ## Request page view
 
-`RequestView` reads the request and exposes declared volatility, layers outer-first and structured deny/exception dependencies from one target-policy snapshot. When an answered request has an approval pointer, the facade reads the recorded answer; older records without it provide no answer detail. The view includes the request issue link, which remains the source for the owner and passkey.
+`RequestView` reads the request and exposes declared volatility, layers outer-first and structured deny/exception dependencies from one target-policy snapshot. When an answered request has an approval pointer, the facade reads the recorded answer; older records without it provide no answer detail. The view includes the request issue link, which remains the source for the owner and passkey. An open request whose repository has no first approval sets `FirstApproval`: no answer can be written yet. An answered request carries its policy pull request and whether it merged; once merged, `Rechecks` gives each open waiting pull request's status under the approved policy, or `running`/`push` until a result lands.
 
 The pull reader validates the pull record and publication marker together with a no-change multi-key CAS
 before admitting an artifact; split reads cannot pair an unpublished result with a later cleared marker.

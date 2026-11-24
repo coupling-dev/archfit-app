@@ -64,7 +64,7 @@ func TestRequestAPIShowsTheRequest(t *testing.T) {
 			map[string]any{"name": "pkg_tc", "layer": "adapters", "depends_on": []any{"pkg_net"}},
 			map[string]any{"name": "pkg_util", "depends_on": []any{}},
 		},
-		"layers": []any{}, "allowed": false, "waiting": []any{},
+		"layers": []any{}, "allowed": false, "waiting": []any{}, "first_approval": false, "policy_merged": false, "rechecks": []any{},
 		"earlier": []any{map[string]any{"kind": "deny", "rule": "no-util-to-tc", "from": "pkg_util", "to": "pkg_tc",
 			"why": "Util stays at the bottom.", "instead": "Pass a value in."}},
 	}
@@ -171,6 +171,15 @@ func TestRequestAPIGoldens(t *testing.T) {
 			v := base
 			v.State = "answered"
 			v.Answer = &gate.RequestAnswer{Kind: policy3.Reject, Instead: "Use a port."}
+			return v
+		}()},
+		{"first-approval", func() gate.RequestView { v := base; v.FirstApproval = true; return v }()},
+		{"rechecking", func() gate.RequestView {
+			v := base
+			v.State = "answered"
+			v.Answer = &gate.RequestAnswer{Kind: policy3.Approve}
+			v.PolicyPull, v.PolicyMerged = 77, true
+			v.Rechecks = []gate.RequestRecheck{{Number: 12, Status: gate.RecheckRunning}}
 			return v
 		}()},
 	} {

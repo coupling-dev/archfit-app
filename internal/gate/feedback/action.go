@@ -2,6 +2,7 @@ package feedback
 
 import (
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -21,6 +22,9 @@ func OwnerLink(appURL, fullName, path string) string {
 	owner, name, _ := strings.Cut(fullName, "/")
 	return appURL + "/r/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + path
 }
+
+// LabelFirst is the label of the owner page that approves the first policy.
+const LabelFirst = "Approve the first policy"
 
 // nextLink is a pending owner step with its absolute URL, as the check and the comment show it.
 type nextLink struct {
@@ -71,6 +75,14 @@ func shortHead(sha string) string {
 // lead starts the check summary when a person must act: the next line and what it covers. GitHub shows the title above
 // the summary, so the status is not repeated. Without a pending step the summary is only the text block.
 func (v view) lead() string {
+	if v.next == nil && v.firstApproval && v.story != nil {
+		// No answer can be written yet: the request this check waits on needs the first policy approved first.
+		next := "**Next:** an administrator approves the first policy (passkey)\n"
+		if v.firstPolicyURL != "" {
+			next = NextLine(LabelFirst, v.firstPolicyURL, "administrator")
+		}
+		return next + "Then " + v.answerer() + " answers request #" + strconv.Itoa(v.story.Request) + ".\n"
+	}
 	if v.next == nil {
 		return ""
 	}

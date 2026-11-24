@@ -9,6 +9,9 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/gate/feedback"
 )
 
+// LabelFirst is the label of the owner page that approves the first policy.
+const LabelFirst = feedback.LabelFirst
+
 // PendingOwnerAction is one step of an owner that waits on a repository: the App page that resolves it, with the same
 // label and path the check and the comment link to.
 type PendingOwnerAction struct {

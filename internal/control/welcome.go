@@ -20,7 +20,7 @@ Merge this pull request to start the checks. Each pull request then gets one ver
 Until an owner makes the check required, a fail does not block a merge.
 
 - To ask for a change to the policy, run ` + "`archfit request -m \"<why>\"`" + ` on your branch.
-- The owners answer requests in the App.
+- The owners answer requests in the App, after a repository administrator named as an owner approves the first policy there.
 - The setup page shows the counts for this week and the next step.
 `
 

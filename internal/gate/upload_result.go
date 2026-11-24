@@ -682,7 +682,7 @@ const (
 	labelConfirm  = "Confirm the policy"
 	labelRevert   = "Revert the policy"
 	labelWorkflow = "Review the workflow change"
-	labelFirst    = "Approve the first policy"
+	labelFirst    = feedback.LabelFirst
 )
 
 // ownerPage is the App page that resolves the first reason that waits for a person, or none. A reason that only

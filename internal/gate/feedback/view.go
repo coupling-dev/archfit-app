@@ -46,14 +46,18 @@ type view struct {
 	story      *story
 	requestURL string
 	policyPull int
-	result     result.Result // the status line (Summary), the errors and the unknown reasons, shown as given
-	author     string        // "" when the author has nothing to do
-	owner      string        // "" when the owner has nothing to do
-	requests   []int         // the requests the wait steps of the errors name, in record order, once each
-	covered    string        // candidate next kind; says checks whether the author line covers each individual step
-	next       *nextLink     // the App page of a pending owner step; nil when none is known
-	head       string        // the commit the check is for, shown with next
-	advisory   string        // the line that says the check does not block the merge; "" in required mode (task 8.7)
+	// firstApproval says the request this check waits on cannot be answered yet: an administrator approves the first
+	// policy first, on firstPolicyURL ("" when the App has no address).
+	firstApproval  bool
+	firstPolicyURL string
+	result         result.Result // the status line (Summary), the errors and the unknown reasons, shown as given
+	author         string        // "" when the author has nothing to do
+	owner          string        // "" when the owner has nothing to do
+	requests       []int         // the requests the wait steps of the errors name, in record order, once each
+	covered        string        // candidate next kind; says checks whether the author line covers each individual step
+	next           *nextLink     // the App page of a pending owner step; nil when none is known
+	head           string        // the commit the check is for, shown with next
+	advisory       string        // the line that says the check does not block the merge; "" in required mode (task 8.7)
 }
 
 // newView builds the view of r, whose Status is the status the App gave it.

@@ -13,6 +13,7 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/github/api"
 	"github.com/coupling-dev/archfit-app/internal/github/webhook"
 	"github.com/coupling-dev/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/wire/wording"
 )
 
 type fakeSetupGitHub struct {
@@ -333,6 +334,13 @@ func TestWelcomePullOpened(t *testing.T) {
 			if tt.want == 1 {
 				if !strings.Contains(gh.body, "<!-- archfit:welcome -->") {
 					t.Fatalf("missing welcome marker: %q", gh.body)
+				}
+				// Answers need the first policy approved: the welcome says so before an owner meets the refusal.
+				if !strings.Contains(gh.body, "after a repository administrator named as an owner approves the first policy") {
+					t.Fatalf("welcome does not say the first policy is approved before answers: %q", gh.body)
+				}
+				if words := wording.StoryNotUsedIn(gh.body); len(words) > 0 {
+					t.Fatalf("welcome words: %v", words)
 				}
 				gh.marker = true
 				if err := h.c.HandleEvent(context.Background(), e); err != nil {
