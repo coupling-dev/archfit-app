@@ -17,6 +17,9 @@ import (
 // An installation no operator has admitted: the list reads nothing from it. Operators admit; owners approve.
 const stateNotAdmitted = "not admitted"
 
+// A repository whose pull requests get advisory checks before the first approval (see advisoryBeforeApproval).
+const repoStateAdvisory = "advisory"
+
 const (
 	maxOverviewRepos = 100
 	parallelLookups  = 8
@@ -138,6 +141,10 @@ func uncheckedOverviewRow(name, state string) overviewRow {
 }
 
 func applyOverviewSetup(row *overviewRow, setup onboarding.Setup) {
+	// The stored state cannot tell advisory checks from none before the first approval; the probe can, as Home does.
+	if row.State == gate.RepoNotSetUp && advisoryBeforeApproval(setup.State, setup.Mode, setup.Admitted) {
+		row.State = repoStateAdvisory
+	}
 	row.SetupStage = repoSetupStage(setup)
 	row.Enforcement, row.EnforcementReason = repoEnforcement(setup.Rules)
 	base := "/r/" + row.FullName

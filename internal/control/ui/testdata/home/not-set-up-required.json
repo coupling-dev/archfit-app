@@ -1,0 +1,38 @@
+{
+  "state": "not_set_up",
+  "status": "Pull requests are not checked yet. Finish the setup steps.",
+  "setup": {
+    "mode": "required",
+    "weekly": {
+      "known": false
+    },
+    "approval": {
+      "status": "needed",
+      "kind": "first"
+    },
+    "passkey_known": true,
+    "owner_action": {
+      "label": "Review first policy",
+      "href": "/r/acme/app/owner/first"
+    },
+    "admitted": true,
+    "policy": true,
+    "workflow": true,
+    "passkey": true,
+    "open_pull": 0,
+    "state": "first_approval",
+    "missing": [],
+    "rules": [
+      {
+        "code": "pull_requests",
+        "state": "warning",
+        "text": "Add a pull request rule to the default branch."
+      },
+      {
+        "code": "gate_check",
+        "state": "warning",
+        "text": "Add the App's archfit/gate check as a required status check."
+      }
+    ]
+  }
+}

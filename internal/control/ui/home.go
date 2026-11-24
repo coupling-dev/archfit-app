@@ -23,6 +23,7 @@ const (
 	homeStateExpired     = "expired"
 	homeStateOutsideFlow = "outside_flow"
 	homeStateNotSetUp    = "not_set_up"
+	homeStateAdvisory    = "advisory"
 	homeStateUnknown     = "unknown"
 )
 
@@ -114,6 +115,9 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 			}
 			state.Review = s.ownerReview(reviewR, sc, pull)
 		}
+		if advisoryBeforeApproval(state.State, state.Mode, state.Admitted) {
+			return homeJSON{State: homeStateAdvisory, Status: homeAdvisoryStatus, Setup: &state}, nil
+		}
 		return homeJSON{State: homeStateNotSetUp, Status: "Pull requests are not checked yet. Finish the setup steps.", Setup: &state}, nil
 	}
 	if homeErr != nil {
@@ -146,6 +150,16 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 		}
 	}
 	return body, nil
+}
+
+const homeAdvisoryStatus = "Advisory checks are on: they report on each pull request and do not block a merge. " +
+	"Next: approve the first policy; an owner can answer requests after that. Then make the check required."
+
+// advisoryBeforeApproval reports a repository whose default branch has a valid advisory policy and an accepted workflow
+// but no approved first policy: the gate checks its pull requests without blocking them (gate.checkState), so it is not
+// "not set up". A required policy without approval gets no verdict and stays not set up.
+func advisoryBeforeApproval(state, mode string, admitted bool) bool {
+	return state == "first_approval" && admitted && mode == "advisory"
 }
 
 func setupRulesComplete(rules []setupFindingJSON) bool {

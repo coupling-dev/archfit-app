@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/coupling-dev/archfit-app/internal/control/onboarding"
+	"github.com/coupling-dev/archfit-app/internal/gate"
 	"github.com/coupling-dev/archfit-app/internal/wire/wording"
 )
 
@@ -267,4 +268,32 @@ func rowNamed(b overviewBody, name string) overviewRow {
 		}
 	}
 	return overviewRow{}
+}
+
+// Before the first approval the stored state says not set up; the probe tells a repository whose advisory checks run
+// apart from one whose checks give no verdict yet, as Home does.
+func TestReposRowSaysAdvisoryWhenChecksRunBeforeTheFirstApproval(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		setup onboarding.Setup
+		want  string
+	}{
+		{"setup merged, advisory", homeAfterSetupMerge("advisory"), repoStateAdvisory},
+		{"setup merged, required", homeAfterSetupMerge("required"), gate.RepoNotSetUp},
+		{"setup pull request open", onboarding.Setup{Mode: "unknown", State: "first_approval", FirstPull: 12, SetupPull: 12}, gate.RepoNotSetUp},
+		{"nothing on the default branch", onboarding.Setup{Mode: "unknown", State: "not_admitted"}, gate.RepoNotSetUp},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.grant("alice", repoName, permRead)
+			e.setups.out = tt.setup
+			alice := e.signIn("alice")
+			if got := rowNamed(decodeAs[overviewBody](t, alice.get("/api/repos")), repoName).State; got != gate.RepoNotSetUp {
+				t.Errorf("unprobed state = %q, want %q", got, gate.RepoNotSetUp)
+			}
+			if got := rowNamed(decodeAs[overviewBody](t, alice.get("/api/repos?probe=1")), repoName).State; got != tt.want {
+				t.Errorf("probed state = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }

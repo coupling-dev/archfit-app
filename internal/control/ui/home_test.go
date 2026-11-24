@@ -197,6 +197,14 @@ func TestHomeAPIGoldens(t *testing.T) {
 				}}}
 			e.gh.fail["BranchHead"] = errors.New("Home must return the existing setup answer without loading the map")
 		}},
+		{"advisory", homePolicy, func(_ *testing.T, e *env) {
+			e.setups.out = homeAfterSetupMerge("advisory")
+			e.gh.fail["BranchHead"] = errors.New("Home must return the advisory setup answer without loading the map")
+		}},
+		{"not-set-up-required", homePolicy, func(_ *testing.T, e *env) {
+			e.setups.out = homeAfterSetupMerge("required")
+			e.gh.fail["BranchHead"] = errors.New("Home must return the setup answer without loading the map")
+		}},
 		{"exception-seven-days", homeWithException("2026-11-17"), func(t *testing.T, e *env) {
 			homeEditRepo(t, e, func(rec map[string]any) {
 				rec["expiry_issues"] = map[string]any{"exception graph app other 2026-11-17": 74}
@@ -227,10 +235,13 @@ func TestHomeAPIGoldens(t *testing.T) {
 			if tt.setup != nil {
 				tt.setup(t, e)
 			}
-			if tt.name == "workflow-review" || tt.name == "workflow-change" || tt.name == "not-set-up" || tt.name == "approval-stale" {
+			if tt.name == "workflow-review" || tt.name == "workflow-change" || tt.name == "not-set-up" || tt.name == "approval-stale" ||
+				tt.name == "advisory" || tt.name == "not-set-up-required" {
+				first := tt.name == "not-set-up" || tt.name == "advisory" || tt.name == "not-set-up-required"
 				e.owners.review = func(a answers.OwnerAction, _ gate.OwnerUser) error {
 					if tt.name == "not-set-up" && a.Kind == gate.OwnerFirst && a.Pull == 12 ||
-						tt.name != "not-set-up" && a.Kind == gate.OwnerWorkflow && a.Pull > 0 {
+						first && tt.name != "not-set-up" && a.Kind == gate.OwnerFirst && a.Pull == 0 ||
+						!first && a.Kind == gate.OwnerWorkflow && a.Pull > 0 {
 						return nil
 					}
 					return gate.ErrOwnerNotDue
@@ -530,4 +541,15 @@ func TestHomeBodySaysNothingNeedsYouOnlyWhenNoSetupIsOpen(t *testing.T) {
 	if got := homeBody(view, setupJSON{}, nil, repoName, today); !strings.Contains(got.Status, "Nothing needs you.") {
 		t.Fatalf("nothing is open, but Home says %q", got.Status)
 	}
+}
+
+// homeAfterSetupMerge is the setup answer right after the setup pull request is merged: the policy (in mode) and the
+// workflow are on the default branch, and no owner has approved the first policy yet.
+func homeAfterSetupMerge(mode string) onboarding.Setup {
+	return onboarding.Setup{Mode: mode, Approval: gate.ApprovalSummary{Status: gate.ApprovalNeeded, Kind: gate.OwnerFirst},
+		Admitted: true, Policy: true, Workflow: true, State: "first_approval", Missing: []string{},
+		Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{
+			{Code: "pull_requests", State: "warning", Text: "Add a pull request rule to the default branch."},
+			{Code: "gate_check", State: "warning", Text: "Add the App's archfit/gate check as a required status check."},
+		}}}
 }
