@@ -19,6 +19,7 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/control/passkey"
 	"github.com/coupling-dev/archfit-app/internal/control/ui/session"
 	"github.com/coupling-dev/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/gate/approvals"
 	"github.com/coupling-dev/archfit-app/internal/gate/weekly"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
 	"github.com/coupling-dev/archfit-app/internal/store"
@@ -197,6 +198,14 @@ func TestHomeAPIGoldens(t *testing.T) {
 				}}}
 			e.gh.fail["BranchHead"] = errors.New("Home must return the existing setup answer without loading the map")
 		}},
+		{"advisory", homePolicy, func(_ *testing.T, e *env) {
+			e.setups.out = homeAfterSetupMerge("advisory")
+			e.gh.fail["BranchHead"] = errors.New("Home must return the advisory setup answer without loading the map")
+		}},
+		{"not-set-up-required", homePolicy, func(_ *testing.T, e *env) {
+			e.setups.out = homeAfterSetupMerge("required")
+			e.gh.fail["BranchHead"] = errors.New("Home must return the setup answer without loading the map")
+		}},
 		{"exception-seven-days", homeWithException("2026-11-17"), func(t *testing.T, e *env) {
 			homeEditRepo(t, e, func(rec map[string]any) {
 				rec["expiry_issues"] = map[string]any{"exception graph app other 2026-11-17": 74}
@@ -227,10 +236,13 @@ func TestHomeAPIGoldens(t *testing.T) {
 			if tt.setup != nil {
 				tt.setup(t, e)
 			}
-			if tt.name == "workflow-review" || tt.name == "workflow-change" || tt.name == "not-set-up" || tt.name == "approval-stale" {
+			if tt.name == "workflow-review" || tt.name == "workflow-change" || tt.name == "not-set-up" || tt.name == "approval-stale" ||
+				tt.name == "advisory" || tt.name == "not-set-up-required" {
+				first := tt.name == "not-set-up" || tt.name == "advisory" || tt.name == "not-set-up-required"
 				e.owners.review = func(a answers.OwnerAction, _ gate.OwnerUser) error {
 					if tt.name == "not-set-up" && a.Kind == gate.OwnerFirst && a.Pull == 12 ||
-						tt.name != "not-set-up" && a.Kind == gate.OwnerWorkflow && a.Pull > 0 {
+						first && tt.name != "not-set-up" && a.Kind == gate.OwnerFirst && a.Pull == 0 ||
+						!first && a.Kind == gate.OwnerWorkflow && a.Pull > 0 {
 						return nil
 					}
 					return gate.ErrOwnerNotDue
@@ -529,5 +541,60 @@ func TestHomeBodySaysNothingNeedsYouOnlyWhenNoSetupIsOpen(t *testing.T) {
 	}
 	if got := homeBody(view, setupJSON{}, nil, repoName, today); !strings.Contains(got.Status, "Nothing needs you.") {
 		t.Fatalf("nothing is open, but Home says %q", got.Status)
+	}
+}
+
+// homeAfterSetupMerge is the setup answer right after the setup pull request is merged: the policy (in mode) and the
+// workflow are on the default branch, and no owner has approved the first policy yet.
+func homeAfterSetupMerge(mode string) onboarding.Setup {
+	return onboarding.Setup{Mode: mode, Approval: gate.ApprovalSummary{Status: gate.ApprovalNeeded, Kind: gate.OwnerFirst},
+		Admitted: true, Policy: true, Workflow: true, State: "first_approval", Missing: []string{},
+		Rules: onboarding.RulesetReport{Findings: []onboarding.RulesetFinding{
+			{Code: "pull_requests", State: "warning", Text: "Add a pull request rule to the default branch."},
+			{Code: "gate_check", State: "warning", Text: "Add the App's archfit/gate check as a required status check."},
+		}}}
+}
+
+func TestHomeIsAdvisoryOnlyWhenAnAdvisoryPolicyAndWorkflowAreOnTheDefaultBranch(t *testing.T) {
+	for _, tt := range []struct {
+		state, mode string
+		admitted    bool
+		want        bool
+	}{
+		{"first_approval", "advisory", true, true},
+		{"first_approval", "required", true, false},
+		{"first_approval", "unknown", true, false},
+		{"first_approval", "advisory", false, false},
+		{"approved", "advisory", true, false},
+		{"outside_flow", "advisory", true, false},
+		{"not_admitted", "advisory", false, false},
+	} {
+		if got := advisoryBeforeApproval(tt.state, tt.mode, tt.admitted); got != tt.want {
+			t.Errorf("advisoryBeforeApproval(%q, %q, %v) = %v, want %v", tt.state, tt.mode, tt.admitted, got, tt.want)
+		}
+	}
+}
+
+func TestHomeAdvisoryNamesTheFirstApprovalOnlyWhileItIsToGive(t *testing.T) {
+	const next = "Next: approve the first policy"
+	for _, tt := range []struct {
+		approval approvals.Status
+		named    bool
+	}{
+		{gate.ApprovalNeeded, true},
+		{gate.ApprovalStale, true},
+		{gate.ApprovalPending, false},
+		{gate.ApprovalUnknown, false},
+	} {
+		e := newHomeEnv(t, homePolicy)
+		e.setups.out = homeAfterSetupMerge("advisory")
+		e.setups.out.Approval.Status = tt.approval
+		if tt.approval == gate.ApprovalPending {
+			e.setups.out.Approval.Pull, e.setups.out.Approval.CurrentHead, e.setups.out.Approval.ApprovedHead = 12, sha(3), sha(3)
+		}
+		body := decodeAs[homeJSON](t, e.as("alice", permAdmin).get(homeAPI))
+		if body.State != homeStateAdvisory || strings.Contains(body.Status, next) != tt.named {
+			t.Errorf("%s: state %q, status %q", tt.approval, body.State, body.Status)
+		}
 	}
 }

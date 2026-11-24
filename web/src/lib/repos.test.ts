@@ -8,6 +8,7 @@ describe('repository state and archfit/gate words', () => {
     ['drift', 'drift'],
     ['expired', 'expired'],
     ['policy changed outside the flow', 'changed outside the flow'],
+    ['advisory', 'advisory'],
     ['not set up', 'not set up'],
     ['unknown', 'unknown'],
     ['not admitted', 'not admitted'],

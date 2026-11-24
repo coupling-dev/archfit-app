@@ -214,17 +214,28 @@ for (const passkey of [true, false]) {
   test(`owner: passkey guidance with registered passkey = ${passkey}`, async ({ page }) => {
     const body = { ...fixture('workflow'), passkey };
     const path = root + 'workflow?pull=7';
-    await open(page, path, { [`GET ${api}owner/workflow/view`]: () => [200, body] });
-    const register = page.getByRole('link', { name: 'Register a passkey' });
+    const requests: unknown[] = [];
+    await open(page, path, {
+      [`GET ${api}owner/workflow/view`]: () => [200, body],
+      [`POST ${api}passkeys/confirmation`]: (sent) => {
+        requests.push(sent);
+        return [200, { attempt: 'attempt-one', installation: 7 }];
+      },
+    });
+    const register = page.getByRole('link', { name: 'Register your passkey' });
     const manage = page.getByRole('link', { name: 'Manage your passkeys' });
+    const notice = page.getByText('Approving needs a passkey. Your first passkey needs a one-time token from an Archfit operator: request it now.', { exact: true });
     if (passkey) {
       await expect(manage).toHaveAttribute('href', '/r/acme/app/passkeys');
       await expect(register).toHaveCount(0);
-      await expect(page.getByText('No passkey yet?', { exact: false })).toHaveCount(0);
+      await expect(notice).toHaveCount(0);
     } else {
       await expect(register).toHaveAttribute('href', '/r/acme/app/passkeys?return=' + encodeURIComponent(path));
       await expect(manage).toHaveCount(0);
-      await expect(page.getByText('No passkey yet?', { exact: false })).toBeVisible();
+      await expect(notice).toBeVisible();
+      await page.getByRole('button', { name: 'Request the token' }).click();
+      await expect(page.getByText('installation 7, attempt attempt-one', { exact: false })).toBeVisible();
+      expect(requests).toEqual([{}]);
     }
     await expect(page.getByRole('button', { name: ownerButton(body.kind), exact: true })).toBeEnabled();
     await expectClean(page);

@@ -122,7 +122,10 @@ with the list open. Browser tests assert zero worker requests before the diagram
 
 For an approved repository the response has `state` (`clean`, `drift`, `expired`, `outside_flow`, `not_set_up` or
 `unknown`; the first that holds, in the order outside the flow, expired, drift, unknown, clean, wins), `status` (the sentence that says what the state means and
-what waits), optional `needs_you` rows, and `map`. A setup answer has `state: not_set_up` and a `setup` block. Each row has
+what waits), optional `needs_you` rows, and `map`. A setup answer has a `setup` block and `state: advisory` when the
+default branch has a valid advisory policy and an accepted workflow but no approved first policy (the gate checks its
+pull requests without blocking them), else `state: not_set_up`. The repositories list probe says `advisory` for the
+same case and leaves the stored `not set up` otherwise. Each row has
 `kind`, `text`, `href`, and the applicable request, pull, rule, modules, expiry date, days left or request record.
 Requests link to `/r/{o}/{n}/requests/{number}`. Drift and expiry link to their GitHub issue, falling back to
 Policy before the sweep opens one. Owner actions link to `/r/{o}/{n}/owner/{workflow|confirm|revert}`;
