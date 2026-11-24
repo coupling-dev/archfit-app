@@ -45,7 +45,7 @@
     {#if hasPolicy}<a class="btn" href={repoPage(route.fullName, '/policy')}>View policy</a>{/if}
     </div>
   {/snippet}
-  {#if action?.needsPasskey}<p id="home-review-note" class="muted">Approval needs your passkey.</p>{/if}
+  {#if action?.needsPasskey}<p id="home-review-note" class="muted">{body?.setup?.passkey_known && !body.setup.passkey ? 'Approving needs a passkey. Step 3 below starts the request for your first one.' : 'Approval needs your passkey.'}</p>{/if}
 </PageHead>
 {#if !body && !failure}<Skeleton rows={5} />{/if}
 {#if body?.needs_you.length}

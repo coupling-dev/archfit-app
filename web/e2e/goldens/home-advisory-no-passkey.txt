@@ -1,0 +1,49 @@
+acme/app
+advisory
+
+Advisory checks are on: they report on each pull request and do not block a merge. Next: approve the first policy; an owner can answer requests after that. Then make the check required.
+
+Approving needs a passkey. Step 3 below starts the request for your first one.
+
+Review proposed files
+View policy
+Set up Archfit
+
+Next: review owner approval
+
+2 of 4 done
+✓
+1 · Add the policy
+done
+Details
+✓
+2 · Open a pull request with both files
+done
+Details
+3
+3 · Owner approval
+
+The owner approves the policy with a passkey. The approval covers these exact files; any later edit needs a new approval.
+
+to do
+
+Review the proposed files before approving.
+
+Approving needs a passkey. Your first passkey needs a one-time token from an Archfit operator: request it now.
+
+Request the token
+
+Send the operator this attempt through the private channel you used to join the beta: installation 7, attempt attempt-one.
+
+Register your passkey when the token arrives. It is valid for 10 minutes. You can read the review without a passkey.
+
+Why a passkey?
+4
+4 · Require the archfit/gate check
+
+This week: counts unavailable
+
+GitHub does not merge a change until archfit/gate passes on the default branch.
+
+to do
+Show this step

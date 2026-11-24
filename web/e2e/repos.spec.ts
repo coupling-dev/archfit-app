@@ -161,3 +161,19 @@ for (const width of [1280, 390]) {
     await expect(page.locator('th[scope="colgroup"]')).toHaveCount(0);
   });
 }
+
+test('repositories: an advisory row is not counted as not set up', async ({ page }) => {
+  const row = (name: string, state: string, next: string) => ({
+    full_name: `acme/${name}`, state, setup_stage: 'first_approval', enforcement: 'not_required',
+    next_step: { text: next, href: `/r/acme/${name}` },
+  });
+  await open(page, '/repositories', {
+    repos: { repos: [row('advisory', 'advisory', 'Review first policy'), row('not-set-up', 'not set up', 'Continue setup')], truncated: false },
+  });
+  await expect(page.getByText('advisory', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Not set up', exact: true }).click();
+  await expect(page.getByText('Showing 1 of 2 repositories.')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'acme/not-set-up' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'acme/advisory' })).toHaveCount(0);
+  await expectClean(page);
+});

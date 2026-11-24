@@ -15,7 +15,7 @@ describe('status words', () => {
   });
 
   it('gives the other repository states no colour', () => {
-    for (const word of ['clean', 'drift', 'changed outside the flow', 'not set up'])
+    for (const word of ['clean', 'drift', 'changed outside the flow', 'advisory', 'not set up'])
       expect(statusStyle(word)).toEqual({ tone: 'neutral', icon: 'dot' });
   });
 

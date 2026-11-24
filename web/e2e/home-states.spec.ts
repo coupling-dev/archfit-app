@@ -11,6 +11,7 @@ const states = [
   ['drift', 'drift'],
   ['workflow-change', 'workflow-change'],
   ['unknown', 'partial-evidence'],
+  ['advisory', 'advisory'],
   ['not-set-up', 'not-set-up'],
 ] as const;
 const fixture = (name: string) =>

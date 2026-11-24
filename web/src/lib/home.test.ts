@@ -288,9 +288,11 @@ describe('repository state', () => {
       'drift',
       'expired',
       'changed outside the flow',
+      'advisory',
       'not set up',
       'unknown',
     ]);
+    expect(readHome({ state: 'advisory', status: 'x', needs_you: [] }).state).toBe('advisory');
     expect(readHome({ state: 'outside_flow', status: 'x', needs_you: [] }).state).toBe('outside_flow');
     expect(readHome({ status: 'clean', needs_you: [] }).state).toBe('unknown');
   });
@@ -403,6 +405,7 @@ describe('repository state', () => {
       'drift',
       'expired',
       'changed outside the flow',
+      'advisory',
       'not set up',
       'unknown',
     ]);

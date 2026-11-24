@@ -2,21 +2,7 @@
 
 This guide is for repository administrators and policy owners using Archfit 4. The App checks changes against `.archfit.yaml` on the protected default branch. It records owner answers and carries policy changes in a pull request. See [architecture](architecture.md) for the trust boundary and failure handling.
 
-The checked-in [release manifest](../internal/wire/manifest/manifest4.json) approves engine v0.9.0 and Action v0.9.0 by their exact identities.
-
-## First-passkey operator confirmation
-
-Before registering a first passkey, open **Passkeys**, select **Request confirmation**, and send the installation and attempt IDs through the trusted private channel used for beta admission. A GitHub sign-in alone does not authorize registration. A configured Archfit operator verifies your GitHub identity through that channel, then issues a token. Enter it in **Token from the operator** and select **Confirm and register a passkey**. The browser prompts immediately; registration returns to the approval page when you arrived from it.
-
-The token is single-use and valid for 10 minutes. A pending request can be issued for 30 minutes. Five wrong tokens lock the attempt for 15 minutes. If registration is canceled or fails after confirmation, request confirmation again and have the operator issue a token for that new attempt; the earlier token may already be consumed and cannot be reissued. If an unused token is lost or exposed, ask the operator to revoke and reissue; never put tokens in a URL, GitHub issue, pull request, ticket, shared document or screenshot.
-
-### Operator runbook
-
-Only configured immutable GitHub operator IDs can use the existing **Admin** page and its confirmation controls. Find the attempt by its installation and attempt IDs. Verify the numeric GitHub user and repository shown against the owner you know through the established private admission channel; do not trust a contact address supplied in the request. If identity or channel is unclear, do not issue.
-
-After verification select **Issue token** and send the one-time value only through that private channel. It appears once; **Hide token** clears it. Lookup never returns it again. If lost or exposed, select **Revoke token** and issue another after any lock expires. Issuing another invalidates the previous token. Operators never register a credential on the owner's behalf. Audit records contain issue, validation, revocation, lockout and registration events without tokens.
-
-The public algorithm is standard: exactly 16 random bytes from Go crypto/rand.Read, encoded as 22 unpadded base64url characters; only SHA-256(token) is stored. TLS, authenticated scope binding, constant-time hash comparison and atomic single use provide security, not secrecy of this algorithm.
+The App accepts the engine releases and Action commits that its [release manifest](../internal/wire/manifest/manifest4.json) lists, by their exact identities. A workflow that pins another Action commit gets no verdict. Operators admit installations and confirm first passkeys; their steps are in the [operator guide](operator-guide.md).
 
 ## Install and set up
 
@@ -64,8 +50,9 @@ GitHub. A policy-push row appears only when it applies to the repository.
 When setup is complete, Home shows one line, **Setup complete · archfit/gate required**, with the details behind a
 disclosure.
 
-With no passkey, **Register a passkey to approve** does not prevent reading the review. An unreadable
-passkey inventory is shown separately from an empty inventory. **Manage passkeys** is a secondary link.
+With no passkey, step 3 says that your first passkey needs a one-time token from an Archfit operator and offers
+**Request the token** (see [Register a passkey](#register-a-passkey)). This does not prevent reading the review. An
+unreadable passkey inventory is shown separately from an empty inventory. **Manage passkeys** is a secondary link.
 
 Step 2, **Open a pull request with both files**, is done when an existing setup pull request is open or when both
 files are already on the default branch. That does not mean the pull request is approved or merged. **View pull
@@ -78,11 +65,13 @@ For a workflow change, an owner named in the approved policy can follow the revi
 ## Repositories
 
 Open `/repositories` after signing in to choose a repository. Each row shows the repository's **State** (`clean`, `drift`,
-`expired`, `changed outside the flow`, `not set up` or `unknown`) and its **archfit/gate** check: **required** when
+`expired`, `changed outside the flow`, `advisory`, `not set up` or `unknown`) and its **archfit/gate** check: **required** when
 GitHub requires pull requests and the check on the default branch, **not required** when either is confirmed off,
 and **not confirmed** when the App could not confirm it. The rows appear first; **Checking…** stands in the
 **archfit/gate** column until the App has read each repository's settings, and the check and **Next step** fill in
-then. A **Next step** appears only while setup is incomplete.
+then. A **Next step** appears only while setup is incomplete. **advisory** appears with the check, as on Home: before
+the check is read, such a repository shows **not set up**. The App reads the check of the first 25 repositories; the
+others keep **not set up**. The **Not set up** filter does not list **advisory** rows.
 Open `/` for **Needs you**, the owner queue across repositories. Each row names the step
 (**Review the workflow change #413**, **Confirm the policy**), the repository, how long it has waited, and links to the
 page that resolves it, so you need no URL. The longest wait is first. A step with no recorded time, such as a policy
@@ -100,7 +89,7 @@ passkey pages are always read fresh.
 ## Home and the map
 
 Open `/r/<owner>/<repo>` for **Home**. The title is the repository. Under it, one status shows the repository
-state (`clean`, `drift`, `expired`, `changed outside the flow`, `not set up` or `unknown`) and one sentence that
+state (`clean`, `drift`, `expired`, `changed outside the flow`, `advisory`, `not set up` or `unknown`) and one sentence that
 says what it means. Next to the title sit at most two buttons. The primary button is the oldest item that waits
 for you, such as **Review workflow change**, or else the action of the setup step you are on, such as
 **Create a pull request on GitHub** or **Open ruleset settings**. With nothing to do there is no primary
@@ -112,7 +101,14 @@ Owner steps come first in **Needs you**, so the primary button is the oldest own
 exceptions near their date, drift and owner actions, one row each with an icon for its kind. Each item opens its
 page, or its GitHub issue. A request's record folds away. Setup comes after **Needs you**. Before the first
 policy is approved, Home shows the setup steps, what is missing and the ruleset advice instead of the map.
-The review link opens a read-only page; the note under the status says that approval needs your passkey.
+The review link opens a read-only page; the note under the status says that approval needs your passkey, or, when
+you have none yet, that step 3 starts the request for your first one.
+
+After the setup pull request is merged, an advisory policy and the workflow are on the default branch, and the
+checks report on each pull request without blocking a merge. Home then says **advisory**: _Advisory checks are on:
+they report on each pull request and do not block a merge. Next: approve the first policy; an owner can answer
+requests after that. Then make the check required._ A required policy that no owner approved stays **not set up**:
+its checks give no verdict until the approval.
 Owner actions open the pages below.
 
 ![Home: a request and the map](images/home.png)
@@ -370,18 +366,22 @@ Its **Repositories** link returns to `/`. For a repository you can see, a missin
 
 ![Passkeys page](images/passkeys.png)
 
+Your first passkey needs a one-time token from an Archfit operator. Home's owner-approval step and the owner page
+say so before you approve, and their **Request the token** starts the request; **Passkeys** offers the same as
+**Request confirmation**, and returns the same attempt. Send the installation and attempt IDs through the private
+channel you used to join the beta. The operator confirms who you are and sends a token. Enter it in **Token from
+the operator** and select **Confirm and register a passkey**; the browser prompts at once. The token is single-use and
+valid for 10 minutes, and five wrong tokens lock the attempt for 15 minutes. If registration fails after
+confirmation, request confirmation again and ask for a token for the new attempt. Never put a token in a URL, a GitHub
+issue, a pull request, a ticket, a shared document or a screenshot. The operator's steps are in the
+[operator guide](operator-guide.md).
+
 Open `/r/<owner>/<repo>/passkeys` after signing in. Your passkeys work in every repository of this account where the policy names you as owner. They do not grant access or an owner role. A policy owner can register a passkey; before the first policy, a repository administrator can register one. Follow the browser's registration prompt. Registration opens a GitHub issue notifying the user and owners. A second passkey and each removal require an existing passkey. The App uses user verification for the assertion; it does not prove that the owner read the request.
 
 Each passkey is listed by the date it was added, its last use, and a short ID. **Remove** names its passkey for screen readers.
 Removing your last passkey needs a confirmation with an existing passkey and opens an issue for the owners. The sentence beside **Remove** says you need a passkey to confirm an approval.
 
 The Owner and Policy editor links preserve their return path. After successful registration, the App returns to that page, where you must still read and confirm the action. The passkey page also accepts `?return=` with an encoded same-repository request, owner action, or policy-editor path. Other destinations are ignored; failed registration never redirects.
-
-## Installation administration
-
-Operators use `/admin` (**Installations**) to admit or revoke installations, separately from policy approval. **Managed by configuration** marks an account whose admission is set in the App settings by pull request; the page says so once and cannot change it. Revocation help appears only when at least one row can be revoked. Revocation still asks for confirmation and stops checks from the account's next event; existing GitHub checks remain.
-
-Repository names become App links only when the signed-in user's repository list grants access. Installation visibility alone does not grant repository access. An empty or unreadable access list leaves names as text.
 
 ## Answer a request
 
