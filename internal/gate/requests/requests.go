@@ -20,9 +20,11 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/github/api"
 	"github.com/coupling-dev/archfit-app/internal/store"
 	"github.com/coupling-dev/archfit-app/internal/wire/envelope"
+	"github.com/coupling-dev/archfit-app/internal/wire/manifest"
 	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 	"github.com/coupling-dev/archfit-app/internal/wire/request"
 	"github.com/coupling-dev/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/wire/workflow"
 )
 
 const (
@@ -34,6 +36,7 @@ const (
 	// maxResultBytes is the upload's size cap: no result the App accepted is larger.
 	maxResultBytes = 5 << 20
 	policyPath     = ".archfit.yaml"
+	workflowPath   = ".github/workflows/archfit.yaml"
 	gateRequired   = "required"
 	stateOpen      = "open"
 	// maxAssignees is GitHub's limit of assignees per issue.
@@ -51,6 +54,10 @@ const (
 	ReactionAnswered = "request_answered" // a deny rule already answers it, or the same request was asked
 	ReactionFiled    = "request_filed"    // a CLI issue became a request
 )
+
+// ReactionOtherEndpoint is the reaction to a request line when the default branch's workflow does not send its
+// results to this App: no reply, the log says why.
+const ReactionOtherEndpoint = "request_other_endpoint"
 
 // The permissions that may ask without having written the pull request (M2 D21).
 var mayAsk = []string{"admin", "write"}
@@ -74,12 +81,14 @@ type Service struct {
 	gh        GitHub
 	store     store.Store
 	publisher feedback.Publisher4
+	appURL    string
 }
 
 // New returns the service. publisher is the gate's Archfit 4 publisher, so a waiting check shares the head's lease
-// with uploads.
-func New(gh GitHub, s store.Store, p feedback.Publisher4) *Service {
-	return &Service{gh: gh, store: s, publisher: p}
+// with uploads. appURL is the App's base URL: a request line is answered only when the workflow sends its results
+// there.
+func New(gh GitHub, s store.Store, p feedback.Publisher4, appURL string) *Service {
+	return &Service{gh: gh, store: s, publisher: p, appURL: appURL}
 }
 
 // Comment is a comment created on a pull request.
@@ -130,6 +139,13 @@ func (s *Service) Comment(ctx context.Context, c Comment) (string, error) {
 	}
 	if pl.State != stateOpen || c.Repo.DefaultBranch == "" || pl.BaseRef != c.Repo.DefaultBranch {
 		return ReactionIgnored, nil
+	}
+	here, err := s.reportsHere(ctx, c.Repo, c.Pull)
+	if err != nil {
+		return ReactionNone, err
+	}
+	if !here {
+		return ReactionOtherEndpoint, nil
 	}
 	allowed := strings.EqualFold(c.Author, pl.Author)
 	if !allowed {
@@ -213,6 +229,37 @@ func (s *Service) Comment(ctx context.Context, c Comment) (string, error) {
 		return ReactionAnswered, nil
 	}
 	return ReactionAsked, nil
+}
+
+// reportsHere reports whether the workflow at the default branch's tip sends its results to this App: its Action
+// step's `endpoint` is the App's base URL, byte for byte, as the upload's audience is. The default branch is read, as
+// for the policy, so a pull request cannot silence the App by changing its own workflow. With two Apps on one
+// repository only the one that gets the results answers; the other stays silent and logs why. A workflow without an
+// endpoint sends nothing (the Action's default is check only), so no App answers. An expression cannot be compared,
+// so the App answers as it did before it read the workflow.
+func (s *Service) reportsHere(ctx context.Context, r api.Repo, pull int) (bool, error) {
+	tip, err := s.gh.BranchHead(ctx, r.RepoRef, r.DefaultBranch)
+	if err != nil {
+		return false, fmt.Errorf("requests: read the default branch head: %w", err)
+	}
+	raw, _, err := s.gh.File(ctx, r.RepoRef, tip, workflowPath)
+	if err != nil && !errors.Is(err, api.ErrNotFound) {
+		return false, fmt.Errorf("requests: read the workflow: %w", err)
+	}
+	endpoint, ok := workflow.ActionEndpoint(raw, manifest.ActionRepository)
+	log := func(msg string) {
+		slog.Default().InfoContext(ctx, msg, "installation_id", r.InstallationID, "repository", r.FullName,
+			"pull", pull, "workflow_endpoint", endpoint, "app_url", s.appURL)
+	}
+	switch {
+	case ok && endpoint == s.appURL:
+		return true, nil
+	case ok && strings.Contains(endpoint, "${{"):
+		log("request answered: the workflow endpoint is an expression")
+		return true, nil
+	}
+	log("request not answered: the workflow does not send its results to this App")
+	return false, nil
 }
 
 // group is the asked errors of one request key, in record order.

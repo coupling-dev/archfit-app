@@ -99,7 +99,7 @@ func newPreviewWorld(t *testing.T) *previewWorld {
 	t.Helper()
 	gh := &previewGH{policy: []byte(previewPolicy)}
 	mem := store.NewMemory()
-	return &previewWorld{t: t, gh: gh, mem: mem, svc: New(gh, mem, nil)}
+	return &previewWorld{t: t, gh: gh, mem: mem, svc: New(gh, mem, nil, "")}
 }
 
 func graphError() result.Error {
