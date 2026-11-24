@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"github.com/coupling-dev/archfit-app/internal/gate/feedback"
+	"github.com/coupling-dev/archfit-app/internal/gate/ingest"
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
 	"github.com/coupling-dev/archfit-app/internal/github/webhook"
 	"github.com/coupling-dev/archfit-app/internal/store"
+	"github.com/coupling-dev/archfit-app/internal/wire/manifest"
 	"github.com/coupling-dev/archfit-app/internal/wire/policy3"
 	"github.com/coupling-dev/archfit-app/internal/wire/request"
 	"github.com/coupling-dev/archfit-app/internal/wire/wording"
@@ -358,6 +360,95 @@ func TestACommentWithoutARequestLineWritesNothing(t *testing.T) {
 	w.ask(p, workerLogin, "please /archfit request it for me")
 	if w.gh.writes() != writes || len(w.gh.issues[shopName]) != 0 {
 		t.Error("a comment without a request line wrote something")
+	}
+}
+
+// workflowWith is a workflow whose Action step has the given `with:` lines.
+func workflowWith(with string) []byte {
+	return []byte("jobs:\n  check:\n    steps:\n      - uses: " + manifest.ActionRepository + "@" + actionPinned + "\n" + with)
+}
+
+// Two Apps installed on one repository both get the comment. Only the App whose base URL is the endpoint of the
+// default branch's workflow answers; the other stays silent and logs why.
+func TestOnlyTheAppTheWorkflowReportsToAnswersARequestLine(t *testing.T) {
+	const staging = "https://app-staging.coupling.dev"
+	tests := []struct {
+		name     string
+		workflow []byte // on the default branch; nil: no workflow file
+		head     []byte // on the pull request's head; nil: as the default branch
+		answers  bool
+		logged   string
+	}{
+		{name: "this App", workflow: workflowWith("        with:\n          endpoint: " + testAudience + "\n"), answers: true},
+		{name: "another App", workflow: workflowWith("        with:\n          endpoint: " + staging + "\n"),
+			logged: `"workflow_endpoint":"` + staging + `"`},
+		{name: "another App with a trailing slash", workflow: workflowWith("        with:\n          endpoint: " + testAudience + "/\n"),
+			logged: `"workflow_endpoint":"` + testAudience + `/"`},
+		{name: "an empty endpoint", workflow: workflowWith("        with:\n          endpoint: \"\"\n"),
+			logged: `"workflow_endpoint":""`},
+		{name: "no endpoint: the Action checks only", workflow: workflowWith(""), logged: `"workflow_endpoint":""`},
+		{name: "no workflow", logged: `"workflow_endpoint":""`},
+		{name: "a head that names another App", workflow: workflowWith("        with:\n          endpoint: " + testAudience + "\n"),
+			head: workflowWith("        with:\n          endpoint: " + staging + "\n"), answers: true},
+		{name: "a head that names this App", workflow: workflowWith("        with:\n          endpoint: " + staging + "\n"),
+			head: workflowWith("        with:\n          endpoint: " + testAudience + "\n"), logged: staging},
+		{name: "an expression", workflow: workflowWith("        with:\n          endpoint: ${{ vars.ARCHFIT_URL }}\n"),
+			answers: true, logged: `"msg":"request answered: the workflow endpoint is an expression"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newAskWorld(t)
+			p := w.pullBy(7)
+			w.uploadAsk(p, "graph", "fail")
+			if tt.workflow == nil {
+				delete(w.gh.files, fileKey(shopName, testBranch, ingest.WorkflowPath))
+			} else {
+				w.setFile(w.shop, testBranch, ingest.WorkflowPath, tt.workflow)
+			}
+			if tt.head != nil {
+				w.setFile(w.shop, p.head, ingest.WorkflowPath, tt.head)
+			}
+			logs := captureLogs(t)
+			writes := w.gh.writes()
+			w.ask(p, workerLogin, "/archfit request tc needs it")
+
+			out := logs.String()
+			if !strings.Contains(out, tt.logged) {
+				t.Errorf("logs lack %s:\n%s", tt.logged, out)
+			}
+			if tt.answers {
+				w.wantWaiting(p, "waiting, request #1000")
+				if reply := w.lastReply(7); !strings.Contains(reply, "- #1000: a new request") {
+					t.Errorf("reply:\n%s", reply)
+				}
+				return
+			}
+			if w.gh.writes() != writes || len(w.gh.issues[shopName]) != 0 {
+				t.Error("an App the workflow does not report to wrote something")
+			}
+			if !strings.Contains(out, `"reaction":"request_other_endpoint"`) ||
+				!strings.Contains(out, `"msg":"request not answered: the workflow does not send its results to this App"`) ||
+				!strings.Contains(out, `"app_url":"`+testAudience+`"`) || strings.Contains(out, "tc needs it") {
+				t.Errorf("logs:\n%s", out)
+			}
+			w.wantFailure(p)
+		})
+	}
+}
+
+func TestAnUnreadWorkflowIsRetriedWithoutAReply(t *testing.T) {
+	w := newAskWorld(t)
+	p := w.pullBy(7)
+	w.uploadAsk(p, "graph", "fail")
+	w.gh.failPath = map[string]error{ingest.WorkflowPath: errors.New("github: 503")}
+	writes := w.gh.writes()
+	e := w.event(webhook.PullCommented, p)
+	e.CommentID, e.Author, e.AuthorType, e.Body = 9007, workerLogin, "User", "/archfit request tc needs it"
+	if err := w.gate.HandleEvent(context.Background(), e); err == nil {
+		t.Fatal("HandleEvent succeeded with an unread workflow; want an error, so the delivery is retried")
+	}
+	if w.gh.writes() != writes || len(w.gh.issues[shopName]) != 0 {
+		t.Error("a request line with an unread workflow wrote something")
 	}
 }
 

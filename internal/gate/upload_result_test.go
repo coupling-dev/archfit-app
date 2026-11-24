@@ -40,7 +40,7 @@ const (
 func workflow4(commit, comment string, extra ...string) []byte {
 	return []byte("name: archfit\non: [pull_request, push, merge_group]\npermissions:\n  id-token: write\njobs:\n  check:\n" +
 		"    runs-on: ubuntu-latest\n    steps:\n      - uses: " + manifest.ActionRepository + "@" + commit + comment + "\n" +
-		strings.Join(extra, ""))
+		"        with:\n          endpoint: " + testAudience + "\n" + strings.Join(extra, ""))
 }
 
 // world4 is the world with an onboarded Archfit 4 repository: a policy and the workflow on the default
