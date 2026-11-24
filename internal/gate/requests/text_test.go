@@ -15,11 +15,14 @@ const githubBodyLimit = 65_536
 
 func TestEveryTextUsesNoNotUsedWordAndIsNoRequest(t *testing.T) {
 	texts := map[string]string{
-		"no result":   textNoResult,
-		"no policy":   textNoPolicy,
-		"answered":    answeredReply(answered{what: "a -> b", rule: "no-a-to-b", instead: "use c"}),
-		"duplicate":   duplicateReply(431),
-		"joined note": joinedNote(7),
+		"no result":      textNoResult,
+		"no policy":      textNoPolicy,
+		"held":           textHeld,
+		"held, new head": textHeldNewHead,
+		"held, pass":     textHeldPass,
+		"answered":       answeredReply(answered{what: "a -> b", rule: "no-a-to-b", instead: "use c"}),
+		"duplicate":      duplicateReply(431),
+		"joined note":    joinedNote(7),
 		"reply": outcome{opened: []int{1}, joined: []int{2}, left: 3,
 			answered: []answered{{what: "a -> b", rule: "no-a-to-b", instead: "use c"}}}.reply(true),
 		"reply of one": outcome{opened: []int{1}, left: 1}.reply(false),

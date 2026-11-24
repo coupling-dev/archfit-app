@@ -24,6 +24,7 @@ func TestKeyLayout(t *testing.T) {
 		{records.RecoveredPushKey(repoName, "merge"), "v4/recovered-push/acme/shop/merge"},
 		{records.PullKey(repoName, 7), "v4/pull/acme/shop/7"},
 		{records.PullIndexKey(repoName), "v4/pull-index/acme/shop"},
+		{records.HeldRequestKey(repoName, 7), "v4/held-request/acme/shop/7"},
 		{records.ReposKey, "v4/repos"},
 	}
 	for _, tt := range tests {
@@ -63,6 +64,11 @@ func TestValuesRoundTrip(t *testing.T) {
 			ExpectedDigest: "sha256:cc", State: records.StateMerged, Commit: "def"}, &records.Proposal{}, records.SchemaProposal},
 		{"pull", &records.Pull{HeadSHA: "abc", RunID: 123456789012, RunAttempt: 2, PayloadDigest: "sha256:dd",
 			Status: "waiting", Errors: []string{"graph a b"}}, &records.Pull{}, records.SchemaPull},
+		{"advisory pull", &records.Pull{HeadSHA: "abc", RunID: 1, Status: "fail", Coverable: true, Advisory: true},
+			&records.Pull{}, records.SchemaPull},
+		{"held request", &records.HeldRequest{HeadSHA: "abc", Author: "worker", Reason: "a needs b <now>",
+			Expires: "2027-01-01", Today: "2026-11-24", CreatedAt: "2026-11-24T12:00:00Z"}, &records.HeldRequest{},
+			records.SchemaHeldRequest},
 		{"policy push", &records.PolicyPush{Digest: "sha256:ee", Proposal: "p1", Unguarded: true}, &records.PolicyPush{}, records.SchemaPolicyPush},
 		{"index", &records.Index{Schema: records.SchemaRequestIndex, Entries: []records.Entry{{Key: "a", ID: "1"}, {Key: "b", ID: "2"}}},
 			&records.Index{Schema: records.SchemaRequestIndex}, records.SchemaRequestIndex},

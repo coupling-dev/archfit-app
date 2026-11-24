@@ -242,7 +242,7 @@ func TestARequestLineIsRefusedWithOneReply(t *testing.T) {
 	}{
 		{"an author without permission", "graph", true, "stranger", "read", "/archfit request why", "a request counts only from the author"},
 		{"a deny-mode error", "deny", true, workerLogin, "", "/archfit request why", "pkg/chaos/netem/netem.go:8: no-chaos-to-runtime"},
-		{"no result yet", "graph", false, workerLogin, "", "/archfit request why", "no checked result for its head"},
+		{"an author without permission before the result", "graph", false, "stranger", "read", "/archfit request why", "a request counts only from the author"},
 		{"no reason", "graph", true, workerLogin, "", "/archfit request", "a request needs a reason"},
 		{"a past date", "graph", true, workerLogin, "", "/archfit request why --expires 2020-01-01", "`--expires` needs a date"},
 	}
@@ -279,8 +279,7 @@ func TestARequestLineNeedsTheVerifiedResultOfTheHead(t *testing.T) {
 			raw := w.gh.artifacts[p.runID]
 			w.gh.artifacts[p.runID] = append(slices.Clone(raw), ' ')
 		},
-		"an artifact that is gone":  func(w *world4, p *pull) { delete(w.gh.artifacts, p.runID) },
-		"a result of an older head": func(w *world4, p *pull) { w.push(p) },
+		"an artifact that is gone": func(w *world4, p *pull) { delete(w.gh.artifacts, p.runID) },
 	}
 	for name, breakIt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -294,6 +293,9 @@ func TestARequestLineNeedsTheVerifiedResultOfTheHead(t *testing.T) {
 			}
 			if n := len(w.gh.issues[shopName]); n != 0 {
 				t.Errorf("%d issues opened", n)
+			}
+			if _, ok := w.held(p); ok {
+				t.Error("a line on a checked head is held")
 			}
 		})
 	}

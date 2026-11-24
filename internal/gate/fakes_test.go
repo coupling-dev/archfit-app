@@ -56,6 +56,8 @@ type fakeGitHub struct {
 	// beforeCheckWrite runs once, unlocked, at the start of the next check run create or update: what it does
 	// happens after that publisher's reads and before its first write.
 	beforeCheckWrite func()
+	// onPull runs, locked, at the start of every Pull read; it must not call the fake.
+	onPull func()
 }
 
 // checkWriteHook takes the one-shot beforeCheckWrite hook and runs it outside the lock.
@@ -244,6 +246,9 @@ func (f *fakeGitHub) Pull(_ context.Context, r api.RepoRef, number int) (api.Pul
 	defer f.mu.Unlock()
 	if err := f.enter("Pull", r); err != nil {
 		return api.Pull{}, err
+	}
+	if f.onPull != nil {
+		f.onPull()
 	}
 	p, ok := f.pulls[pullKey(r.FullName, number)]
 	if !ok {
@@ -693,6 +698,7 @@ const (
 	pullRecordKeyPrefix      = "v4/pull/"  // the envelope 2 pull records (M2 D6)
 	pullIndexKeyPrefix       = "v4/pull-index/"
 	requestKeyPrefix         = "v4/request/" // the requests of M2 task 16
+	heldRequestKeyPrefix     = "v4/held-request/"
 	requestIndexKeyPrefix    = "v4/request-index/"
 	answerKeyPrefixes        = "v4/approval/ v4/proposal/ v4/proposal-index/ v4/proposal-lease/" // M2 task 19
 	pushKeyPrefixes          = "v4/repo/ v4/policy-push/ v4/recovered-push/"                     // M2 task 20
@@ -709,7 +715,7 @@ func isRecord(key string) bool {
 
 // isV4Record is a pull record or a request of Archfit 4, or their index.
 func isV4Record(key string) bool {
-	prefixes := []string{"v4/weekly/", "v4/publication/", pullRecordKeyPrefix, pullIndexKeyPrefix, requestKeyPrefix, requestIndexKeyPrefix}
+	prefixes := []string{"v4/weekly/", "v4/publication/", pullRecordKeyPrefix, pullIndexKeyPrefix, requestKeyPrefix, requestIndexKeyPrefix, heldRequestKeyPrefix}
 	prefixes = append(prefixes, strings.Fields(answerKeyPrefixes)...)
 	for _, prefix := range append(prefixes, strings.Fields(pushKeyPrefixes)...) {
 		if strings.HasPrefix(key, prefix) {

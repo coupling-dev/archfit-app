@@ -4,6 +4,40 @@ This guide is for repository administrators and policy owners using Archfit 4. T
 
 The App accepts the engine releases and Action commits that its [release manifest](../internal/wire/manifest/manifest4.json) lists, by their exact identities. A workflow that pins another Action commit gets no verdict. Operators admit installations and confirm first passkeys; their steps are in the [operator guide](operator-guide.md).
 
+## First 15 minutes
+
+From nothing to a first answered request. Each step links to its section.
+
+**1. Set up advisory checks (about 5 minutes).**
+
+- On the default branch, run `archfit setup` and follow each `next:` line, running it again when asked. It writes
+  `.archfit.yaml` and the workflow and opens the setup pull request.
+- Install the App from the link setup prints ([Install and set up](#install-and-set-up)). The setup pull request shows
+  a neutral **No verdict yet** check.
+- Merge the setup pull request. Checks are now advisory: they report on each pull request and never block a merge.
+
+**2. Ask for the first request (about 2 minutes).**
+
+- On a branch, `archfit check` names each error and its `next:` step. An error that needs an owner says
+  `archfit request`.
+- Open the pull request, then run `archfit request -m "<why you need it>"`, or comment
+  `/archfit request <why you need it>` on the pull request. A comment posted before the check has a result is held
+  and filed when the result arrives ([Pull request and comment](#pull-request-and-comment)).
+- The App opens a request issue, assigns the owners, and the pull request comment names the request.
+
+**3. Give the first answer (about 5 minutes, owner).**
+
+- Once per repository, a repository administrator approves the first policy with a passkey. Until then the request
+  page shows **Approve the first policy** instead of the answers.
+- The first passkey needs a one-time token from an Archfit operator ([Register a passkey](#register-a-passkey)).
+- On the request page, choose an answer and confirm it with the passkey ([Answer a request](#answer-a-request)). The
+  App opens and merges the policy pull request.
+
+**4. Re-check (about 1 minute).** The App runs the pull request's check again with the new policy. Nothing for the
+author to do: the comment and the request page show the new result.
+
+To make the check block merges later, see [Configure the ruleset](#configure-the-ruleset).
+
 ## Install and set up
 
 For the end-to-end route, see [Try it on your pull request](https://github.com/coupling-dev/archfit/blob/main/docs/try-it-on-your-pull-request.md).
@@ -409,6 +443,16 @@ Only an owner named in the current policy can answer. The requester may answer i
 The comment starts with the change story, from the check through any request and re-check.
 The current step is bold. When an action is needed, **Next** names who acts and links to the request.
 The App updates the same comment as the check runs again.
+
+A `/archfit request` comment posted before the check has a result for the pull request's head is held. The App
+replies once that it files the request when the check reports, and then files it as if it had been posted then: the
+same permission checks and the same replies. A new push before the result, or a passing result, discards it with a
+short reply. A later request line on the pull request replaces the held one. If the App cannot file it when the
+result arrives, it files it with the next result of the same head (a re-run).
+
+When a request is filed and the open requests cover every error, the App posts the comment again at once. With
+`gate: required` the check shows **waiting**. With an advisory policy the check stays a neutral **fail**, and each
+error says `wait for an owner: #<n>`; **Next** names who answers the request.
 
 Open `/r/<owner>/<repo>/pull/<number>` to see the check result. The page and the GitHub comment use the same status,
 records, and instructions for the author and owner. A result can be **pass**, **fail**, **waiting**, or **unknown**.

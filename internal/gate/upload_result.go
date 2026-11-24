@@ -106,8 +106,9 @@ type decision4 struct {
 	NeutralUnknown bool
 	Tip            string // the default branch's head every rule read; the decision holds while it is the head
 	NoPolicy       bool   // the default branch has no valid policy: it cannot be confirmed, only reverted
-	// Coverable is a fail of a pull request in required mode that the App accepted as it is: open requests decide
-	// whether it is waiting. Covered are those requests; Waiting is the result shown then.
+	// Coverable is a fail of a pull request that the App accepted as it is: open requests decide whether it is
+	// waiting (required mode) or names them (advisory mode, where it stays a fail). Covered are those requests;
+	// Waiting is the result shown then.
 	Coverable   bool
 	StagedToken string
 	StagedAt    time.Time
@@ -162,6 +163,9 @@ func (g *Gate) serveUpload4(w http.ResponseWriter, req *http.Request) {
 	}
 	if err == nil {
 		err = g.driftPushed(ctx, u, d)
+	}
+	if err == nil && publish && u.Binding.PullRequest != 0 {
+		g.releaseHeld(ctx, u)
 	}
 
 	deadline, _ := ctx.Deadline()
@@ -303,31 +307,40 @@ func (v *upload4) decide(ctx context.Context, u ingest.Upload4) (decision4, erro
 
 // cover derives the status waiting (design 7.1, M2 task 16): a fail whose errors all ask an owner and are all in open
 // requests is waiting, and the pull request joins those requests in the store. Only a pull request into the default
-// branch in required mode is covered: waiting is in progress, which blocks a merge, and advisory mode never blocks.
+// branch is covered. In advisory mode the fail stays a fail, because waiting is in progress, which blocks a merge, and
+// advisory mode never blocks: its next steps name the requests instead (gate/requests' Name).
 func (v *upload4) cover(ctx context.Context, u ingest.Upload4, d decision4) (decision4, error) {
 	b := u.Binding
-	d.Coverable = b.PullRequest != 0 && !d.Advisory && len(d.Reasons) == 0 && u.Result != nil && d.Status == result.StatusFail
+	d.Coverable = b.PullRequest != 0 && len(d.Reasons) == 0 && u.Result != nil && d.Status == result.StatusFail
 	if !d.Coverable {
 		return d, nil
 	}
-	ids, shown, err := v.covered(ctx, u)
+	ids, shown, err := v.covered(ctx, u, d.Advisory)
 	if err != nil || len(ids) == 0 {
 		return d, err
 	}
 	if err := asks.Wait(ctx, v.store, b.Repo, b.PullRequest, ids); err != nil {
 		return decision4{}, err
 	}
-	d.Status, d.Covered, d.Waiting = result.StatusWaiting, ids, &shown
+	d.Covered, d.Waiting = ids, &shown
+	if !d.Advisory {
+		d.Status = result.StatusWaiting
+	}
 	return d, nil
 }
 
-// covered reads the requests that cover their key (gate/requests' OpenIndex) and derives the result's status from them.
-func (v *upload4) covered(ctx context.Context, u ingest.Upload4) ([]int, result.Result, error) {
+// covered reads the requests that cover their key (gate/requests' OpenIndex) and derives the result's status from
+// them: Cover in required mode, Name in advisory mode.
+func (v *upload4) covered(ctx context.Context, u ingest.Upload4, advisory bool) ([]int, result.Result, error) {
 	open, err := asks.OpenIndex(ctx, v.store, u.Binding.Repo)
 	if err != nil {
 		return nil, result.Result{}, err
 	}
-	shown, ids := asks.Cover(*u.Result, open)
+	cover := asks.Cover
+	if advisory {
+		cover = asks.Name
+	}
+	shown, ids := cover(*u.Result, open)
 	return ids, shown, nil
 }
 
@@ -580,7 +593,8 @@ func (v *upload4) storePull(ctx context.Context, u ingest.Upload4, d decision4, 
 		return nil
 	}
 	rec := records.Pull{HeadSHA: b.HeadSHA, RunID: b.RunID, RunAttempt: b.RunAttempt,
-		PayloadDigest: u.Envelope.PayloadDigest, Status: string(d.Status), Coverable: d.Coverable}
+		PayloadDigest: u.Envelope.PayloadDigest, Status: string(d.Status), Coverable: d.Coverable,
+		Advisory: d.Coverable && d.Advisory}
 	if len(d.Reasons) == 1 && d.Reasons[0].Code == reasonPolicyChanged {
 		rec.Reason = reasonPolicyChanged
 	}
@@ -711,7 +725,8 @@ func (d decision4) ownerPage(b ingest.Binding4) feedback.OwnerPage {
 // the default branch's head again: when it moved, the decision may be stale, nothing is written and the upload answers
 // 503, so the Action's retry decides from the new head. An upload of the same run decided earlier then never replaces
 // one decided later. A coverable fail also reads the open requests again: a request line that opened or joined one
-// since the decision makes it stale the same way, so a fail never lands after the waiting that request set.
+// since the decision makes it stale the same way, so a fail never lands after the waiting, or the named requests,
+// that request set.
 func (v *upload4) publish(ctx context.Context, u ingest.Upload4, d decision4) error {
 	b := u.Binding
 	return v.publisher.Publish4(ctx, feedback.Publication4{
@@ -731,7 +746,7 @@ func (v *upload4) publish(ctx context.Context, u ingest.Upload4, d decision4) er
 			if tip != d.Tip || !d.Coverable {
 				return tip == d.Tip, nil
 			}
-			ids, _, err := v.covered(ctx, u)
+			ids, _, err := v.covered(ctx, u, d.Advisory)
 			return slices.Equal(ids, d.Covered), err
 		},
 	})

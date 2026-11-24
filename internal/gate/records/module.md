@@ -97,7 +97,7 @@ add fields to the `v1` values before the release. After the release a field chan
 
 ## Public Contract
 
-Keys: `Prefix` (`v4/`), `RepoKey`, `RequestKey`, `RequestIndexKey`, `ApprovalKey`, `ProposalKey`, `ProposalIndexKey`,
+Keys: `Prefix` (`v4/`), `RepoKey`, `RequestKey`, `RequestIndexKey`, `HeldRequestKey`, `ApprovalKey`, `ProposalKey`, `ProposalIndexKey`,
 `ProposalLeaseKey`, `PolicyPushKey`, `PullKey`, `PullIndexKey`, `ReposKey`, `PullEntry`, `NewID`. `ProposalLeaseKey`
 (`v4/proposal-lease/<repo>`) holds a lease, not a record: `gate/proposals` owns its value and holds it while an answer
 writes the repository's proposal.
@@ -110,7 +110,8 @@ writes the repository's proposal.
 | `v4/proposal/<repo>/<id>` | `Proposal` | `archfit-app.proposal.v1` | kind (none for the App's policy pull request, `first` or `workflow` for a pull request someone else wrote), ordered approval ids (at most `MaxApprovals` = 9), pull request, head SHA, expected digest, the workflow digest its merge must land (`first`, `workflow`), state `open`, `merged` or `void`, consuming commit |
 | `v4/recovered-push/<repo>/<merge>` | `PolicyPush` | `archfit-app.policy-push.v1` | immutable proposal/digest proof, written atomically with a recovered consume; real delayed webhook ranges are recorded against this proof |
 | `v4/policy-push/<repo>/<before>..<after>` | `PolicyPush` | `archfit-app.policy-push.v1` | the policy digest of a default-branch push that changed the policy, and the proposal it consumed, or `unguarded` (no approved policy yet); neither: outside the flow. `<before>` is 40 zeros for a push that created the branch |
-| `v4/pull/<repo>/<pr>` | `Pull` | `archfit-app.pull.v1` | head SHA, run id, run attempt, payload digest, accepted policy digest, status, an unambiguous policy-changed refusal code, ambiguous sweep range (`sweep_note`), the date the result judged exceptions on (an accepted result only), error keys and the request key of each error ("" when it has none), for the preview (M2 D6; no result bytes); `rechecks` (optional): the proposal, path, unmet condition and head of each re-check after an answer, the latest last, at most `MaxRechecks` (16) (M2 task 21) |
+| `v4/pull/<repo>/<pr>` | `Pull` | `archfit-app.pull.v1` | head SHA, run id, run attempt, payload digest, accepted policy digest, status, an unambiguous policy-changed refusal code, ambiguous sweep range (`sweep_note`), the date the result judged exceptions on (an accepted result only), error keys and the request key of each error ("" when it has none), for the preview (M2 D6; no result bytes); `coverable` (a fail the App accepted as it is: open requests cover it) and `advisory` (decided under an advisory policy: requests are named, the status stays `fail`); `rechecks` (optional): the proposal, path, unmet condition and head of each re-check after an answer, the latest last, at most `MaxRechecks` (16) (M2 task 21) |
+| `v4/held-request/<repo>/<pr>` | `HeldRequest` | `archfit-app.held-request.v1` | a request line posted before the pull request's head had a checked result: the head, the author, the reason (at most 500 characters), the expiry date, the App's date and the time of the post; one per pull request, deleted when filed, discarded or the pull request closes (gate/requests) |
 
 Functions, all under one installation tenant:
 

@@ -18,6 +18,13 @@ const recordCap = 30_000
 const (
 	textNoResult = "archfit: this pull request has no checked result for its head yet. Ask again when the check has run.\n"
 	textNoPolicy = "archfit: the default branch has no valid policy yet, so nothing can be asked.\n"
+	// The replies about a request line posted before the head had a checked result (hold, Release).
+	textHeld = "archfit: request received before the check result. The App files it when the check reports a " +
+		"result for this head. A later request line on this pull request replaces it.\n"
+	textHeldNewHead = "archfit: the request posted before the check result was not filed: the pull request has a " +
+		"new head. Ask again when its check has run.\n"
+	textHeldPass = "archfit: the request posted before the check result was not filed: the check passes, so " +
+		"there is nothing to ask.\n"
 )
 
 // records is the text record of errs as the check prints it, without the status line. Records past recordCap are

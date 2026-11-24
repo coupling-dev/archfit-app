@@ -151,9 +151,12 @@ func put(ctx context.Context, s store.Store, r api.Repo, issue int, req records.
 	return other, err
 }
 
-// PullClosed removes a closed pull request from the pull index; its pull record stays. A reopened pull request is
-// indexed again by its next upload.
+// PullClosed removes a closed pull request from the pull index and drops its held request line; its pull record
+// stays. A reopened pull request is indexed again by its next upload.
 func PullClosed(ctx context.Context, s store.Store, r api.Repo, pull int) error {
+	if err := (&Service{store: s}).dropHeld(ctx, r, pull); err != nil {
+		return err
+	}
 	entry := records.PullEntry(pull)
 	err := records.Indexed(ctx, s, tenant(r), records.PullKey(r.FullName, pull), records.PullIndexKey(r.FullName),
 		records.SchemaPullIndex, func(cur []byte, x *records.Index) ([]byte, error) {

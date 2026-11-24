@@ -198,7 +198,10 @@ func (v *pullViews) stored(ctx context.Context, r api.Repo, number int, pl api.P
 		out.Message = "The stored result cannot be trusted."
 		return nil
 	}
-	if rec.Coverable || rec.Status == string(result.StatusWaiting) {
+	switch {
+	case rec.Coverable && rec.Advisory:
+		res, _ = asks.Name(res, reqs.index)
+	case rec.Coverable || rec.Status == string(result.StatusWaiting):
 		res, _ = asks.Cover(res, reqs.index)
 	}
 	view := BuildPullView(res)

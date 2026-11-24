@@ -83,6 +83,40 @@ func TestCover(t *testing.T) {
 	}
 }
 
+func TestNameKeepsTheFailAndNamesTheRequests(t *testing.T) {
+	open := map[string]int{"graph a b": 431, "graph a c": 432}
+	tests := []struct {
+		name string
+		in   result.Result
+		ids  []int
+	}{
+		{"one covered error", failed(ask("a", "b")), []int{431}},
+		{"two requests", failed(ask("a", "c"), ask("a", "b")), []int{432, 431}},
+		{"an error without a request", failed(ask("a", "b"), ask("a", "d")), nil},
+		{"a pass", result.Result{Status: result.StatusPass, Summary: "archfit: pass"}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			shown, ids := Name(tt.in, openIndex(t, open))
+			if !slices.Equal(ids, tt.ids) {
+				t.Fatalf("ids = %v, want %v", ids, tt.ids)
+			}
+			if shown.Status != tt.in.Status || shown.Summary != tt.in.Summary {
+				t.Errorf("shown = %s %q, want %s %q", shown.Status, shown.Summary, tt.in.Status, tt.in.Summary)
+			}
+			for i, e := range shown.Errors {
+				want := tt.in.Errors[i].Next
+				if tt.ids != nil {
+					want = result.Next{Kind: nextWait, Text: waitPrefix + strconv.Itoa(tt.ids[min(i, len(tt.ids)-1)])}
+				}
+				if e.Next != want {
+					t.Errorf("error %d next = %+v, want %+v", i, e.Next, want)
+				}
+			}
+		})
+	}
+}
+
 func TestCoverMatchesTheWaitingGolden(t *testing.T) {
 	r := result.Result{Status: result.StatusFail, Summary: "archfit: fail, 1 error", Errors: []result.Error{{
 		Path: "pkg/tc/netem.go", Line: 12, Rule: "graph", What: "pkg_tc -> pkg_util is not an allowed dependency",

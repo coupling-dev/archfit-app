@@ -27,9 +27,12 @@ who asked still sees `fail`.
      permission (`api.Collaborators`). Else one reply, `NoPermission`.
   3. Refuse a line that cannot be used (no reason, too long, a bad date) with its reply.
   4. Read the errors of the pull request's latest verified result (M2 D6): the pull record of its current head, the
-     run's artifact `archfit-result`, whose SHA-256 must be the recorded payload digest. No record, a record of an
-     older head, a status without errors the App accepted, or an artifact that is gone or other bytes: one reply, ask
-     again when the check has run.
+     run's artifact `archfit-result`, whose SHA-256 must be the recorded payload digest. When the head has no result
+     with a verdict yet (no record, a record of an older head, or `unknown`), the line is held (`hold`): it is kept at
+     `records.HeldRequestKey` with the head, the author, the reason, the date and the App's date of the post, one
+     per pull request (a later line replaces it: a later early line, or a line judged against the head's result, which
+drops it), and one reply says it is filed when the check reports. A
+     verdict whose artifact is gone or other bytes: one reply, ask again when the check has run.
   5. The errors that ask an owner are those whose next step is the `archfit request` command. None: one reply,
      `NothingToAsk` with the records of the other errors.
   6. Per request key, in record order: a deny rule of the default branch's policy that lists both modules answers it
@@ -38,8 +41,10 @@ who asked still sees `fail`.
      Else the App opens the issue (`wire/request`'s title and body, the pull request linked), labels it
      `archfit-request`, assigns the policy's owners, and stores the request with its index entry. One line opens at
      most `MaxNewPerComment` (10) requests; the reply says to ask again for the rest.
-  7. Derive the status again and publish `waiting` when it now holds (required mode only); then post one reply. The
-     reply says the check shows `waiting` only in required mode.
+  7. Derive the status again and publish it when open requests now cover every error: `waiting` in required mode
+     (`Cover`); in advisory mode the check stays a neutral `fail` whose next steps name the requests (`Name`), and the
+     recorded status stays `fail`. Then post one reply. The reply says the check shows `waiting` only in required
+     mode.
   A pull request that joins is shown on the issue once: the body is rendered again and the issue gets one note until
   the request's `Listed` holds it. An upload joins in the store alone (`Wait`), so its pull request reaches the issue
   with its own request line, and a failed edit is done again on a retry.
@@ -47,12 +52,22 @@ who asked still sees `fail`.
   permission, take the key from the reported answer. A deny rule that answers it, or a request in the index with the
   key: one note and the issue is closed. Else the issue is the request, stored "as reported" (numbers unverified), labeled
   and assigned. Any other refusal: one reply, the issue stays.
+- File a held line (`Release`, called by the gate after a pull-request upload publishes): when the pull request's
+  current head is the held head and its pull record has a verdict (pass, fail or waiting), take the line in one swap
+  (only the caller that deleted it files it) and judge it as a comment posted then: the same pull request, endpoint,
+  permission and line checks and replies, with the App's date of the post. A pull request with a new head discards it
+  with a reply, a pass discards it with a reply, a closed pull request discards it without one, and an `unknown` keeps
+  it (also one that lands between the claim and the read). When filing fails the line is held again; a retried
+  comment delivery judges the line against the result and drops the held copy, so it is not filed twice. `hold` releases once after it stores the line, so an upload that
+  landed between the read and the hold does not leave it held.
 - Derive `waiting` (`Cover`): a `fail` whose errors all ask an owner and whose keys are all in the request index is
   `waiting`; the status line names the requests (`archfit: waiting, request #431`) and each error's next step is
   `wait for an owner: #431`. Every other result stays as it is.
-- On a verified upload the gate calls `OpenIndex`, `Cover` and `Wait`: the pull request joins the requests that cover
+- Name the requests of an advisory fail (`Name`): the same coverage as `Cover`, but the status and status line stay
+  `fail`; only each error's next step becomes `wait for an owner: #431`. It never returns `waiting`.
+- On a verified upload the gate calls `OpenIndex`, `Cover` (required) or `Name` (advisory) and `Wait`: the pull request joins the requests that cover
   it, in the store only, so the upload stays within its deadline.
-- Drop a closed pull request from the pull index (`PullClosed`).
+- Drop a closed pull request from the pull index and drop its held line (`PullClosed`).
 - Show a request to its owner (`Service.View`, M2 task 17, design 10.4, 12.3, 19): the reason, the record with its
   balance, verified or "as reported", and from the policy at the default branch's tip the two modules (layer,
   volatility, subdomain, `depends_on`), whether the dependency is already allowed, and the earlier answers: the `deny`
@@ -103,7 +118,7 @@ Core: the request is how a worker asks instead of copying code. Volatility: high
   request below 64 KiB), at most 10 assignees, at most 10 new requests per line.
 - The artifact name `archfit-result` (M2 D6), which the Action uploads (archfit-action task 10).
 - Advisory mode: `Cover` is applied only in required mode. `waiting` is `in_progress`, which blocks a merge, and an
-  advisory policy never blocks; a request still opens.
+  advisory policy never blocks; a request still opens, and `Name` shows it in the check.
 
 ## Public Contract
 
@@ -125,6 +140,8 @@ func (s *Service) Filed(ctx context.Context, i Issue) (reaction string, err erro
 func Asks(e result.Error) bool
 func Key(e result.Error) (string, error)
 func Cover(r result.Result, open *records.Index) (shown result.Result, ids []int)
+func Name(r result.Result, open *records.Index) (shown result.Result, ids []int) // advisory: stays fail
+func (s *Service) Release(ctx context.Context, r api.Repo, pull int) (reaction string, err error)
 func OpenIndex(ctx context.Context, s store.Store, r api.Repo) (*records.Index, error)
 func Wait(ctx context.Context, s store.Store, r api.Repo, pull int, ids []int) error
 func PullClosed(ctx context.Context, s store.Store, r api.Repo, pull int) error
@@ -146,7 +163,7 @@ func RequestComment(number int) string
 func Diff(path string, old, edited []byte) string
 ```
 
-Reactions: `none`, `request_ignored`, `request_other_endpoint`, `request_refused`, `request_asked`, `request_answered`, `request_filed`. An error
+Reactions: `none`, `request_ignored`, `request_other_endpoint`, `request_refused`, `request_asked`, `request_answered`, `request_filed`, `request_held`. An error
 is a failed read or write: the gate returns it so the delivery is retried. A retry joins the requests already open
 without a second note; a reply may be posted again.
 
@@ -154,7 +171,8 @@ without a second note; a reply may be posted again.
 
 - **gate** (parent): builds the `Service` with the gate's `Publisher4` and the App's base URL, so a waiting check takes the head's lease
   that uploads take; calls `Comment` on `PullCommented` with a request line, `Filed` on `IssueOpened`, `PullClosed`
-  on `PullClosed`, and `OpenIndex`, `Cover` and `Wait` from the envelope 2 upload (`upload_result.go`).
+  on `PullClosed`, and `OpenIndex`, `Cover` (required) or `Name` (advisory) and `Wait` from the envelope 2 upload
+  (`upload_result.go`), then `Release` after the upload publishes a pull request's result.
 - **gate/records**: the request, its index and the pull record. **gate/feedback**: `Publisher4`, `ErrStaleInputs`.
 - **wire/request**: the grammar, the key, the issue, the rejections. **wire/result**: the result and its record.
   **wire/policy3**: owners, gate mode, deny rules. **wire/envelope**: the payload digest. **wire/workflow**: the
@@ -178,11 +196,16 @@ without a second note; a reply may be posted again.
   as `requests triage failed` with identifiers only.
 - **Stated limit**: when storing a new request fails after its issue was opened, a retried delivery opens a second
   issue for the key.
+- **Stated limit**: only an upload of the pull request releases a held line, and the sweep does not. A line whose
+  filing fails (a failed read or write, or the upload's deadline) stays held until the next upload of that head (a
+  re-run); a new head or the pull request's close discards it.
 
 ## Test Specification
 
 - `TestWaitJoinsARequestWhileItCoversItsKey`: an answered request whose proposal is open takes the pull request; one
   answered without a proposal and one whose proposal was consumed take none.
+- `TestNameKeepsTheFailAndNamesTheRequests`: a covered fail keeps its status and status line; partial or no coverage
+  changes nothing.
 - `TestCover`, `TestCoverMatchesTheWaitingGolden`, `TestRequestNames`: every status, partial coverage, a fix-the-code
   error whose key is open, two requests, the status line and record of `wire/result`'s `waiting.txt`.
 - `TestNoCommentOfTheAppIsARequest` (owner and engine text with LF, CRLF and a bare CR before the command),
@@ -197,6 +220,10 @@ without a second note; a reply may be posted again.
   without a line writes nothing; ten requests per line; a new push stays waiting and a new error fails; advisory
   never waits; an upload decided before a request is stale; a CLI issue as reported, then confirmed by a pull request;
   a CLI issue closed or refused; a closed pull request leaves the pull index.
+- In `internal/gate` (`held_request_test.go`): an early line is held with one reply and filed when the fail of its head
+  lands (waiting in required mode), once; a new head or a pass discards it with a reply; an older head's record and an
+  `unknown` keep it until a fail of the head; two releases file it once; a closed pull request drops it; an advisory
+  check names the filed request, stays a neutral fail, and keeps naming it after a new push.
 - In `preview_test.go`, over a fake GitHub and the memory Store: a verified and an "as reported" request; a request with
   earlier answers, one already allowed, and none without a policy; the diff of approve, approve until the worker's date
   and another, and reject with `instead`; each refusal, including a date not ahead or too far and a worker's date now

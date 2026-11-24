@@ -13,6 +13,8 @@ It never imports control, app or an LLM. Provenance authenticates the sender; re
 - `UploadHandler` serves POST /v1/reports through envelope 2 only. Authentication/binding is in ingest;
   upload_result.go compares the policy digest, immutable protected target, workflow, engine identity and
   recorded approval authority before publishing a result. Invalid/unverifiable evidence becomes unknown.
+  After a pull-request upload publishes, it files the request line held for that pull request (requests'
+  `Release`); a failure there is logged and never changes the upload's answer.
 - `HandleEvent` handles request comments/issues, closed pull requests and policy/workflow pushes.
   An opened/synchronized pull into the default branch retires spent proposal-head authority.
   Legacy pending/fork, merge-group protected-settings and source-graph webhook rules are removed.
@@ -93,7 +95,9 @@ App-generated publication receipt takes precedence over the artifact; pending, o
 never produce a verdict. Otherwise the run artifact is fetched with a bound and its exact bytes are checked
 against the stored digest before decoding. Missing artifacts, digest mismatches and publication pending
 states remain distinct. `BuildPullView` is the only result-to-page form; only coverable required-policy or already-waiting engine
-results are covered from the live request index. Advisory failures stay fail. The pull head must match the stored record.
+results are covered from the live request index. Advisory failures stay fail; a coverable advisory fail (pull record
+`advisory`) names its requests in each next step, as its comment does (requests' `Name`). The pull head must match the
+stored record.
 
 A missing-upload receipt remains readable before the first pull record exists. References to outside-flow
 issues are plain text, not request links; only the shared model's explicit request numbers become links.

@@ -77,7 +77,7 @@ func TestViewGoldens(t *testing.T) {
 			v := newView(tc.result)
 			golden4(t, tc.name+".comment.md", v.comment(maxBody))
 			switch tc.name {
-			case "pass", "pass-advisory", "fail-fix", "fail-advisory", "fail-ask", "fail-copy", "fail-expired-exception", "waiting", "unknown", "unknown-advisory":
+			case "pass", "pass-advisory", "fail-fix", "fail-advisory", "fail-ask", "fail-copy", "fail-expired-exception", "waiting", "unknown", "unknown-advisory", "fail-advisory-request":
 				golden4(t, tc.name+".check.md", checkText(v, tc.advisory))
 			}
 			golden4(t, tc.name+".title.txt", v.title()+"\n")
@@ -130,6 +130,10 @@ func viewFixtures(t *testing.T) []viewFixture {
 		Next:    result.Next{Kind: nextCommand, Text: `archfit request -m "<why you need it>"`},
 	}}}
 	fixtures = append(fixtures, viewFixture{"can-record", can, false})
+	// An advisory policy never waits: a fail whose error is in request #431 stays a fail and names it (requests' Name).
+	named := engineResult(t, "graph")
+	named.Errors[0].Next = result.Next{Kind: nextWait, Text: "wait for an owner: #431"}
+	fixtures = append(fixtures, viewFixture{"fail-advisory-request", named, true})
 	waiting := engineResult(t, "waiting")
 	waiting.Errors = append(waiting.Errors, waiting.Errors[0], waiting.Errors[0])
 	waiting.Errors[1].Path = "pkg/tc/second.go"
