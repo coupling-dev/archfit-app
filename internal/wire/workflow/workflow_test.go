@@ -65,3 +65,43 @@ func TestActionRef(t *testing.T) {
 		}
 	}
 }
+
+func TestActionEndpoint(t *testing.T) {
+	const action = "coupling-dev/archfit-action"
+	step := func(uses, with string) string {
+		return "jobs:\n  archfit:\n    steps:\n      - uses: actions/checkout@v4\n      - uses: " + uses + "\n" + with
+	}
+	tests := []struct {
+		name     string
+		raw      string
+		endpoint string
+		ok       bool
+	}{
+		{"literal", step(action+"@abc", "        with:\n          endpoint: https://app.coupling.dev\n          discover: true\n"),
+			"https://app.coupling.dev", true},
+		{"quoted", step(action+"@abc", "        with:\n          endpoint: \"https://app-staging.coupling.dev\"\n"),
+			"https://app-staging.coupling.dev", true},
+		{"repository case", step("Coupling-Dev/Archfit-Action@abc", "        with:\n          endpoint: https://x.test\n"),
+			"https://x.test", true},
+		{"expression", step(action+"@abc", "        with:\n          endpoint: ${{ vars.ARCHFIT_URL }}\n"),
+			"${{ vars.ARCHFIT_URL }}", true},
+		{"empty input", step(action+"@abc", "        with:\n          endpoint: \"\"\n"), "", false},
+		{"no input", step(action+"@abc", "        with:\n          audience: https://x.test\n"), "", false},
+		{"no with", step(action+"@abc", ""), "", false},
+		{"another action", step("actions/setup-go@v5", "        with:\n          endpoint: https://x.test\n"), "", false},
+		{"first action step in job-name order", "jobs:\n  b:\n    steps:\n      - uses: " + action + "@abc\n" +
+			"        with:\n          endpoint: https://b.test\n  a:\n    steps:\n      - uses: " + action + "@abc\n" +
+			"        with:\n          endpoint: https://a.test\n", "https://a.test", true},
+		{"run text is not a call", "jobs:\n  check:\n    steps:\n      - run: |\n          uses: " + action +
+			"@abc\n          endpoint: https://x.test\n", "", false},
+		{"not yaml", "\t- broken: [", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			endpoint, ok := workflow.ActionEndpoint([]byte(tt.raw), action)
+			if endpoint != tt.endpoint || ok != tt.ok {
+				t.Errorf("ActionEndpoint = %q, %v; want %q, %v", endpoint, ok, tt.endpoint, tt.ok)
+			}
+		})
+	}
+}
