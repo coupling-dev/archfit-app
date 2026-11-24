@@ -16,6 +16,13 @@ who asked still sees `fail`.
 - Take in a pull-request comment with a request line (`Service.Comment`):
   1. Parse it (`wire/request`); a comment without a request line is not a request. Only an open pull request into the
      default branch is judged; any other is ignored without a word.
+     Only the App the workflow sends its results to answers. The App reads `.github/workflows/archfit.yaml` at the
+     default branch's tip (trusted input, like the policy; a pull request cannot change it) and takes the Action
+     step's `endpoint` input (`wire/workflow`). It answers when the endpoint is its base URL, byte for byte, as the
+     upload's audience is. Another endpoint, an empty or missing one (the Action's default is check only: nothing is
+     sent), no Action step or no workflow file: no reply, reaction `request_other_endpoint`, and an Info log with the
+     workflow's endpoint and the App's URL. With two Apps on one repository only the one that gets the results
+     answers. An endpoint that is an expression (`${{ … }}`) cannot be compared: the App answers and logs that.
   2. Authorize the author (M2 D21): the login that wrote the pull request, or a login with `write` or `admin`
      permission (`api.Collaborators`). Else one reply, `NoPermission`.
   3. Refuse a line that cannot be used (no reason, too long, a bad date) with its reply.
@@ -107,7 +114,7 @@ const MaxNewPerComment = 10
 type GitHub interface { /* File, BranchHead, Pull, Artifact, CreateComment, CreateIssue, UpdateIssueBody, CloseIssue,
     SetAssigneesAndLabels, CollaboratorPermission */ }
 type Service struct{ /* unexported */ }
-func New(gh GitHub, s store.Store, p feedback.Publisher4) *Service
+func New(gh GitHub, s store.Store, p feedback.Publisher4, appURL string) *Service
 
 type Comment struct { Repo api.Repo; Pull int; Author, Body string; Today time.Time }
 type Issue struct { Repo api.Repo; Number int; Author, Body string; Today time.Time }
@@ -139,18 +146,19 @@ func RequestComment(number int) string
 func Diff(path string, old, edited []byte) string
 ```
 
-Reactions: `none`, `request_ignored`, `request_refused`, `request_asked`, `request_answered`, `request_filed`. An error
+Reactions: `none`, `request_ignored`, `request_other_endpoint`, `request_refused`, `request_asked`, `request_answered`, `request_filed`. An error
 is a failed read or write: the gate returns it so the delivery is retried. A retry joins the requests already open
 without a second note; a reply may be posted again.
 
 ## Integrations
 
-- **gate** (parent): builds the `Service` with the gate's `Publisher4`, so a waiting check takes the head's lease
+- **gate** (parent): builds the `Service` with the gate's `Publisher4` and the App's base URL, so a waiting check takes the head's lease
   that uploads take; calls `Comment` on `PullCommented` with a request line, `Filed` on `IssueOpened`, `PullClosed`
   on `PullClosed`, and `OpenIndex`, `Cover` and `Wait` from the envelope 2 upload (`upload_result.go`).
 - **gate/records**: the request, its index and the pull record. **gate/feedback**: `Publisher4`, `ErrStaleInputs`.
 - **wire/request**: the grammar, the key, the issue, the rejections. **wire/result**: the result and its record.
-  **wire/policy3**: owners, gate mode, deny rules. **wire/envelope**: the payload digest.
+  **wire/policy3**: owners, gate mode, deny rules. **wire/envelope**: the payload digest. **wire/workflow**: the
+  workflow's Action endpoint. **wire/manifest**: the Action's repository.
 - **github/api**: the roles of `GitHub`.
 
 ## Constraints and Invariants

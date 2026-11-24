@@ -38,6 +38,39 @@ func UsesRefs(raw []byte) []string {
 	return out
 }
 
+// ActionEndpoint returns the first non-empty `endpoint` input, in job-name order, of a step that calls repository,
+// and whether there is one. A step without the input sends nothing, so it does not hide a later one. A file that is
+// not YAML has none.
+func ActionEndpoint(raw []byte, repository string) (string, bool) {
+	var doc struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Uses string               `yaml:"uses"`
+				With map[string]yaml.Node `yaml:"with"` // a non-scalar input of another step still decodes
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if yaml.Unmarshal(raw, &doc) != nil {
+		return "", false
+	}
+	names := make([]string, 0, len(doc.Jobs))
+	for name := range doc.Jobs {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		for _, step := range doc.Jobs[name].Steps {
+			if _, ok := ActionRef(step.Uses, repository); !ok {
+				continue
+			}
+			if in := step.With["endpoint"]; in.Kind == yaml.ScalarNode && in.Value != "" {
+				return in.Value, true
+			}
+		}
+	}
+	return "", false
+}
+
 // ActionRef returns the ref of a `uses:` reference to the Archfit Action (`<repository>@<ref>`), compared without
 // case as GitHub does, and whether the reference is one.
 func ActionRef(uses, repository string) (string, bool) {
