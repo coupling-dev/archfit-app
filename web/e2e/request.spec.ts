@@ -846,3 +846,88 @@ test('request: a refresh read held across the owner\'s answer cannot bring back 
   await expect(page.locator('.page-head .small')).toHaveText('An owner rejected this request.');
   await expect(answerBox(page).locator('.banner')).toHaveCount(1);
 });
+
+test('request: before the first policy approval the page offers no answer, only the first-policy page', async ({ page }) => {
+  await docsClock(page);
+  const reads: string[] = [];
+  const writes = await open(page, path, {
+    [`GET ${req}`]: () => [200, { ...request, first_approval: true }],
+    [`GET ${req}/preview`]: (_, url) => {
+      reads.push(url.search);
+      return preview(url);
+    },
+  });
+  await expect(page.locator('.page-head .small')).toHaveText('Waiting for an administrator to approve the first policy.');
+  await expect(answerBox(page).getByRole('radio')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Answer/ })).toHaveCount(0);
+  await expect(answerBox(page).getByRole('link', { name: 'Approve the first policy', exact: true })).toHaveAttribute(
+    'href',
+    '/r/acme/app/owner/first?return=' + encodeURIComponent(path),
+  );
+  expect(reads).toEqual([]);
+  expect(writes).toEqual([]);
+  await expectPageText(page, 'request-first-approval');
+  await expectClean(page);
+});
+
+test('request: the answers appear by themselves once the first policy is approved', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-13T12:00:00Z') });
+  const { handlers } = owner({});
+  let first = true;
+  handlers[`GET ${req}`] = () => [200, { ...request, first_approval: first }];
+  await open(page, path, handlers);
+  await expect(answerBox(page).getByRole('link', { name: 'Approve the first policy', exact: true })).toBeVisible();
+  first = false;
+  await page.clock.runFor(20_000);
+  await expect(answerBox(page).getByRole('radio')).toHaveCount(3);
+  await expect(answerBox(page).getByRole('link', { name: 'Approve the first policy', exact: true })).toHaveCount(0);
+});
+
+test('request: after the answer the page follows the policy and the re-check until the result lands', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-13T12:00:00Z') });
+  let reads = 0;
+  let later: object = { policy_pull: 77, policy_merged: false, rechecks: [] };
+  await open(page, path, {
+    [`GET ${req}`]: () => {
+      reads++;
+      return [200, { ...request, state: 'answered', answer: { kind: 'approve' }, ...later }];
+    },
+  });
+  const story = page.getByRole('list', { name: 'Story of the change' });
+  const now = story.locator('[aria-current="step"]');
+  await expect(now).toContainText('policy');
+
+  later = { policy_pull: 77, policy_merged: true, rechecks: [{ number: 12, status: 'running' }] };
+  await page.clock.runFor(20_000);
+  await expect(now).toContainText('re-check');
+  await expect(page.getByText('Re-check: pull request #12 has no result with the new policy yet.')).toBeVisible();
+  await expectPageText(page, 'request-rechecking');
+
+  later = { policy_pull: 77, policy_merged: true, rechecks: [{ number: 12, status: 'pass' }] };
+  await page.clock.runFor(20_000);
+  await expect(page.getByText('Re-check: pull request #12 passes.')).toBeVisible();
+  await expect(now).toHaveCount(0);
+  await expect(story.getByRole('listitem').nth(5)).toHaveClass(/\bdone\b/);
+
+  // The result is in: the page stops reading the request again.
+  const settled = reads;
+  await page.clock.runFor(60_000);
+  expect(reads).toBe(settled);
+  await expectClean(page);
+});
+
+test('request: a re-check whose result never lands is followed for 10 minutes, then the page stops reading', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-13T12:00:00Z') });
+  let reads = 0;
+  await open(page, path, {
+    [`GET ${req}`]: () => {
+      reads++;
+      return [200, { ...request, state: 'answered', answer: { kind: 'approve' }, policy_pull: 77, policy_merged: true, rechecks: [{ number: 12, status: 'running' }] }];
+    },
+  });
+  await expect(page.getByText('Re-check: pull request #12 has no result with the new policy yet.')).toBeVisible();
+  await page.clock.runFor(10 * 60_000);
+  await expect.poll(() => reads).toBe(31);
+  await page.clock.runFor(5 * 60_000);
+  expect(reads).toBe(31);
+});

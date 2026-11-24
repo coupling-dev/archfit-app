@@ -2,7 +2,7 @@ import type { MapModel } from '../components/map/model';
 // The words and rules of the request page (design 10.4, 12.3). The server decides who may answer and checks every
 // answer again; these helpers only say what the page shows and keep a button off until its field is filled.
 
-import type { AnswerKind, Preview, PullEffect, RequestEarlier, RequestModule, RequestView } from './api';
+import type { AnswerKind, Preview, PullEffect, Recheck, RequestEarlier, RequestModule, RequestView } from './api';
 
 // answerKinds are the answers a request offers, in order (story spec 8.18, section 5; owner decision 2026-11-22). A
 // surface request (a use past the declared parts of the module it reaches) is never approved as such: it offers making
@@ -110,6 +110,7 @@ export function statusOf(r: RequestView): Status {
   if (r.state === 'closed') return { word: 'closed', tone: 'neutral', line: `${name} is closed.` };
   let line = 'Waiting for an owner to answer.';
   if (!r.policy) line = `${name} cannot be answered here: the default branch has no valid policy.`;
+  else if (r.first_approval) line = 'Waiting for an administrator to approve the first policy.';
   else if (r.allowed) line += ' The policy already allows this dependency.';
   else if (!r.verified) line += ' Its numbers are as reported: no pull request confirmed them yet.';
   return { word: 'waiting', tone: 'attention', line };
@@ -169,14 +170,51 @@ export function question(r: Pick<RequestView, 'from' | 'to' | 'path' | 'surface'
 
 export type Step = 'done' | 'failed' | 'current' | 'later' | 'skipped';
 
+type StoryInput = Pick<RequestView, 'state' | 'answer' | 'policy_merged' | 'rechecks'>;
+
 // storySteps is the story row of a request page: change, check, ask, answer, policy, re-check. A request exists, so the
 // check failed and the ask happened. An approval moves the story to the policy step; a rejection ends it at the answer.
-// merged is true when this page saw the App merge the policy pull request of its own answer.
-export function storySteps(r: Pick<RequestView, 'state' | 'answer'>, merged = false): Step[] {
+// Once the policy has the answer, the re-check is current while a waiting pull request runs again, failed when one
+// fails or needs a new push, and done when every one has its result. merged is true when this page saw the App merge
+// the policy pull request of its own answer, before a read of the request says so.
+export function storySteps(r: StoryInput, merged = false): Step[] {
   if (r.state === 'open') return ['done', 'failed', 'current', 'later', 'later', 'later'];
   if (r.answer?.kind === 'reject') return ['done', 'failed', 'done', 'failed', 'skipped', 'skipped'];
-  if (r.state === 'answered') return merged ? ['done', 'failed', 'done', 'done', 'done', 'current'] : ['done', 'failed', 'done', 'done', 'current', 'later'];
-  return ['done', 'failed', 'done', 'skipped', 'skipped', 'skipped'];
+  if (r.state !== 'answered') return ['done', 'failed', 'done', 'skipped', 'skipped', 'skipped'];
+  if (!merged && !r.policy_merged) return ['done', 'failed', 'done', 'done', 'current', 'later'];
+  return ['done', 'failed', 'done', 'done', 'done', recheckStep(r.policy_merged ? r.rechecks : undefined)];
+}
+
+// recheckStep is the re-check step from the waiting pull requests; none known yet keeps it current, and no open one
+// waiting means nothing to re-check.
+function recheckStep(rechecks: readonly Recheck[] | undefined): Step {
+  if (!rechecks) return 'current';
+  if (rechecks.some((x) => x.status === 'running')) return 'current';
+  if (rechecks.some((x) => x.status === 'fail' || x.status === 'push')) return 'failed';
+  return rechecks.length ? 'done' : 'skipped';
+}
+
+// rechecking is true while the story of an answered request still moves by itself: the App merges its policy pull
+// request, or a waiting pull request runs again. The page reads the request again on its interval until it stops.
+export function rechecking(r: StoryInput & Pick<RequestView, 'policy_pull'>): boolean {
+  if (r.state !== 'answered' || r.answer?.kind === 'reject') return false;
+  if (!r.policy_merged) return !!r.policy_pull;
+  return !!r.rechecks?.some((x) => x.status === 'running');
+}
+
+const recheckWords: Record<Recheck['status'], string> = {
+  running: 'has no result with the new policy yet',
+  pass: 'passes',
+  fail: 'fails',
+  waiting: 'waits on another request',
+  unknown: 'is unknown',
+  push: 'runs again after a new push',
+};
+
+// recheckLine says what the re-check did to each waiting pull request, once the policy has the answer; '' before.
+export function recheckLine(r: Pick<RequestView, 'policy_merged' | 'rechecks'>): string {
+  if (!r.policy_merged || !r.rechecks?.length) return '';
+  return `Re-check: ${r.rechecks.map((x) => `pull request #${x.number} ${recheckWords[x.status]}`).join('; ')}.`;
 }
 
 // addedLines counts the lines an answer adds to .archfit.yaml, from its unified diff.

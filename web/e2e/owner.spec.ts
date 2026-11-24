@@ -285,3 +285,16 @@ test('owner: unreadable file gives the GitHub fallback and no action', async ({ 
   await expectPageText(page, 'owner-unreadable');
   await expectClean(page);
 });
+
+test('owner: the first-policy page links back to the request that sent the owner, and only to one of this repository', async ({ page }) => {
+  const handlers = { [`GET ${api}owner/first/view`]: () => [200, fixture('first')] as [number, object] };
+  await open(page, root + 'first?return=' + encodeURIComponent('/r/acme/app/requests/431'), handlers);
+  await expect(page.getByRole('link', { name: 'Back to the request', exact: true })).toHaveAttribute('href', '/r/acme/app/requests/431');
+
+  for (const other of ['/r/acme/other/requests/431', 'https://evil.example/r/acme/app/requests/431', '/r/acme/app/policy?edit=1']) {
+    await page.unrouteAll();
+    await open(page, root + 'first?return=' + encodeURIComponent(other), handlers);
+    await expect(page.getByRole('button', { name: 'Approve with passkey' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Back to the request', exact: true })).toHaveCount(0);
+  }
+});
