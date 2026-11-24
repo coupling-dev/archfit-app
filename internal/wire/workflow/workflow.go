@@ -38,14 +38,15 @@ func UsesRefs(raw []byte) []string {
 	return out
 }
 
-// ActionEndpoint returns the `endpoint` input of the first step, in job-name order, that calls repository, and
-// whether such a step sets the input to a non-empty value. A file that is not YAML has none.
+// ActionEndpoint returns the first non-empty `endpoint` input, in job-name order, of a step that calls repository,
+// and whether there is one. A step without the input sends nothing, so it does not hide a later one. A file that is
+// not YAML has none.
 func ActionEndpoint(raw []byte, repository string) (string, bool) {
 	var doc struct {
 		Jobs map[string]struct {
 			Steps []struct {
-				Uses string            `yaml:"uses"`
-				With map[string]string `yaml:"with"`
+				Uses string               `yaml:"uses"`
+				With map[string]yaml.Node `yaml:"with"` // a non-scalar input of another step still decodes
 			} `yaml:"steps"`
 		} `yaml:"jobs"`
 	}
@@ -59,9 +60,11 @@ func ActionEndpoint(raw []byte, repository string) (string, bool) {
 	slices.Sort(names)
 	for _, name := range names {
 		for _, step := range doc.Jobs[name].Steps {
-			if _, ok := ActionRef(step.Uses, repository); ok {
-				endpoint := step.With["endpoint"]
-				return endpoint, endpoint != ""
+			if _, ok := ActionRef(step.Uses, repository); !ok {
+				continue
+			}
+			if in := step.With["endpoint"]; in.Kind == yaml.ScalarNode && in.Value != "" {
+				return in.Value, true
 			}
 		}
 	}

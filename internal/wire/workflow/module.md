@@ -13,8 +13,8 @@ shell text, environment values and unrelated fields are not calls.
 `ActionRef(uses, repository) (string, bool)` matches the repository without case and extracts its ref.
 It does not resolve or approve a ref. Onboarding applies manifest 4 and public-tag resolution.
 
-`ActionEndpoint(raw, repository) (string, bool)` returns the `endpoint` input of the first step, in job-name order,
-that calls the repository, and whether it is non-empty. The gate's request lines use it to answer only when the
+`ActionEndpoint(raw, repository) (string, bool)` returns the first non-empty `endpoint` input, in job-name order, of a
+step that calls the repository, and whether there is one; a step without it sends nothing and does not count. The gate's request lines use it to answer only when the
 workflow sends its results to this App. It returns the value as written: an expression is not evaluated.
 
 ## Constraints

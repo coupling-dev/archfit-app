@@ -94,6 +94,13 @@ func TestActionEndpoint(t *testing.T) {
 			"        with:\n          endpoint: https://a.test\n", "https://a.test", true},
 		{"run text is not a call", "jobs:\n  check:\n    steps:\n      - run: |\n          uses: " + action +
 			"@abc\n          endpoint: https://x.test\n", "", false},
+		{"non-scalar inputs of steps", "jobs:\n  check:\n    steps:\n      - uses: actions/cache@v4\n" +
+			"        with:\n          path: [a, b]\n      - uses: " + action + "@abc\n        with:\n" +
+			"          endpoint: https://x.test\n          extra: {k: v}\n", "https://x.test", true},
+		{"a non-scalar endpoint", step(action+"@abc", "        with:\n          endpoint: [https://x.test]\n"), "", false},
+		{"a step without an endpoint does not hide a later one", "jobs:\n  a:\n    steps:\n      - uses: " + action +
+			"@abc\n  b:\n    steps:\n      - uses: " + action + "@abc\n        with:\n          endpoint: https://b.test\n",
+			"https://b.test", true},
 		{"not yaml", "\t- broken: [", "", false},
 	}
 	for _, tt := range tests {
