@@ -28,7 +28,7 @@ func (g *filedGitHub) SetAssigneesAndLabels(context.Context, api.RepoRef, int, [
 func TestFiledUnprotectedCan(t *testing.T) {
 	w := newPreviewWorld(t)
 	gh := &filedGitHub{previewGH: w.gh}
-	svc := New(gh, w.mem, nil)
+	svc := New(gh, w.mem, nil, "")
 	record := "pkg_tc -> pkg_util: graph: not an allowed dependency\n  balance: 9/10 (min 7): contract, pkg_util is low\n  next: request\npolicy: not protected\n"
 	reaction, err := svc.Filed(context.Background(), Issue{Repo: previewRepo, Number: 77, Author: "writer", Today: testToday, CreatedAt: testToday.Add(-time.Hour),
 		Body: "/archfit request why\n\n```text\n" + record + "```\n"})
@@ -52,7 +52,7 @@ func TestFiledUnprotectedCan(t *testing.T) {
 func TestFiledCanOfEngine090KeepsTheInputsAndTheSurface(t *testing.T) {
 	w := newPreviewWorld(t)
 	gh := &filedGitHub{previewGH: w.gh}
-	svc := New(gh, w.mem, nil)
+	svc := New(gh, w.mem, nil, "")
 	record := "pkg_tc -> pkg_util: coupling: pkg/util/retry is past the surface\n" +
 		"  balance: 2/10 (min 7): intrusive, pkg_util is high\n  surface: pkg/util (public)\n  next: request\n"
 	reaction, err := svc.Filed(context.Background(), Issue{Repo: previewRepo, Number: 78, Author: "writer", Today: testToday,
@@ -77,7 +77,7 @@ func TestFiledCanOfEngine090KeepsTheInputsAndTheSurface(t *testing.T) {
 func TestAVerifiedPackageReplacesTheReportedOne(t *testing.T) {
 	w := newPreviewWorld(t)
 	gh := &filedGitHub{previewGH: w.gh}
-	svc := New(gh, w.mem, nil)
+	svc := New(gh, w.mem, nil, "")
 	record := "pkg_tc -> pkg_util: coupling: pkg/util/retry is past the surface\n" +
 		"  balance: 2/10 (min 7): intrusive, pkg_util is high\n  surface: pkg/util (public)\n  next: request\n"
 	if _, err := svc.Filed(context.Background(), Issue{Repo: previewRepo, Number: 79, Author: "writer", Today: testToday,
@@ -96,7 +96,7 @@ func TestAVerifiedPackageReplacesTheReportedOne(t *testing.T) {
 
 func TestFiledMissingCreationTime(t *testing.T) {
 	w := newPreviewWorld(t)
-	svc := New(&filedGitHub{previewGH: w.gh}, w.mem, nil)
+	svc := New(&filedGitHub{previewGH: w.gh}, w.mem, nil, "")
 	record := "pkg_tc -> pkg_util: graph: not an allowed dependency\n  balance: 9/10 (min 7): contract, pkg_util is low\n  next: request\npolicy: not protected\n"
 	_, err := svc.Filed(context.Background(), Issue{Repo: previewRepo, Number: 77, Author: "writer", Today: testToday, Body: "/archfit request why\n\n```text\n" + record + "```\n"})
 	if err != nil {
