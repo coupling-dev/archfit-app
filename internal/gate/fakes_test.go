@@ -56,6 +56,8 @@ type fakeGitHub struct {
 	// beforeCheckWrite runs once, unlocked, at the start of the next check run create or update: what it does
 	// happens after that publisher's reads and before its first write.
 	beforeCheckWrite func()
+	// onPull runs, locked, at the start of every Pull read; it must not call the fake.
+	onPull func()
 }
 
 // checkWriteHook takes the one-shot beforeCheckWrite hook and runs it outside the lock.
@@ -244,6 +246,9 @@ func (f *fakeGitHub) Pull(_ context.Context, r api.RepoRef, number int) (api.Pul
 	defer f.mu.Unlock()
 	if err := f.enter("Pull", r); err != nil {
 		return api.Pull{}, err
+	}
+	if f.onPull != nil {
+		f.onPull()
 	}
 	p, ok := f.pulls[pullKey(r.FullName, number)]
 	if !ok {

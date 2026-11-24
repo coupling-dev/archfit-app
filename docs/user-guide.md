@@ -447,12 +447,12 @@ The App updates the same comment as the check runs again.
 A `/archfit request` comment posted before the check has a result for the pull request's head is held. The App
 replies once that it files the request when the check reports, and then files it as if it had been posted then: the
 same permission checks and the same replies. A new push before the result, or a passing result, discards it with a
-short reply. Only the newest early line of a pull request is held. If the App cannot file it when the result arrives,
-it files it with the next result of the same head (a re-run).
+short reply. A later request line on the pull request replaces the held one. If the App cannot file it when the
+result arrives, it files it with the next result of the same head (a re-run).
 
-When a request is filed, the App posts the comment again at once. With `gate: required` the check shows **waiting**.
-With an advisory policy the check stays a neutral **fail**, and each error the request covers says
-`wait for an owner: #<n>`; **Next** names who answers the request.
+When a request is filed and the open requests cover every error, the App posts the comment again at once. With
+`gate: required` the check shows **waiting**. With an advisory policy the check stays a neutral **fail**, and each
+error says `wait for an owner: #<n>`; **Next** names who answers the request.
 
 Open `/r/<owner>/<repo>/pull/<number>` to see the check result. The page and the GitHub comment use the same status,
 records, and instructions for the author and owner. A result can be **pass**, **fail**, **waiting**, or **unknown**.

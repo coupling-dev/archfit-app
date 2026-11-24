@@ -20,7 +20,7 @@ const (
 	textNoPolicy = "archfit: the default branch has no valid policy yet, so nothing can be asked.\n"
 	// The replies about a request line posted before the head had a checked result (hold, Release).
 	textHeld = "archfit: request received before the check result. The App files it when the check reports a " +
-		"result for this head.\n"
+		"result for this head. A later request line on this pull request replaces it.\n"
 	textHeldNewHead = "archfit: the request posted before the check result was not filed: the pull request has a " +
 		"new head. Ask again when its check has run.\n"
 	textHeldPass = "archfit: the request posted before the check result was not filed: the check passes, so " +

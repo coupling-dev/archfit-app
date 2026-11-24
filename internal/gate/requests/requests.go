@@ -176,12 +176,23 @@ func (s *Service) take(ctx context.Context, c Comment, line request.Line, lineEr
 	switch {
 	case noResult && held == nil && !checked(rec, pl.HeadSHA):
 		return s.hold(ctx, c, pl.HeadSHA, line)
+	case noResult && !checked(rec, pl.HeadSHA):
+		// A newer attempt of the head has no verdict since Release read it: the line stays held, without a reply.
+		s.restore(ctx, c.Repo, records.HeldRequestKey(c.Repo.FullName, c.Pull), *held)
+		return ReactionHeld, nil
 	case noResult:
 		return s.refuse(ctx, ref, c.Pull, textNoResult)
 	case err != nil:
 		return ReactionNone, err
 	case held != nil && res.Status == result.StatusPass:
 		return s.refuse(ctx, ref, c.Pull, textHeldPass)
+	}
+	if held == nil {
+		// A line judged against the head's result replaces the line held for the pull request, as a later early line
+		// does: a held line put back after a failed filing is never filed again after its retried comment.
+		if err := s.dropHeld(ctx, c.Repo, c.Pull); err != nil {
+			return ReactionNone, err
+		}
 	}
 	var asks, others []result.Error
 	for _, e := range res.Errors {

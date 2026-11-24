@@ -132,6 +132,17 @@ func (s *Service) claim(ctx context.Context, r api.Repo, key string, h records.H
 	return taken, nil
 }
 
+// dropHeld deletes the line held for pull, if any.
+func (s *Service) dropHeld(ctx context.Context, r api.Repo, pull int) error {
+	err := store.Update(ctx, s.store, tenant(r), []string{records.HeldRequestKey(r.FullName, pull)}, func([][]byte) ([][]byte, error) {
+		return [][]byte{nil}, nil
+	})
+	if err != nil {
+		return fmt.Errorf("requests: drop the held request: %w", err)
+	}
+	return nil
+}
+
 // restore holds h again after its filing failed, unless a newer early line took its place. It is logged, with
 // identifiers only, when that fails too.
 func (s *Service) restore(ctx context.Context, r api.Repo, key string, h records.HeldRequest) {

@@ -167,6 +167,75 @@ func TestOnlyOneReleaseFilesAHeldLine(t *testing.T) {
 	}
 }
 
+func TestAFailedFilingIsHeldAgainAndFiledOnce(t *testing.T) {
+	w := newAskWorld(t)
+	p := w.pullBy(7)
+	w.ask(p, workerLogin, "/archfit request tc needs it")
+	w.gh.fail["CreateIssue"] = errors.New("github is down")
+	w.uploadAsk(p, "graph", "fail") // the upload succeeds; its filing fails
+	if _, ok := w.held(p); !ok || len(w.gh.issues[shopName]) != 0 {
+		t.Fatalf("after a failed filing: held %v, %d issues", ok, len(w.gh.issues[shopName]))
+	}
+
+	delete(w.gh.fail, "CreateIssue")
+	w.ask(p, workerLogin, "/archfit request tc needs it") // a retried delivery, judged against the result
+	if _, ok := w.held(p); ok {
+		t.Error("a line judged against the result left the held copy")
+	}
+	if reaction, err := w.gate.asks.Release(context.Background(), p.repo, p.number); err != nil || reaction != asks.ReactionNone {
+		t.Errorf("release after the retry = %s, %v", reaction, err)
+	}
+	if n := len(w.gh.issues[shopName]); n != 1 {
+		t.Errorf("%d issues, want 1", n)
+	}
+}
+
+func TestAHeldLineStaysHeldWhenTheHeadLosesItsVerdict(t *testing.T) {
+	w := newAskWorld(t)
+	p := w.pullBy(7)
+	w.uploadAsk(p, "graph", "fail")
+	w.put4(records.HeldRequestKey(shopName, p.number), &records.HeldRequest{HeadSHA: p.head, Author: workerLogin,
+		Reason: "tc needs it", Today: "2026-11-24"})
+	rec, _ := w.pullRecord(p)
+	replies := len(w.replies(p))
+	reads := 0
+	w.gh.onPull = func() {
+		// Release read a verdict; a newer attempt of the head is decided unknown before the line is judged.
+		if reads++; reads == 2 {
+			rec.Status, rec.RunAttempt = "unknown", rec.RunAttempt+1
+			w.put4(records.PullKey(shopName, p.number), &rec)
+		}
+	}
+	reaction, err := w.gate.asks.Release(context.Background(), p.repo, p.number)
+	if err != nil || reaction != asks.ReactionHeld {
+		t.Fatalf("release = %s, %v; want %s", reaction, err, asks.ReactionHeld)
+	}
+	if _, ok := w.held(p); !ok {
+		t.Error("the line is no longer held")
+	}
+	if got := len(w.replies(p)); got != replies || len(w.gh.issues[shopName]) != 0 {
+		t.Errorf("%d new replies, %d issues", got-replies, len(w.gh.issues[shopName]))
+	}
+}
+
+func TestAHeldLineIsFiledOnlyWithThePermissionItsAuthorHasThen(t *testing.T) {
+	w := newAskWorld(t)
+	p := w.pullBy(7)
+	w.gh.permissions[shopName+"|writer-2"] = "write"
+	w.ask(p, "writer-2", "/archfit request tc needs it")
+	if _, ok := w.held(p); !ok {
+		t.Fatal("a writer's early line is not held")
+	}
+	w.gh.permissions[shopName+"|writer-2"] = "read"
+	w.uploadAsk(p, "graph", "fail")
+	if reply := w.lastReply(7); !strings.Contains(reply, "a request counts only from the author") {
+		t.Errorf("reply:\n%s", reply)
+	}
+	if n := len(w.gh.issues[shopName]); n != 0 {
+		t.Errorf("%d issues opened", n)
+	}
+}
+
 func TestAClosedPullRequestDropsItsHeldLine(t *testing.T) {
 	w := newAskWorld(t)
 	p := w.pullBy(7)

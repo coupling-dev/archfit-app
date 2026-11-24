@@ -30,7 +30,8 @@ who asked still sees `fail`.
      run's artifact `archfit-result`, whose SHA-256 must be the recorded payload digest. When the head has no result
      with a verdict yet (no record, a record of an older head, or `unknown`), the line is held (`hold`): it is kept at
      `records.HeldRequestKey` with the head, the author, the reason, the date and the App's date of the post, one
-     per pull request (a later early line replaces it), and one reply says it is filed when the check reports. A
+     per pull request (a later line replaces it: a later early line, or a line judged against the head's result, which
+drops it), and one reply says it is filed when the check reports. A
      verdict whose artifact is gone or other bytes: one reply, ask again when the check has run.
   5. The errors that ask an owner are those whose next step is the `archfit request` command. None: one reply,
      `NothingToAsk` with the records of the other errors.
@@ -56,7 +57,8 @@ who asked still sees `fail`.
   (only the caller that deleted it files it) and judge it as a comment posted then: the same pull request, endpoint,
   permission and line checks and replies, with the App's date of the post. A pull request with a new head discards it
   with a reply, a pass discards it with a reply, a closed pull request discards it without one, and an `unknown` keeps
-  it. When filing fails the line is held again. `hold` releases once after it stores the line, so an upload that
+  it (also one that lands between the claim and the read). When filing fails the line is held again; a retried
+  comment delivery judges the line against the result and drops the held copy, so it is not filed twice. `hold` releases once after it stores the line, so an upload that
   landed between the read and the hold does not leave it held.
 - Derive `waiting` (`Cover`): a `fail` whose errors all ask an owner and whose keys are all in the request index is
   `waiting`; the status line names the requests (`archfit: waiting, request #431`) and each error's next step is
@@ -169,7 +171,8 @@ without a second note; a reply may be posted again.
 
 - **gate** (parent): builds the `Service` with the gate's `Publisher4` and the App's base URL, so a waiting check takes the head's lease
   that uploads take; calls `Comment` on `PullCommented` with a request line, `Filed` on `IssueOpened`, `PullClosed`
-  on `PullClosed`, and `OpenIndex`, `Cover` and `Wait` from the envelope 2 upload (`upload_result.go`).
+  on `PullClosed`, and `OpenIndex`, `Cover` (required) or `Name` (advisory) and `Wait` from the envelope 2 upload
+  (`upload_result.go`), then `Release` after the upload publishes a pull request's result.
 - **gate/records**: the request, its index and the pull record. **gate/feedback**: `Publisher4`, `ErrStaleInputs`.
 - **wire/request**: the grammar, the key, the issue, the rejections. **wire/result**: the result and its record.
   **wire/policy3**: owners, gate mode, deny rules. **wire/envelope**: the payload digest. **wire/workflow**: the
