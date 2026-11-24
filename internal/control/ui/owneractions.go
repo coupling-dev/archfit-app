@@ -34,7 +34,8 @@ type ownerActionsBody struct {
 }
 
 // apiOwnerActions lists the owner steps that wait on the user's repositories, oldest first, so the list page can show
-// them without the owner knowing a URL. A repository with no approved policy has none: its setup is on the list.
+// them without the owner knowing a URL. A repository with no approved policy has one only when requests wait on its
+// first approval; otherwise its setup is on the list.
 func (s *server) apiOwnerActions(r *http.Request, sc scope) (any, error) {
 	ctx := gate.WithRequestMemo(r.Context())
 	repos, err := s.gh.users.UserRepos(ctx, sc.user.Token)
@@ -65,6 +66,20 @@ func (s *server) apiOwnerActions(r *http.Request, sc scope) (any, error) {
 			continue
 		}
 		if state == gate.RepoNotSetUp {
+			// No owner step waits before the first approval, except that the requests filed meanwhile need it. The
+			// requests are stored records only, so this read is not counted against the repositories Home reads.
+			wg.Add(1)
+			slots <- struct{}{}
+			go func() {
+				defer wg.Done()
+				defer func() { <-slots }()
+				requests, err := s.repoStates.OpenRequests(ctx, repo)
+				if err != nil {
+					failed[i] = true
+				} else if len(requests) > 0 {
+					rows[i] = append(rows[i], firstPolicyRow(repo.FullName, requests))
+				}
+			}()
 			continue
 		}
 		if reads == maxOwnerActionRepos {
@@ -140,6 +155,26 @@ func (s *server) apiOwnerActions(r *http.Request, sc scope) (any, error) {
 		return cmp.Or(cmp.Compare(a.Since, b.Since), cmp.Compare(a.Repo, b.Repo), cmp.Compare(a.Pull, b.Pull))
 	})
 	return body, nil
+}
+
+// firstPolicyRow is the first approval of a repository whose open requests cannot be answered before it: it waits
+// since the oldest of them was asked.
+func firstPolicyRow(fullName string, requests []gate.HomeRequest) ownerActionRow {
+	text := fmt.Sprintf("Request #%d waits for the first policy approval.", requests[0].Number)
+	if len(requests) > 1 {
+		text = fmt.Sprintf("%d requests wait for the first policy approval.", len(requests))
+	}
+	row := ownerActionRow{Repo: fullName, Kind: gate.OwnerFirst, Label: gate.LabelFirst, Text: text, Href: "/r/" + fullName + "/owner/first"}
+	var since time.Time
+	for _, r := range requests {
+		if !r.AskedAt.IsZero() && (since.IsZero() || r.AskedAt.Before(since)) {
+			since = r.AskedAt
+		}
+	}
+	if !since.IsZero() {
+		row.Since = since.UTC().Format(time.RFC3339)
+	}
+	return row
 }
 
 func exceptionWaitText(from, to, rule string, left int) string {

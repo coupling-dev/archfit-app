@@ -22,6 +22,8 @@ const (
 // RepoStates supplies only the stored repository state needed by the repositories page.
 type RepoStates interface {
 	RepoState(context.Context, api.Repo) (string, error)
+	// OpenRequests are the repository's open requests, from stored records only.
+	OpenRequests(context.Context, api.Repo) ([]HomeRequest, error)
 }
 
 type repoStates struct {
@@ -61,4 +63,16 @@ func (s *repoStates) RepoState(ctx context.Context, repo api.Repo) (string, erro
 	default:
 		return RepoUnknown, nil
 	}
+}
+
+// OpenRequests reads the open requests of an admitted repository from its stored records; it reads no GitHub.
+func (s *repoStates) OpenRequests(ctx context.Context, repo api.Repo) ([]HomeRequest, error) {
+	admitted, err := s.admissions.Admitted(ctx, repo.InstallationID, strings.SplitN(repo.FullName, "/", 2)[0])
+	if err != nil {
+		return nil, err
+	}
+	if !admitted {
+		return nil, api.ErrNotFound
+	}
+	return openRequests(ctx, s.store, store.Tenant(repo.InstallationID), repo)
 }

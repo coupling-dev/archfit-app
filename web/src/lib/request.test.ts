@@ -24,6 +24,8 @@ import {
   effectLead,
   askedAgo,
   ledeLine,
+  recheckLine,
+  rechecking,
 } from './request';
 
 const open: RequestView = {
@@ -120,6 +122,7 @@ describe('statusOf', () => {
       'attention',
       'Request #431 cannot be answered here: the default branch has no valid policy.',
     ],
+    [{ ...open, first_approval: true }, 'waiting', 'attention', 'Waiting for an administrator to approve the first policy.'],
     [{ ...open, state: 'answered' }, 'answered', 'neutral', 'An owner answered this request.'],
     [
       { ...open, state: 'answered', answer: { kind: 'approve' } },
@@ -292,6 +295,37 @@ describe('storySteps', () => {
   });
   it('marks the policy done after a merge this page saw', () => {
     expect(storySteps({ state: 'answered', answer: { kind: 'approve' } }, true)).toEqual(['done', 'failed', 'done', 'done', 'done', 'current']);
+  });
+  const approved = { state: 'answered', answer: { kind: 'approve' }, policy_pull: 77 } as const;
+  it.each([
+    ['policy pull request open', { ...approved, policy_merged: false, rechecks: [] }, 'current', 'later', true],
+    ['a pull request runs again', { ...approved, policy_merged: true, rechecks: [{ number: 12, status: 'running' }, { number: 14, status: 'pass' }] }, 'done', 'current', true],
+    ['every result landed', { ...approved, policy_merged: true, rechecks: [{ number: 12, status: 'pass' }, { number: 14, status: 'waiting' }] }, 'done', 'done', false],
+    ['a result fails', { ...approved, policy_merged: true, rechecks: [{ number: 12, status: 'fail' }] }, 'done', 'failed', false],
+    ['a new push is needed', { ...approved, policy_merged: true, rechecks: [{ number: 12, status: 'push' }] }, 'done', 'failed', false],
+    ['no open pull request waits', { ...approved, policy_merged: true, rechecks: [] }, 'done', 'skipped', false],
+  ] as const)('reads the re-check from the request: %s', (_, r, policy, recheck, moving) => {
+    expect(storySteps(r).slice(4)).toEqual([policy, recheck]);
+    expect(rechecking(r)).toBe(moving);
+  });
+  it('stops reading again for an open, rejected or closed request', () => {
+    expect(rechecking({ state: 'open', policy_pull: 77 })).toBe(false);
+    expect(rechecking({ state: 'answered', answer: { kind: 'reject', instead: 'x' }, policy_pull: 77 })).toBe(false);
+    expect(rechecking({ state: 'closed' })).toBe(false);
+  });
+});
+
+describe('recheckLine', () => {
+  it.each([
+    [{ policy_merged: false, rechecks: [] }, ''],
+    [{ policy_merged: true, rechecks: [] }, ''],
+    [{ policy_merged: true, rechecks: [{ number: 12, status: 'running' }] }, 'Re-check: pull request #12 has no result with the new policy yet.'],
+    [
+      { policy_merged: true, rechecks: [{ number: 12, status: 'pass' }, { number: 14, status: 'push' }] },
+      'Re-check: pull request #12 passes; pull request #14 runs again after a new push.',
+    ],
+  ] as const)('%o says "%s"', (r, want) => {
+    expect(recheckLine(r)).toBe(want);
   });
 });
 

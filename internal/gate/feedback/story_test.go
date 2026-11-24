@@ -13,6 +13,7 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/gate/records"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
 	"github.com/coupling-dev/archfit-app/internal/wire/result"
+	"github.com/coupling-dev/archfit-app/internal/wire/wording"
 )
 
 // parseStory reads the line as the engine's `archfit status` does (internal/application/request/status.go).
@@ -303,6 +304,42 @@ func TestStoryCommentPreservesCopyableLiterals(t *testing.T) {
 	for _, literal := range []string{"`src/@shared/widget.ts`", "`npm install @acme/lib`", "](https://app.example/requests/@owner)"} {
 		if !strings.Contains(body, literal) {
 			t.Errorf("comment lost %q: %s", literal, body)
+		}
+	}
+}
+
+// A request that waits on the first approval says so on every surface: the comment, the check summary and the story
+// line archfit status reads. Its check keeps its result as the title.
+func TestARequestBeforeTheFirstApprovalSaysTheAdministratorApprovesFirst(t *testing.T) {
+	h := newHarness(headB)
+	h.pub = New4(h.checks, h.comments, h.pulls, h.store, appURL, h.clock.now, nil,
+		func(context.Context, api.Repo, int) (StoryFacts, error) {
+			return StoryFacts{State: records.StateOpen, Owner: "alexei-led", FirstApproval: true}, nil
+		})
+	waiting := result.Result{Status: result.StatusWaiting, Summary: "archfit: waiting, request #40", Errors: []result.Error{{
+		Path: "a.go", Line: 1, Rule: "graph", What: "x", Next: result.Next{Kind: nextWait, Text: "wait for an owner: #40"}}}}
+	if err := h.pub.Publish4(context.Background(), pub4(prTarget(headB), 7, 1, waiting)); err != nil {
+		t.Fatal(err)
+	}
+	first := appURL + "/r/" + prTarget(headB).Repo.FullName + "/owner/first"
+	body := h.comments.all()[0].Body
+	want := "**Next: an administrator approves the first policy** (passkey): " + first +
+		"\nThen @alexei-led answers request #40, and this check runs again. Nothing for the author to do."
+	if !strings.Contains(body, want) || strings.Contains(body, "(1 minute, passkey)") {
+		t.Errorf("comment:\n%s\nwant it to contain %q", body, want)
+	}
+	check := h.checks.latest(t, headB, gateCheck)
+	wantLead := "**Next:** [Approve the first policy](" + first + ") (administrator, passkey)\nThen @alexei-led answers request #40.\n"
+	if !strings.HasPrefix(check.Summary, wantLead) || check.Title != "⏳ waiting, request #40" {
+		t.Errorf("check title %q, summary:\n%s\nwant it to start with %q", check.Title, check.Summary, wantLead)
+	}
+	s := parseStory(t, check.Text)
+	if s.Steps.Ask != stepCurrent || !strings.Contains(s.Next, "An administrator approves the first policy, then an owner answers #40") {
+		t.Errorf("story = %+v", s)
+	}
+	for _, text := range []string{body, check.Summary, s.Next} {
+		if words := wording.StoryNotUsedIn(text); len(words) > 0 {
+			t.Errorf("story words %v in %q", words, text)
 		}
 	}
 }

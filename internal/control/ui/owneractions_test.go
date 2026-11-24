@@ -3,12 +3,15 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/coupling-dev/archfit-app/internal/control/answers"
 	"github.com/coupling-dev/archfit-app/internal/gate"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
+	"github.com/coupling-dev/archfit-app/internal/store"
 )
 
 const ownerActionsAPI = "/api/owner-actions"
@@ -66,6 +69,47 @@ func TestOwnerActionsSaysNothingForARepositoryWithoutAnApprovedPolicyAndReadsNoG
 	}
 	if calls := e.gh.called("OpenPulls"); len(calls) != 0 {
 		t.Fatalf("a repository that is not set up read pulls: %v", calls)
+	}
+}
+
+func TestOwnerActionsAsksForTheFirstApprovalWhenRequestsWaitOnIt(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		requests map[string]string // request number to asked_at
+		want     []ownerActionRow
+	}{
+		{name: "no request"},
+		{name: "one request", requests: map[string]string{"3": "2026-11-20T09:23:00Z"},
+			want: []ownerActionRow{{Repo: repoName, Kind: gate.OwnerFirst, Label: "Approve the first policy",
+				Text: "Request #3 waits for the first policy approval.", Since: "2026-11-20T09:23:00Z", Href: "/r/" + repoName + "/owner/first"}}},
+		{name: "two requests, the oldest wait counts", requests: map[string]string{"3": "2026-11-20T09:23:00Z", "5": "2026-11-19T08:00:00Z"},
+			want: []ownerActionRow{{Repo: repoName, Kind: gate.OwnerFirst, Label: "Approve the first policy",
+				Text: "2 requests wait for the first policy approval.", Since: "2026-11-19T08:00:00Z", Href: "/r/" + repoName + "/owner/first"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newHomeEnv(t, homePolicy)
+			if err := e.store.Delete(t.Context(), store.Tenant(installA), "v4/repo/"+repoName); err != nil {
+				t.Fatal(err)
+			}
+			var entries []any
+			for _, number := range slices.Sorted(maps.Keys(tc.requests)) {
+				at := tc.requests[number]
+				key := "graph app other " + number
+				entries = append(entries, map[string]any{"key": key, "id": number})
+				homePut(t, e, "request/"+number, map[string]any{"schema": "archfit-app.request.v1", "key": key, "state": "open",
+					"reason": "reason", "numbers": map[string]any{}, "asked_at": at})
+			}
+			homePut(t, e, "request-index", map[string]any{"schema": "archfit-app.request-index.v1", "entries": entries})
+
+			got := decodeAs[ownerActionsBody](t, e.as("alice", permRead).get(ownerActionsAPI))
+
+			if !slices.Equal(got.Actions, tc.want) || got.Unread != 0 {
+				t.Fatalf("owner actions = %+v, want %+v", got, tc.want)
+			}
+			if calls := e.gh.called("OpenPulls"); len(calls) != 0 {
+				t.Fatalf("a repository that is not set up read pulls: %v", calls)
+			}
+		})
 	}
 }
 

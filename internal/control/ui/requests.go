@@ -40,6 +40,21 @@ type requestJSON struct {
 	// AskedBy and AskedAt name who filed the request and when (RFC 3339); absent for an older record.
 	AskedBy string `json:"asked_by,omitempty"`
 	AskedAt string `json:"asked_at,omitempty"`
+	// FirstApproval is true for an open request no answer can reach yet: an administrator approves the first policy
+	// first.
+	FirstApproval bool `json:"first_approval"`
+	// PolicyPull is the App's policy pull request that carries the answer, absent when none; PolicyMerged says the
+	// policy has the answer, and Rechecks are then the waiting pull requests' check under it.
+	PolicyPull   int                  `json:"policy_pull,omitempty"`
+	PolicyMerged bool                 `json:"policy_merged"`
+	Rechecks     []requestRecheckJSON `json:"rechecks"`
+}
+
+// requestRecheckJSON is one waiting pull request after the answer reached the policy: pass, fail, waiting or unknown
+// once its check ran with that policy, running while it runs again, push when only a new push runs it again.
+type requestRecheckJSON struct {
+	Number int    `json:"number"`
+	Status string `json:"status"`
 }
 
 type requestSurfaceJSON struct {
@@ -120,7 +135,11 @@ func (s *server) apiRequest(r *http.Request, sc scope) (any, error) {
 	body := requestJSON{IssueHref: v.IssueHref, Number: v.Number, State: v.State, Reason: v.Reason, Rule: v.Rule, Path: v.Path, From: v.From,
 		To: v.To, Expires: v.Expires, Record: v.Record, Verified: v.Numbers.Verified, Policy: v.Policy, Allowed: v.Allowed,
 		Dependencies: []requestDependencyJSON{}, Layers: append([]string{}, v.Layers...), Modules: []moduleJSON{}, Earlier: []earlierJSON{}, Waiting: append([]int{}, v.Waiting...),
-		AskedBy: v.AskedBy, AskedAt: v.AskedAt}
+		AskedBy: v.AskedBy, AskedAt: v.AskedAt, FirstApproval: v.FirstApproval, PolicyPull: v.PolicyPull, PolicyMerged: v.PolicyMerged,
+		Rechecks: []requestRecheckJSON{}}
+	for _, rc := range v.Rechecks {
+		body.Rechecks = append(body.Rechecks, requestRecheckJSON{Number: rc.Number, Status: rc.Status})
+	}
 	for _, d := range v.Dependencies {
 		body.Dependencies = append(body.Dependencies, requestDependencyJSON{Kind: d.Kind, Rule: d.Rule, From: d.From, To: d.To, Expires: d.Expires})
 	}

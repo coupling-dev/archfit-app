@@ -28,6 +28,8 @@ type StoryFacts struct {
 	PolicyPull   int    // the App's policy pull request that carries the answer; 0 when none
 	PolicyMerged bool   // that pull request merged
 	Owner        string // the GitHub login of the person who answers; "" when the policy names no person
+	// FirstApproval says no administrator approved the first policy yet: no answer can be written until one does.
+	FirstApproval bool
 }
 
 // StoryReader reads the facts of request number of r. A nil reader leaves the story to the result alone.
@@ -143,10 +145,14 @@ func storyOf(v view, facts *StoryFacts) story {
 		s.Steps.Ask, s.Steps.Answer, s.Steps.Policy, s.Steps.Recheck = stepDone, stepDone, stepDone, stepCurrent
 		s.Next = "nothing to do. " + n + " is answered and the policy has it; this check runs again by itself."
 	default:
-		// The request is open: the owner answers it.
+		// The request is open: the owner answers it, once an administrator approved the first policy.
 		s.Steps.Ask, s.Steps.Answer, s.Steps.Policy, s.Steps.Recheck = stepCurrent, stepLater, stepLater, stepLater
 		if facts != nil {
 			s.WaitingFor = facts.Owner
+			if facts.FirstApproval {
+				s.Next = "nothing to do. An administrator approves the first policy, then an owner answers " + n +
+					"; this check runs again by itself."
+			}
 		}
 	}
 	return s
@@ -184,12 +190,15 @@ func (v view) storyHeader() string {
 		return header
 	}
 	switch {
-	case s.Steps.Ask == stepCurrent && s.Request > 0:
-		owner := "an owner"
-		if s.WaitingFor != "" {
-			owner = "@" + s.WaitingFor
+	case s.Steps.Ask == stepCurrent && s.Request > 0 && v.firstApproval:
+		header += "**Next: an administrator approves the first policy** (passkey)"
+		if v.firstPolicyURL != "" {
+			header += ": " + v.firstPolicyURL
 		}
-		header += "**Next: " + owner + " answers request #" + strconv.Itoa(s.Request) + "** (1 minute, passkey)"
+		header += "\nThen " + v.answerer() + " answers request #" + strconv.Itoa(s.Request) +
+			", and this check runs again. Nothing for the author to do.\n\n"
+	case s.Steps.Ask == stepCurrent && s.Request > 0:
+		header += "**Next: " + v.answerer() + " answers request #" + strconv.Itoa(s.Request) + "** (1 minute, passkey)"
 		if v.requestURL != "" {
 			header += ": " + v.requestURL
 		}
@@ -204,4 +213,12 @@ func (v view) storyHeader() string {
 		header += "**Next: the author fixes the code** and pushes.\nThis check runs again on the push.\n\n"
 	}
 	return header
+}
+
+// answerer is who answers the request of v's story: the person it waits for, else "an owner".
+func (v view) answerer() string {
+	if v.story != nil && v.story.WaitingFor != "" {
+		return "@" + v.story.WaitingFor
+	}
+	return "an owner"
 }

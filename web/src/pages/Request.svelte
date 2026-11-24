@@ -37,6 +37,8 @@
     previewPath,
     pullLine,
     question,
+    recheckLine,
+    rechecking,
     requestMap,
     statusOf,
     storySteps,
@@ -48,8 +50,12 @@
   // the click. Preview reads never answer a request; only the confirm button starts the answer ceremony.
   let { route, session, here }: { route: Repo & { number: number }; session: Session; here: string } = $props();
 
-  // The page reads the request again on this interval while it is open, so it never asks the owner to reload.
+  // The page reads the request again on this interval while it is open, and after an answer while the App merges the
+  // policy pull request or runs the waiting checks again, so it never asks the owner to reload. A re-check takes about
+  // a minute; the page follows it for at most 10 minutes, so a run that never lands does not keep it reading.
   const refreshMs = 20_000;
+  const maxRecheckReads = 30;
+  let recheckReads = 0;
 
   const api = (suffix: string) => repoAPI(route.owner, route.name, suffix);
   const github = $derived(`https://github.com/${encodeURIComponent(route.owner)}/${encodeURIComponent(route.name)}`);
@@ -86,7 +92,7 @@
         if (n !== loads) return;
         const before = body;
         body = b;
-        if (b.state === 'open' && b.policy) void previewAll(before, n);
+        if (b.state === 'open' && b.policy && !b.first_approval) void previewAll(before, n);
         else if (before && !own) changed = changedWhileOpen(before, b, false);
       },
       (e: ApiError) => {
@@ -98,7 +104,12 @@
 
   $effect(() => {
     const timer = setInterval(() => {
-      if (!busy && body?.state === 'open' && document.visibilityState === 'visible') load();
+      if (busy || !body || document.visibilityState !== 'visible') return;
+      if (body.state === 'open') load();
+      else if (rechecking(body) && recheckReads < maxRecheckReads) {
+        recheckReads++;
+        load();
+      }
     }, refreshMs);
     return () => clearInterval(timer);
   });
@@ -192,6 +203,7 @@
   </div>
 
   <StoryRow steps={storySteps(body, answered?.state === 'merged')} ask={`#${body.number}`} />
+  {#if recheckLine(body)}<p class="small" role="status">{recheckLine(body)}</p>{/if}
 
   {#if changed}<Banner role="status">{changed}</Banner>{/if}
 
@@ -217,7 +229,10 @@
   <section class="box" aria-labelledby="answer">
     <div class="box-head"><h2 class="title-box" id="answer">{body.state === 'open' ? 'Your answer' : 'Answer'}</h2></div>
     <div class="box-body stack">
-      {#if body.state === 'open' && body.policy}
+      {#if body.state === 'open' && body.policy && body.first_approval}
+        <p>No answer can be written until a repository administrator named as an owner approves the first policy. Then the answers appear here.</p>
+        <p><a class="btn primary" href={repoPage(route.fullName, '/owner/first?return=' + encodeURIComponent(here))}>Approve the first policy</a></p>
+      {:else if body.state === 'open' && body.policy}
         <div class="answers" role="radiogroup" aria-label="Choose an answer">
           {#each kinds.filter((k) => !k.minor) as { kind, title } (kind)}
             {@const shown = previews[kind]}

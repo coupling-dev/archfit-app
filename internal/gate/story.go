@@ -22,8 +22,8 @@ type storyGitHub interface {
 	AccountType(ctx context.Context, r api.RepoRef, login string) (string, error)
 }
 
-// storyReader reads the facts of a request for the story line of a pull request's check: the request's state, the
-// App's policy pull request that carries its answer, and the person who answers. The policy declares owners for the
+// storyReader reads the facts of a request for the story line of a pull request's check: the request's state, whether
+// it waits on the first approval, the App's policy pull request that carries its answer, and the person who answers. The policy declares owners for the
 // whole repository only, so that person is its first owner who is a person: a login GitHub says is a User, never an
 // organization; "" when it names none, or when GitHub cannot say.
 func storyReader(files storyGitHub, s store.Store) feedback.StoryReader {
@@ -35,6 +35,14 @@ func storyReader(files storyGitHub, s store.Store) feedback.StoryReader {
 			return facts, err
 		}
 		facts.State = req.State
+		// No answer can be written before an administrator approves the first policy, which the default branch holds.
+		var repo records.Repo
+		if req.State == records.StateOpen {
+			err := records.Load(ctx, s, t, records.RepoKey(r.FullName), &repo)
+			if err != nil && !errors.Is(err, records.ErrNoRecord) {
+				return facts, err
+			}
+		}
 		if req.Approval != "" {
 			var a records.Approval
 			if err := records.Load(ctx, s, t, records.ApprovalKey(r.FullName, req.Approval), &a); err != nil {
@@ -59,6 +67,7 @@ func storyReader(files storyGitHub, s store.Store) feedback.StoryReader {
 		if err != nil {
 			return facts, nil
 		}
+		facts.FirstApproval = req.State == records.StateOpen && repo.ApprovedDigest == ""
 		if login := firstPerson(pol.Owners); login != "" {
 			if kind, err := files.AccountType(ctx, r.RepoRef, login); err == nil && kind == "User" {
 				facts.Owner = login

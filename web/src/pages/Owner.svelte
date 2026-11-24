@@ -10,6 +10,7 @@
   import { ownerViewPath, outcomeText, outcomeTone, ownerButton, ownerTitle, readOwnerView, ownerFileVersion, type OwnerOutcome, type OwnerRoute, type OwnerView } from '../lib/owner';
   import { canRetryRead, ownerStale, type OwnerStale } from '../lib/recovery';
   import { confirm } from '../lib/passkey';
+  import { passkeyReturn } from '../lib/passkey-return';
   import { repoPage } from '../lib/route';
   import { passkeyFailure } from '../lib/webauthn';
 
@@ -26,6 +27,11 @@
   let busy = $state(false);
   let moved = $state(false);
   let outcome = $state<OwnerOutcome | null>(null);
+  // The request page that sent the owner here, when one did (a request waits on the first approval): linked back to.
+  const back = $derived.by(() => {
+    const to = passkeyReturn(route.fullName, new URLSearchParams(window.location.search).get('return'));
+    return to && /\/requests\/\d+$/.test(to) ? to : undefined;
+  });
 
   // "unknown — why": the status word gets the one status look, and the reason follows it.
   const status = $derived.by(() => {
@@ -90,6 +96,7 @@
 
 <PageHead title={ownerTitle(route.action)} repo={route.fullName} status={showStatus ? statusLine : undefined} actions={nothingToDo ? next : undefined}>
   {#if route.pull && !nothingToDo}<p class="pull-line">Pull request #{route.pull}</p>{/if}
+  {#if back}<p class="small"><a class="inline" href={back}>Back to the request</a></p>{/if}
   {#if nothingToDo}
     <Banner tone="info" role="status">{nothingToDo.reason}</Banner>
   {:else if failure}<Banner tone="danger" role="alert">{failure}</Banner>

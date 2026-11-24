@@ -119,6 +119,17 @@ export interface RequestView {
   waiting?: number[]; // pull requests waiting on this request
   asked_by?: string; // the login that filed the request; absent for an older record
   asked_at?: string; // when, RFC 3339
+  first_approval?: boolean; // an open request no answer can reach yet: an administrator approves the first policy first
+  policy_pull?: number; // the App's policy pull request that carries the answer
+  policy_merged?: boolean; // the policy has the answer
+  rechecks?: readonly Recheck[]; // after policy_merged: each open waiting pull request's check under the new policy
+}
+
+// Recheck is one waiting pull request after the answer reached the policy: its check status once it ran with that
+// policy, running while it runs again, push when only a new push runs it again.
+export interface Recheck {
+  number: number;
+  status: 'pass' | 'fail' | 'waiting' | 'unknown' | 'running' | 'push';
 }
 
 export interface PullEffect {

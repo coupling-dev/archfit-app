@@ -1,0 +1,44 @@
+May pkg_tc depend on pkg_util?
+
+Request #431. Asked by @dev 12 minutes ago: “netem needs the retry helper of pkg_util to apply a rule again after a container restart.” Pull request #12 waits for your answer.
+
+Waiting for an administrator to approve the first policy.
+
+✓
+change
+: done
+✗
+check
+: failed
+●
+ask #431
+: now
+○
+answer
+: later
+○
+policy
+: later
+○
+re-check
+: later
+Where
+pkg/tc/netem.go:12 graph pkg_tc -> pkg_util is not an allowed dependency
+The rule
+The policy does not allow pkg_tc → pkg_util (rule graph).
+Balance
+9/10 (min 7)
+Asked until
+2026-12-01
+On GitHub
+Request #431
+Your answer
+
+No answer can be written until a repository administrator named as an owner approves the first policy. Then the answers appear here.
+
+Approve the first policy
+
+The map
+Why the balance
+Earlier answers about these modules (1)
+The record
