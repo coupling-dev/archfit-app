@@ -1,5 +1,6 @@
 <script lang="ts">
   import Disclosure from './ui/Disclosure.svelte';
+  import PasskeyToken from './PasskeyToken.svelte';
   import Diff from './ui/Diff.svelte';
   import StatusLabel from './ui/StatusLabel.svelte';
   import { explain, postJSON, repoAPI, type ApiError, type Answered, type Session } from '../lib/api';
@@ -95,7 +96,7 @@
     {#if !setup.passkey_known}
       <p>Could not read your passkeys. Review is still available; try again before approving.</p>
     {:else if !setup.passkey && approvalNeedsReview(setup)}
-      <a class="btn" href={repoPage(repo.fullName, '/passkeys')}>Register a passkey to approve</a>
+      <PasskeyToken api={api} {session} repo={repo.fullName} returnTo={reviewHref ?? repoPage(repo.fullName, '/owner/first')} />
       <p>A passkey is needed to approve, but not to read the review.</p>
     {:else if setup.passkey}
       <p><a href={repoPage(repo.fullName, '/passkeys')}>Manage passkeys</a></p>

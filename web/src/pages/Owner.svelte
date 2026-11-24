@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PasskeyToken from '../components/PasskeyToken.svelte';
   import Skeleton from '../components/Skeleton.svelte';
   import Banner from '../components/ui/Banner.svelte';
   import Diff from '../components/ui/Diff.svelte';
@@ -212,7 +213,7 @@
         {#if view.passkey}
           <p class="small"><a href={repoPage(route.fullName, '/passkeys')}>Manage your passkeys</a></p>
         {:else}
-          <p class="small">No passkey yet? <a href={repoPage(route.fullName, '/passkeys?return=' + encodeURIComponent(here))}>Register a passkey</a> to return here after registration.</p>
+          <PasskeyToken {api} {session} repo={route.fullName} returnTo={here} />
         {/if}
         {#if actionError}<Banner tone="danger" role="alert">{actionError}</Banner>{/if}
         {#if moved}<p><a href={repoPage(route.fullName)}>View current setup</a></p>{/if}

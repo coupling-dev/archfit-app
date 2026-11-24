@@ -60,12 +60,9 @@ for (const file of names) {
       if (body.setup.passkey) {
         await expect(page.getByRole('link', { name: 'Manage passkeys' })).toHaveAttribute('href', path + '/passkeys');
         await expect(page.getByRole('link', { name: 'Manage passkeys' })).not.toHaveClass(/btn/);
-        await expect(page.getByRole('link', { name: 'Register a passkey to approve' })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Request the token' })).toHaveCount(0);
       } else {
-        await expect(page.getByRole('link', { name: 'Register a passkey to approve' })).toHaveAttribute(
-          'href',
-          path + '/passkeys',
-        );
+        await expect(page.getByRole('button', { name: 'Request the token' })).toBeVisible();
       }
       await expect(page.getByRole('heading', { name: 'Set up Archfit' })).toBeVisible();
       await expect(page.getByRole('heading', { name: '3 · Owner approval', exact: true })).toBeVisible();
@@ -295,7 +292,7 @@ for (const first of [true, false]) {
     const link = page.getByRole('link', { name: ownerReviewLabel(body.setup), exact: true });
     await expect(link).toHaveAttribute('href', body.setup.owner_action.href);
     await expect(link).not.toHaveAttribute('aria-disabled');
-    await expect(page.getByRole('link', { name: 'Register a passkey to approve' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Request the token' })).toBeVisible();
     await link.focus();
     await expect(link).toBeFocused();
     await expectClean(page);
@@ -464,3 +461,53 @@ for (const width of [375, 1280]) {
     await expect(needs.getByRole('link', { name: 'Request #431 waits.' })).toHaveAttribute('href', '/r/acme/app/requests/431');
   });
 }
+
+test('home: advisory checks are on after the setup merge, and the next owner step is named', async ({ page }) => {
+  const body = fixture('advisory');
+  await open(page, path, { [api]: () => [200, body] });
+  await expect(page.locator('.page-head .status-label')).toHaveText('advisory');
+  await expect(page.locator('.page-head .status-line p')).toHaveText(
+    'Advisory checks are on: they report on each pull request and do not block a merge. Next: approve the first policy; an owner can answer requests after that. Then make the check required.',
+  );
+  await expect(page.getByText('not set up', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.page-head .btn.primary')).toHaveText('Review and approve');
+  await expect(page.getByText('Next: review owner approval', { exact: true })).toBeVisible();
+  await expectClean(page);
+});
+
+test('home: a required policy without approval stays not set up', async ({ page }) => {
+  await open(page, path, { [api]: () => [200, fixture('not-set-up-required')] });
+  await expect(page.locator('.page-head .status-label')).toHaveText('not set up');
+  await expect(page.locator('.page-head .status-line p')).toHaveText('Pull requests are not checked yet. Finish the setup steps.');
+});
+
+test('home: without a passkey, step 3 says the first one needs an operator token and starts the request', async ({ page }) => {
+  const body = fixture('advisory');
+  body.setup.passkey = false;
+  const requests: unknown[] = [];
+  await open(page, path, {
+    [api]: () => [200, body],
+    'POST /api/repos/acme/app/passkeys/confirmation': (sent) => {
+      requests.push(sent);
+      return [200, { attempt: 'attempt-one', installation: 7 }];
+    },
+  });
+  await expect(page.locator('#home-review-note')).toHaveText('Approving needs a passkey. Step 3 below starts the request for your first one.');
+  const step = page.locator('.setup .steps > li').nth(2);
+  await expect(step.getByText('Approving needs a passkey. Your first passkey needs a one-time token from an Archfit operator: request it now.', { exact: true })).toBeVisible();
+  await expect(step.getByRole('link', { name: 'Register your passkey' })).toHaveAttribute('href', path + '/passkeys?return=%2Fr%2Facme%2Fapp%2Fowner%2Ffirst');
+  await step.getByRole('button', { name: 'Request the token' }).click();
+  await expect(step.getByRole('status')).toHaveText(
+    'Requested. Send the operator this attempt through the private channel you used to join the beta: installation 7, attempt attempt-one.',
+  );
+  await expect(step.getByRole('button', { name: 'Request the token' })).toHaveCount(0);
+  expect(requests).toEqual([{}]);
+  await expectPageText(page, 'home-advisory-no-passkey');
+  await expectClean(page);
+});
+
+test('home: an owner with a passkey gets no token notice', async ({ page }) => {
+  await open(page, path, { [api]: () => [200, fixture('advisory')] });
+  await expect(page.locator('#home-review-note')).toHaveText('Approval needs your passkey.');
+  await expect(page.getByText(/one-time token/)).toHaveCount(0);
+});
