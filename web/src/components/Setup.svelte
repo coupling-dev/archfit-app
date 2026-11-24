@@ -95,9 +95,8 @@
     {/if}
     {#if !setup.passkey_known}
       <p>Could not read your passkeys. Review is still available; try again before approving.</p>
-    {:else if !setup.passkey && approvalNeedsReview(setup)}
-      <PasskeyToken api={api} {session} repo={repo.fullName} returnTo={reviewHref ?? repoPage(repo.fullName, '/owner/first')} />
-      <p>A passkey is needed to approve, but not to read the review.</p>
+    {:else if !setup.passkey && reviewHref}
+      <PasskeyToken {api} {session} repo={repo.fullName} returnTo={reviewHref} {here} />
     {:else if setup.passkey}
       <p><a href={repoPage(repo.fullName, '/passkeys')}>Manage passkeys</a></p>
     {/if}

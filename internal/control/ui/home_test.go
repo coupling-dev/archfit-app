@@ -19,6 +19,7 @@ import (
 	"github.com/coupling-dev/archfit-app/internal/control/passkey"
 	"github.com/coupling-dev/archfit-app/internal/control/ui/session"
 	"github.com/coupling-dev/archfit-app/internal/gate"
+	"github.com/coupling-dev/archfit-app/internal/gate/approvals"
 	"github.com/coupling-dev/archfit-app/internal/gate/weekly"
 	"github.com/coupling-dev/archfit-app/internal/github/api"
 	"github.com/coupling-dev/archfit-app/internal/store"
@@ -552,4 +553,48 @@ func homeAfterSetupMerge(mode string) onboarding.Setup {
 			{Code: "pull_requests", State: "warning", Text: "Add a pull request rule to the default branch."},
 			{Code: "gate_check", State: "warning", Text: "Add the App's archfit/gate check as a required status check."},
 		}}}
+}
+
+func TestHomeIsAdvisoryOnlyWhenAnAdvisoryPolicyAndWorkflowAreOnTheDefaultBranch(t *testing.T) {
+	for _, tt := range []struct {
+		state, mode string
+		admitted    bool
+		want        bool
+	}{
+		{"first_approval", "advisory", true, true},
+		{"first_approval", "required", true, false},
+		{"first_approval", "unknown", true, false},
+		{"first_approval", "advisory", false, false},
+		{"approved", "advisory", true, false},
+		{"outside_flow", "advisory", true, false},
+		{"not_admitted", "advisory", false, false},
+	} {
+		if got := advisoryBeforeApproval(tt.state, tt.mode, tt.admitted); got != tt.want {
+			t.Errorf("advisoryBeforeApproval(%q, %q, %v) = %v, want %v", tt.state, tt.mode, tt.admitted, got, tt.want)
+		}
+	}
+}
+
+func TestHomeAdvisoryNamesTheFirstApprovalOnlyWhileItIsToGive(t *testing.T) {
+	const next = "Next: approve the first policy"
+	for _, tt := range []struct {
+		approval approvals.Status
+		named    bool
+	}{
+		{gate.ApprovalNeeded, true},
+		{gate.ApprovalStale, true},
+		{gate.ApprovalPending, false},
+		{gate.ApprovalUnknown, false},
+	} {
+		e := newHomeEnv(t, homePolicy)
+		e.setups.out = homeAfterSetupMerge("advisory")
+		e.setups.out.Approval.Status = tt.approval
+		if tt.approval == gate.ApprovalPending {
+			e.setups.out.Approval.Pull, e.setups.out.Approval.CurrentHead, e.setups.out.Approval.ApprovedHead = 12, sha(3), sha(3)
+		}
+		body := decodeAs[homeJSON](t, e.as("alice", permAdmin).get(homeAPI))
+		if body.State != homeStateAdvisory || strings.Contains(body.Status, next) != tt.named {
+			t.Errorf("%s: state %q, status %q", tt.approval, body.State, body.Status)
+		}
+	}
 }

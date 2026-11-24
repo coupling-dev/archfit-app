@@ -6,7 +6,7 @@
   // The first passkey needs a token from an Archfit operator. This says so where an owner is first sent to approve,
   // and starts the request there. A request from the same session returns the same attempt, so the Passkeys page
   // finishes it with the token the operator issued for this one.
-  let { api, session, repo, returnTo }: { api: RepoAPI; session: Session; repo: string; returnTo: string } = $props();
+  let { api, session, repo, returnTo, here }: { api: RepoAPI; session: Session; repo: string; returnTo: string; here: string } = $props();
   let attempt = $state('');
   let installation = $state(0);
   let busy = $state(false);
@@ -17,19 +17,18 @@
     try {
       const v = await postJSON<{ attempt: string; installation: number }>(api('passkeys/confirmation'), session.csrf, {});
       attempt = v.attempt; installation = v.installation;
-    } catch (e) { error = explain(e as ApiError, window.location.pathname); }
+    } catch (e) { error = explain(e as ApiError, here); }
     finally { busy = false; }
   }
 </script>
 
 <div class="token stack-sm">
   <p>Approving needs a passkey. Your first passkey needs a one-time token from an Archfit operator: request it now.</p>
-  {#if !attempt}
-    <button class="btn" type="button" disabled={busy} onclick={request}>{busy ? 'Requesting…' : 'Request the token'}</button>
-  {:else}
-    <p role="status">Requested. Send the operator this attempt through the private channel you used to join the beta: installation {installation}, attempt <code>{attempt}</code>.</p>
-  {/if}
-  <p><a href={repoPage(repo, '/passkeys?return=' + encodeURIComponent(returnTo))}>Register your passkey</a> when the token arrives. It is valid for 10 minutes.</p>
+  <!-- The button stays, so focus is not lost, and asking again returns the same attempt. The live region is always
+       there, so its new text is announced. -->
+  <button class="btn" type="button" disabled={busy} onclick={request}>{busy ? 'Requesting…' : 'Request the token'}</button>
+  <p role="status">{#if attempt}Send the operator this attempt through the private channel you used to join the beta: installation {installation}, attempt <code>{attempt}</code>.{/if}</p>
+  <p><a href={repoPage(repo, '/passkeys?return=' + encodeURIComponent(returnTo))}>Register your passkey</a> when the token arrives. It is valid for 10 minutes. You can read the review without a passkey.</p>
   {#if error}<p class="flash error" role="alert">{error}</p>{/if}
 </div>
 

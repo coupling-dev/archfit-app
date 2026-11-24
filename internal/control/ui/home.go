@@ -116,7 +116,7 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 			state.Review = s.ownerReview(reviewR, sc, pull)
 		}
 		if advisoryBeforeApproval(state.State, state.Mode, state.Admitted) {
-			return homeJSON{State: homeStateAdvisory, Status: homeAdvisoryStatus, Setup: &state}, nil
+			return homeJSON{State: homeStateAdvisory, Status: homeAdvisoryStatus(state.Approval.Status), Setup: &state}, nil
 		}
 		return homeJSON{State: homeStateNotSetUp, Status: "Pull requests are not checked yet. Finish the setup steps.", Setup: &state}, nil
 	}
@@ -152,8 +152,15 @@ func (s *server) apiHome(r *http.Request, sc scope) (any, error) {
 	return body, nil
 }
 
-const homeAdvisoryStatus = "Advisory checks are on: they report on each pull request and do not block a merge. " +
-	"Next: approve the first policy; an owner can answer requests after that. Then make the check required."
+// homeAdvisoryStatus names the owner's next step only while the first approval is still to give; a recorded approval
+// waiting to take effect, or one the App could not confirm, is told by setup step 3.
+func homeAdvisoryStatus(approval string) string {
+	const on = "Advisory checks are on: they report on each pull request and do not block a merge."
+	if approval == string(gate.ApprovalNeeded) || approval == string(gate.ApprovalStale) {
+		return on + " Next: approve the first policy; an owner can answer requests after that. Then make the check required."
+	}
+	return on
+}
 
 // advisoryBeforeApproval reports a repository whose default branch has a valid advisory policy and an accepted workflow
 // but no approved first policy: the gate checks its pull requests without blocking them (gate.checkState), so it is not

@@ -70,7 +70,8 @@ GitHub requires pull requests and the check on the default branch, **not require
 and **not confirmed** when the App could not confirm it. The rows appear first; **Checking…** stands in the
 **archfit/gate** column until the App has read each repository's settings, and the check and **Next step** fill in
 then. A **Next step** appears only while setup is incomplete. **advisory** appears with the check, as on Home: before
-the check is read, such a repository shows **not set up**. The **Not set up** filter does not list **advisory** rows.
+the check is read, such a repository shows **not set up**. The App reads the check of the first 25 repositories; the
+others keep **not set up**. The **Not set up** filter does not list **advisory** rows.
 Open `/` for **Needs you**, the owner queue across repositories. Each row names the step
 (**Review the workflow change #413**, **Confirm the policy**), the repository, how long it has waited, and links to the
 page that resolves it, so you need no URL. The longest wait is first. A step with no recorded time, such as a policy

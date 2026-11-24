@@ -31,11 +31,11 @@ Review the proposed files before approving.
 
 Approving needs a passkey. Your first passkey needs a one-time token from an Archfit operator: request it now.
 
-Requested. Send the operator this attempt through the private channel you used to join the beta: installation 7, attempt attempt-one.
+Request the token
 
-Register your passkey when the token arrives. It is valid for 10 minutes.
+Send the operator this attempt through the private channel you used to join the beta: installation 7, attempt attempt-one.
 
-A passkey is needed to approve, but not to read the review.
+Register your passkey when the token arrives. It is valid for 10 minutes. You can read the review without a passkey.
 
 Why a passkey?
 4

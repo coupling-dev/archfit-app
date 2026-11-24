@@ -213,7 +213,7 @@
         {#if view.passkey}
           <p class="small"><a href={repoPage(route.fullName, '/passkeys')}>Manage your passkeys</a></p>
         {:else}
-          <PasskeyToken {api} {session} repo={route.fullName} returnTo={here} />
+          <PasskeyToken {api} {session} repo={route.fullName} returnTo={here} {here} />
         {/if}
         {#if actionError}<Banner tone="danger" role="alert">{actionError}</Banner>{/if}
         {#if moved}<p><a href={repoPage(route.fullName)}>View current setup</a></p>{/if}

@@ -498,9 +498,8 @@ test('home: without a passkey, step 3 says the first one needs an operator token
   await expect(step.getByRole('link', { name: 'Register your passkey' })).toHaveAttribute('href', path + '/passkeys?return=%2Fr%2Facme%2Fapp%2Fowner%2Ffirst');
   await step.getByRole('button', { name: 'Request the token' }).click();
   await expect(step.getByRole('status')).toHaveText(
-    'Requested. Send the operator this attempt through the private channel you used to join the beta: installation 7, attempt attempt-one.',
+    'Send the operator this attempt through the private channel you used to join the beta: installation 7, attempt attempt-one.',
   );
-  await expect(step.getByRole('button', { name: 'Request the token' })).toHaveCount(0);
   expect(requests).toEqual([{}]);
   await expectPageText(page, 'home-advisory-no-passkey');
   await expectClean(page);
@@ -510,4 +509,15 @@ test('home: an owner with a passkey gets no token notice', async ({ page }) => {
   await open(page, path, { [api]: () => [200, fixture('advisory')] });
   await expect(page.locator('#home-review-note')).toHaveText('Approval needs your passkey.');
   await expect(page.getByText(/one-time token/)).toHaveCount(0);
+});
+
+test('home: a viewer who cannot approve gets no token notice', async ({ page }) => {
+  const body = fixture('advisory');
+  body.setup.passkey = false;
+  body.setup.owner_action = { label: 'A repository administrator named as an architecture owner in the policy can review this.' };
+  await open(page, path, { [api]: () => [200, body] });
+  await expect(page.getByText(body.setup.owner_action.label, { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Request the token' })).toHaveCount(0);
+  await expect(page.locator('#home-review-note')).toHaveCount(0);
+  await expectClean(page);
 });
