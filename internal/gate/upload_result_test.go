@@ -168,11 +168,12 @@ func TestUpload4AcceptsAPullRequest(t *testing.T) {
 	for _, tc := range []struct {
 		golden, status, conclusion string
 		errors, requestKeys        []string
+		advisoryFail               bool
 	}{
-		{"pass", "pass", "success", nil, nil},
-		// The policy has no gate: required, so a fail shows as neutral.
+		{"pass", "pass", "success", nil, nil, false},
+		// The policy has no gate: required, so a fail shows as neutral, and open requests would name its errors.
 		{"deny", "fail", "neutral", []string{"no-chaos-to-runtime pkg_chaos pkg_runtime github.com/alexei-led/pumba/pkg/runtime/docker"},
-			[]string{"no-chaos-to-runtime pkg_chaos pkg_runtime"}},
+			[]string{"no-chaos-to-runtime pkg_chaos pkg_runtime"}, true},
 	} {
 		t.Run(tc.golden, func(t *testing.T) {
 			w := newWorld4(t)
@@ -183,7 +184,7 @@ func TestUpload4AcceptsAPullRequest(t *testing.T) {
 			rec, head := w.pullRecord(p)
 			want := records.Pull{Schema: records.SchemaPull, HeadSHA: p.head, RunID: p.runID, RunAttempt: 1,
 				PayloadDigest: s.env.PayloadDigest, PolicyDigest: s.env.PolicyDigest, Status: tc.status, Date: "2026-11-10", Errors: tc.errors,
-				RequestKeys: tc.requestKeys}
+				RequestKeys: tc.requestKeys, Coverable: tc.advisoryFail, Advisory: tc.advisoryFail}
 			if fmt.Sprint(rec) != fmt.Sprint(want) || head != p.head {
 				t.Errorf("pull record = %+v, index head %q; want %+v, %q", rec, head, want, p.head)
 			}

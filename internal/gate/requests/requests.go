@@ -53,6 +53,7 @@ const (
 	ReactionAsked    = "request_asked"    // requests opened or joined
 	ReactionAnswered = "request_answered" // a deny rule already answers it, or the same request was asked
 	ReactionFiled    = "request_filed"    // a CLI issue became a request
+	ReactionHeld     = "request_held"     // posted before the head had a checked result: filed when it lands
 )
 
 // ReactionOtherEndpoint is the reaction to a request line when the default branch's workflow does not send its
@@ -129,6 +130,12 @@ func (s *Service) Comment(ctx context.Context, c Comment) (string, error) {
 	if !ok {
 		return ReactionNone, nil
 	}
+	return s.take(ctx, c, line, lineErr, nil)
+}
+
+// take judges a parsed request line. held is the held line it files (Release), nil for a comment just posted: a line
+// without a checked result for the head is then held, and a held one is not held again.
+func (s *Service) take(ctx context.Context, c Comment, line request.Line, lineErr error, held *records.HeldRequest) (string, error) {
 	ref := c.Repo.RepoRef
 	pl, err := s.gh.Pull(ctx, ref, c.Pull)
 	if errors.Is(err, api.ErrNotFound) {
@@ -160,12 +167,21 @@ func (s *Service) Comment(ctx context.Context, c Comment) (string, error) {
 		return s.refuse(ctx, ref, c.Pull, rejection.Reply())
 	}
 
+	if held != nil && held.HeadSHA != pl.HeadSHA {
+		return s.refuse(ctx, ref, c.Pull, textHeldNewHead)
+	}
+
 	rec, res, err := s.latest(ctx, c.Repo, c.Pull)
+	noResult := errors.Is(err, errNoResult) || err == nil && rec.HeadSHA != pl.HeadSHA
 	switch {
-	case errors.Is(err, errNoResult) || err == nil && rec.HeadSHA != pl.HeadSHA:
+	case noResult && held == nil && !checked(rec, pl.HeadSHA):
+		return s.hold(ctx, c, pl.HeadSHA, line)
+	case noResult:
 		return s.refuse(ctx, ref, c.Pull, textNoResult)
 	case err != nil:
 		return ReactionNone, err
+	case held != nil && res.Status == result.StatusPass:
+		return s.refuse(ctx, ref, c.Pull, textHeldPass)
 	}
 	var asks, others []result.Error
 	for _, e := range res.Errors {
@@ -217,10 +233,8 @@ func (s *Service) Comment(ctx context.Context, c Comment) (string, error) {
 			o.opened = append(o.opened, id)
 		}
 	}
-	if pol.Gate == gateRequired {
-		if err := s.republish(ctx, c.Repo, c.Pull); err != nil {
-			return ReactionNone, err
-		}
+	if err := s.republish(ctx, c.Repo, c.Pull, pol.Gate != gateRequired); err != nil {
+		return ReactionNone, err
 	}
 	if err := s.post(ctx, ref, c.Pull, o.reply(pol.Gate == gateRequired)); err != nil {
 		return ReactionNone, fmt.Errorf("requests: reply: %w", err)
@@ -490,9 +504,10 @@ func (s *Service) latest(ctx context.Context, r api.Repo, pull int) (records.Pul
 var errWithdrawn = errors.New("requests: publication withdrawn")
 
 // republish derives the status of the pull request's latest result again and, when open requests now cover it,
-// publishes it as waiting and records that status. A newer upload that lands meanwhile makes the publication stale;
-// the newest record is then read again.
-func (s *Service) republish(ctx context.Context, r api.Repo, pull int) error {
+// publishes it as waiting and records that status. Under an advisory policy the check never waits: the result stays
+// a fail whose next steps name the requests (Name), published as advisory, and the recorded status stays. A newer
+// upload that lands meanwhile makes the publication stale; the newest record is then read again.
+func (s *Service) republish(ctx context.Context, r api.Repo, pull int, advisory bool) error {
 	for range republishTries {
 		rec, res, err := s.latest(ctx, r, pull)
 		if errors.Is(err, errNoResult) {
@@ -505,7 +520,11 @@ func (s *Service) republish(ctx context.Context, r api.Repo, pull int) error {
 		if err != nil {
 			return err
 		}
-		shown, ids := Cover(res, open)
+		cover := Cover
+		if advisory {
+			cover = Name
+		}
+		shown, ids := cover(res, open)
 		if len(ids) == 0 {
 			return nil
 		}
@@ -518,6 +537,7 @@ func (s *Service) republish(ctx context.Context, r api.Repo, pull int) error {
 			RunID:      rec.RunID,
 			RunAttempt: rec.RunAttempt,
 			Digest:     rec.PayloadDigest,
+			Advisory:   advisory,
 			Result:     shown,
 			Current:    func(ctx context.Context) (bool, error) { return s.same(ctx, r, pull, rec) },
 		})
@@ -529,6 +549,9 @@ func (s *Service) republish(ctx context.Context, r api.Repo, pull int) error {
 		}
 		if err != nil {
 			return fmt.Errorf("requests: publish waiting: %w", err)
+		}
+		if advisory {
+			return nil
 		}
 		return s.setStatus(ctx, r, pull, rec, result.StatusWaiting)
 	}

@@ -19,6 +19,7 @@ const (
 	SchemaProposalIndex = "archfit-app.proposal-index.v1"
 	SchemaPull          = "archfit-app.pull.v1"
 	SchemaPullIndex     = "archfit-app.pull-index.v1"
+	SchemaHeldRequest   = "archfit-app.held-request.v1"
 	SchemaRepos         = "archfit-app.repos.v1"
 	SchemaPolicyPush    = "archfit-app.policy-push.v1"
 	SchemaPolicyHistory = "archfit-app.policy-history.v1"
@@ -221,7 +222,9 @@ type Pull struct {
 	SweepNote     string `json:"sweep_note,omitempty"`    // ambiguous approved-commit..tip range
 	Reason        string `json:"reason,omitempty"`        // App refusal code, for the guarded recheck
 	Status        string `json:"status"`
-	Coverable     bool   `json:"coverable,omitempty"` // the accepted fail may wait on requests (required policy)
+	Coverable     bool   `json:"coverable,omitempty"` // the accepted fail may wait on requests
+	// Advisory says the coverable fail was decided under an advisory policy: open requests name it, and it stays a fail.
+	Advisory bool `json:"advisory,omitempty"`
 	// Date is the date the result judged exceptions on (YYYY-MM-DD), for a result the App accepted as it is: an
 	// exception that expired after it is one the result did not judge (M2 task 22).
 	Date   string   `json:"date,omitempty"`
@@ -234,6 +237,19 @@ type Pull struct {
 	// latest last, at most MaxRechecks. An upload keeps them, so a delivery of a consuming push again, late or after
 	// later ones, finds its proposal here.
 	Rechecks []Recheck `json:"rechecks,omitempty"`
+}
+
+// HeldRequest is a request line posted on a pull request before its head had a checked result, at HeldRequestKey.
+// gate/requests files it, as if it was posted then, when the result of that head lands. One per pull request: a later
+// early line replaces it. The reason is at most 500 characters (wire/request), so the record stays small.
+type HeldRequest struct {
+	Schema    string `json:"schema"`
+	HeadSHA   string `json:"head_sha"`
+	Author    string `json:"author"`
+	Reason    string `json:"reason"`
+	Expires   string `json:"expires,omitempty"`    // YYYY-MM-DD; empty when not asked
+	Today     string `json:"today"`                // the App's date when the line was posted, YYYY-MM-DD
+	CreatedAt string `json:"created_at,omitempty"` // when the comment was posted, RFC 3339
 }
 
 // MaxRechecks bounds Pull.Rechecks; the oldest goes first. A pull request waits on few answers, and a delivery of a
@@ -261,16 +277,21 @@ func (v *Request) stamp() string  { v.Schema = SchemaRequest; return v.Schema }
 func (v *Approval) stamp() string { v.Schema = SchemaApproval; return v.Schema }
 func (v *Proposal) stamp() string { v.Schema = SchemaProposal; return v.Schema }
 func (v *Pull) stamp() string     { v.Schema = SchemaPull; return v.Schema }
+func (v *HeldRequest) stamp() string {
+	v.Schema = SchemaHeldRequest
+	return v.Schema
+}
 func (v *PolicyPush) stamp() string {
 	v.Schema = SchemaPolicyPush
 	return v.Schema
 }
 
-func (*Repo) check() error       { return nil }
-func (*Request) check() error    { return nil }
-func (*Approval) check() error   { return nil }
-func (*Pull) check() error       { return nil }
-func (*PolicyPush) check() error { return nil }
+func (*Repo) check() error        { return nil }
+func (*Request) check() error     { return nil }
+func (*Approval) check() error    { return nil }
+func (*Pull) check() error        { return nil }
+func (*HeldRequest) check() error { return nil }
+func (*PolicyPush) check() error  { return nil }
 
 // NoPolicy is the digest a PolicyChange shows for a commit without a policy.
 const NoPolicy = "none"

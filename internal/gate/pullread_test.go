@@ -216,6 +216,17 @@ func TestAdvisoryFailureDoesNotWaitForOpenRequest(t *testing.T) {
 	if got.View == nil || got.View.Status != result.StatusFail || got.View.Records[0].Request != 0 {
 		t.Fatalf("advisory result became waiting: %+v", got.View)
 	}
+
+	// An advisory fail the App accepted as coverable names the request and stays a fail, as its comment does.
+	put(records.PullKey(r.FullName, 4), &records.Pull{HeadSHA: "head", RunID: 42, RunAttempt: 1, Status: "fail", Coverable: true,
+		Advisory: true, PolicyDigest: "approved", PayloadDigest: envelope.PayloadDigest(raw)})
+	got, err = NewPullViews(&pullReadGitHub{pull: api.Pull{HeadSHA: "head"}, artifact: raw}, mem).PullPage(t.Context(), r, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.View == nil || got.View.Status != result.StatusFail || got.View.Records[0].Request != 431 {
+		t.Fatalf("advisory result with a request: %+v", got.View)
+	}
 }
 
 func TestPullPageNeverShowsPreviousHeadsPass(t *testing.T) {

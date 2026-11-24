@@ -44,6 +44,18 @@ func Key(e result.Error) (string, error) {
 // and each error's next step names its request. ids are the requests, in record order, once each. Any other result is
 // returned unchanged with no ids.
 func Cover(r result.Result, open *records.Index) (shown result.Result, ids []int) {
+	return cover(r, open, true)
+}
+
+// Name is Cover for an advisory policy, where a check never waits: a fail whose errors are all covered stays a fail
+// with its own status line, and each error's next step names its request, so the author sees the request was filed.
+// It never returns the status waiting.
+func Name(r result.Result, open *records.Index) (shown result.Result, ids []int) {
+	return cover(r, open, false)
+}
+
+// cover derives the next steps of a fully covered fail; wait says whether the result also becomes waiting.
+func cover(r result.Result, open *records.Index, wait bool) (shown result.Result, ids []int) {
 	if r.Status != result.StatusFail || len(r.Errors) == 0 || len(r.Unknown) > 0 || open == nil {
 		return r, nil
 	}
@@ -66,7 +78,10 @@ func Cover(r result.Result, open *records.Index) (shown result.Result, ids []int
 		}
 	}
 	shown = r
-	shown.Status, shown.Summary, shown.Errors = result.StatusWaiting, statusPrefix+requestNames(ids), errs
+	shown.Errors = errs
+	if wait {
+		shown.Status, shown.Summary = result.StatusWaiting, statusPrefix+requestNames(ids)
+	}
 	return shown, ids
 }
 

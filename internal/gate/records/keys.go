@@ -73,6 +73,11 @@ func PullKey(fullName string, pr int) string {
 	return "v4/pull/" + repo(fullName) + "/" + strconv.Itoa(pr)
 }
 
+// HeldRequestKey holds the request line posted on a pull request before its head had a checked result (HeldRequest).
+func HeldRequestKey(fullName string, pr int) string {
+	return "v4/held-request/" + repo(fullName) + "/" + strconv.Itoa(pr)
+}
+
 // PullIndexKey holds the open pull requests of a repository.
 func PullIndexKey(fullName string) string { return "v4/pull-index/" + repo(fullName) }
 
